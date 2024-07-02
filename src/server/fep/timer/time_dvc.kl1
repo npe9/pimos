@@ -1,0 +1,292 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module timer_device.
+:- with_macro pimos.
+:- public driver/4.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver(CAbort,DS,F,If)
+%%      CAbort  :: Termination variable from the client task
+%%                 = abort ; []
+%%      DS      :: Input stream from the client task
+%%      F       :: Output stream to scsi_fep_module (vector stream)
+%%      If      :: ={0,Conf,SCont,SAbort}
+%%                 Conf  :: Output stream to confirmation device
+%%                 SCont :: Server control stream
+%%                 SAbort:: Server control abortion variable
+
+driver(CAbort,DS,F,If) :- true |
+        V={fep,msec,_,P,P,[]},
+        id_table:id_table(T),
+        driver_0(CAbort,DS,F,T,If,V,A,A,dummy_attention,_).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_0(CAb,DS,F,T,If,V,A,A1,AtF,Att)
+%%      T       :: Output stream to the keyed_bag which is used to store the
+%%                      list of the aborted requests with the key ID.
+%%      V       :: Device information
+%%                 = {ID,MyUnit,PAb,PP,P,P1}
+%%                  ID  :: Relative timer ID (= fep)
+%%                  MyUnit :: Time unit of the user_fep_timer (atom)
+%%                  PAb  :: Abortion variable for on_at/on_after processes (when disconnected only)
+%%                  PP   :: Termination variable for on_at/on_after processes
+%%                  P,P1 :: short-circuit variables for on_at/on_after processes
+%%      A,A1    :: d-list for aborted messages
+%%      Att     :: Attention line to OS
+
+driver_0(CAb,_,F,T,If,V,_,_,_,_) :- wait(CAb) |
+        abort(If,F,T,fep#normal,_,V).
+alternatively.
+driver_0(CAb,[reset(Args)|DS],F,T,If,V,A,A1,AtF,Att) :- true |
+        F={fep#reset,AbF1,AtF1,S,F1},
+        wait_01(CAb,DS,F1,T,If,V,A,A1,AtF,Att,Args,AtF1,AbF1,S).
+driver_0(_,[close(S)|_],F,T,If,V,A,A1,_,Att) :- true |
+        terminate(If,S,F,T,Att,_,A,A1,_,V).
+driver_0(CAb,[Req|DS],F,T,If,V,A,A1,AtF,Att) :- 
+    vector_element(Req,0,MsgName),MsgName\=reset,MsgName\=close |
+        A1=[Req|A2],
+        driver_0(CAb,DS,F,T,If,V,A,A2,AtF,Att).
+driver_0(_,[],F,T,If,V,A,A1,_,Att) :- true |
+        terminate(If,_,F,T,Att,_,A,A1,_,V).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_01(CAb,DS,F,T,If,V,A,A1,AtF,Att,Args,AtF1,AbF1,S)
+%%      Args    :: = normal(Ab,Att,ID)
+%%                      Ab      :: New abort line from OS
+%%                      Att     :: New attention line to OS
+%%                      ID      :: Id number for aborted messages
+%%                 ; abnormal
+%%                 ; disconnected
+%%      AbF1    :: New abort line to fep
+
+wait_01(CAb,DS,F,T,If,V,A,A1,_,Att,Args,AtF1,AbF1,fep#normal) :- true |
+        Att=[],
+        A1=[],
+        T=[put_with_new_id(ID,A)|T1],
+        Args=normal(Ab1,Att1,ID),
+        driver_1(CAb,DS,F,T1,If,V,Ab1,AtF1,Att1,AbF1).
+wait_01(CAb,DS,F,T,If,V,A,A1,AtF,Att,Args,_,AbF1,fep#abnormal) :- true |
+        Args=abnormal,
+        AbF1=fep#nil,
+        driver_0(CAb,DS,F,T,If,V,A,A1,AtF,Att).
+wait_01(CAb,DS,F,T,If,V,A,A1,_,Att,Args,_,AbF1,fep#disconnected) :- true |
+        Args=disconnected,
+        AbF1=fep#nil,
+        disconnected(CAb,DS,F,T,If,A,A1,Att,_,V).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_1(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF)
+%%      Ab      :: Abort line from OS
+%%      AbF     :: Abort line to fep
+
+driver_1(CAb,_,F,T,If,V,_,_,_,AbF) :- wait(CAb) |
+        abort(If,F,T,fep#normal,AbF,V).
+driver_1(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF) :- wait(Ab) |
+        AbF=fep#abort,
+        driver_0(CAb,DS,F,T,If,V,A,A,AtF,Att).
+alternatively.
+driver_1(CAb,[Req|DS],F,T,If,V,Ab,AtF,Att,AbF) :- true |
+        io_req(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,Req).
+driver_1(_,[],F,T,If,V,Ab,_,Att,AbF) :- true |
+        terminate(If,_,F,T,Att,AbF,A,A,Ab,V).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% io_req(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,Req)
+%%      Req     :: Io_request message
+
+io_req(CAb,DS,F,T,If,V,_,AtF,Att,AbF,{reset,Args}) :- true |
+        AbF=fep#abort,
+%        F={fep#reset,AbF1,AtF1,S,F1},                                  % patch for fep
+%        wait_01(CAb,DS,F1,T,If,V,A,A,AtF,Att,Args,AtF1,AbF1,S).
+        fep_patch(CAb,DS,F,T,If,V,_,AtF,Att,_,Args).
+io_req(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,{next_attention,Args}) :- true |
+        Att=[],
+        Args=normal(Att1),
+        driver_1(CAb,DS,F,T,If,V,Ab,AtF,Att1,AbF).
+io_req(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,{resend,ID,S}) :- true |
+        device_driver:resend(DS,DS1,T,T1,ID,S),
+        driver_1(CAb,DS1,F,T1,If,V,Ab,AtF,Att,AbF).
+io_req(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,{cancel,ID,S}) :- true |
+        device_driver:cancel(T,T1,ID,S),
+        driver_1(CAb,DS,F,T1,If,V,Ab,AtF,Att,AbF).
+
+io_req(_,_,F,T,If,V,Ab,_,Att,AbF,{close,S}) :- true |
+        terminate(If,S,F,T,Att,AbF,A,A,Ab,V).
+
+io_req(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,where(Args)) :- true |
+        set_vector_element(V,0,ID,ID,V1),
+        Args=normal(ID),
+        driver_1(CAb,DS,F,T,If,V1,Ab,AtF,Att,AbF).
+io_req(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,set_time_unit(Unit,S)) :- true |
+        set_vector_element(V,1,_,Unit,V1),
+        S=normal,
+        driver_1(CAb,DS,F,T,If,V1,Ab,AtF,Att,AbF).
+io_req(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,get_time_unit(Args)) :- true |
+        set_vector_element(V,1,Unit,Unit,V1),
+        Args=normal(Unit),
+        driver_1(CAb,DS,F,T,If,V1,Ab,AtF,Att,AbF).
+
+otherwise.
+io_req(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,Req) :- true |
+        set_vector_element(V,1,Unit,Unit,V1),
+        send_message(Req,Req1,Unit,F,Val,S,F1),
+        driver_2(CAb,DS,F1,T,If,V1,Ab,AtF,Att,AbF,Req1,Val,S).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_2(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,Req,Val,S)
+%%      Req     :: Io_request message that is processing now
+%%      Val     :: Values from fep (vector)
+
+driver_2(CAb,_,F,T,If,V,_,_,_,AbF,_,_,S) :- wait(CAb) |
+        abort(If,F,T,S,AbF,V).
+driver_2(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,Req,Val,S) :- wait(Ab) |
+        AbF=fep#abort,
+        wait_20(CAb,DS,F,T,If,V,AtF,Att,Req,Val,S).
+alternatively.
+driver_2(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,Req,Val,fep#normal) :- true |
+        return_values(Req,Val,V,V1),
+        driver_1(CAb,DS,F,T,If,V1,Ab,AtF,Att,AbF).
+driver_2(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF,Req,_,fep#abnormal) :- true |
+        device_driver:return_ab_status(Req,abnormal),
+        driver_1(CAb,DS,F,T,If,V,Ab,AtF,Att,AbF).
+driver_2(CAb,DS,F,T,If,V,_,_,Att,AbF,Req,_,fep#disconnected) :- true |
+        device_driver:return_ab_status(Req,disconnected),
+        disconnected(CAb,DS,F,T,If,A,A,Att,AbF,V).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_20(CAb,DS,F,T,If,V,AtF,Att,Req,Val,S)
+
+wait_20(CAb,DS,F,T,If,V,AtF,Att,Req,Val,fep#normal) :- true |
+        return_values(Req,Val,V,V1),
+        driver_0(CAb,DS,F,T,If,V1,A,A,AtF,Att).
+wait_20(CAb,DS,F,T,If,V,AtF,Att,Req,_,fep#abnormal) :- true |
+        device_driver:return_ab_status(Req,abnormal),
+        driver_0(CAb,DS,F,T,If,V,A,A,AtF,Att).
+wait_20(CAb,DS,F,T,If,V,_,Att,Req,_,fep#disconnected) :- true |
+        device_driver:return_ab_status(Req,disconnected),
+        disconnected(CAb,DS,F,T,If,A,A,Att,_,V).
+wait_20(CAb,DS,F,T,If,V,AtF,Att,Req,_,fep#aborted) :- true |
+        A=[Req|A1],
+        driver_0(CAb,DS,F,T,If,V,A,A1,AtF,Att).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% send_message(Req,Req1,Unit,F,Val,S,F1,Unit)
+%%      Req     :: Io_request message
+%%      Req1    :: New io_request message
+%%      Unit    :: Time unit
+%%      F,F1    :: Output stream to fep (vector)
+%%      Val     :: Values from fep (vector)
+%%      S       :: Status from fep
+
+%% get type messages
+send_message({get_count,Args},Req,_,F,Val,S,F1) :- true |
+        F={fep#get_count,C,S,F1},
+        Req={get_count,Args},
+        Val={C}.
+send_message({get_date_time,Args},Req,_,F,Val,S,F1) :- true |
+        F={fep#get_date_time,Date,Time,S,F1},
+        Req={get_date_time,Args},
+        Val={Date,Time}.
+
+send_message({on_at,C,Args},Req,Unit,F,Val,S,F1) :- C>=0 |
+        F0={fep#on_at,C1,Now,S,F1},
+        Req={on_at,C,Args},
+        Val={Now},
+        time_unit_translator:trans({Unit,C},msec(C1)),
+        do_send_message(C1,F,F0).
+send_message({on_after,C,Args},Req,Unit,F,Val,S,F1) :- C>=0 |
+        F0={fep#on_after,C1,Now,S,F1},
+        Req={on_after,C,Args},
+        Val={Now},
+        time_unit_translator:trans({Unit,C},msec(C1)),
+        do_send_message(C1,F,F0).
+
+send_message({MsgName,C,Args},Req,_,F,Val,S,F1) :- C<0 |
+        F=F1,
+        S=fep#abnormal,
+        Req={MsgName,C,Args},
+        Val=0.
+
+do_send_message(C,F,F1) :- wait(C) | F=F1.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_values(Req,Val,V,V1)
+%%      Req     :: Io_request message
+%%      Val     :: Values from fep (vector)
+%%      V       :: Device information
+%%                 = {ID,MyUnit,PAb,PP,P,P1}
+%%                  ID  :: Relative timer ID (= fep)
+%%                  MyUnit :: Time unit of the user_fep_timer (atom)
+%%                  PAb  :: Abortion variable for on_at/on_after processes (when disconnected only)
+%%                  PP   :: Termination variable for on_at/on_after processes
+%%                  P,P1 :: short-circuit variables for on_at/on_after processes
+
+return_values({on_at,_,Args},{N},{ID,MyU,PAb,PP,P,P1},V1) :- true |
+        Args=normal(Now),
+        V1={ID,MyU,PAb,PP,P,P0},
+        wake_up(PAb,N,Now,P0,P1).
+return_values({on_after,_,Args},{N},{ID,MyU,PAb,PP,P,P1},V1) :- true |
+        Args=normal(Now),
+        V1={ID,MyU,PAb,PP,P,P0},
+        wake_up(PAb,N,Now,P0,P1).
+return_values(get_count(Args),{N},V,V1) :- true |
+        Args=normal(Now),
+        set_vector_element(V,1,Unit,Unit,V1),
+        time_unit_translator:trans(msec(N),{Unit,Now}).
+return_values(get_date_time(Args),{Date,N},V,V1) :- true |
+        Args=normal(Date,Now),
+        set_vector_element(V,1,Unit,Unit,V1),
+        time_unit_translator:trans(msec(N),{Unit,Now}).
+otherwise.
+return_values(Req,Val,V,V1) :- true |
+        V=V1,
+        device_driver:return_values(Req,Val).
+
+wake_up(PAb,_,Now,P,P1) :- wait(PAb) | Now=disconnected,P=P1.
+wake_up(_,fep#wake_up,Now,P,P1) :- true | Now=wake_up,P=P1.
+wake_up(_,fep#aborted,Now,P,P1) :- true | Now=aborted,P=P1.     % for mpsi_fep device
+wake_up(_,fep#nil,Now,P,P1) :- true | Now=aborted,P=P1.         % for scsi_fep device
+
+
+disconnected(CAb,DS,F,T,If,A,A1,Att,AbF,{_,_,PAb,PP,P,P1}) :- true |
+        PAb=abort,P=P1,
+        disconnected_wait(CAb,DS,F,T,If,A,A1,Att,AbF,PP).
+
+disconnected_wait(CAb,DS,F,T,If,A,A1,Att,AbF,[]) :- true |
+        device_driver:disconnected(CAb,DS,F,T,If,A,A1,Att,AbF).
+
+terminate(If,S,F,T,Att,AbF,A,A1,Ab,{_,_,_,PP,P,P1}) :- true |
+        P=P1,
+        wait_stopwatch_terminated(If,S,F,T,Att,AbF,A,A1,Ab,PP).
+
+wait_stopwatch_terminated(If,S,F,T,Att,AbF,A,A1,Ab,PP) :- wait(Ab) |
+        AbF=fep#abort,
+        wait_stopwatch_terminated(If,S,F,T,Att,_,A,A1,_,PP).
+wait_stopwatch_terminated(If,S,F,T,Att,AbF,A,A1,_,[]) :- true |
+        device_driver:terminate(If,S,F,T,Att,AbF,A,A1).
+
+abort(If,F,T,S,AbF,{_,_,_,PP,P,P1}) :- true |
+        P=P1,
+        device_driver:device_info(scont,If,If1,SCont,SCont0),
+        device_driver:abort(If1,F,T,S,AbF),
+        waiting_process_terminated(SCont,SCont0,PP).
+
+waiting_process_terminated(SCont,SCont0,[]) :- true | SCont=SCont0.
+
+
+fep_patch(CAb,DS,F,T,If,V,_,AtF,Att,_,Args) :- true |
+        F={fep#next_attention,AtF1,S,F1},
+        now_reset(CAb,DS,F1,T,If,V,_,AtF,Att,_,Args,S).
+
+now_reset(CAb,DS,F,T,If,V,_,AtF,Att,_,Args,S) :- wait(S) |
+        F={fep#reset,AbF1,AtF1,S1,F1},
+        wait_01(CAb,DS,F1,T,If,V,A,A,AtF,Att,Args,AtF1,AbF1,S1).

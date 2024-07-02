@@ -1,0 +1,217 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>user>yashiro>DISK_SIM>scsi_disk.kl1.19, 02-Apr-92 17:22:03, Edit by yashiro
+:- module scsi_disk_simulator.
+:- with_macro pimos.
+:- public create/4.
+
+create(Unit,LUN,Pathname,Result) :-
+    integer(Unit), integer(LUN), string(Pathname,_,16) |
+        shoen:raise(pimos_tag#task,get_std(io),STD),
+        current_node(CurrentNode,_),
+        create_simulator(Pathname,Result,STD).
+
+
+create_simulator(Pathname,Result,ERROR) :-
+    string(Pathname,_,_) |
+        copy:copy(Pathname,Pathname0,Pathname1),
+        disk_simulator_file:restore(Pathname0,St),
+        check_restore_status(St,Pathname1,Result,ERROR).
+
+check_restore_status(normal(simulator(BlockSize,CylinderSize,DiskSize),Contents),Pathname,Result,ERROR) :-
+    true |
+        disk_simulator:create(BlockSize,CylinderSize,DiskSize,Contents,St),
+        check_disk_simulator(St,Pathname,Result,ERROR).
+check_restore_status(abnormal(nonexistent),Pathname,Result,ERROR) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,[getenv(vm:disk_parameter,Result0)]),
+        check_restore_status1(Result0,Pathname,Result,ERROR).
+
+check_restore_status1(abnormal,Pathname,Result,ERROR) :-
+    true |
+        ERROR = [putb("!! Cannot set disk parameter !!",_)],
+        Result = abnormal.
+check_restore_status1(normal({BlockSize,CylinderSize,Cylinders}),Pathname,Result,ERROR) :-
+    integer(BlockSize),integer(CylinderSize),integer(Cylinders) |
+        disk_simulator:create(BlockSize,CylinderSize,Cylinders,[],St),
+        check_disk_simulator(St,Pathname,Result,ERROR).
+
+check_disk_simulator(normal(DiskSimulator0),Pathname,Result,ERROR) :-
+    true |
+        pool:keyed_set(State),
+        State = [put(pathname,Pathname,_)|State1],
+        disk_filter(DiskSimulator,DiskSimulator0,State1,ERROR),
+        Result  = normal(DiskSimulator).
+
+disk_filter([],Out,State,ERROR) :-
+    true |
+        Out = [media_structure(normal(MediaStructure)),
+               contents(normal(Contents))],
+        State=[get(pathname,Pathname)],
+        disk_simulator_file:save(Pathname,MediaStructure,Contents,Status),
+        check_save_status(Status,ERROR).
+
+disk_filter([test_unit_ready(Result)|In],Out,State,ERROR) :-
+    true |
+        Result = normal,
+        disk_filter(In,Out,State,ERROR).
+disk_filter([inquiry(Result)|In],Out,State,ERROR) :-
+    true |
+        new_string(VUParameter,0,8),
+        Result = normal(scsi#direct_access,0,0,VUParameter),
+%         Result = normal(scsi#direct_access,scsi#not_removable,0,VUParameter),
+        disk_filter(In,Out,State,ERROR).
+disk_filter([send_diagnostic(SelfTest,DeviceOffLine,UnitOffLine,Modification,Result)|In],Out,State,ERROR) :-
+    integer(SelfTest), integer(DeviceOffLine), integer(UnitOffLine),
+    string(Modification,_,8) |
+        Result = normal,
+        State=[put(diagnostic,{SelfTest,DeviceOffLine,UnitOffLine,Modification},_)|State1],
+        disk_filter(In,Out,State1,ERROR).
+disk_filter([receive_diagnosic(Result)|In],Out,State,ERROR) :-
+    true |
+        State=[get_if_any(diagnostic,Value)|State1],
+        check_diagnostic(Value,State1,State2,Result),
+        disk_filter(In,Out,State2,ERROR).
+disk_filter([format_unit(DefectList,Designation,Completeness,InterLeave,Modification,Result)|In],Out,State,ERROR) :-
+    list(DefectList), integer(Designation), integer(Completeness),
+    integer(InterLeave), integer(Modification) |
+        Result = normal,
+        disk_filter(In,Out,State,ERROR).
+disk_filter([read(Block,Length,Buffer,Result)|In],Out,State,ERROR) :-
+    integer(Block), integer(Length), string(Buffer,_,8) |
+        Out = [read(Block,Length,Buffer,Result0)|Out1],
+        check_read_write_status(Result0,Result),
+        disk_filter(In,Out1,State,ERROR).
+disk_filter([write(Block,Length,Buffer,Result)|In],Out,State,ERROR) :-
+    integer(Block), integer(Length), string(Buffer,_,8) |
+        Out = [write(Block,Length,Buffer,Result0)|Out1],
+        check_read_write_status(Result0,Result),
+        disk_filter(In,Out1,State,ERROR).
+disk_filter([mode_select(MediumType,BlockDescriptor,Modification,Result)|In],Out,State,ERROR) :-
+    integer(MediumType), wait(BlockDescriptor), string(Modification,_,8) |
+        Result = normal,
+        State=[put(mode,{MediumType,BlockDescriptor},_)|State1],
+        disk_filter(In,Out,State1,ERROR).
+disk_filter([mode_sense(Result)|In],Out,State,ERROR) :-
+    true |
+        State = [get_if_any(mode,Value)|State1],
+        check_mode_sense(Value,Out,Out1,State1,State2,Result),
+        disk_filter(In,Out1,State2,ERROR).
+disk_filter([reassign_blocks(Blocks,Result)|In],Out,State,ERROR) :-
+    list(Blocks) |
+        set_reassign_blocks(Blocks,Out,Out1,Result),
+        disk_filter(In,Out1,State,ERROR).
+disk_filter([start_stop_unit(MotorSwitch,ReportTiming,Result)|In],Out,State,ERROR) :-
+    integer(MotorSwitch), integer(ReportTiming) |
+        State = [put(motor,{MotorSwitch,ReportTiming},_)|State1],
+        Result = normal,
+        disk_filter(In,Out,State1,ERROR).
+disk_filter([prevent_allow_medium_removal(Lock,Result)|In],Out,State,ERROR) :-
+    integer(Lock) |
+        Result = normal,
+        disk_filter(In,Out,State,ERROR).
+disk_filter([read_capacity(Scope,Block,Modification,Result)|In],Out,State,ERROR) :-
+    integer(Scope),integer(Block), integer(Modification) |
+        Out = [media_structure(Status)|Out1],
+        check_read_capacity(Status,Scope,Block,Modification,Result),
+        disk_filter(In,Out1,State,ERROR).
+disk_filter([write_and_verify(Block,Length,Buffer,ByteCheck,Result)|In],Out,State,ERROR) :-
+    integer(Block), integer(Length), integer(ByteCheck), string(Buffer,_,8) |
+        Out = [write(Block,Length,Buffer,Result0)|Out1],
+        check_read_write_status(Result0,Result),
+        disk_filter(In,Out1,State,ERROR).
+otherwise.
+disk_filter([Mes|In],Out,State,ERROR) :-
+    true |
+        ERROR = [ putb("illegal message for SCSI disk simulator!!",_) |ERROR1],
+        disk_filter(In,Out,State,ERROR1).
+
+check_diagnostic({},State,NState,Result) :-
+    true |
+        State = NState,
+        new_string(SenseBytes,0,8),
+        Result = abnormal(check_condition(16#"08",16#"80",extended(0,5,0,SenseBytes))).
+        % CompletionCode = ERROR END, Detail = UNEXPECTED MESSAGE, SenseData = ILLEGAL REQUEST,
+check_diagnostic({Value},State,NState,Result) :-
+    true |
+        new_string(Data,0,8),
+        Result = normal(Data),
+        State = [put(diagnostic,Value,_)|NState].
+
+check_read_write_status(normal(DataSize,NewBuffer),Result) :-
+    integer(DataSize), string(NewBuffer,_,8) |
+        Result = normal(DataSize,NewBuffer).
+check_read_write_status(abnormal(Reason),Result) :-
+    true |
+        check_read_write_status1(Reason,Result).
+
+check_read_write_status1(io_error([{Block,Error}|ErrorList]),Result) :-
+    integer(Block) |
+        new_string(SenseBytes,0,8),
+        Result = abnormal(check_condition(16#"08",16#"00",extended(0,3,Block,SenseBytes))).
+
+check_mode_sense({},Out,NOut,State,NState,Result) :-  % not selected yet
+%   normal(MediumType,WriteProtect,BlockDescriptor,VUParameters)
+    new_string(VUParameters,0,8),
+    Result = normal(0,0,{0,BlockSize,0},VUParameters),
+    State=NState,
+    Out = [media_structure(Result0)|NOut],
+    check_mode_sense1(Result0,BlockSize).
+
+check_mode_sense({{MediumType,BlockDescriptor}},Out,NOut,State,NState,Result) :-
+%   normal(MediumType,WriteProtect,BlockDescriptor,VUParameters)
+    new_string(VUParameters,0,8),
+    Result = normal(MediumType,BlockDescriptor,{},VUParameters),
+    State=[put(mode,{MediumType,BlockDescriptor},_)|NState],
+    Out = NOut.
+
+check_mode_sense1(normal(simulator(BlockSize,_,_)),NBlockSize) :-
+    true |
+        BlockSize = NBlockSize.
+otherwise.
+check_mode_sense1(_,NBlockSize) :-
+    true |
+        NBlockSize = 512.
+
+set_reassign_blocks(Blocks,Out,NOut,Result) :-
+    true |
+        Out = [media_structure(Result)|Out1],
+        set_reassign_blocks1(Result,Blocks,Out1,NOut,Result).
+set_reassign_blocks1(normal(simulator(BlockSize,_,_)),Blocks,Out,NOut,Result) :-
+    true |
+        set_reassign_blocks2(Blocks,BlockSize,Out,NOut,Result).
+
+set_reassign_blocks2([Block|Blocks],BlockSize,Out,NOut,Result) :-
+    true |
+        new_string(String,BlockSize,8),
+        Out = [set_contents(Block,1,String,_)|Out1],
+        set_reassign_blocks2(Blocks,BlockSize,Out1,NOut,Result).
+set_reassign_blocks2([],BlockSize,Out,NOut,Result) :-
+    true |
+        Out = NOut, Result = normal.
+
+check_read_capacity(normal(simulator(BlockSize,CylinderSize,DiskSize)),
+                    Scope,Block,Modification,Result):-
+    true |
+        check_read_capacity1(BlockSize,CylinderSize,DiskSize,
+                    Scope,Block,Modification,Result).
+
+check_read_capacity1(BlockSize,CylinderSize,DiskSize,0,_,_,Result) :-
+    LastBlock := (CylinderSize * DiskSize) - 1 |
+        Result = normal(LastBlock,BlockSize).
+
+check_read_capacity1(BlockSize,CylinderSize,DiskSize,1,Block,_,Result):-
+    true |
+        Result = normal(Block,BlockSize).
+        
+check_save_status(normal,ERROR) :-
+    true |
+        ERROR = [putb("SCSI disk simulator: NORMAL END",_)].
+otherwise.
+check_save_status(abnormal,ERROR) :-
+    true |
+        ERROR = [putb("SCSI disk simulator: ABNORMAL END",_)].

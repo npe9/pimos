@@ -1,0 +1,762 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module fep_window_device.
+:- with_macro pimos.
+:- public device_create/5.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_create(Stream, Node, DevID, DevStream, ^Send)
+%%      Stream     ::  stream of window request device
+%%      Node       ::  node number of FEP
+%%      DevID      ::  device ID
+%%      DevStream  ::  stream of window device
+%%      Send       ::  send message for SCSI DRIVER
+
+device_create(Stream, Node, DevID, DevStream, Send) :-
+    Stream = {fep#create, Username, Password, Window, Status, _},
+    integer(DevID) |
+        Send = [send({DevID, fep#create_window, 
+                Node, Username, Password}, Result)|SendTail],
+        check_send_status(Result, Window, DevID, DevStream, SendTail,
+                    {DevID, Status}).
+device_create(Stream, Node, DevID, DevStream, Send) :-
+    Stream = {fep#create_with_buffer, Username, Password, Buffer, Window,
+              Status, _},
+    integer(DevID) |
+        Send = [send({DevID, fep#create_with_buffer,
+                Node, Username, Password, Buffer}, Result)|SendTail],
+        check_send_status(Result, Window, DevID, DevStream, SendTail,
+                    {DevID, Status}).
+device_create(Stream, Node, DevID, DevStream, Send) :-
+    Stream = {fep#get_max_size, X, Y, Pathname, Char, Lines, Status, _},
+    integer(DevID) |
+        Send = [send({DevID, fep#get_max_size, 
+                Node, X, Y, Pathname}, Result)],
+        check_send_status(Result, DevStream, {DevID, Status, Char, Lines}).
+device_create(Stream, Node, DevID, DevStream, Send) :-
+    Stream = {fep#get_max_size, Username, Password, X, Y, Pathname, Char, Lines,
+              Status, _},
+    integer(DevID) |
+        Send = [send({DevID, fep#get_max_size, 
+                Node, Username, Password, X, Y, Pathname}, Result)],
+        check_send_status(Result, DevStream, {DevID, Status, Char, Lines}).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_status(Status, Stream, DevID, Reply, ^Send, ^Result)
+%%      Status     ::  status of device create message
+%%      Stream     ::  stream of window device
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      Send       ::  send message for SCSI DRIVER
+%%      Result     ::  value of I/O message
+
+check_send_status(normal, Stream, DevID, Reply, Send, Result) :-
+    true |
+        reply(Stream, DevID, Reply, Send, Result).
+check_send_status(abnormal, _, _, _, Send, Result) :-
+    display_console("SCSI I/O Error in window device creation") |
+        fep_utility:device_abnormal(Result),
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_status(Status, Reply, ^Result)
+%%      Status     ::  status of device create message
+%%      Reply      ::  reply of I/O message
+%%      Result     ::  value of I/O message
+
+check_send_status(normal, Reply, Result) :-
+    true |
+        get_max_size(Reply, Result).
+check_send_status(abnormal, _, Result) :-
+    display_console("SCSI I/O Error in window device creation") |
+        fep_utility:device_abnormal(Result).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% reply(Stream, DevID, Reply, ^Send, ^Result)
+%%      Stream     ::  stream of window device
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      Send       ::  send message for SCSI DRIVER
+%%      Result     ::  value of I/O message
+
+reply(Stream, DevID, [normal(Value)|Reply], Send, Result) :-
+    vector_element(Value, 1, Response),
+    Response = fep#normal |
+        fep_utility:set_value(Value, Result),
+        device_process(Stream, DevID, Reply, Send).
+otherwise.
+reply(_, _, [normal(Value)|_], Send, Result) :-
+    true |
+        fep_utility:set_value(Value, Result),
+        Send = [].
+reply(_, _, [abnormal(Value)|_], Send, Result) :-
+    true |
+        fep_utility:set_value(Value, Result),
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% get_max_size(Reply, ^Result)
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      Result     ::  value of I/O message
+
+get_max_size([normal(Value)|_], Result) :-
+    true |
+        fep_utility:set_value(Value, Result).
+get_max_size([abnormal(Value)|_], Result) :-
+    true |
+        fep_utility:set_value(Value, Result).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_process(Stream, DevID, Reply, ^Send)
+%%      Stream     ::  stream of window device
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      Send       ::  send message for SCSI DRIVER
+
+device_process(fep#nil, _, _, Send) :-
+    true |
+        Send = [].
+device_process(Stream, DevID, Reply, Send) :-
+    Stream = {fep#reset, Abort, Attention, Status, Cdr} |
+        Status = fep#normal,
+        device_io(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive),
+        fep_receiver:reply_with_attention([reset(_,Attention)|AtMsg], fep#nil,
+                _, FepLine, Reply, Receive).
+otherwise.
+device_process(Stream, _, _, Send) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        Send = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_window_device: device_process/ 4"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_io(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg, ^Receive)
+%%      Stream     ::  stream of window device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_io(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    wait(FepLine) |
+        device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send,
+                            AtMsg, Receive).
+alternatively.
+device_io(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    true |
+        device_io0(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_disconnected(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg,
+%%                     ^Receive)
+%%      Stream     ::  stream of window device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_disconnected(fep#nil, _, Attention, _, DevID, Send, AtMsg, Receive) :-
+    true |
+        AtMsg = [],
+        Send = [send({DevID, fep#close}, Result)|SendTail],
+        device_terminate(Result, Attention, DevID, SendTail, Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive) :-
+    Stream = {fep#reset, _, NewAttention, Status, Cdr} |
+        Status = fep#disconnected,
+        NewAttention = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive):-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#disconnected,
+        NewAttention = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive):-
+    Stream = {fep#getl, String, Status, Cdr} |
+        Status = fep#disconnected,
+        String = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive):-
+    Stream = {fep#buffer_name, Buffer_name, Status, Cdr} |
+        Status = fep#disconnected,
+        Buffer_name = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive):-
+    Stream = {fep#get_inside_size, Char, Lines, Status, Cdr} |
+        Status = fep#disconnected, 
+        Char = fep#nil,
+        Lines = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive):-
+    Stream = {fep#get_position, X, Y, Status, Cdr} |
+        Status = fep#disconnected,
+        X = fep#nil,
+        Y = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive):-
+    Stream = {fep#get_title, String, Status, Cdr} |
+        Status = fep#disconnected,
+        String = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive):-
+    Stream = {fep#get_font, Pathname, Status, Cdr} |
+        Status = fep#disconnected,
+        Pathname = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+otherwise.
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#disconnected,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_io0(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg,
+%%            ^Receive)
+%%      Stream     ::  stream of window device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_io0(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    wait(Abort) |
+        Send = [send({DevID, fep#abort}, Result)|SendTail],
+        device_abort0(Result, Stream, Abort, Attention, FepLine, DevID,
+                      SendTail, AtMsg, Receive).
+alternatively.
+device_io0(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    true |
+        device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                   Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_io1(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg,
+%%            ^Receive)
+%%      Stream     ::  stream of window device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_io1(fep#nil, _, Attention, _, DevID, Send, AtMsg, Receive) :-
+    true |
+        AtMsg = [],
+        Send = [send({DevID, fep#close}, Result)|SendTail],
+        device_terminate(Result, Attention, DevID, SendTail, Receive).
+device_io1(Stream, _, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        AtMsg = [reset(Attention,NewAttention)|AtMsgTail],
+        Status = fep#normal,
+        device_io(Cdr, NewAbort, NewAttention, FepLine, DevID, Send, AtMsgTail, 
+                  Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        AtMsg = [reset(Attention,NewAttention)|AtMsgTail],
+        Status = fep#normal,
+        device_io(Cdr, Abort, NewAttention, FepLine, DevID, Send, AtMsgTail,
+                  Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#getl, Line, Status, Cdr} |
+        Send = [send({DevID, fep#getl}, Result)|SendTail],
+        fep_utility:str8_to_str16(Line1, Line),
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status, Line1}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#putb, String, Status, Cdr} |
+        Send = [send({DevID, fep#putb, String}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#flush, Status, Cdr} |
+        Send = [send({DevID, fep#flush}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#beep, Status, Cdr} |
+        Send = [send({DevID, fep#beep}, Result)|SendTail], 
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#set_inside_size, Char, Lines, Status, Cdr} |
+        Send = [send({DevID, fep#set_inside_size, Char, Lines},
+                     Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#set_size, Status, Cdr} |
+        Send = [send({DevID, fep#set_size}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                     SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#set_position, X, Y, Status, Cdr} |
+        Send = [send({DevID, fep#set_position, X, Y}, 
+                     Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#set_position_by_mouse, Status, Cdr} |
+        Send = [send({DevID, fep#set_position_by_mouse},
+                     Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#reshape, X, Y, Char, Lines, Status, Cdr} |
+        Send = [send({DevID, fep#reshape, X, Y, Char, Lines},
+                     Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#reshape_by_mouse, Status, Cdr} |
+        Send = [send({DevID, fep#reshape_by_mouse},
+                     Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#set_title, String, Status, Cdr} |
+        Send = [send({DevID, fep#set_title, String},
+                     Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#set_font, Pathname, Status, Cdr} |
+        Send = [send({DevID, fep#set_font, Pathname},
+                     Result)|SendTail], 
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#select_buffer, Buffer_name, Status, Cdr} |
+        Send = [send({DevID, fep#select_buffer, Buffer_name},
+                     Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#buffer_name, Buffer_name, Status, Cdr} |
+        Send = [send({DevID, fep#buffer_name}, Result)|SendTail],
+        fep_utility:str8_to_str16(Buffer_name1, Buffer_name),
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status, Buffer_name1}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#activate, Status, Cdr} |
+        Send = [send({DevID, fep#activate}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#deactivate, Status, Cdr} |
+        Send = [send({DevID, fep#deactivate}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#show, Status, Cdr} |
+        Send = [send({DevID, fep#show}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#hide, Status, Cdr} |
+        Send = [send({DevID, fep#hide}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#clear, Status, Cdr} |
+        Send = [send({DevID, fep#clear}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#get_inside_size, Char, Lines, Status, Cdr} |
+        Send = [send({DevID, fep#get_inside_size},
+                     Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status, Char, Lines}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#get_position, X, Y, Status, Cdr} |
+        Send = [send({DevID, fep#get_position}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status, X, Y}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#get_title, String, Status, Cdr} |
+        Send = [send({DevID, fep#get_title}, Result)|SendTail],
+        fep_utility:str8_to_str16(String1, String),
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status, String1}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#get_font, Pathname, Status, Cdr} |
+        Send = [send({DevID, fep#get_font}, Result)|SendTail], 
+        fep_utility:str8_to_str16(Pathname1, Pathname),
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status, Pathname1}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#ungetb, String, Status, Cdr} |
+        Send = [send({DevID, fep#ungetb, String},
+                     Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status}, AtMsg, Receive).
+otherwise.
+device_io1(Stream, _, Attention, _, _, Send, AtMsg, Receive) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        fep_utility:close_device(Attention, Send),
+        AtMsg = [],
+        Receive = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_window_device: device_io1/ 8"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_aborted(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg, 
+%%                ^Receive)
+%%      Stream     ::  stream of window device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_aborted(fep#nil, _, Attention, _, DevID, Send, AtMsg, Receive) :-
+    true |
+        AtMsg = [],
+        Send = [send({DevID, fep#close}, Result)|SendTail],
+        device_terminate(Result, Attention, DevID, SendTail, Receive).
+device_aborted(Stream, _, Attention, FepLine, DevID, Send, AtMsg, Receive):-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        AtMsg = [reset(Attention, NewAttention)|AtMsgTail],
+        Status = fep#normal,
+        device_io(Cdr, NewAbort, NewAttention, FepLine, DevID, Send, AtMsgTail,
+                  Receive).
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive):-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#aborted,
+        NewAttention = fep#nil,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive):-
+    Stream = {fep#getl, Line, Status, Cdr} |
+        Status = fep#aborted,
+        Line = fep#nil,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive):-
+    Stream = {fep#buffer_name, Buffer_name, Status, Cdr} |
+        Status = fep#aborted,
+        Buffer_name = fep#nil,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive):-
+    Stream = {fep#get_inside_size, Char, Lines, Status, Cdr} |
+        Status = fep#aborted, 
+        Char = fep#nil,
+        Lines = fep#nil,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive):-
+    Stream = {fep#get_position, X, Y, Status, Cdr} |
+        Status = fep#aborted,
+        X = fep#nil,
+        Y = fep#nil,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive):-
+    Stream = {fep#get_title, String, Status, Cdr} |
+        Status = fep#aborted,
+        String = fep#nil,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive):-
+    Stream = {fep#get_font, Pathname, Status, Cdr} |
+        Status = fep#aborted,
+        Pathname = fep#nil,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+otherwise.
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+               Receive) :-
+    vector(Stream, Size),
+    vector_element(Stream, ~(Size-1), Cdr),
+    vector_element(Stream, ~(Size-2), Status) |
+        Status = fep#aborted,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abnormal(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg,
+%%                 ^Receive)
+%%      Stream     ::  stream of string_io device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_abnormal(fep#nil, _, Attention, _, _, Send, AtMsg, Receive) :-
+    true |
+        fep_utility:close_device(Attention, Send),
+        AtMsg = [],
+        Receive = [].
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive):-
+    Stream = {fep#reset, _, NewAttention, Status, Cdr} |
+        Status = fep#abnormal,
+        NewAttention = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#abnormal,
+        NewAttention = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive):-
+    Stream = {fep#getl, Line, Status, Cdr} |
+        Status = fep#abnormal,
+        Line = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive):-
+    Stream = {fep#buffer_name, Buffer_name, Status, Cdr} |
+        Status = fep#abnormal,
+        Buffer_name = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive):-
+    Stream = {fep#get_inside_size, Char, Lines, Status, Cdr} |
+        Status = fep#abnormal, 
+        Char = fep#nil,
+        Lines = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive):-
+    Stream = {fep#get_position, X, Y, Status, Cdr} |
+        Status = fep#abnormal,
+        X = fep#nil,
+        Y = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive):-
+    Stream = {fep#get_title, String, Status, Cdr} |
+        Status = fep#abnormal,
+        String = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive):-
+    Stream = {fep#get_font, Pathname, Status, Cdr} |
+        Status = fep#abnormal,
+        Pathname = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+otherwise.
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#abnormal,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+ 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_status(Status, Stream, Abort, ^Attention, FepLine, DevID,
+%%                   ^Send, Vars, ^AtMsg, ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Stream     ::  stream of window device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      Vars       ::  variables of I/O message
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+    
+check_send_status(normal, Stream, Abort, Attention, FepLine, DevID, Send,
+                  Vars, AtMsg, Receive) :-
+    true |
+        Receive = [receive(Vars, Result)|ReceiveTail],
+        check_send_normal(Result, Stream, Abort, Attention, FepLine, DevID, 
+                   Send, AtMsg, ReceiveTail).
+otherwise.
+check_send_status(abnormal, Stream, Abort, Attention, FepLine, DevID, Send,
+                  Vars, AtMsg, Receive) :-
+    true |
+        fep_utility:device_abnormal(Vars),
+        device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_normal(Status, Stream, Abort, ^Attention, FepLine, DevID,
+%%                   ^Send, ^AtMsg, ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Stream     ::  stream of window device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+check_send_normal(Result, Stream, Abort, Attention, FepLine, DevID, Send, 
+                  AtMsg, Receive) :-
+    wait(Abort) |
+        Send = [send({DevID, fep#abort}, Result1)|SendTail],
+        device_abort1(Result1, Result, Stream, Abort, Attention, FepLine, DevID,
+                      SendTail, AtMsg, Receive).
+alternatively.
+check_send_normal(normal, Stream, Abort, Attention, FepLine, DevID, Send,
+                  AtMsg, Receive) :-
+    true |
+        device_io(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                  Receive).
+check_send_normal(abnormal, Stream, Abort, Attention, FepLine, DevID, Send,
+                  AtMsg, Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abort0(Status, Stream, Abort, ^Attention, FepLine, DevID, ^Send,
+%%               ^AtMsg, ^Receive)
+%%      Status     ::  status of device abort message
+%%      Stream     ::  stream of window device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_abort0(normal, Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+              Receive) :-
+    true |
+        device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_abort0(abnormal, Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+              Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abort1(StatusA, StatusI, Stream, Abort, ^Attention, FepLine, DevID,
+%%               ^Send, ^AtMsg, ^Receive)
+%%      StatusA    ::  status of device abort message
+%%      StatusI    ::  status of device I/O message
+%%      Stream     ::  stream of window device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_abort1(normal, normal, Stream, Abort, Attention, FepLine, DevID, 
+              Send, AtMsg, Receive) :-
+    true |
+        device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_abort1(abnormal, _, Stream, Abort, Attention, FepLine, DevID, 
+              Send, AtMsg, Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abort1(_, abnormal, Stream, Abort, Attention, FepLine, DevID, 
+              Send, AtMsg, Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+      
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_terminate(Status, ^Attention, DevID, ^Send, ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Attention  ::  attention line from FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      Receive    ::  result of I/O message
+
+device_terminate(normal, Attention, DevID, Send, Receive) :-
+    true |
+        Receive = [receive({DevID, _}, Result)],
+        device_terminate1(Result, Attention, Send).
+device_terminate(abnormal, _, _, Send, Receive) :-
+    display_console("SCSI I/O Error in window device termination") |
+        Send = [], 
+        Receive = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_terminate1(Status, ^Attention, ^Send)
+%%      Status     ::  status of device I/O message
+%%      Attention  ::  attention line from FEP
+%%      Send       ::  send message for SCSI DRIVER
+
+device_terminate1(normal, Attention, Send) :-
+    true |
+        fep_utility:close_device(Attention, Send).
+device_terminate1(abnormal, Attention, Send) :-
+    true |
+        fep_utility:close_device(Attention, Send).

@@ -1,0 +1,332 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module io_node_confirm.
+:- with_macro pimos.
+:- public go/2.
+
+go(In,Fep):- true|
+   merge(In,In1),
+   go1(In1,DevIn),
+   merge(DevIn,Dev),
+   confirm(Dev,Fep).
+
+go1(In,Dev):- true|
+   pool:keyed_set(Pool),
+   loop(In,Pool,Dev).
+loop([],Pool,Dev):- true|
+   Pool = [],
+   Dev = [].
+loop([confirm(Type,IONode,Name,Password,AB,Result)|In],Pool,Dev):-
+   string(Name,_,_),
+   string(Password,_,_)|
+   Pool = [put(IONode,New,Old)|PoolN],
+   merge({In0,In},In2),
+   node_check(Old,New,In0,Type,IONode,Name,Password,AB,Result,Dev1),
+   Dev = {Dev1,Dev2},
+   loop(In2,PoolN,Dev2).
+loop([confirm(Type,IONode,0,0,AB,Result)|In],Pool,Dev):-
+   true|
+   Dev = [get_device(Type,Result)|DevN],
+   loop(In,Pool,DevN).
+loop([remove(IONode)|In],Pool,Dev):-
+   true|
+   Pool = [do([get_if_any(IONode,X)|DN])|PoolN],
+   remove_io_node(X,IONode,_,DN,io_node),
+   loop(In,PoolN,Dev).
+loop([remove(IONode,Name)|In],Pool,Dev):-
+   true|
+   Pool = [do([get_if_any(IONode,X)|DN])|PoolN],
+   remove_io_node(X,IONode,Name,DN,all),
+   loop(In,PoolN,Dev).
+
+node_check(Old,New,In0,Type,IONode,Name,Pass,AB,Result,Dev):-
+   vector(Old,0)|
+   pool:keyed_set(NameP),
+   merge(NamePIn,NameP),
+   New = {1,NamePWait},
+   Dev = [confirm(Type,IONode,Name,Pass,AB,Status)],
+   name_check0(Status,Result,NamePWait,NamePIn,IONode,Name,Pass,In0).
+otherwise.
+node_check(Old,New,In0,Type,IONode,Name,Pass,AB,Result,Dev):-
+   vector_element(Old,0,V)|
+   V = {N,NV},
+   N1 := N + 1,
+   NV = [do([get_if_any(Name,NR)|DNext])|NVN],
+   New = {N1,NVN},
+   name_check(NR,DNext,In0,Type,IONode,Name,Pass,AB,Result,Dev).
+
+name_check0(normal(Fep,Dir),Result,NamePWait,NamePIn,IONode,Name,Pass,In0):-
+   true|
+   NamePIn = [put(Name,{Pass,Dir,1},_)|NamePWait],
+   Result = normal(In1,Fep,Dir),
+   merge(In1,In1Out),
+   erase_name(In1Out,IONode,Name,In0).
+otherwise.
+name_check0(_,Result,NamePWait,NamePIn,IONode,Name,Pass,In0):-
+   NamePIn = NamePWait,
+   Result = abnormal,
+   In0 = [remove(IONode)].
+
+erase_name([],IONode,Name,In0):-
+   true|
+   In0 = [remove(IONode,Name)].
+
+%%%
+name_check(Old,DNext,In0,Type,IONode,Name,Pass,Ab,Result,Dev):-
+   vector(Old,0)|
+   Dev = [confirm(Type,IONode,Name,Pass,Ab,Status)],
+   name_check0(Status,Result,[],DNext,IONode,Name,Pass,In0).
+otherwise.
+name_check({{Pass,Dir,N}},DNext,In0,Type,IONode,Name,Pass,Ab,Result,Dev):-
+   N1 := N + 1|
+   DNext = [put(Name,{Pass,Dir,N1},_)],
+   Dev = [get_fep(Type,IONode,Name,Pass,Dir,Result,InIn1)],
+   merge(InIn1,In1),
+   erase_name(In1,IONode,Name,In0).
+otherwise.
+name_check(Old,DNext,In0,_,IONode,Name,Ab,_,Result,Dev):-
+   vector_element(Old,0,OldV)|
+   DNext = [put(Name,OldV,_)],
+   Result = abnormal,
+   Dev = [],
+   In0 = [remove(IONode)].
+
+remove_io_node(X,_,_,Pool,_):-
+   vector(X,0)|
+   Pool = [].
+otherwise.
+remove_io_node({{1,X}},IONode,Name,Pool,Type):-
+   true|
+   Pool = [],
+   remove_name(Type,Name,X,[]).
+otherwise.
+remove_io_node({{N,X}},IONode,Name,Pool,Type):-
+   true|
+   N1 := N - 1,
+   Pool = [put(IONode,{N1,X1},_)],
+   remove_name(Type,Name,X,X1).
+
+remove_name(io_node,Name,X,X1):-
+   true|
+   X = X1.
+remove_name(all,Name,X,X1):-
+   true|
+   X = [do([get_if_any(Name,Info)|Next])|X1],
+   remove_name(Info,Name,Next).
+
+remove_name(Info,Name,X):-
+   vector(Info,0)|
+   X = [].
+otherwise.
+remove_name({{Pass,Dir,1}},Name,X):-
+   true|
+   X = [].
+otherwise.
+remove_name({{Pass,Dir,N}},Name,X):-
+   N1 := N - 1|
+   X = [put(Name,{Pass,Dir,N1},_)].
+
+confirm([],Fep):-
+    true|
+    Fep = [].
+
+confirm([confirm(Type,IONode,Name,Pass,Ab,Res)|In],Fep):-
+   true|
+   confirm_body(IONode,Name,Pass,Status,Fep,FepN,Ab),
+   wait_confirm(Status,In,FepN,Type,IONode,Name,Pass,Res).
+confirm([get_fep(Type,IONode,Name,Pass,Dir,Result,Conf)|In],Fep):-
+    true|
+    wait_confirm(normal(Dir),In,Fep,Type,IONode,Name,Pass,Res),
+    confirm_type(Res,Result,Conf).
+confirm([get_device(Type,Result)|In],Fep):-
+    true|
+    wait_confirm(normal(""),In,Fep,Type,Res),
+    confirm_type(Res,Result,_).
+
+confirm_type(normal(Fep,Dir),Result,Conf):-
+    true|
+    Result = normal(Conf,Fep,Dir).
+otherwise.
+confirm_type(Status,Result,Conf):-
+    true|
+    Status = Result,
+    Conf = [].
+
+wait_confirm(normal(Dir),In,Fep,socket,IONode,Name,Pass,Res):-
+   string(IONode,_,_)|
+%%%%%%%%%
+%   Fep = {fep#remote_socket,IONode,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [remote_socket(IONode,Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,socket,IONode,Name,Pass,Res):-
+   integer(IONode)|
+%%%%%%%%%
+%   Fep = {fep#socket,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [socket(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,window,IONode,Name,Pass,Res):-
+   string(IONode,_,_)|
+%%%%%%%%%
+%   Fep = {fep#remote_window,IONode,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [remote_window(IONode,Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,window,IONode,Name,Pass,Res):-
+   integer(IONode)|
+%%%%%%%%%
+%   Fep = {fep#window,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [window(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,file,IONode,Name,Pass,Res):-
+   string(IONode,_,_)|
+%%%%%%%%%
+%   Fep = {fep#remote_file,IONode,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [remote_file(IONode,Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,file,IONode,Name,Pass,Res):-
+   integer(IONode)|
+%%%%%%%%%
+%   Fep = {fep#file,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [file(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,timer,IONode,Name,Pass,Res):-
+   string(IONode,_,_)|
+%%%%%%%%%
+%   Fep = {fep#remote_timer,IONode,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [remote_timer(IONode,Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,timer,IONode,Name,Pass,Res):-
+   integer(IONode)|
+%%%%%%%%%
+%   Fep = {fep#timer,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [timer(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,string_io,IONode,Name,Pass,Res):-
+   string(IONode,_,_)|
+%   Fep = {fep#remote_string_io,IONode,Str,Status,FepN},
+   Fep = [remote_string_io(IONode,Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,string_io,IONode,Name,Pass,Res):-
+   integer(IONode)|
+%   Fep = {fep#string_io,Str,Status,FepN},
+   Fep = [string_io(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,fep_info,IONode,Name,Pass,Res):-
+   true|
+   confirm(In,Fep),
+   Res = normal(_,Dir).
+otherwise.
+wait_confirm(Status,In,Fep,_,IONode,Name,Pass,Res):-
+   true|
+   confirm(In,Fep),
+   Res = abnormal.
+
+wait_confirm(normal(Dir),In,Fep,socket,Res):-
+   true|
+%%%%%%%%%
+%   Fep = {fep#socket,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [socket(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,window,Res):-
+   true|
+%%%%%%%%%
+%   Fep = {fep#window,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [window(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,file,Res):-
+   true|
+%%%%%%%%%
+%   Fep = {fep#file,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [file(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,timer,Res):-
+   true|
+%%%%%%%%%
+%   Fep = {fep#timer,Str,Status,FepN},
+%%%%%%%%%
+   Fep = [timer(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,string_io,Res):-
+   true|
+%   Fep = {fep#string_io,Str,Status,FepN},
+   Fep = [string_io(Status)|FepN],
+   confirm(In,FepN),
+   wait_confirm(Status,Res,Dir).
+wait_confirm(normal(Dir),In,Fep,fep_info,Res):-
+   true|
+   confirm(In,Fep),
+   Res = normal(_,Dir).
+otherwise.
+wait_confirm(Status,In,Fep,fep_info,Res):-
+   true|
+   confirm(In,Fep),
+   Res = abnormal.
+
+wait_confirm(normal(Str),Res,Dir):-
+   true|
+   Res = normal(Str,Dir).
+otherwise.
+wait_confirm(St,Res,Dir):-
+   true|
+   Res = St.
+
+confirm_body(IONode,Name,Pass,Result,Fep,FepN,Ab):-
+    integer(IONode)|
+%    Fep = {fep#string_io,Str,Status,FepN},
+    Fep = [string_io(Status)|FepN],
+%%%    Fep = {fep#remote_string_io,IONode,Name,Pass,Str,Status,FepN},
+%%%%%%%%%%%%%
+    wait_confirm_body(Status,Ab,Result,Name,Pass).
+otherwise.
+confirm_body(IONode,Name,Pass,Result,Fep,FepN,Ab):-
+    true|
+%    Fep = {fep#remote_string_io,IONode,Str,Status,FepN},
+    Fep = [remote_string_io(IONode,Status)|FepN],
+%%%    Fep = {fep#remote_string_io,IONode,Name,Pass,Str,Status,FepN},
+%%%%%%%%%%%%%
+    wait_confirm_body(Status,Ab,Result,Name,Pass).
+
+wait_confirm_body(_,Ab,Result,Name,Pass):-
+    wait(Ab)|
+    Result = abnormal.
+alternatively.
+wait_confirm_body(normal(Str),Ab,Result,Name,Pass):-
+    true|
+    confirm_device:check(Str,Name,Pass,Result,Ab).
+wait_confirm_body(abnormal,Ab,Result,Name,Pass):-
+    true|
+    Result = abnormal.
+wait_confirm_body(aborted,Ab,Result,Name,Pass):-
+    true|
+    Result = abnormal.
+wait_confirm_body(disconnected,Ab,Result,Name,Pass):-
+    true|
+    Result = abnormal.

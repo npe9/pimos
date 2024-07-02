@@ -1,0 +1,338 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module telnet_login.
+:- with_macro pimos.
+:- public make_telnet/2, login/2.
+
+/*
+version(Version):-
+   true|
+   Version = "Ver 3.60C".
+*/
+
+%%%%%%%%%% telnet
+
+make_telnet([],Feps):-
+   true|
+   true.
+otherwise.
+make_telnet(In,Feps):-
+   true|
+   copy:copy(In,In1,In2),
+   telnet_go(In1,Wait),
+   make_telnet2(Wait,In2,Feps).
+
+make_telnet2(Wait,In,Feps):-
+   wait(Wait)|
+   make_telnet2(In,Feps).
+
+make_telnet2([],_):-
+   true|
+   true.
+make_telnet2([{Fep,Node,Port}|In],Feps):-
+   display_console(ascii#"TELNET LOGIN SERVICE STARTS ***"),
+   display_console(Fep)|
+   make_telnet21(Fep)@node(Node),
+   make_telnet2(In,Feps).
+
+make_telnet21(Fep):-
+   true|
+   get_telnet_code(Fep,OK,Code,Args),
+   login:get_resource(RH,RL),
+   shoen:raise(pimos_tag#task,general_request(Fep),GR),
+   GR = [execute(Code,Args,
+                 [resource(RH,RL),
+                  name("telnet"),
+                  tag(-1),
+                  stdio([in_out_inter({telnet_server,Fep,St1})],St2)],
+                 Res)],
+   wait_telnet(Res,St1,St2,OK,Fep).
+
+wait_telnet(normal(Cont,Rep),St1,St2,OK,Fep):-
+   true|
+   wait_telnet2(St1,St2,Rep,Cont,OK,Fep).
+otherwise.
+wait_telnet(_,St1,St2,OK,Fep):-
+   display_console(ascii#"TELNET: cannot make a telnet task!!")|
+   OK = no.
+
+wait_telnet2(normal,Normal,Rep,Cont,OK,Fep):-
+   wait(Normal)|
+   login:task_monitor(Rep,Cont),
+   wait_telnet3(OK,Fep).
+otherwise.
+wait_telnet2(_,_,Rep,Cont,OK,Fep):-
+   display_console(ascii#"TELNET: cannot get a socket!!")|
+   Cont = [].
+
+wait_telnet3(OK,Fep):-
+   wait(OK)|
+   make_telnet21(Fep).
+
+%get_telnet_code(Fep,OK,Code,Args):-
+%   true|
+%   predicate_to_code(module#telnet_login,login,2,Code),
+%   Args = {Fep,OK}.
+
+get_telnet_code(Fep,OK,Code,Args):-
+   true|
+   predicate_to_code(module#login,execute_user_goal,1,Code),
+   Args = {telnet_login:login(Fep,OK)}.
+
+login(Fep,OK):-
+   true|
+   shoen:raise(pimos_tag#task,get_std(inter),IO),
+   shoen:raise(pimos_tag#task,general_request,GR),
+   shoen:raise(pimos_tag#task,general_request(0),GR2),
+   GR = [setenv(window_request:io_node," ",_),
+         setenv(task:make_window,no,_)|GRN],
+   GR2= [file(FR)],
+   login1(FR,GRN,IO,Fep,OK).
+
+login1(normal(FR,_,_),GR,IO,Fep,OK):-
+   true|
+   GR = [request_anyway(login_server,_,Res)],
+   login2(Res,FR,IO,Fep,OK).
+otherwise.
+login1(_,GR,IO,Fep,OK):-
+   true|
+   GR = [],
+   IO = [putl("Sorry! I cannot read TELNET-USER-FILE."),flush(_)].
+
+login2(normal(LO),FR,IO,Fep,OK):-
+   true|
+   LO = [reset(RESET)|LON],
+   login3(RESET,LON,FR,IO,Fep,OK).
+otherwise.
+login2(_,FR,IO,Fep,OK):-
+   true|
+   IO = [], FR = [].
+
+login3(normal(_,_,_),LO,FR,IO,Fep,OK):-
+   true|
+   pimos_version:version(Version),
+   builtin#append_string(["*** Welcome to PIMOS *** (Ver ",
+                          Version,")"],Title),
+   IO = [putl(Title),flush(AC),putb("login: "),getl(UN)|ION],
+   wait_tlogin0(AC,UN,LO,ION,FR,Fep,OK).
+otherwise.
+login3(_,LO,FR,IO,Fep,OK):-
+   true|
+   LO = [], FR = [], IO = [].
+
+wait_tlogin0(AC,UN,LO,IO,FR,Fep,OK):-
+   wait(AC)|
+   OK = next,
+   wait_tlogin(UN,LO,IO,FR,Fep).
+
+wait_tlogin(UN,LO,IO,FR,Fep):-
+   string(UN,_,_)|
+%   IO = [putb("password:"),getl(Pass)|ION],
+   IO = [putb("password:"),get_attributes(Attri),getb_noecho(1024,Pass)|ION],
+   wait_tlogin2(Pass,UN,LO,ION,FR,Fep,Attri).
+otherwise.
+wait_tlogin(_,LO,IO,FR,_):-
+   true|
+   LO = [],
+   IO = [], FR = [].
+
+wait_tlogin2(normal(Pass),UN,LO,IO,FR,Fep,
+        normal(telnet,[ip_address(Add),_])):-
+   string(Pass,Len,_)|
+   builtin#substring(Pass,0,~(Len-1),Pass2,_),
+   LO = [login(UN,Pass2,Res)],
+   wait_tlogin3(Res,UN,IO,FR,Fep,Add).
+otherwise.
+wait_tlogin2(_,_,LO,IO,FR,_,_):-
+   true|
+   LO = [],
+   IO = [], FR = [].
+
+wait_tlogin3(normal(Code,Args,UInfo,P,LO),UN,IO,FR,Fep,Add):-
+   true|
+   FR = [open("pimos:pimos.telnet",read(Res))],
+   wait_tlogin4(Res,IO,UN,Fep,{Code,Args,UInfo,P,LO},Add).
+otherwise.
+wait_tlogin3(_,UN,IO,FR,Fep,Add):-
+   true|
+   IO = [putl("Sorry!"),flush(_)],
+   FR = [].
+
+wait_tlogin4(normal(FOut,_,_),IO,UN,Fep,INFO,Add):-
+   true|
+   buffer:input_filter([getwt(WT)|FIn],FOut),
+   io_node_check(WT,FIn,UN,Fep,Yes,Add),
+   wait_tlogin5(Yes,IO,UN,Fep,INFO).
+otherwise.
+wait_tlogin4(_,IO,UN,Fep,INFO,Add):-
+   true|
+   set_vector_element(INFO,4,[],0,_),
+   IO = [putl("Sorry! Please make a TELNET USER FILE."),
+         flush(_)].
+
+
+io_node_check(normal(empty),FIn,UN,Fep,Yes,Add):-
+   true|
+   FIn = [getwt(WT)|FIn2],
+   io_node_check(WT,FIn2,UN,Fep,Yes,Add).
+io_node_check(normal(end_of_file),FIn,_,_,Yes,Add):-
+   true|
+   FIn = [],
+   Yes = no.
+otherwise.
+io_node_check(normal(WT),FIn,UN,Fep,Yes,Add):-
+   true|
+   variable:unwrap(WT,{_,Term},[count(N)]),
+   io_node_check2(N,Term,FIn,UN,Fep,Yes,Add).
+otherwise.
+io_node_check(_,FIn,_,_,Yes,Add):-
+   display_console(ascii#"Syntax error in pimos.telnet")|
+   FIn = [],
+   Yes = no.
+
+io_node_check2(0,user(UN,List),FIn,UN,Fep,Yes,Add)
+:- list(List) |
+   io_node_check3(List,FIn,Yes,Add).
+io_node_check2(0,user(UN,Fep,IONODE,RUN,Dir),FIn,UN,Fep,Yes,Add):-
+   Fep \= '*',
+   string(IONODE,_,_),
+   string(RUN,_,_),
+   string(Dir,_,_)|
+   Yes = yes(IONODE,RUN,Dir),
+   FIn = [].
+io_node_check2(0,user(UN,Fep,IONODE,RUN),FIn,UN,Fep,Yes,Add):-
+   Fep \= '*',
+   string(IONODE,_,_),
+   string(RUN,_,_)|
+   Yes = yes(IONODE,RUN,*),
+   FIn = [].
+io_node_check2(0,user(UN,*,IONODE,RUN,Dir),FIn,UN,_,Yes,Add):-
+   string(IONODE,_,_),
+   string(RUN,_,_),
+   string(Dir,_,_)|
+   Yes = yes(IONODE,RUN,Dir),
+   FIn = [].
+io_node_check2(0,user(UN,*,IONODE,RUN),FIn,UN,_,Yes,Add):-
+   string(IONODE,_,_),
+   string(RUN,_,_)|
+   Yes = yes(IONODE,RUN,*),
+   FIn = [].
+otherwise.
+io_node_check2(_,_,FIn,UN,Fep,Yes,Add):-
+   true|
+   FIn = [getwt(WT)|FIn2],
+   io_node_check(WT,FIn2,UN,Fep,Yes,Add).
+
+io_node_check3([],FIn,Yes,Add):-
+   display_console(ascii#"Syntax error in pimos.telnet")|
+   FIn = [],
+   Yes = no.
+io_node_check3([ionode(Add,Node,UN,Dir)|Next],FIn,Yes,Add)
+:- vector(Add,_),
+   string(Node,_,_),
+   string(UN,_,_),
+   string(Dir,_,_) |
+   FIn=[],
+   Yes=yes(Node,UN,Dir).
+io_node_check3([ionode(Add,Node,UN,Dir)|Next],FIn,Yes,Add)
+:- vector(Add,_),
+   integer(Node),
+   string(UN,_,_),
+   string(Dir,_,_) |
+   FIn=[],
+   Yes=yes(Node,UN,Dir).
+otherwise.
+io_node_check3([_|Next],FIn,Yes,Add):- true |
+   io_node_check3(Next,FIn,Yes,Add).
+
+
+wait_tlogin5(yes(IONode,Run,Dir),IO,UN,Fep,INFO):-
+   true|
+   make_pass_message(IONode,Run,Msg),
+%   IO = [putb(Msg),getl(RPass)|ION],
+   IO = [putb(Msg),getb_noecho(1024,RPass)|ION],
+   wait_tlogin6(RPass,IONode,Dir,Run,ION,UN,Fep,INFO).
+otherwise.
+wait_tlogin5(_,IO,UN,Fep,INFO):-
+   true|
+   set_vector_element(INFO,4,[],0,_),
+   IO = [putl("Sorry! You are NOT a TELNET-user."),flush(_)].
+
+wait_tlogin6(normal(RPass),IONode,Dir,Run,IO,UN,Fep,INFO):-
+   wait(RPass)|
+   string(RPass,Len,_,RPass2),
+   builtin#substring(RPass2,0,~(Len-1),RPass3,_),
+   shoen:raise(pimos_tag#task,general_request(Fep,IONode,Run,RPass3),GR),
+   GR = [connection(St)],
+   wait_tlogin7(St,IO,Fep,IONode,Dir,Run,RPass3,UN,INFO).
+
+wait_tlogin7(normal(_),IO,Fep,IONode,Dir,Run,RPass,UN,INFO):-
+   true|
+   INFO = {Code,Args,UInfo,P,LO},
+   login_p:go({P,Fep,IONode,Run,RPass,"telnet",Dir},Code,Args,UN,LO),
+   IO = [].
+otherwise.
+wait_tlogin7(_,IO,Fep,IONode,Dir,Run,RPass,UN,INFO):-
+   true|
+   IO = [putl("Sorry, you cannot use this FEP."),
+         putb("Do you force to log into PIMOS? (y/n/again) "),
+         getl(Ans)|ION],
+   wait_tlogin8(Ans,ION,Fep,IONode,Dir,Run,RPass,UN,INFO).
+
+%wait_tlogin8(Ans,IO,Fep,_,_,_,_,UN,INFO):-
+wait_tlogin8(Ans,IO,Fep,IONode,Dir,Run,RPass,UN,INFO):-
+   string_element(Ans,0,#"y")|
+   INFO = {Code,Args,_,P,LO},
+%   login_p:go({P,Fep," ","","","telnet",""},Code,Args,UN,LO),
+   login_p:go({P,Fep,IONode,Run,RPass,"telnet",Dir},Code,Args,UN,LO),
+   IO = [].
+wait_tlogin8(Ans,IO,_,_,_,_,_,_,INFO):-
+   string_element(Ans,0,#"n")|
+   IO = [],
+   INFO = {_,_,_,_,[]}.
+otherwise.
+wait_tlogin8(_,IO,Fep,IONode,Dir,Run,_,UN,INFO):-
+   true|
+   make_pass_message(IONode,Run,Msg),
+%   IO = [putb(Msg),getl(RPass)|ION],
+   IO = [putb(Msg),getb_noecho(1024,RPass)|ION],
+   wait_tlogin6(RPass,IONode,Dir,Run,ION,UN,Fep,INFO).
+   
+telnet_go([],Wait):- true| true.
+otherwise.
+telnet_go(Param,Wait):- true|
+   make_param(Param,NewParam),
+   telnet_server:go(NewParam),
+   shoen:raise(pimos_tag#task,general_request,
+                   [request_anyway(telnet_server,_,S)]),
+   wait_telnet_go(S,Wait).
+
+wait_telnet_go(normal(normal(S)),Wait):-
+   true|
+   S = [], Wait = ok.
+otherwise.
+wait_telnet_go(_,Wait):-
+   display_console(ascii#"ERROR In TELNET SERVER")|
+   Wait = ok.
+
+make_param([],Out):- true| Out = [].
+make_param([{Fep,Node,Port}|In],Out):- true|
+   Out = [telnet(Fep,Node,Port)|OutN],
+   make_param(In,OutN).
+
+make_pass_message(IONode,Run,Msg):-
+   true|
+   ionode(IONode,IONODE),
+   builtin#append_string(["password of FEP[",Run,"@",IONODE,"]:"],Msg).
+
+ionode(IONode,IONODE):-
+   string(IONode,_,_)|
+   IONode = IONODE.
+ionode(IONode,IONODE):-
+   integer(IONode)|
+   login_server:int2string(1,IONode,IONODE).

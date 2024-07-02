@@ -1,0 +1,126 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v295>Loader>make.kl1.3, 18-Nov-91 18:55:32, Edit by hori
+
+:- module compiler_make.
+:- with_macro pimos.
+:- public make/6.
+
+make([],VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = VP,
+    MESG0 = [warning("nothing to make",[]),
+             report_total_error(string#"Compilation(s)")|MESG],
+    Status = normal.
+make(TopModNames,VP0,VP,MESG0,MESG,Status) :- list(TopModNames) |
+    relink:search_program_modules(TopModNames,VP0,VP1,MESG0,MESG1,TopModules,_),
+    VP1 = [get_file_request(FR)|VP2],
+    if_updated(TopModules,FR,UpdatedFiles0),
+    pool:keyed_set(P0,100),
+    unique_file(UpdatedFiles0,P0,UpdatedFiles),
+    make_0(UpdatedFiles,VP2,VP,MESG1,MESG,Status).
+
+make_0(FSs,VP0,VP,MESG0,MESG,Status) :- list(FSs) |
+    VP0 = [get_module_table(MT0)|VP1],
+    MT0 = [get_code(pimos::kl1_compiler_distributer,compile,6,normal(Code))],
+    apply(Code,{FSs,VP1,VP,MESG0,MESG,Status}).
+make_0([],VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = VP,
+    MESG0 = [warning("nothing to make",[]),
+             report_total_error(string#"Compilation(s)")|MESG],
+    Status = normal.
+
+if_updated([Module|Rest],FR,UpdatedFiles) :- true |
+    module:get_attributes(Module,Attributes),
+    if_updated(Attributes,Rest,FR,UpdatedFiles).
+if_updated([],FR,UpdatedFiles) :- true |
+    FR = [],
+    UpdatedFiles = [].
+
+if_updated(normal({_,_,FullPath,DateTime,Depends}),Rest,FR0,UpdatedFiles) :- true |
+    kl1_library_file_utility:decomp_filename(FullPath,Node,Path,FileName,Extension,Version,DirStr),
+    builtin#append_string([Path,DirStr,string#".",Extension],OpenName),
+    FR0 = [open(OpenName,read(Status))|FR1],
+    check_source_file_0(Status,DateTime,Depends,Rest,FR1,UpdatedFiles).
+otherwise.
+if_updated(_,Rest,FR,UpdatedFiles) :- true |
+    if_updated(Rest,FR,UpdatedFiles).
+
+check_source_file_0(normal(FS0,_,_),DateTime,Depends,Rest,FR0,UpdatedFiles) :- true |
+    FS0 = [attributes(Status)|FS1],
+    check_source_file_1(Status,DateTime,Depends,Rest,FR0,FS1,UpdatedFiles).
+otherwise.
+check_source_file_0(_,DateTime,Depends,Rest,FR,UpdatedFiles) :- true |
+    if_updated(Rest,FR,UpdatedFiles).
+
+check_source_file_1(Status,DateTime,Depends,Rest,FR,FS,UpdatedFiles) :-
+    Status = normal(Owner,UpdateUser,CDate,CTime,MDate,MTime,LinkCount,FileSize,RecordSize) |
+    kl1_library_file_utility:normalize_date_time(MDate,MTime,FDate,FTime),
+    timer_utility:sort({FDate,FTime},DateTime,_,_,Swapped),
+    check_source_file_2(Swapped,Depends,Rest,FR,FS,UpdatedFiles).
+otherwise.
+check_source_file_1(Status,DateTime,Depends,Rest,FR,FS,UpdatedFiles) :-
+    FS = [],
+    if_updated(Rest,FR,UpdatedFiles).
+
+check_source_file_2(yes,Depends,Rest,FR,FS0,UpdatedFiles) :- true |
+    FS0 = [pathname(normal(FileName))|FS],
+    UpdatedFiles = [{FileName,FS}|UpdatedFiles0],
+    if_updated(Rest,FR,UpdatedFiles0).
+otherwise.
+check_source_file_2(_,Depends,Rest,FR,FS,UpdatedFiles) :- true |
+    check_depends(Depends,Rest,FR,FS,UpdatedFiles).
+
+check_depends([{FullPath,DateTime}|Depends],Rest,FR0,FS,UpdatedFiles) :- true |
+    kl1_library_file_utility:decomp_filename(FullPath,Node,Path,FileName,Extension,Version,DirStr),
+    builtin#append_string([Path,DirStr,string#".",Extension],OpenName),
+    FR0 = [open(OpenName,read(Status))|FR1],
+    check_depends_0(Status,DateTime,Depends,Rest,FR1,FS,UpdatedFiles).
+otherwise.
+check_depends([],Rest,FR,FS,UpdatedFiles) :- true |
+    FS = [],
+    if_updated(Rest,FR,UpdatedFiles).
+
+check_depends_0(normal(DFS,_,_),DateTime,Depends,Rest,FR0,FS,UpdatedFiles) :- true |
+    DFS = [attributes(Status)],
+    check_depends_1(Status,DateTime,Depends,Rest,FR0,FS,UpdatedFiles).
+otherwise.
+check_depends_0(_,DateTime,Depends,Rest,FR,FS,UpdatedFiles) :- true |
+    FS = [],
+    if_updated(Rest,FR,UpdatedFiles).
+
+check_depends_1(Status,DateTime,Depends,Rest,FR,FS,UpdatedFiles) :-
+    Status = normal(Owner,UpdateUser,CDate,CTime,MDate,MTime,LinkCount,FileSize,RecordSize) |
+    kl1_library_file_utility:normalize_date_time(MDate,MTime,FDate,FTime),
+    timer_utility:sort({FDate,FTime},DateTime,_,_,Swapped),
+    check_depends_2(Swapped,Depends,Rest,FR,FS,UpdatedFiles).
+otherwise.
+check_depends_1(Status,DateTime,Depends,Rest,FR,FS,UpdatedFiles) :-
+    FS = [],
+    if_updated(Rest,FR,UpdatedFiles).
+
+check_depends_2(yes,Depends,Rest,FR,FS0,UpdatedFiles) :- true |
+    FS0 = [pathname(normal(FileName))|FS],
+    UpdatedFiles = [{FileName,FS}|UpdatedFiles0],
+    if_updated(Rest,FR,UpdatedFiles0).
+otherwise.
+check_depends_2(_,Depends,Rest,FR,FS,UpdatedFiles) :- true |
+    check_depends(Depends,Rest,FR,FS,UpdatedFiles).
+
+unique_file([{FileName,FS}|Rest],P0,UpdatedFiles) :- true |
+    P0 = [empty(FileName,YorN)|P1],
+    unique_file(YorN,FileName,FS,Rest,P1,UpdatedFiles).
+unique_file([],P0,UpdatedFiles) :- true |
+    P0 = [],
+    UpdatedFiles = [].
+
+unique_file(yes,FileName,FS,Rest,P0,UpdatedFiles) :- true |
+    P0 = [put(FileName,0,_)|P1],
+    UpdatedFiles = [FS|UpdatedFiles0],
+    unique_file(Rest,P1,UpdatedFiles0).
+unique_file(no,FileName,FS,Rest,P0,UpdatedFiles) :- true |
+    FS = [],
+    unique_file(Rest,P0,UpdatedFiles).

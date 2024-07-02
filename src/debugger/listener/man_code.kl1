@@ -1,0 +1,364 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module listener_code_manager.
+:- public create/2, filter/2.
+:- with_macro pimos.
+
+create(CODE,Pac) :- true|
+    merge(CODE,CODE1),
+    manager(CODE1,CODE2),
+    module_table:cache_table([get_default_package(Dfp)|CODE2]),
+    package(Dfp,Pac).
+
+package(normal(Pac),Package) :- true| Package=Pac.
+
+manager([existent(M,P,A,Exist)|S],CODE) :- atom(M) | % default_package
+    CODE=[get_default_package(Dfp)|CODE1],
+    package(Dfp,Pac),
+    existent_check(Pac,M,P,A,CODE1,CODE2,Exist),
+    manager(S,CODE2).
+manager([existent(Pac::M,P,A,Exist)|S],CODE) :- 
+    existent_check(Pac,M,P,A,CODE,CODE1,Exist),
+    manager(S,CODE1).
+manager([existent(Pac,M,P,A,Exist)|S],CODE) :- 
+    existent_check(Pac,M,P,A,CODE,CODE1,Exist),
+    manager(S,CODE1).
+
+manager([get_predicates(M,P,A,List)|S],CODE) :- atom(M) | % default_package
+    CODE=[get_default_package(Dfp)|CODE1],
+    package(Dfp,Pac),
+    get_predicates(Pac,M,P,A,CODE1,CODE2,List),
+    manager(S,CODE2).
+manager([get_predicates(Pac::M,P,A,List)|S],CODE) :- 
+    get_predicates(Pac,M,P,A,CODE,CODE1,List),
+    manager(S,CODE1).
+manager([get_predicates(Pac,M,P,A,List)|S],CODE) :- 
+    get_predicates(Pac,M,P,A,CODE,CODE1,List),
+    manager(S,CODE1).
+
+manager([do(List)|S],CODE) :- 
+    merge(List,List1),
+    listener_utility:prepend(List1,S,S1),
+    manager(S1,CODE).
+
+manager([],CODE) :-  CODE=[].
+otherwise.
+manager([Msg|S],CODE) :- 
+    CODE=[Msg|CODE1],
+    manager(S,CODE1).
+
+
+
+existent_check('*','*','*','*',CODE,CODE1,Exist) :-  
+    CODE1=CODE, Exist=exist.
+existent_check(Pac,'*','*','*',CODE,CODE1,Exist) :- Pac\=('*') |
+    CODE=[get_all_modules(Pac,Status)|CODE1],
+    existent_package(Status,Exist).
+existent_check('*', M, '*','*',CODE,CODE2,Exist) :- M\=('*') |
+    CODE=[get_all_packages(Status)|CODE1],
+    existent_module0(Status,M,CODE1,CODE2,Exist).
+existent_check(Pac, M, '*','*',CODE,CODE1,Exist) :- Pac\=('*'), M\=('*') |
+    CODE=[get_module_in_the_package(Pac,M,Status)|CODE1],
+    existent_module(Status,Exist).
+otherwise.
+existent_check('*','*', P,  A, CODE,CODE1,Exist) :- 
+    CODE=[get_all_modules(Status)|CODE1],
+    existent_check0(Status,P,A,Exist).
+existent_check(Pac,'*', P,  A, CODE,CODE1,Exist) :- Pac\=('*') |
+    CODE=[get_all_modules(Pac,Status)|CODE1],
+    existent_check1(Status,P,A,Exist).
+otherwise.
+existent_check('*', M,  P, A,CODE,CODE2,Exist) :- 
+    CODE=[get_all_packages(Status)|CODE1],
+    existent_check5(Status,M,P,A,CODE1,CODE2,Exist).
+existent_check(Pac, M,  P, A,CODE,CODE1,Exist) :- Pac\=('*') |
+    CODE=[get_module_in_the_package(Pac,M,Status)|CODE1],
+    existent_check4(Status,P,A,Exist).
+
+
+existent_module(normal(_),           Exist) :-  Exist=exist.
+existent_module(non_existent,        Exist) :-  Exist=non_existent_module.
+existent_module(protection_violation,Exist) :-  Exist=protection_violation.
+otherwise.
+existent_module(_,                   Exist) :-  Exist=non_existent_module.
+
+existent_package(normal(_),           Exist) :-  Exist=exist.
+existent_package(non_existent,        Exist) :-  Exist=non_existent_package.
+existent_package(protection_violation,Exist) :-  Exist=protection_violation.
+otherwise.
+existent_package(_,                   Exist) :-  Exist=non_existent_package.
+
+
+existent_module0(normal(List),M,CODE,CODE1,Exist) :-
+    existent_module00(List,M,CODE,CODE1,Exist).
+existent_module0(protection_violation,_,CODE,CODE1,Exist) :-
+    CODE1=CODE, Exist=protection_violation.
+otherwise.
+existent_module0(_,_,CODE,CODE1,Exist) :-
+    CODE1=CODE, Exist=non_existent_package.
+
+existent_module00([{Pac,_,_}|L],M,CODE,CODE2,Exist) :-
+    CODE=[get_module_in_the_package(Pac,M,Status)|CODE1],
+    existent_module(Status,Exist1),
+    existent_module000(Exist1,L,M,CODE1,CODE2,Exist).
+existent_module00([],_,CODE,CODE1,Exist) :- 
+    CODE1=CODE, Exist= non_existent_module.
+
+existent_module000(exist,_,_,CODE,CODE1,Exist) :- CODE1=CODE, Exist=exist.
+otherwise.
+existent_module000(_,    L,M,CODE,CODE1,Exist) :-
+    existent_module00(L,M,CODE,CODE1,Exist).
+
+
+existent_check0(normal(List),P,A,Exist) :- existent_check00(List,P,A,Exist).
+existent_check0(protection_violation,_,_,Exist) :- Exist=protection_violation.
+otherwise.
+existent_check0(_,_,_,Exist) :- Exist=non_existent_package.
+
+existent_check00([{_,Ms}|L],P,A,Exist) :- 
+    existent_check1(Ms,P,A,Exist1),
+    existent_check000(Exist1,L,P,A,Exist).
+existent_check00([],_,_,Exist) :- Exist=non_existent_predicate.
+
+existent_check000(exist,_,_,_,Exist) :- Exist=exist.
+otherwise.
+existent_check000(_,L,P,A,Exist) :- existent_check00(L,P,A,Exist).
+
+
+existent_check1(normal(L),P,A,Exist) :- 
+    existent_check2(L,P,A,Exist).
+otherwise.
+existent_check1(_,        _,_,Exist) :-  Exist=non_existent_module.
+
+existent_check2([{_,M,_}|L],P,A,Exist) :- 
+    module:predicates(M,PL),
+    existent_predicate(PL,P,A,Exist1),
+    existent_check3(Exist1,L,P,A,Exist).
+existent_check2([],   _,_,Exist) :-  Exist=non_existent_predicate.
+
+existent_check3(exist,_,_,_,Exist) :-  Exist=exist.
+otherwise.
+existent_check3(_,    L,P,A,Exist) :- 
+    existent_check2(L,P,A,Exist).
+
+existent_check4(normal(M),P,A,Exist) :- 
+    module:predicates(M,PL),
+    existent_predicate(PL,P,A,Exist).
+otherwise.
+existent_check4(_,        _,_,Exist) :-  Exist=non_existent_module.
+
+existent_check5(normal(List),M,P,A,CODE,CODE1,Exist) :- 
+    existent_check55(List,M,P,A,CODE,CODE1,Exist).
+existent_check5(protection_violation,_,_,_,CODE,CODE1,Exist) :- 
+    CODE1=CODE, Exist=protection_violation.
+otherwise.
+existent_check5(_,_,_,_,CODE,CODE1,Exist) :- 
+    CODE1=CODE, Exist=non_existent_package.
+
+existent_check55([{Pac,_,_}|L],M,P,A,CODE,CODE2,Exist) :- 
+    CODE=[get_module_in_the_package(Pac,M,Status)|CODE1],
+    existent_check4(Status,P,A,Exist1),
+    existent_check555(Exist1,L,M,P,A,CODE1,CODE2,Exist).
+existent_check55([],_,_,_,CODE,CODE1,Exist) :- 
+    CODE1=CODE, 
+    Exist=non_existent_predicate.
+
+existent_check555(exist,_,_,_,_,CODE,CODE1,Exist) :- CODE1=CODE, Exist=exist.
+otherwise.
+existent_check555(_,L,M,P,A,CODE,CODE1,Exist) :- existent_check55(L,M,P,A,CODE,CODE1,Exist).
+    
+
+existent_predicate([{_,_,_}|_],'*','*',Exist) :-  Exist=exist.
+existent_predicate([{_,_,A}|_],'*', A, Exist) :-  A\=('*') | Exist=exist.
+existent_predicate([{_,P,_}|_], P, '*',Exist) :-  P\=('*') | Exist=exist.
+existent_predicate([{_,P,A}|_], P,  A, Exist) :-  P\=('*'), A\=('*') | Exist=exist.
+existent_predicate([],          _,  _, Exist) :-  Exist=non_existent_predicate.
+otherwise.
+existent_predicate([_|PL],      P,  A, Exist) :- 
+    existent_predicate(PL,P,A,Exist).
+
+
+
+get_predicates('*', M, P,A,CODE,CODE2,Preds) :-
+    CODE=[get_all_packages(Status)|CODE1],
+    get_predicates0(Status,M,P,A,CODE1,CODE2,Preds).
+get_predicates(Pac,'*',P,A,CODE,CODE1,Preds) :- Pac\=('*') |
+    CODE=[get_all_modules(Pac,Status)|CODE1],
+    get_predicates1(Status,P,A,Ps),
+    Preds=[{Pac,Ps}].
+get_predicates(Pac, M, P,A,CODE,CODE1,Preds) :- Pac\=('*'), M\=('*') |
+    CODE=[get_module_in_the_package(Pac,M,Status)|CODE1],
+    get_predicates2(Status,M,P,A,Ps),
+    Preds=[{Pac,Ps}].
+
+get_predicates0(normal(List),M,P,A,CODE,CODE1,Preds) :-
+    get_predicates00(List,M,P,A,CODE,CODE1,Preds).
+otherwise.
+get_predicates0(_,_,_,_,CODE,CODE1,Preds) :- CODE1=CODE, Preds=[].
+
+get_predicates00([{Pac,_,_}|L],M,P,A,CODE,CODE2,Preds) :- M\=('*') |
+    CODE=[get_module_in_the_package(Pac,M,Status)|CODE1],
+    get_predicates2(Status,M,P,A,Ps),
+    Preds=[{Pac,Ps}|Preds1],
+    get_predicates00(L,M,P,A,CODE1,CODE2,Preds1).
+get_predicates00([{Pac,_,_}|L],'*',P,A,CODE,CODE2,Preds) :-
+    CODE=[get_all_modules(Pac,Status)|CODE1],
+    get_predicates1(Status,P,A,Ps),
+    Preds=[{Pac,Ps}|Preds1],
+    get_predicates00(L,'*',P,A,CODE1,CODE2,Preds1).
+get_predicates00([],_,_,_,CODE,CODE1,Preds) :- CODE1=CODE, Preds=[].
+
+get_predicates1(normal(List),P,A,Preds) :- 
+    get_predicates11(List,P,A,Preds).
+otherwise.
+get_predicates1(_,           _,_,Preds) :- Preds=[].
+
+get_predicates11([{M,Mdl,_}|L],P,A,Preds) :- 
+    module:predicates(Mdl,List),
+    get_preds(List,P,A,Ps),
+    Preds=[{M,Ps}|Preds1],  
+    get_predicates11(L,P,A,Preds1).
+get_predicates11([],         _,_,Preds) :-  Preds=[].
+
+get_predicates2(normal(Mdl), M,P,A,Preds) :- 
+    module:predicates(Mdl,List),
+    get_preds(List,P,A,Ps),
+    Preds=[{M,Ps}].
+otherwise.
+get_predicates2(_,           _,_,_,Preds) :-  Preds=[].
+
+
+get_preds(List,          '*','*',Ps) :-  Ps=List.
+otherwise.
+get_preds([{Type,P,A}|L], P , A ,Ps) :- 
+    Ps=[{Type,P,A}|Ps1],
+    get_preds(L,P,A,Ps1).
+get_preds([{Type,P,A}|L], P ,'*',Ps) :- 
+    Ps=[{Type,P,A}|Ps1],
+    get_preds(L,P,'*',Ps1).
+get_preds([{Type,P,A}|L],'*', A ,Ps) :- 
+    Ps=[{Type,P,A}|Ps1],
+    get_preds(L,'*',A,Ps1).
+otherwise.    
+get_preds([_|L],          P , A ,Ps) :- 
+    get_preds(L,P,A,Ps).
+get_preds([],             _ , _ ,Ps) :-  Ps=[].
+
+
+
+
+filter([existent(M,P,A,Exist)|US],OS) :- atom(M), atom(P), A>=0 |
+    OS=[existent(M,P,A,Exist1)|OS1],
+    listener_utility:ground_unify(Exist1,Exist),
+    filter(US,OS1).
+filter([existent(Pac::M,P,A,Exist)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[existent(Pac,M,P,A,Exist1)|OS1],
+    listener_utility:ground_unify(Exist1,Exist),
+    filter(US,OS1).
+filter([existent(Pac,M,P,A,Exist)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[existent(Pac,M,P,A,Exist1)|OS1],
+    listener_utility:ground_unify(Exist1,Exist),
+    filter(US,OS1).
+filter([existent(M,P,'*',Exist)|US],OS) :- atom(M), atom(P) |
+    OS=[existent(M,P,'*',Exist1)|OS1],
+    listener_utility:ground_unify(Exist1,Exist),
+    filter(US,OS1).
+filter([existent(Pac::M,P,'*',Exist)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[existent(Pac,M,P,'*',Exist1)|OS1],
+    listener_utility:ground_unify(Exist1,Exist),
+    filter(US,OS1).
+filter([existent(Pac,M,P,'*',Exist)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[existent(Pac,M,P,'*',Exist1)|OS1],
+    listener_utility:ground_unify(Exist1,Exist),
+    filter(US,OS1).
+filter([get_predicates(M,P,A,List)|US],OS) :- atom(M), atom(P), A>=0 |
+    OS=[get_predicates(M,P,A,List1)|OS1],
+    listener_utility:ground_unify(List1,List),
+    filter(US,OS1).
+filter([get_predicates(Pac::M,P,A,List)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[get_predicates(Pac,M,P,A,List1)|OS1],
+    listener_utility:ground_unify(List1,List),
+    filter(US,OS1).
+filter([get_predicates(Pac,M,P,A,List)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[get_predicates(Pac,M,P,A,List1)|OS1],
+    listener_utility:ground_unify(List1,List),
+    filter(US,OS1).
+filter([get_predicates(M,P,'*',List)|US],OS) :- atom(M), atom(P) |
+    OS=[get_predicates(M,P,'*',List1)|OS1],
+    listener_utility:ground_unify(List1,List),
+    filter(US,OS1).
+filter([get_predicates(Pac::M,P,'*',List)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[get_predicates(Pac,M,P,'*',List1)|OS1],
+    listener_utility:ground_unify(List1,List),
+    filter(US,OS1).
+filter([get_predicates(Pac,M,P,'*',List)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[get_predicates(Pac,M,P,'*',List1)|OS1],
+    listener_utility:ground_unify(List1,List),
+    filter(US,OS1).
+filter([do(List)|US],OS) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,US,US1),
+    filter(US1,OS).
+% FOR PACKAGE 6/12
+filter([get_module(Name,Status)|US],OS) :- atom(Name) |
+    OS=[get_module(Name,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([get_module(Pac::Name,Status)|US],OS) :- atom(Pac), atom(Name) |
+    OS=[get_module(Pac,Name,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([get_module(Pac,Name,Status)|US],OS) :- atom(Pac), atom(Name) |
+    OS=[get_module(Pac,Name,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([get_code(M,P,A,Status)|US],OS) :- atom(M), atom(P), A>=0 |
+    OS=[get_code(M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([get_code(Pac::M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[get_code(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([get_code(Pac,M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[get_code(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([update_module(M,Mdl,Status)|US],OS) :- atom(M), module(Mdl,_) |
+    OS=[update_module(M,Mdl,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([remove_module(M,Status)|US],OS) :- atom(M) |
+    OS=[remove_module(M,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([get_all_modules(Status)|US],OS) :-
+    OS=[get_all_modules(Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([],OS) :- OS=[].
+filter([get_default_package(Status)|US],OS) :-
+    OS=[get_default_package(Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([set_default_package(Name,Status)|US],OS) :- atom(Name) |
+    OS=[set_default_package(Name,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([reset_package|US],OS) :-
+    OS=[reset_package|OS1],
+    filter(US,OS1).
+filter([define_package(Pa,SPa,Pro,Status)|US],OS) :-
+  atom(Pa), atom(SPa), integer(Pro) |
+    OS=[define_package(Pa,SPa,Pro,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([get_package_info(Pa,Status)|US],OS) :- atom(Pa) |
+    OS=[get_package_info(Pa,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+

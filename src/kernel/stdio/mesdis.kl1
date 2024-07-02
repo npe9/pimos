@@ -1,0 +1,710 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a 'messageDistributer' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module stdio_distributer.
+:- public mesDis01/2, mesDis02/3, mesDis03/3, mesDis04/3, mesDis05/4.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                 -------------------------      stdIn, stdOut
+% User    =======>|  messageDistributer1  |=======>
+%                 -------------------------      stdInter
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+mesDis01(U, IOI) :- true | U = IOI.
+
+%mesDis1(U, UAtt, UAbt, IOI, IOIAtt, IOIAbt) :- true |
+%    U = IOI, UAtt = IOIAtt, UAbt = IOIAbt.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                 -------------------------
+%                 |                       |=======> stdOut, stdInter
+% User    =======>|  messageDistributer2  |
+%                 |                       |=======> stdIn
+%                 -------------------------
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+mesDis02(U, In, OI) :- true |
+    shellUtils:seqNoGen(SNG),
+    pool:keyed_set(Pl),
+    mesDis02(U, In, OI, SNG, Pl).
+
+%%%  closing the I/O stream  %%%
+mesDis02([], In, OI, SNG, Pl) :- true | In = [], OI = [], SNG = [], Pl = [].
+
+%% Detected the 'RESET' message, %%
+%%  so distributed it into each streams & into the new status %%
+mesDis02([reset(X) | U], In, OI, SNG, Pl) :- true |
+    X = {Status, UAbt, UAtt, Id},
+    In = [reset({InStatus, InAbt, InAtt, InId}) | NIn],
+    OI = [reset({OIStatus, OIAbt, OIAtt, OIId}) | NOI],
+    SNG = [getNo(Id) | NSNG],
+    Pl = [put(Id, { InId, OIId }, _) | NPl],
+    status2(InStatus, OIStatus, Status),
+    mesDis2(U, UAtt, UAbt, NIn, InAtt, InAbt, NOI, OIAtt, OIAbt, NSNG, NPl).
+mesDis02([Mes|U],In,OI,SNG,Pl) :- vector_element(Mes, 0, V0), V0 \= reset |
+%%%  Sending to STD-IN  %%%
+    (Mes = getb(A, B) -> In = [Mes | NIn], NOI = OI ;
+     Mes = getb_noecho(A, B) -> In = [Mes | NIn], NOI = OI ;
+     Mes = prompt(A, B) -> In = [Mes | NIn], NOI = OI ;
+     Mes = ungetb(A, B) -> In = [Mes | NIn], NOI = OI ;
+     Mes = get_attributes(in, A) -> In = [Mes | NIn], NOI = OI ;
+%%%  Sending to STD-OUT  %%%
+     Mes = putb(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = flush(A) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = get_attributes(out, A) -> NIn = In, OI = [Mes | NOI] ;
+%%%  Sending to STD-INTER  %%%
+     Mes = igetb(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = igetb_noecho(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = iprompt(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = iungetb(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = iputb(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = iflush(A) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = get_attributes(inter, A) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = switch(A) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = am_I_there(A) -> NIn = In, OI = [Mes | NOI] ;
+%%%  Message error handling  %%%
+    otherwise ;
+     true -> NIn = In, NOI = OI ),
+    mesDis02(U, NIn, NOI, SNG, Pl).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%mesDis2(U, UAtt, UAbt, In, InAtt, InAbt, OI, OIAtt, OIAbt) :- true |
+%    shellUtils:seqNoGen(SNG),
+%    pool:keyed_set(Pl),
+%    mesDis2(U, UAtt, UAbt,In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, Pl).
+
+%% Detected the user 'ABORT' req., so distribute it into each OS lines %%
+mesDis2(U, UAtt, UAbt, In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, Pl) :-
+    wait(UAbt) | InAbt = abort, OIAbt = abort,
+    mesDis2(U, UAtt, _, In, InAtt, _, OI, OIAtt, _, SNG, Pl).
+
+%% Detected the 'ATTENTION' req. from In, so distribute it into each lines %%
+mesDis2(U, UAtt, UAbt, In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, Pl) :-
+    wait(InAtt) | UAtt = InAtt,
+    mesDis2(U, _, UAbt, In, _, InAbt, OI, OIAtt, OIAbt, SNG, Pl).
+
+%% Detected the 'ATTENTION' req. from OI, so distribute it into each lines %%
+mesDis2(U, UAtt, UAbt, In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, Pl) :-
+    wait(OIAtt) | UAtt = OIAtt,
+    mesDis2(U, _, UAbt, In, InAtt, InAbt, OI, _, OIAbt, SNG, Pl).
+
+%% closing the I/O stream %%
+mesDis2([], UAtt, _, In, InAtt, _, OI, OIAtt, _, SNG, Pl) :- true |
+    close2(InAtt, OIAtt, UAtt), In = [], OI = [], SNG = [], Pl = [].
+
+%% Detected the 'RESET' message, so distribute it into each streams %%
+mesDis2([reset(X) | U], OldUAtt, _,
+        In, OldInAtt, _, OI, OldOIAtt, _, SNG, Pl) :- true |
+    close2(OldInAtt, OldOIAtt, OldUAtt),
+    X = {Status, UAbt, UAtt, Id},
+    In = [reset({InStatus, InAbt, InAtt, InId}) | NIn],
+    OI = [reset({OIStatus, OIAbt, OIAtt, OIId}) | NOI],
+    SNG = [getNo(Id) | NSNG],
+    Pl = [put(Id, { InId, OIId }, _) | NPl],
+    status2(InStatus, OIStatus, Status),
+    mesDis2(U, UAtt, UAbt, NIn, InAtt, InAbt, NOI, OIAtt, OIAbt, NSNG, NPl).
+
+%% Detected the 'NEXT_ATTENTION' message, so distribute it into each streams %%
+mesDis2([next_attention(X) | U], OldUAtt, UAbt,
+    In, OldInAtt, InAbt, OI, OldOIAtt, OIAbt, SNG, Pl) :- true |
+    close2(OldInAtt, OldOIAtt, OldUAtt),
+    X = {Status, UAtt},
+    In = [next_attention({InStatus, InAtt}) | NIn],
+    OI = [next_attention({OIStatus, OIAtt}) | NOI],
+    status2(InStatus, OIStatus, Status),
+    mesDis2(U, UAtt, UAbt, NIn, InAtt, InAbt, NOI, OIAtt, OIAbt, SNG, Pl).
+
+%%%  Detected the 'RESEND' message, so distribute it into each streams %%
+mesDis2([resend(Id, Status) | U], UAtt, UAbt,
+        In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, Pl) :- true |
+    Pl = [get_all(Id, Keys) | NPl],
+    mesDis21(Status, Keys, U, UAtt, UAbt,
+        In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, NPl, resend).
+
+%%%  Detected the 'CANCEL' message, so distribute it into each streams %%
+mesDis2([cancel(Id, Status) | U], UAtt, UAbt,
+        In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, Pl) :- true |
+    Pl = [get_all(Id, Keys) | NPl],
+    mesDis21(Status, Keys, U, UAtt, UAbt,
+        In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, NPl, cancel).
+
+%%%  Receive the normal I/O message  %%%
+mesDis2([Mes| U], UAtt, UAbt, In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, Pl) :-
+        vector_element(Mes, 0, V0),
+        V0 \= reset, V0 \= next_attention, V0 \= resend, V0 \= cancel |
+%%%  Sending to STD-IN %%%
+    (Mes = getb(A, B) -> In = [Mes | NIn], NOI = OI ;
+     Mes = getb_noecho(A, B) -> In = [Mes | NIn], NOI = OI ;
+     Mes = prompt(A, B) -> In = [Mes | NIn], NOI = OI ;
+     Mes = ungetb(A, B) -> In = [Mes | NIn], NOI = OI ;
+     Mes = get_attributes(in, A) -> In = [Mes | NIn], NOI = OI ;
+%%%  Sending to STD-OUT %%%
+     Mes = putb(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = flush(A) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = get_attributes(out, A) -> NIn = In, OI = [Mes | NOI] ;
+%%%  Sending to STD-INTER %%%
+     Mes = igetb(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = igetb_noecho(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = iprompt(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = iungetb(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = iputb(A, B) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = iflush(A) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = get_attributes(inter, A) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = switch(A) -> NIn = In, OI = [Mes | NOI] ;
+     Mes = am_I_there(A) -> NIn = In, OI = [Mes | NOI] ;
+%%%  Message error handling  %%%
+    otherwise ;
+     true -> NIn = In, NOI = OI ),
+    mesDis2(U, UAtt, UAbt, NIn, InAtt, InAbt, NOI, OIAtt, OIAbt, SNG, Pl).
+
+
+%%% check keys when 'RESEND' | 'CANCEL' %%%
+mesDis21(_, Keys, U, UAtt, UAbt, In, InAtt, InAbt,
+        OI, OIAtt, OIAbt, SNG, Pl, _) :- Keys = [] |
+    mesDis2(U, UAtt, UAbt, In, InAtt, InAbt, OI, OIAtt, OIAbt, SNG, Pl).
+mesDis21(Status, Keys, U, UAtt, UAbt, In, InAtt, InAbt,
+        OI, OIAtt, OIAbt, SNG, Pl, Mes) :- Keys = [{ InId, OIId }] |
+    In = [{Mes, InId, InStatus} | NIn],
+    OI = [{Mes, OIId, OIStatus} | NOI],
+    status2(InStatus, OIStatus, Status),
+    mesDis2(U, UAtt, UAbt, NIn, InAtt, InAbt, NOI, OIAtt, OIAbt, SNG, Pl).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                 -------------------------
+%                 |                       |=======> stdIn, stdInter
+% User    =======>|  messageDistributer3  |
+%                 |                       |=======> stdOut
+%                 -------------------------
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+mesDis03(U, InI, O) :- true |
+    shellUtils:seqNoGen(SNG),
+    pool:keyed_set(Pl),
+    mesDis03(U, InI, O, SNG, Pl).
+
+%% closing the I/O stream %%
+mesDis03([], InI, O, SNG, Pl) :- true | InI = [], O = [], SNG = [], Pl = [].
+
+%% Detected the 'RESET' message, %%
+%%  so distribute it into each streams & into the New status %%
+mesDis03([reset(X) | U], InI, O, SNG, Pl) :- true |
+    X = {Status, UAbt, UAtt, Id},
+    InI = [reset({InIStatus, InIAbt, InIAtt, InIId}) | NInI],
+    O = [reset({OStatus, OAbt, OAtt, OId}) | NO],
+    SNG = [getNo(Id) | NSNG],
+    Pl = [put(Id, { InIId, OId }, _) | NPl],
+    status2(InIStatus, OStatus, Status),
+    mesDis3(U, UAtt, UAbt, NInI, InIAtt, InIAbt, NO, OAtt, OAbt, NSNG, NPl).
+
+mesDis03([Mes| U], InI, O, SNG, Pl) :- vector_element(Mes,0,V0), V0 \= reset |
+%%%  Sending to STD-IN  %%%
+    (Mes = getb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = getb_noecho(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = prompt(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = ungetb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = get_attributes(in, A) -> InI = [Mes | NInI], NO = O ;
+%%%  Sending to STD-OUT  %%%
+     Mes = putb(A, B) -> NInI = InI, O = [Mes | NO] ;
+     Mes = flush(A) -> NInI = InI, O = [Mes | NO] ;
+     Mes = get_attributes(out, A) -> NInI = InI, O = [Mes | NO] ;
+%%%  Sending to STD-INTER  %%%
+     Mes = igetb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = igetb_noecho(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = iprompt(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = iungetb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = iputb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = iflush(A) -> InI = [Mes | NInI], NO = O ;
+     Mes = get_attributes(inter, A) -> InI = [Mes | NInI], NO = O ;
+     Mes = switch(A) -> InI = [Mes | NInI], NO = O ;
+     Mes = am_I_there(A) -> InI = [Mes | NInI], NO = O ;
+%%%  Message error handling  %%%
+    otherwise ;
+     true -> NInI = InI, NO = O ),
+    mesDis03(U, NInI, NO, SNG, Pl).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%mesDis3(U, UAtt, UAbt, InI, InIAtt, InIAbt, O, OAtt, OAbt) :- true |
+%    shellUtils:seqNoGen(SNG),
+%    pool:keyed_set(P),
+%    mesDis3(U, UAtt, UAbt, InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, P).
+
+%% Detected the user 'ABORT' req., so distribute it into each lines %%
+mesDis3(U, UAtt, UAbt,
+        InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, Pl) :- wait(UAbt) |
+    InIAbt = abort, OAbt = abort,
+    mesDis3(U, UAtt, _, InI, InIAtt, _, O, OAtt, _, SNG, Pl).
+
+%% Detected the 'ATTENTION' req. from InI, so distribute it into each lines %%
+mesDis3(U, UAtt, UAbt,
+        InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, Pl) :- wait(InIAtt) |
+    UAtt = InIAtt,
+    mesDis3(U, _, UAbt, InI, _, InIAbt, O, OAtt, OAbt, SNG, Pl).
+
+%% Detected the 'ATTENTION' req. from O, so distribute it into each lines %%
+mesDis3(U, UAtt, UAbt,
+        InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, Pl) :- wait(OAtt) |
+    UAtt = OAtt,
+    mesDis3(U, _, UAbt, InI, InIAtt, InIAbt, O, _, OAbt, SNG, Pl).
+
+%% closing the I/O stream %%
+mesDis3([], UAtt, _, InI, InIAtt, _, O, OAtt, _, SNG, Pl) :- true |
+    close2(InIAtt, OAtt, UAtt),
+    InI = [], O = [], SNG = [], Pl = [].
+
+%% Detected the 'RESET' message, so distribute it into each streams %%
+mesDis3([reset(X) | U], OldUAtt, _,
+            InI, OldInIAtt, _, O, OldOAtt, _, SNG, Pl) :- true |
+    close2(OldInIAtt, OldOAtt, OldUAtt),
+    X = {Status, UAbt, UAtt, Id},
+    InI = [reset({InIStatus, InIAbt, InIAtt, InIId}) | NInI],
+    O = [reset({OStatus, OAbt, OAtt, OId}) | NO],
+    SNG = [getNo(Id) | NSNG],
+    Pl = [put(Id, { InIId, OId }, _) | NPl],
+    status2(InIStatus, OStatus, Status),
+    mesDis3(U, UAtt, UAbt, NInI, InIAtt, InIAbt, NO, OAtt, OAbt, NSNG, NPl).
+
+%% Detected the 'NEXT_ATTENTION' message, so distribute it into each streams %%
+mesDis3([next_attention(X) | U], OldUAtt, UAbt,
+        InI, OldInIAtt, InIAbt, O, OldOAtt, OAbt, SNG, Pl) :- true |
+    close2(OldInIAtt, OldOAtt, OldUAtt),
+    X = {Status, UAtt},
+    InI = [next_attention({InIStatus, InIAtt}) | NInI],
+    O = [next_attention({OStatus, OAtt}) | NO],
+    status2(InIStatus, OStatus, Status),
+    mesDis3(U, UAtt, UAbt, NInI, InIAtt, InIAbt, NO, OAtt, OAbt, SNG, Pl).
+
+%%%  Detected the 'RESEND' message, so distribute it into each streams %%
+mesDis3([resend(Id, Status) | U], UAtt, UAbt,
+        InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, Pl) :- true |
+    Pl = [get_all(Id, Keys) | NPl],
+    mesDis31(Status, Keys, U, UAtt, UAbt,
+        InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, NPl, resend).
+
+%%%  Detected the 'CANCEL' message, so distribute it into each streams %%
+mesDis3([cancel(Id, Status) | U], UAtt, UAbt,
+        InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, Pl) :- true |
+    Pl = [get_all(Id, Keys) | NPl],
+    mesDis31(Status, Keys, U, UAtt, UAbt,
+        InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, NPl, cancel).
+
+%%%  Receive the normal I/O message  %%%
+mesDis3([Mes| U], UAtt, UAbt, InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, Pl) :-
+        vector_element(Mes, 0, V0),
+        V0 \= reset, V0 \= next_attention, V0 \= resend, V0 \= cancel |
+%%%  Sending to STD-IN  %%%
+    (Mes = getb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = getb_noecho(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = prompt(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = ungetb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = get_attributes(in, A) -> InI = [Mes | NInI], NO = O ;
+%%%  Sending to STD-OUT  %%%
+     Mes = putb(A, B) -> NInI = InI, O = [Mes | NO] ;
+     Mes = flush(A) -> NInI = InI, O = [Mes | NO] ;
+     Mes = get_attributes(out, A) -> NInI = InI, O = [Mes | NO] ;
+%%%  Sending to STD-INTER  %%%
+     Mes = igetb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = igetb_noecho(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = iprompt(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = iungetb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = iputb(A, B) -> InI = [Mes | NInI], NO = O ;
+     Mes = iflush(A) -> InI = [Mes | NInI], NO = O ;
+     Mes = get_attributes(inter, A) -> InI = [Mes | NInI], NO = O ;
+     Mes = switch(A) -> InI = [Mes | NInI], NO = O ;
+     Mes = am_I_there(A) -> InI = [Mes | NInI], NO = O ;
+%%%  Message error handling  %%%
+    otherwise ;
+     true -> NInI = InI, NO = O ),
+    mesDis3(U, UAtt, UAbt, NInI, InIAtt, InIAbt, NO, OAtt, OAbt, SNG, Pl).
+
+
+%%% check keys when 'RESEND' | 'CANCEL' %%%
+mesDis31(_, Keys, U, UAtt, UAbt, InI, InIAtt, InIAbt,
+        O, OAtt, OAbt, SNG, Pl, _) :- Keys = [] |
+    mesDis3(U, UAtt, UAbt, InI, InIAtt, InIAbt, O, OAtt, OAbt, SNG, Pl).
+mesDis31(Status, Keys, U, UAtt, UAbt, InI, InIAtt, InIAbt,
+        O, OAtt, OAbt, SNG, Pl, Mes) :- Keys = [{ InIId, OId }] |
+    InI = [{Mes, InIId, InIStatus} | NInI],
+    O = [{Mes, OId, OStatus} | NO],
+    status2(InIStatus, OStatus, Status),
+    mesDis3(U, UAtt, UAbt, NInI, InIAtt, InIAbt, NO, OAtt, OAbt, SNG, Pl).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                  -------------------------
+%                 |                       |=======> stdIn, stdOut
+% User    =======>|  messageDistributer4  |
+%                 |                       |=======> stdInter
+%                 -------------------------
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+mesDis04(U, InO, I) :- true |
+    shellUtils:seqNoGen(SNG),
+    pool:keyed_set(Pl),
+    mesDis04(U, InO, I, SNG, Pl).
+
+%% closing the I/O stream %%
+mesDis04([], InO, I, SNG, Pl) :- true | InO = [], I = [], SNG = [], Pl = [].
+
+%% Detected the 'RESET' message, %%
+%%  so distribute it into each streams & into the New status %%
+mesDis04([reset(X) | U], InO, I, SNG, Pl) :- true |
+    X = {Status, UAbt, UAtt, Id},
+    InO = [reset({InOStatus, InOAbt, InOAtt, InOId}) | NInO],
+    I = [reset({IStatus, IAbt, IAtt, IId}) | NI],
+    SNG = [getNo(Id) | NSNG],
+    Pl = [put(Id, { InOId, IId }, _) | NPl],
+    status2(InOStatus, IStatus, Status),
+    mesDis4(U, UAtt, UAbt, NInO, InOAtt, InOAbt, NI, IAtt, IAbt, NSNG, NPl).
+
+mesDis04([Mes| U], InO, I, SNG, Pl) :- vector_element(Mes,0,V0), V0 \= reset |
+%%%  Sending to STD-IN  %%%
+    (Mes = getb(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = getb_noecho(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = prompt(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = ungetb(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = get_attributes(in, A) -> InO = [Mes | NInO], NI = I ;
+%%%  Sending to STD-OUT  %%%
+     Mes = putb(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = flush(A) -> InO = [Mes | NInO], NI = I ;
+     Mes = get_attributes(out, A) -> InO = [Mes | NInO], NI = I ;
+%%%  Sending to STD-INTER  %%%
+     Mes = igetb(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = igetb_noecho(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = iprompt(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = iungetb(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = iputb(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = iflush(A) -> NInO = InO, I = [Mes | NI] ;
+     Mes = get_attributes(inter, A) -> NInO = InO, I = [Mes | NI] ;
+     Mes = switch(A) -> NInO = InO, I = [Mes | NI] ;
+     Mes = am_I_there(A) -> NInO = InO, I = [Mes | NI] ;
+%%%  Message error handling  %%%
+    otherwise ;
+     true -> NInO = InO, NI = I ),
+    mesDis04(U, NInO, NI, SNG, Pl).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%mesDis4(U, UAtt, UAbt, InO, InOAtt, InOAbt, I, IAtt, IAbt) :- true |
+%    shellUtils:seqNoGen(SNG),
+%    pool:keyed_set(P),
+%    mesDis4(U, UAtt, UAbt, InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, P).
+
+%% Detected the user 'ABORT' req., so distribute it into each lines %%
+mesDis4(U, UAtt, UAbt,
+        InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, Pl) :- wait(UAbt) |
+    InOAbt = abort, IAbt = abort,
+    mesDis4(U, UAtt, _, InO, InOAtt, _, I, IAtt, _, SNG, Pl).
+
+%% Detected the 'ATTENTION' req. from InO, so distribute it into each lines %%
+mesDis4(U, UAtt, UAbt,
+        InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, Pl) :- wait(InOAtt) |
+    UAtt = InOAtt,
+    mesDis4(U, _, UAbt, InO, _, InOAbt, I, IAtt, IAbt, SNG, Pl).
+
+%% Detected the 'ATTENTION' req. from I, so distribute it into each lines %%
+mesDis4(U, UAtt, UAbt,
+        InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, Pl) :- wait(IAtt) |
+    UAtt = IAtt,
+    mesDis4(U, _, UAbt, InO, InOAtt, InOAbt, I, _, IAbt, SNG, Pl).
+
+%% closing the I/O stream %%
+mesDis4([], UAtt, _, InO, InOAtt, _, I, IAtt, _, SNG, Pl) :- true |
+    close2(InOAtt, IAtt, UAtt),
+    InO = [], I = [], SNG = [], Pl = [].
+
+%% Detected the 'RESET' message, so distribute it into each streams %%
+mesDis4([reset(X) | U], OldUAtt, _,
+            InO, OldInOAtt, _, I, OldIAtt, _, SNG, Pl) :- true |
+    close2(OldInOAtt, OldIAtt, OldUAtt),
+    X = {Status, UAbt, UAtt, Id},
+    InO = [reset({InOStatus, InOAbt, InOAtt, InOId}) | NInO],
+    I = [reset({IStatus, IAbt, IAtt, IId}) | NI],
+    SNG = [getNo(Id) | NSNG],
+    Pl = [put(Id, { InOId, IId }, _) | NPl],
+    status2(InOStatus, IStatus, Status),
+    mesDis4(U, UAtt, UAbt, NInO, InOAtt, InOAbt, NI, IAtt, IAbt, NSNG, NPl).
+
+%% Detected the 'NEXT_ATTENTION' message, so distribute it into each streams %%
+mesDis4([next_attention(X) | U], OldUAtt, UAbt,
+        InO, OldInOAtt, InOAbt, I, OldIAtt, IAbt, SNG, Pl) :- true |
+    close2(OldInOAtt, OldIAtt, OldUAtt),
+    X = {Status, UAtt},
+    InO = [next_attention({InOStatus, InOAtt}) | NInO],
+    I = [next_attention({IStatus, IAtt}) | NI],
+    status2(InOStatus, IStatus, Status),
+    mesDis4(U, UAtt, UAbt, NInO, InOAtt, InOAbt, NI, IAtt, IAbt, SNG, Pl).
+
+%%%  Detected the 'RESEND' message, so distribute it into each streams %%
+mesDis4([resend(Id, Status) | U], UAtt, UAbt,
+        InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, Pl) :- true |
+    Pl = [get_all(Id, Keys) | NPl],
+    mesDis41(Status, Keys, U, UAtt, UAbt,
+        InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, NPl, resend).
+
+%%%  Detected the 'CANCEL' message, so distribute it into each streams %%
+mesDis4([cancel(Id, Status) | U], UAtt, UAbt,
+        InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, Pl) :- true |
+    Pl = [get_all(Id, Keys) | NPl],
+    mesDis41(Status, Keys, U, UAtt, UAbt,
+        InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, NPl, cancel).
+
+%%%  Receive the normal I/O message  %%%
+mesDis4([Mes| U], UAtt, UAbt, InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, Pl) :-
+        vector_element(Mes, 0, V0),
+        V0 \= reset, V0 \= next_attention, V0 \= resend, V0 \= cancel |
+%%%  Sending to STD-IN  %%%
+    (Mes = getb(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = getb_noecho(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = prompt(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = ungetb(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = get_attributes(in, A) -> InO = [Mes | NInO], NI = I ;
+%%%  Sending to STD-OUT  %%%
+     Mes = putb(A, B) -> InO = [Mes | NInO], NI = I ;
+     Mes = flush(A) -> InO = [Mes | NInO], NI = I ;
+     Mes = get_attributes(out, A) -> InO = [Mes | NInO], NI = I ;
+%%%  Sending to STD-INTER  %%%
+     Mes = igetb(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = igetb_noecho(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = iprompt(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = iungetb(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = iputb(A, B) -> NInO = InO, I = [Mes | NI] ;
+     Mes = iflush(A) -> NInO = InO, I = [Mes | NI] ;
+     Mes = get_attributes(inter, A) -> NInO = InO, I = [Mes | NI] ;
+     Mes = switch(A) -> NInO = InO, I = [Mes | NI] ;
+     Mes = am_I_there(A) -> NInO = InO, I = [Mes | NI] ;
+%%%  Message error handling  %%%
+    otherwise ;
+     true -> NInO = InO, NI = I ),
+    mesDis4(U, UAtt, UAbt, NInO, InOAtt, InOAbt, NI, IAtt, IAbt, SNG, Pl).
+
+
+%%% check keys when 'RESEND' | 'CANCEL' %%%
+mesDis41(_, Keys, U, UAtt, UAbt, InO, InOAtt, InOAbt,
+        I, IAtt, IAbt, SNG, Pl, _) :- Keys = [] |
+    mesDis4(U, UAtt, UAbt, InO, InOAtt, InOAbt, I, IAtt, IAbt, SNG, Pl).
+mesDis41(Status, Keys, U, UAtt, UAbt, InO, InOAtt, InOAbt,
+        I, IAtt, IAbt, SNG, Pl, Mes) :- Keys = [{ InOId, IId }] |
+    InO = [{Mes, InOId, InOStatus} | NInO],
+    I = [{Mes, IId, IStatus} | NI],
+    status2(InOStatus, IStatus, Status),
+    mesDis4(U, UAtt, UAbt, NInO, InOAtt, InOAbt, NI, IAtt, IAbt, SNG, Pl).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                 -------------------------
+%                 |                       |=======> stdIn
+% User    =======>|  messageDistributer5  |=======> stdOut
+%                 |                       |=======> stdInter
+%                 -------------------------
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+mesDis05(U, In, O, I) :- true |
+    shellUtils:seqNoGen(SNG),
+    pool:keyed_set(Pl),
+    mesDis05(U, In, O, I, SNG, Pl).
+
+%% closing the I/O stream %%
+mesDis05([], In, O, I, SNG, Pl) :- true |
+    In = [], O = [], I = [], SNG = [], Pl = [].
+
+%% Detected the 'RESET' message, %%
+%%  so distribute it into each streams & into the new status %%
+mesDis05([reset(X) | U], In, O, I, SNG, Pl) :- true |
+    X = {Status, UAbt, UAtt, Id},
+    In = [reset({InStatus, InAbt, InAtt, InId}) | NIn],
+    O = [reset({OStatus, OAbt, OAtt, OId}) | NO],
+    I = [reset({IStatus, IAbt, IAtt, IId}) | NI],
+    SNG = [getNo(Id) | NSNG],
+    Pl = [put(Id, { InId, OId, IId }, _) | NPl],
+    status3(InStatus, OStatus, IStatus, Status),
+    mesDis5(U, UAtt, UAbt, NIn, InAtt, InAbt,
+        NO, OAtt, OAbt, NI, IAtt, IAbt, NSNG, NPl).
+
+mesDis05([Mes|U],In,O,I,SNG,Pl) :- vector_element(Mes,0,V0), V0 \= reset |
+%%%  Sending to STD-IN  %%%
+    (Mes = getb(A, B) -> In = [Mes | NIn], NO = O, NI = I ;
+     Mes = getb_noecho(A, B) -> In = [Mes | NIn], NO = O, NI = I ;
+     Mes = prompt(A, B) -> In = [Mes | NIn], NO = O, NI = I ;
+     Mes = ungetb(A, B) -> In = [Mes | NIn], NO = O, NI = I ;
+     Mes = get_attributes(in, A) -> In = [Mes | NIn], NO = O, NI = I ;
+%%%  Sending to STD-OUT  %%%
+     Mes = putb(A, B) -> NIn = In, O = [Mes | NO], NI = I ;
+     Mes = flush(A) -> NIn = In, O = [Mes | NO], NI = I ;
+     Mes = get_attributes(out, A) -> NIn = In, O = [Mes | NO], NI = I ;
+%%%  Sending to STD-INTER  %%%
+     Mes = igetb(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = igetb_noecho(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = iprompt(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = iungetb(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = iputb(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = iflush(A) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = get_attributes(inter, A) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = switch(A) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = am_I_there(A) -> NIn = In, NO = O, I = [Mes | NI] ;
+%%%  Message error handling  %%%
+    otherwise ;
+     true -> NIn = In, NO = O, NI = I ),
+    mesDis05(U, NIn, NO, NI, SNG, Pl).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%mesDis5(U, UAtt, UAbt, In, InAtt, InAbt,
+%        O, OAtt, OAbt, I, IAtt, IAbt) :- true |
+%    shellUtils:seqNoGen(SNG),
+%    pool:keyed_set(Pl),
+%    mesDis5(U, UAtt, UAbt,
+%        In, InAtt, InAbt, O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl).
+
+%% Detected the user 'ABORT' req., so distribute it into each lines %%
+mesDis5(U, UAtt, UAbt,
+        In, InAtt, InAbt, O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl) :-
+    wait(UAbt) | InAbt = abort, OAbt = abort, IAbt = abort,
+    mesDis5(U, UAtt, _, In, InAtt, _, O, OAtt, _, I, IAtt, _, SNG, Pl).
+
+%% Detected the 'ATTENTION' req. from In, so distribute it into each lines %%
+mesDis5(U, UAtt, UAbt,
+        In, InAtt, InAbt, O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl) :-
+    wait(InAtt) | UAtt = InAtt,
+    mesDis5(U, _, UAbt,
+        In, _, InAbt, O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl).
+
+%% Detected the 'ATTENTION' req. from O, so distribute it into each lines %%
+mesDis5(U, UAtt, UAbt,
+        In, InAtt, InAbt, O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl) :-
+    wait(OAtt) | UAtt = OAtt,
+    mesDis5(U, _, UAbt,
+        In, InAtt, InAbt, O, _, OAbt, I, IAtt, IAbt, SNG, Pl).
+
+%% Detected the 'ATTENTION' req. from I, so distribute it into each lines %%
+mesDis5(U, UAtt, UAbt,
+        In, InAtt, InAbt, O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl) :-
+    wait(IAtt) | UAtt = IAtt,
+    mesDis5(U, _, UAbt,
+        In, InAtt, InAbt, O, OAtt, OAbt, I, _, IAbt, SNG, Pl).
+
+%% closing the I/O stream %%
+mesDis5([], UAtt, _, In, InAtt, _, O, OAtt, _, I, IAtt, _, SNG, Pl) :- true |
+    close3(InAtt, OAtt, IAtt, UAtt),
+    In = [], O = [], I = [], SNG = [], Pl = [].
+
+%% Detected the 'RESET' message, so distribute it into each streams %%
+mesDis5([reset(X) | U], OldUAtt, _, In, OldInAtt, _,
+        O, OldOAtt, _, I, OldIAtt, _, SNG, Pl) :- true |
+    close3(OldInAtt, OldOAtt, OldIAtt, OldUAtt),
+    X = {Status, UAbt, UAtt, Id},
+    In = [reset({InStatus, InAbt, InAtt, InId}) | NIn],
+    O = [reset({OStatus, OAbt, OAtt, OId}) | NO],
+    I = [reset({IStatus, IAbt, IAtt, IId}) | NI],
+    SNG = [getNo(Id) | NSNG],
+    Pl = [put(Id, { InId, OId, IId }, _) | NPl],
+    status3(InStatus, OStatus, IStatus, Status),
+    mesDis5(U, UAtt, UAbt, NIn, InAtt, InAbt,
+        NO, OAtt, OAbt, NI, IAtt, IAbt, NSNG, NPl).
+
+%% Detected the 'NEXT_ATTENTION' message, so distribute it into each streams %%
+mesDis5([next_attention(X) | U], OldUAtt, UAbt, In, OldInAtt, InAbt,
+        O, OldOAtt, OAbt, I, OldIAtt, IAbt, SNG, Pl) :- true |
+    close3(OldInAtt, OldOAtt, OldIAtt, OldUAtt),
+    X = {Status, UAtt},
+    In = [next_attention({InStatus, InAtt}) | NIn],
+    O = [next_attention({OStatus, OAtt}) | NO],
+    I = [next_attention({IStatus, IAtt}) | NI],
+    status3(InStatus, OStatus, IStatus, Status),
+    mesDis5(U, UAtt, UAbt, NIn, InAtt, InAbt,
+        NO, OAtt, OAbt, NI, IAtt, IAbt, SNG, Pl).
+
+%% Detected the 'RESEND' message, so distribute it into each streams %%
+mesDis5([resend(Id, Status) | U], UAtt, UAbt, In, InAtt, InAbt,
+        O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl) :- true |
+    Pl = [get_all(Id, Keys) | NPl],
+    mesDis51(Status, Keys, U, UAtt, UAbt, In, InAtt, InAbt,
+        O, OAtt, OAbt, I, IAtt, IAbt, SNG, NPl, resend).
+
+%% Detected the 'CANCEL' message, so distribute it into each streams %%
+mesDis5([cancel(Id, Status) | U], UAtt, UAbt, In, InAtt, InAbt,
+        O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl) :- true |
+    Pl = [get_all(Id, Keys) | NPl],
+    mesDis51(Status, Keys, U, UAtt, UAbt, In, InAtt, InAbt,
+        O, OAtt, OAbt, I, IAtt, IAbt, SNG, NPl, cancel).
+
+%%%  Receive the normal I/O message  %%%
+mesDis5([Mes| U], UAtt, UAbt, In, InAtt, InAbt,
+        O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl) :- vector_element(Mes, 0, V0),
+        V0 \= reset, V0 \= next_attention, V0 \= resend, V0 \= cancel |
+%%%  Sending to STD-IN  %%%
+    (Mes = getb(A, B) -> In = [Mes | NIn], NO = O, NI = I ;
+     Mes = getb_noecho(A, B) -> In = [Mes | NIn], NO = O, NI = I ;
+     Mes = prompt(A, B) -> In = [Mes | NIn], NO = O, NI = I ;
+     Mes = ungetb(A, B) -> In = [Mes | NIn], NO = O, NI = I ;
+     Mes = get_attributes(in, A) -> In = [Mes | NIn], NO = O, NI = I ;
+%%%  Sending to STD-OUT  %%%
+     Mes = putb(A, B) -> NIn = In, O = [Mes | NO], NI = I ;
+     Mes = flush(A) -> NIn = In, O = [Mes | NO], NI = I ;
+     Mes = get_attributes(out, A) -> NIn = In, O = [Mes | NO], NI = I ;
+%%%  Sending to STD-INTER  %%%
+     Mes = igetb(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = igetb_noecho(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = iprompt(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = iungetb(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = iputb(A, B) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = iflush(A) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = get_attributes(inter, A) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = switch(A) -> NIn = In, NO = O, I = [Mes | NI] ;
+     Mes = am_I_there(A) -> NIn = In, NO = O, I = [Mes | NI] ;
+%%%  Message error handling  %%%
+    otherwise ;
+     true -> NIn = In, NO = O, NI = I ),
+    mesDis5(U, UAtt, UAbt,
+        NIn, InAtt, InAbt, NO, OAtt, OAbt, NI, IAtt, IAbt, SNG, Pl).
+
+%%% check keys when 'resend' | 'cancel' %%%
+mesDis51(_, Keys, U, UAtt, UAbt, In, InAtt, InAbt,
+        O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl, _) :- Keys = [] |
+    mesDis5(U, UAtt, UAbt,
+        In, InAtt, InAbt, O, OAtt, OAbt, I, IAtt, IAbt, SNG, Pl).
+mesDis51(Status, Keys, U, UAtt, UAbt, In, InAtt, InAbt, O, OAtt, OAbt,
+        I, IAtt, IAbt, SNG, Pl, Mes) :- Keys = [{ InId, OId, IId }] |
+    In = [{Mes, InId, InStatus} | NIn],
+    O = [{Mes, OId, OStatus} | NO],
+    I = [{Mes, IId, IStatus} | NI],
+    status3(InStatus, OStatus, IStatus, Status),
+    mesDis5(U, UAtt, UAbt, NIn, InAtt, InAbt,
+            NO, OAtt, OAbt, NI, IAtt, IAbt, SNG, Pl).
+
+%%%%%  Status Checker (input ==> 2)  %%%%%
+
+status2(In1, In2, Out) :- wait(In1), wait(In2) | check2(In1, In2, Out).
+
+check2(In1, In2, Out) :- In1 = normal, In2 = normal | Out = normal.
+otherwise.
+check2(_, _, Out) :- true | Out = abnormal.
+
+%%%%%  Status Checker (input ==> 3)  %%%%%
+
+status3(In1, In2, In3, Out) :- wait(In1), wait(In2), wait(In3) |
+    check3(In1, In2, In3, Out).
+
+check3(In1, In2, In3, Out) :- In1 = normal, In2 = normal, In3 = normal |
+    Out = normal.
+otherwise.
+check3(_, _, _, Out) :- true | Out = abnormal.
+
+%close1(In, Out) :- true | In = Out.
+%close2(In1, In2, Out) :- wait(In1), wait(In2) | Out = [].
+close2(In1, In2, Out) :- true | Out = [].
+%close3(In1, In2, In3, Out) :- wait(In1), wait(In2), wait(In3) | Out = [].
+close3(In1, In2, In3, Out) :- true | Out = [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of 'Message Distributer' module. (MESDIS)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

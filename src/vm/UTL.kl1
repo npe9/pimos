@@ -1,0 +1,273 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%------------%
+% pv_utility %
+%------------%
+
+%----------%
+% version 1%
+%----------%
+
+:- module pv_utility.
+:- with_macro pimos.
+
+:- public   change_element_size/3,
+            round_up/3,
+            equal_string/3,
+            curtail/2.
+
+
+%=======================%
+% change_element_size/3 %
+%=======================%
+change_element_size(String, NewEsize, NewString):-
+    string(String, Length, Esize)|
+        transform(Esize, NewEsize, String, Length, NewString).
+
+%-------------%
+% transform/5 %
+%-------------%
+transform(Esize, Esize, String, _, NewString):-
+    true |
+        NewString = String.
+transform(8, 16, String, Length, NewString):-
+    true |
+        round_up(Length, 2, NewLength),
+        new_string(NewString0, NewLength, 16),
+        transform2(String, 0, Length, 8, NewString0, 0, NewString).
+transform(8, 32, String, Length, NewString):-
+    true |
+        round_up(Length, 4, NewLength),
+        new_string(NewString0, NewLength, 32),
+        transform4(String, 0, Length, NewString0, 0, NewString).
+transform(16, 32, String, Length, NewString):-
+    true |
+        round_up(Length, 2, NewLength),
+        new_string(NewString0, NewLength, 32),
+        transform2(String, 0, Length, 16, NewString0, 0, NewString).
+
+transform(32, 16, String, Length, NewString):-
+    true |
+        NewLength := Length << 1,
+        new_string(NewString0, NewLength, 16),
+        invtransform2(String, 0, Length, NewString0, 0, NewString).
+transform(32, 8, String, Length, NewString):-
+    true |
+        NewLength := Length << 2,
+        new_string(NewString0, NewLength, 8),
+        invtransform4(String, 0, Length, NewString0, 0, NewString).
+transform(16, 8, String, Length, NewString):-
+    true |
+        NewLength := Length << 1,
+        new_string(NewString0, NewLength, 8),
+        invtransform3(String, 0, Length, NewString0, 0, NewString).
+
+
+%--------------%
+% transform2/7 %
+%--------------%
+transform2(String, Position, End, _, NewString0, _, NewString):-
+    Position >= End |
+        NewString = NewString0.
+otherwise.
+transform2(String, Position, End, Shift, NewString0, NewPosition, NewString):-
+    Last := Position + 1,
+    Last = End |
+        string_element(String, Position, Element0, CString0),
+        NewElement := Element0 << Shift,
+        set_string_element(NewString0, NewPosition, NewElement, NewString).
+transform2(String, Position, End, Shift, NewString0, NewPosition, NewString):-
+    NextPosition := Position + 2,
+    NextNewPosition := NewPosition + 1 |
+        string_element(String, Position, Element0, CString0),
+        string_element(CString0, ~(Position + 1), Element1, CString1),
+        Left := Element0 << Shift,
+        NewElement := Left \/ Element1,
+        set_string_element(NewString0, NewPosition, NewElement, NewString1),
+        transform2(CString1, NextPosition, End, Shift, NewString1, NextNewPosition, NewString).
+
+%--------------%
+% transform4/6 %
+%--------------%
+transform4(String, Position, End, NewString0, _, NewString):-
+    Position >= End |
+        NewString = NewString0.
+otherwise.
+transform4(String, Position, End, NewString0, NewPosition, NewString):-
+    Last := Position + 1,
+    End = Last |
+        string_element(String,     Position,      Element0, CString0),
+        NewElement := Element0 << 24,
+        set_string_element(NewString0, NewPosition, NewElement, NewString).
+transform4(String, Position, End, NewString0, NewPosition, NewString):-
+    Last := Position + 2,
+    End = Last |
+        string_element(String,    Position,      Element0, String1),
+        string_element(String1, ~(Position + 1), Element1, String2),
+        Left0 := Element0 << 24,
+        Left1 := Element1 << 16,
+        NewElement := Left0 \/ Left1,
+        set_string_element(NewString0, NewPosition, NewElement, NewString).
+transform4(String, Position, End, NewString0, NewPosition, NewString):-
+    Last := Position + 3,
+    End = Last |
+        string_element(String,    Position,      Element0, String1),
+        string_element(String1, ~(Position + 1), Element1, String2),
+        string_element(String2, ~(Position + 2), Element2, String3),
+        Left0 := Element0 << 24,
+        Left1 := Element1 << 16,
+        Left2 := Element2 << 8,
+        NewElement := ( Left0 \/ Left1 ) \/ Left2,
+        set_string_element(NewString0, NewPosition, NewElement, NewString).
+transform4(String, Position, End, NewString0, NewPosition, NewString):-
+    NextPosition := Position + 4,
+    NextNewPosition := NewPosition + 1 |
+        string_element(String,     Position,      Element0, CString0),
+        string_element(CString0, ~(Position + 1), Element1, CString1),
+        string_element(CString1, ~(Position + 2), Element2, CString2),
+        string_element(CString2, ~(Position + 3), Element3, CString3),
+        Left0 := Element0 << 24,
+        Left1 := Element1 << 16,
+        Left2 := Element2 << 8,
+        NewElement := (((Left0 \/ Left1) \/ Left2) \/ Element3),
+        set_string_element(NewString0, NewPosition, NewElement, NewString1),
+        transform4(CString3, NextPosition, End, NewString1, NextNewPosition, NewString).
+
+%-----------------%
+% invtransform2/6 %
+%-----------------%
+%   +--------+--------+
+%   |Element0|Element1|
+%   +--------+--------+
+
+invtransform2(_, Position, Length, CNewString, _, NewString):-
+    Position >= Length |
+        NewString = CNewString.
+otherwise.
+invtransform2(String, Position, Length, CNewString, NewPosition, NewString):-
+    NextPosition := Position + 1,
+    NextNewPosition := NewPosition + 2 |
+        string_element(String, Position, Element, CString),
+        NewElement0 :=   Element >> 16,
+        NewElement1 := ( Element << 16 ) >> 16,
+        set_string_element(CNewString,    NewPosition,      NewElement0, CNewString1),
+        set_string_element(CNewString1, ~(NewPosition + 1), NewElement1, CNewString2),
+        invtransform2(CString, NextPosition, Length, CNewString2, NextNewPosition, NewString).
+
+%-----------------%
+% invtransform3/6 %
+%-----------------%
+invtransform3(_, Position, Length, CNewString, _, NewString):-
+    Position >= Length |
+        NewString = CNewString.
+otherwise.
+invtransform3(String, Position, Length, CNewString, NewPosition, NewString):-
+    NextPosition := Position + 1,
+    NextNewPosition := NewPosition + 2 |
+        string_element(String, Position, Element, CString),
+        NewElement0 :=   Element >> 8,
+        NewElement1 := ( Element << 24 ) >> 24,
+        set_string_element(CNewString,    NewPosition,      NewElement0, CNewString1),
+        set_string_element(CNewString1, ~(NewPosition + 1), NewElement1, CNewString2),
+        invtransform3(CString, NextPosition, Length, CNewString2, NextNewPosition, NewString).
+
+%-----------------%
+% invtransform4/6 %
+%-----------------%
+%   +--------+--------+--------+--------+
+%   |Element0|Element1|Element2|Element3|
+%   +--------+--------+--------+--------+
+
+invtransform4(_, Position, Length, CNewString, _, NewString):-
+    Position >= Length |
+        NewString = CNewString.
+otherwise.
+invtransform4(String, Position, Length, CNewString, NewPosition, NewString):-
+    NextPosition := Position + 1,
+    NextNewPosition := NewPosition + 4 |
+        string_element(String, Position, Element, CString),
+        NewElement0 :=  Element        >> 24,           % 16%"FF000000"
+        NewElement1 := (Element << 8)  >> 24,           % 16#"00FF0000"
+        NewElement2 := (Element << 16) >> 24,           % 16#"0000FF00"
+        NewElement3 := (Element << 24) >> 24,           % 16#"000000FF"
+        set_string_element(CNewString,    NewPosition,      NewElement0, CNewString1),
+        set_string_element(CNewString1, ~(NewPosition + 1), NewElement1, CNewString2),
+        set_string_element(CNewString2, ~(NewPosition + 2), NewElement2, CNewString3),
+        set_string_element(CNewString3, ~(NewPosition + 3), NewElement3, CNewString4),
+        invtransform4(CString, NextPosition, Length, CNewString4, NextNewPosition, NewString).
+
+%============%
+% round_up/3 %
+%============%
+round_up(X, Y, Z):-
+    modulo(X, Y, R),
+    divide(X, Y, Q) |
+        round_up1(R, Q, Z).
+
+%-------------%
+% round_up1/3 %
+%-------------%
+round_up1(0, Q, Z):-
+    true |
+        Z = Q.
+otherwise.
+round_up1(_, Q, Z):-
+    true |
+        Z := Q + 1.
+
+%================%
+% equal_string/3 %
+%================%
+equal_string(String1, String2, Result):-
+    string(String1, L, ES),
+    string(String2, L, ES)|
+        string_elements(0, L, String1, String2, Result).
+otherwise.
+equal_string(_, _, Result):-
+    true |
+        Result = false.
+
+string_elements(Position, End, S1, S2, Result):-
+    Position < End,
+    NextPosition := Position + 1,
+    string_element(S1, Position, E1),
+    string_element(S2, Position, E1)|
+        string_elements(NextPosition, End, S1, S2, Result).
+string_elements(Position, End, _, _, Result):-
+    Position >= End |
+        Result = true.
+otherwise.
+string_elements(_, _, _, _, Result):-
+    true |
+        Result = false.
+
+%===========%
+% curtail/2 %
+%===========%
+curtail(CrudeString, RealString):-
+    true |
+        string(CrudeString, Length, ES, CrudeString1),
+        LastPosition := Length - 1,
+        curtail(CrudeString1, LastPosition, ES, RealString).
+
+%-----------%
+% curtail/4 %
+%-----------%
+curtail(_, -1, ES, RealString):-
+    true |
+        new_string(RealString, 0, ES).
+curtail(CrudeString, Position, ES, RealString):-
+    Position \= -1,
+    string_element(CrudeString, Position, 0),
+    NextPosition := Position - 1 |
+        curtail(CrudeString, NextPosition, ES, RealString).
+otherwise.
+curtail(CrudeString, Position, _, RealString):-
+    true |
+        RealLength := Position + 1,
+        builtin#substring(CrudeString, 0, RealLength, RealString, _).
+

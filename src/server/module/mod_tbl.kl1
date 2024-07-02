@@ -1,0 +1,258 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v25>Module>mod_tbl.kl1.2, 28-Nov-90 12:37:48, Edit by hori
+%% Module Management
+%%  Write-Through Version
+
+:- module module_table.
+:- public cache_table/1,dynamic_link/3.
+:- with_macro pimos.
+
+%% Service predicates
+
+cache_table(CacheTBL):-
+    create(ModDev,Package),
+    module_table_0(CacheTBL,ModDev,Package).
+
+create(Module_device,Package) :- true |
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:package,St0),module(St1)]),
+    get_default_package(St0,Package),
+    check_1(St1,Module_device).
+
+check_1(normal(Stream,Abort,Attention),Module_device) :-
+    Stream = [create(Status)],
+    check_2(Status,Module_device).
+otherwise.
+check_1(Status,Module_device) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(module_table_error,"Unable to get module request device"),Status),
+    Module_device = [].
+
+check_2(normal(Stream,Abort,Attention),Module_device) :-
+    Module_device = Stream.
+otherwise.
+check_2(Status,Module_device) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(module_table_error,"Unable to create module device"),Status),
+    Module_device = [].
+
+get_default_package(normal(Package0),Package) :- atom(Package0) |
+    Package0 = Package.
+otherwise.
+get_default_package(_,Package) :- true |
+    Package = work.
+
+dynamic_link(Name,Pred,Args) :-
+    atom(Name), atom(Pred), vector(Args,Arity) |
+    create([get_code(Package,Name,Pred,Arity,Status)],Package),
+    wait_dynamic_link(Status,Args).
+dynamic_link({(::),Package,Name},Pred,Args) :-
+    atom(Package), atom(Name), atom(Pred), vector(Args,Arity) |
+    create([get_code(Package,Name,Pred,Arity,Status)],_),
+    wait_dynamic_link(Status,Args).
+
+wait_dynamic_link(normal(Code),Args) :- true |
+    apply(Code,Args).
+otherwise.
+wait_dynamic_link(Status,Args) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(module_table_error,"Illegal Dynamic Link"),{Status,Args}),
+    Module_device = [].
+
+%% MODULE_TABLE
+
+module_table_0([reset_package|In],ModDev0,_) :- true |
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:package,St0)]),
+    get_default_package(St0,Package),
+    module_table_0(In,ModDev0,Package).
+module_table_0([get_default_package(Status)|In],ModDev0,Package) :- atom(Package) |
+    Status = normal(Package),
+    module_table_0(In,ModDev0,Package).
+module_table_0([set_default_package(Package,Status)|In],ModDev0,_) :- atom(Package) |
+    Status = normal,
+    module_table_0(In,ModDev0,Package).
+otherwise.
+module_table_0([set_default_package(_,Status)|In],ModDev0,Package) :- true |
+    Status = abnormal,
+    module_table_0(In,ModDev0,Package).
+otherwise.
+module_table_0([Message|In],ModDev0,Package) :- true |
+    module_table(Message,ModDev0,ModDev1,Package),
+    module_table_0(In,ModDev1,Package).
+module_table_0([],ModDev0,Package) :- true |
+    ModDev0 = [].
+
+%% PACKAGE
+module_table(define_package(Package,Super,Protect,Status),ModDev0,ModDev,_) :- true |
+    define_package(Package,Super,Protect,Status,ModDev0,ModDev).
+module_table(remove_package(Package,Status),ModDev0,ModDev,_) :- true |
+    remove_package(Package,Status,ModDev0,ModDev).
+module_table(protect_package(Package,Protection,Status),ModDev0,ModDev,_) :- true |
+    protect_package(Package,Protection,Status,ModDev0,ModDev).
+module_table(set_package_owner(Package,OwnerID,Status),ModDev0,ModDev,_) :- true |
+    set_package_owner(Package,OwnerID,Status,ModDev0,ModDev).
+module_table(get_package_info(Package,Status),ModDev0,ModDev,_) :- true |
+    get_package_info(Package,Status,ModDev0,ModDev).
+module_table(get_super_package(Package,Status),ModDev0,ModDev,_) :-  true |
+    get_super_package(Package,Status,ModDev0,ModDev).
+module_table(get_all_packages(Status),ModDev0,ModDev,_) :- true |
+    ModDev0 = [get_all_packages(Status)|ModDev].
+%% MODULE
+module_table(get_module(Package,Name,Status),ModDev0,ModDev,_) :- true |
+    get_module(Package,Name,Status,ModDev0,ModDev).
+module_table(get_module(Name,Status),ModDev0,ModDev,Package) :- true |
+    get_module(Package,Name,Status,ModDev0,ModDev).
+module_table(get_module_in_the_package(Package,Name,Status),ModDev0,ModDev,_) :- true |
+    get_module_in_the_package(Package,Name,Status,ModDev0,ModDev).
+module_table(get_module_in_the_package(Name,Status),ModDev0,ModDev,Package) :- true |
+    get_module_in_the_package(Package,Name,Status,ModDev0,ModDev).
+module_table(get_module_info(Package,Name,Status),ModDev0,ModDev,_) :- true |
+    get_module_info(Package,Name,Status,ModDev0,ModDev).
+module_table(get_module_info(Name,Status),ModDev0,ModDev,Package) :- true |
+    get_module_info(Package,Name,Status,ModDev0,ModDev).
+module_table(get_code(Name,Pred,Arity,Status),ModDev0,ModDev,Package) :- true |
+    get_code(Package,Name,Pred,Arity,Status,ModDev0,ModDev).
+module_table(get_code(Package,Name,Pred,Arity,Status),ModDev0,ModDev,_) :- true |
+    get_code(Package,Name,Pred,Arity,Status,ModDev0,ModDev).
+module_table(update_module(Name,Module,Status),ModDev0,ModDev,Package) :- true |
+    update_module(Package,Name,Module,Status,ModDev0,ModDev).
+module_table(update_module(Package,Name,Module,Status),ModDev0,ModDev,_) :- true |
+    update_module(Package,Name,Module,Status,ModDev0,ModDev).
+module_table(remove_module(Name,Status),ModDev0,ModDev,Package) :- true |
+    remove_module(Package,Name,Status,ModDev0,ModDev).
+module_table(remove_module(Package,Name,Status),ModDev0,ModDev,_) :- true |
+    remove_module(Package,Name,Status,ModDev0,ModDev).
+module_table(get_all_modules(Status),ModDev0,ModDev,_) :- true |
+    ModDev0 = [get_all_modules(Status)|ModDev].
+module_table(get_all_modules(Package,Status),ModDev0,ModDev,_) :- true |
+    get_all_modules(Package,Status,ModDev0,ModDev).
+otherwise.
+module_table(ERROR,ModDev0,ModDev,Package):- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(module_table_error,"Illegal Message"),ERROR),
+    ModDev0 = ModDev.
+
+%% ERROR HANDLING %%
+
+define_package(Package,Super,Protect,Status,ModDev0,ModDev) :-
+    atom(Package), atom(Super), integer(Protect), Package \= Super |
+    ModDev0 = [define_package(Package,Super,Protect,Status)|ModDev].
+otherwise.
+define_package(Package,Super,Protect,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+remove_package(Package,Status,ModDev0,ModDev) :- atom(Package) |
+    ModDev0 = [remove_package(Package,Status)|ModDev].
+otherwise.
+remove_package(Package,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+protect_package(Package,Protection,Status,ModDev0,ModDev) :-
+    atom(Package), integer(Protection) |
+    ModDev0 = [protect_package(Package,Protection,Status)|ModDev].
+otherwise.
+protect_package(Package,Protection,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+set_package_owner(Package,OwnerID,Status,ModDev0,ModDev) :-
+    atom(Package), OwnerID = {UID,GID},
+    UID >= 0, GID >= 0 |     %
+    ModDev0 = [set_package_owner(Package,OwnerID,Status)|ModDev].
+otherwise.
+set_package_owner(Package,OwnerID,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+get_package_info(Package,Status,ModDev0,ModDev) :- atom(Package) |
+    ModDev0 = [get_package_info(Package,Status)|ModDev].
+otherwise.
+get_package_info(Package,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+get_super_package(Package,Status,ModDev0,ModDev) :- atom(Package) |
+    ModDev0 = [get_super_package(Package,Status)|ModDev].
+otherwise.
+get_super_package(Package,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+get_module(Package,Name,Status,ModDev0,ModDev) :- 
+    atom(Package), atom(Name) |
+    ModDev0 = [get_module(Package,Name,Status)|ModDev].
+get_module(_,{(::),Package,Name},Status,ModDev0,ModDev) :-
+    atom(Package), atom(Name) |
+    ModDev0 = [get_module(Package,Name,Status)|ModDev].
+otherwise.
+get_module(Package,Name,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+get_module_in_the_package(Package,Name,Status,ModDev0,ModDev) :-
+    atom(Package), atom(Name) |
+    ModDev0 = [get_module_in_the_package(Package,Name,Status)|ModDev].
+get_module_in_the_package(_,{(::),Package,Name},Status,ModDev0,ModDev) :- 
+    atom(Package), atom(Name) |
+    ModDev0 = [get_module_in_the_package(Package,Name,Status)|ModDev].
+otherwise.
+get_module_in_the_package(Package,Name,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+get_module_info(Package,Name,Status,ModDev0,ModDev) :-
+    atom(Package), atom(Name) |
+    ModDev0 = [get_module_info(Package,Name,Status)|ModDev].
+get_module_info(_,{(::),Package,Name},Status,ModDev0,ModDev) :- 
+    atom(Package), atom(Name) |
+    ModDev0 = [get_module_info(Package,Name,Status)|ModDev].
+otherwise.
+get_module_info(Package,Name,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+get_code(Package,Name,Pred,Arity,Status,ModDev0,ModDev) :-
+    atom(Package), atom(Name), atom(Pred), Arity >= 0 |
+    ModDev0 = [get_code(Package,Name,Pred,Arity,Status)|ModDev].
+get_code(_,{(::),Package,Name},Pred,Arity,Status,ModDev0,ModDev) :-
+    atom(Package), atom(Name), atom(Pred), Arity >= 0 |
+    ModDev0 = [get_code(Package,Name,Pred,Arity,Status)|ModDev].
+otherwise.
+get_code(Package,Name,Pred,Arity,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+update_module(Package,Name,Module,Status,ModDev0,ModDev) :-
+    atom(Package), atom(Name), module(Module,_) |
+    ModDev0 = [update_module(Package,Name,Module,Status)|ModDev].
+update_module(_,{(::),Package,Name},Module,Status,ModDev0,ModDev) :-
+    atom(Package), atom(Name), module(Module,_) |
+    ModDev0 = [update_module(Package,Name,Module,Status)|ModDev].
+otherwise.
+update_module(Package,Name,Module,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+remove_module(Package,Name,Status,ModDev0,ModDev) :-
+    atom(Package), atom(Name) |
+    ModDev0 = [remove_module(Package,Name,Status)|ModDev].
+remove_module(_,{(::),Package,Name},Status,ModDev0,ModDev) :-
+    atom(Package), atom(Name) |
+    ModDev0 = [remove_module(Package,Name,Status)|ModDev].
+otherwise.
+remove_module(Package,Name,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.
+
+get_all_modules(Package,Status,ModDev0,ModDev) :- atom(Package) |
+    ModDev0 = [get_all_modules(Package,Status)|ModDev].
+otherwise.
+get_all_modules(Package,Status,ModDev0,ModDev) :- true |
+    Status = abnormal,
+    ModDev0 = ModDev.

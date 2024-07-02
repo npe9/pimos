@@ -1,0 +1,80 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- include("pimos.h").
+:- module inspector_variable.
+:- public unwrap/4,unwrap/5.
+
+unwrap(WT,Res,V,V1) :- true |
+        Res0={WT1,T},
+        unwrap(WT,WT1,T,V,V1,S),
+        wait_and_return(Res,Res0,S).
+
+wait_and_return(Res,Res1,S) :- wait(S) | Res=Res1.
+
+unwrap(WT,Res,V,V1,S) :- true |
+        Res={WT1,T},
+        unwrap(WT,WT1,T,V,V1,S).
+
+unwrap(atom(X),WT,T,V,V1,S) :- true | WT=atom(X),T=X,V=V1,S=normal.
+unwrap(integer(X),WT,T,V,V1,S) :- true | WT=integer(X),T:=X,V=V1,S=normal.
+:- switch(floating_point).
+:- case(yes).
+unwrap(floating_point(X),WT,T,V,V1,S) :- true | WT=floating_point(X),T$:=X,V=V1,S=normal.
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+unwrap(extended_floating_point(X),WT,T,V,V1,S) :- true |
+        WT=extended_floating_point(X),T$$:=X,V=V1,S=normal.
+:- end_switch.
+unwrap(string(X),WT,T,V,V1,S) :- string(X,L,_) |
+        V=V1,
+        builtin#new_string(Str,L),
+        WT=string(X1),
+        copy_str(~(L-1),X,X1,Str,T,S).
+unwrap(list([E|X]),WT,T,V,V1,S) :- true |
+        WT=list([E1|X1]),
+        T=[Car|Cdr],
+        unwrap(E,E1,Car,V,V0,S0),
+        unwrap(X,X1,Cdr,V0,V1,S1),
+        wait_normal(S0,S1,S).
+unwrap(vector(X),WT,T,V,V1,S) :- vector(X,L) |
+        WT=vector(X1),
+        new_vector(Vect,L),
+        unwrap_vect(~(L-1),V,V1,X,X1,Vect,T,S).
+unwrap(variable(Name),WT,T,V,V1,S) :- true |
+        WT=variable(Name),
+        V=[get_value(Name,T0)|V1],
+        if_stored(T0,T,S).
+unwrap(module(X),WT,T,V,V1,S) :- true |
+        WT=module(X),
+        T=X,V=V1,S=normal.
+unwrap(code(X),WT,T,V,V1,S) :- true |
+        WT=code(X),
+        T=X,V=V1,S=normal.
+unwrap(unknown(X),WT,T,V,V1,S) :- true |
+        WT=unknown(X),
+        T=X,V=V1,S=normal.
+
+if_stored({},T,S) :- true | T=_,S=normal.
+if_stored({T0},T,S) :- true | T0=T,S=normal.
+
+unwrap_vect(I,V,V1,X,X1,Y,Y1,S) :- I>=0 |
+        set_vector_element(X,I,WE,WE1,X0),
+        set_vector_element(Y,I,_,E,Y0),
+        unwrap(WE,WE1,E,V,V0,S0),
+        unwrap_vect(~(I-1),V0,V1,X0,X1,Y0,Y1,S1),
+        wait_normal(S0,S1,S).
+unwrap_vect(I,V,V1,X,X1,Y,Y1,S) :- I<0 | V=V1,X=X1,Y=Y1,S=normal.
+        
+copy_str(I,X,X1,Y,Y1,S) :- I>=0 |
+        string_element(X,I,E,X0),
+        set_string_element(Y,I,E,Y0),
+        copy_str(~(I-1),X0,X1,Y0,Y1,S).
+copy_str(I,X,X1,Y,Y1,S) :- I<0 | X=X1,Y=Y1,S=normal.
+
+wait_normal(normal,normal,S) :- true | S=normal.

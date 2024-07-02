@@ -1,0 +1,86 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_cmd_varpool.
+:- with_macro pimos.
+:- public execute/10.
+
+execute(_,X,X1,IR,IR1,WS,WS1,V,V1,name(VarName)) :- true |
+        IR=IR1,
+        name(VarName,X,X1,WS,WS1,V,V1).
+
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,list(A)) :- true |
+        X=X1,
+        list(Abort,V,V1,IR,IR1,WS,WS1,A).
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,list) :- true |
+        X=X1,
+        list(Abort,V,V1,IR,IR1,WS,WS1,all).
+
+execute(_,X,X1,IR,IR1,WS,WS1,V,V1,clear) :- true |
+        X=X1,IR=IR1,WS=WS1,
+        V=[clear|V1].
+
+%*** name ***
+name(Name,X,X1,WS,WS1,V,V1) :-
+    string_element(Name,0,#"_"),string(Name,L,_),L>1 |
+        builtin#substring(Name,1,~(L-1),Name1,_),
+        WS=[get_value(Name1,Var0)|WS0],
+        wait_check_buffer_varpool(Name,X,X1,WS0,WS1,V,V1,Name1,Var0).
+otherwise.
+name(Name,X,X1,WS,WS1,V,V1) :- true |
+        V=[put_immediately(Name,Var,Status)|V1],
+        if_fresh_variable(Var,X,X1,WS,WS1,Status).
+
+wait_check_buffer_varpool(Name,X,X1,WS,WS1,V,V1,Name1,{}) :- true |
+        V=[put_immediately(Name,Var,Status)|V1],
+        if_fresh_variable_buffer_varpool(Var,X,X1,WS,WS1,Status,Name1).
+otherwise.
+wait_check_buffer_varpool(_,X,X1,WS,WS1,V,V1,_,_) :- true |
+        X=X1,V=V1,
+        WS=[putf(string#"~s~n",[string#">Illegal variable name"])|WS1].
+
+if_fresh_variable_buffer_varpool(Var,X,X1,WS,WS1,normal,Name) :- true |
+        Var=X,X1=X,
+        WS=[put_var(Name,Var)|WS1].
+otherwise.
+if_fresh_variable_buffer_varpool(_,X,X1,WS,WS1,_,_) :- true |
+        X=X1,
+        WS=[putf(string#"~s~n",[string#">Illegal variable name"])|WS1].
+
+if_fresh_variable(Var,X,X1,WS,WS1,normal) :- true |
+        Var=X,X1=X,WS=WS1.
+otherwise.
+if_fresh_variable(_,X,X1,WS,WS1,_) :- true |
+        X=X1,
+        WS=[putf(string#"~s~n",[string#">Illegal variable name"])|WS1].
+
+%*** list ***
+list(Abort,V,V1,IR,IR1,WS,WS1,all) :- true |
+        V=[get_varlist(local,InsVL),get_varlist(listener,LisVL)|V1],
+        write_varlist(Abort,InsVL,IR,IR0,WS,WS0),
+        write_varlist(Abort,LisVL,IR0,IR1,WS0,WS1).
+list(Abort,V,V1,IR,IR1,WS,WS1,local) :- true |
+        V=[get_varlist(local,InsVL)|V1],
+        write_varlist(Abort,InsVL,IR,IR1,WS,WS1).
+list(Abort,V,V1,IR,IR1,WS,WS1,listener) :- true |
+        V=[get_varlist(listener,LisVL)|V1],
+        write_varlist(Abort,LisVL,IR,IR1,WS,WS1).
+alternatively.
+list(_,V,V1,IR,IR1,WS,WS1,M) :- true |
+        V=V1,IR=IR1,
+        WS=[error(unwrapped_illegal_param(M))|WS1].
+
+write_varlist(Abort,_,IR,IR1,WS,WS1) :- wait(Abort) |
+        IR=IR1,WS=WS1.
+write_varlist(_,_,[abort|IR],IR1,WS,WS1) :- true |
+        IR=IR1,WS=WS1.
+alternatively.
+write_varlist(Abort,[{K,D}|VL],IR,IR1,WS,WS1) :- true |
+        WS=[putf(string#" ~s = ",[K]),write(D,_)|WS0],
+        write_varlist(Abort,VL,IR,IR1,WS0,WS1).
+write_varlist(_,[],IR,IR1,WS,WS1) :- true |
+        IR=IR1,WS=WS1.
+

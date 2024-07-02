@@ -1,0 +1,65 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>timer.kl1.10, 12-Jan-90 16:01:56, Edit by yashiro
+:- with_macro pimos.
+:- module timer_lib.
+:- public request/1, get_count/1, on_at/2, on_after/2.
+
+request(Result) :-
+    true |
+        shoen:raise(pimos_tag#task, general_request, GRD ),
+        GRD = [ timer( Status ) ],
+        check_device_request_only( Status, Result ).
+
+check_device_request_only( normal( DEVICE_REQUEST, _, _), Result ) :-
+    true |
+        DEVICE_REQUEST = [ create(Result) ].
+
+check_device_request_only( abnormal, Result ) :-
+    true |
+        Result = abnormal(cannot_get_device_request).
+
+get_count(Result) :-
+    true |
+        shoen:raise(pimos_tag#task, general_request, GRD ),
+        GRD = [ timer( Status ) ],
+        check_device_request( Status, get_count(Result)).
+
+on_at(Count,Result) :-
+    true |
+        shoen:raise(pimos_tag#task, general_request, GRD ),
+        GRD = [ timer( Status ) ],
+        check_device_request( Status, on_at(Count, Result) ).
+
+on_after(Count,Result) :-
+    true |
+        shoen:raise(pimos_tag#task, general_request, GRD ),
+        GRD = [ timer( Status ) ],
+        check_device_request( Status, on_after(Count, Result) ).
+
+check_device_request( normal( DEVICE_REQUEST, _, _), Command ) :-
+    true |
+        DEVICE_REQUEST = [ create(Status) ],
+        check_device( Status, Command ).
+check_device_request( abnormal, get_count(Result) ) :-
+    true |
+        Result = abnormal(cannot_get_device_request).
+check_device_request( abnormal, on_at(_,Result) ) :-
+    true |
+        Result = abnormal(cannot_get_device_request).
+check_device_request( abnormal, on_after(_,Result) ) :-
+    true |
+        Result = abnormal(cannot_get_device_request).
+
+check_device( normal(DEVICE,_,_), Command) :-
+    true |
+        DEVICE=[Command].
+check_device( abnormal, get_count(Result) ) :-
+    true |
+        Result=abnormal(cannot_create_device).
+check_device( abnormal, on_at(_,Result) ) :-
+    true |
+        Result=abnormal(cannot_create_device).
+check_device( abnormal, on_after(_,Result) ) :-
+    true |
+        Result=abnormal(cannot_create_device).

@@ -1,0 +1,839 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- if_not_defined(included).
+:- macro_module  implicit_macro.
+:- with_macro    pimos.
+:- inherit_macro pimos.
+:- end_if.
+
+%% implicit macro expander
+%%
+
+%% implicit variable table initialize
+
+begin => [] :- true |
+    &stream <<= [get_if_any_and_put(implicit, _, []),
+                 get_if_any_and_put(local_implicit, _, [])].
+
+%% save implicit macro directive
+
+vector({atom(':-'), vector({atom(implicit), Args})}) => [] :- as_a_clause |
+    make_table(Gtbl, [], Args),
+    check_table(Gtbl1, [], Gtbl),
+    &stream <<= [get_and_put(implicit, _, Gtbl1)].
+vector({atom(':-'), vector({atom(local_implicit), Args})}) => [] :- as_a_clause |
+    make_table(Ltbl, [], Args),
+    check_table(Ltbl1, [], Ltbl),
+    &stream <<= [get_and_put(local_implicit, _, Ltbl1)].
+vector({atom(':-'), atom(local_implicit)}) => [] :- as_a_clause |
+    &stream <<= [get_and_put(local_implicit, _, [])].
+
+:- local_implicit info:shared, stream:oldnew, tbl:oldnew.
+
+make_table(vector({atom(','), X, Y})) --> true |
+   make_table(X),
+   make_table(Y).
+make_table(vector({atom(':'), atom(Arg), atom(Type)})) --> true |
+   check_type(Type, Arg).
+otherwise.
+make_table(Dec) --> true |
+   &stream <<= [error(string#"invalid local IMPLICIT declaration : ~T", [Dec])].
+
+check_type(oldnew, Arg) --> true |
+   &tbl<<=[{Arg, oldnew}].
+check_type(stream, Arg) --> true |
+   &tbl<<=[{Arg, stream}].
+check_type(shared, Arg) --> true |
+   &tbl<<=[{Arg, shared}].
+check_type(string, Arg) --> true |
+   &tbl<<=[{Arg, string}].
+otherwise.
+check_type(Type, Arg) --> true |
+   &stream <<= [error(string#"invalid type declaration of IMPLICIT argument : ~T", [vector({atom(':'), atom(Arg), atom(Type)})])].
+
+check_table([{Name, Type}|Cdr]) --> true |
+ {{check_table(&info, &stream, NewTbl, [], Name, Cdr)}},
+   &tbl<<=[{Name, Type}],
+   check_table(NewTbl).
+check_table([]) --> true | true.
+
+check_table(Name, [{Name, Type}|Cdr]) --> true |
+   &stream <<= [error(string#"multiple defined IMPLICIT argument : ~T", [vector({atom(':'), atom(Name), atom(Type)})])],
+   check_table(Name, Cdr).
+otherwise.
+check_table(Name1, [{Name2, Type}|Cdr]) --> true |
+   &tbl<<=[{Name2, Type}],
+   check_table(Name1, Cdr).
+check_table(_, []) --> true | true.
+
+%% implicit macro expander
+
+vector({atom('-->'), H0, vector({atom('|'), G0, B0})}) =>
+      vector({atom('``'), vector({atom(':-'), H3, vector({atom('|'), G3, B3})})})
+      with_predicates ExCls :- as_a_clause |
+    macro#expand_macro(as_a_goal, in_the_head, H0, When, H1, Where),
+  {{append_guard(G0, When, Where, G1)}},
+    macro#expand_macro(as_a_goal, in_the_guard, G1, G2),
+    macro#expand_macro(as_a_goal, in_the_body, B0, B1),
+    macro_management_process([init_tables(Args-Exarg)|Mtbl0]),
+%%    convert_one_goal(Mtbl0, Mtbl1, non_expand, 0, head, Heads, [], H1),
+%%  {{append_expanded_goals(Heads, H2, G0, G1)}},
+  {{get_functor_arity(H1, Func, Ari, H2)}},
+    Ari1 := Ari+Exarg,
+  {{copy_implicit_args_head(Args, Ari1, H2, H3)}},
+    convert_goals(Mtbl0, Mtbl1, expand, Exarg, guard, G2, [], G3),
+    convert_goals(Mtbl1, [terminate(Term)], expand, Exarg, body, B1, Term, B2),
+    case_expansion(ExCls, [], no, outside, B2, B3, vector({H3,G3}), Func/Ari1).
+
+append_guard(Goal0, When, [], Goal) :- true |
+   append_guard(When, Goal, Goal0).
+otherwise.
+append_guard(Goal0, When, Where, Goal) :- true |
+   append_guard(When, Goal, vector({atom(','), Goal0, Goal1})),
+   append_guard(Where, Goal1).
+
+append_guard([Goals|Cdr], Goal0, Goal) :- true |
+   Goal0=vector({atom(','), Goals, Goal1}),
+   append_guard(Cdr, Goal1, Goal).
+append_guard([], Goal0, Goal) :- true | Goal0=Goal.
+
+append_guard([Goal], Goal0) :- true | Goal0=Goal.
+otherwise.
+append_guard([Goals|Cdr], Goal0) :- true |
+   Goal0=vector({atom(','), Goals, Goal1}),
+   append_guard(Cdr, Goal1).
+
+%%append_expanded_goals([H0], H, G0, G) :- true | H0=H, G0=G.
+%%otherwise.
+%%append_expanded_goals([H0|Rest], H, G0, G) :- true |
+%%   append_expanded_goals_to_guard([H0|Rest], H, G0, G).
+%%
+%%append_expanded_goals_to_guard([H0], H, G0, G) :- true | H0=H, G0=G.
+%%otherwise.
+%%append_expanded_goals_to_guard([Goal|Rest], H, G0, G) :- true |
+%%   G=wrap#(Goal,G1),
+%%   append_expanded_goals_to_guard(Rest, H, G0, G1).
+
+copy_implicit_args_head(Args, Ari, vector(H0), NewHead) :- vector(H0, N) |
+   Ari1 := Ari+1,
+   new_vector(NewH0, Ari1),
+   set_vector_element(H0, 0, Func, [], H1),
+   set_vector_element(NewH0, 0, _, Func, NewH1),
+   copy_implicit_args(Args, 1, Ari2, NewH1, NewH2),
+   copy_original_args(Ari2, _, 1, N, H1, NewH2, NewH),
+   NewHead=vector(NewH).
+copy_implicit_args_head([], 0, atom(H0), NewHead) :- true |
+   NewHead=atom(H0).
+otherwise.
+copy_implicit_args_head(Args, Ari, atom(H0), NewHead) :- true |
+   Ari1 := Ari+1,
+   new_vector(NewH0, Ari1),
+   set_vector_element(NewH0, 0, _, atom(H0), NewH1),
+   copy_implicit_args(Args, 1, _, NewH1, NewH),
+   NewHead=vector(NewH).
+
+:- local_implicit info:shared, stream:oldnew, tbl:oldnew, sw:shared,
+                  exargs:shared, part:shared.
+
+convert_goals(Goals, Terminate, NewGoals) --> true |
+ {{convert_COMMA_to_list(ListGoals, [], Goals)}},
+   convert_macros(NewListGoals, Terminate, ListGoals),
+ {{convert_list_to_COMMA(NewListGoals, NewGoals)}}.
+
+:- local_implicit goalslist:oldnew.
+
+convert_COMMA_to_list(vector({atom(','), G1, G2})) --> true |
+   convert_COMMA_to_list(G1),
+   convert_COMMA_to_list(G2).
+otherwise.
+convert_COMMA_to_list(G1) --> true |
+   &goalslist <<= [G1].
+
+convert_list_to_COMMA([vector({atom(','), G0, G1})|Cdr], NewGoals) :- Cdr\=[] |
+   NewGoals=vector({atom(','), G0, vector({atom(','), G1, Rest})}),
+   convert_list_to_COMMA(Cdr, Rest).
+otherwise.
+convert_list_to_COMMA([G1|Cdr], NewGoals) :- Cdr\=[] |
+   NewGoals=vector({atom(','), G1, Rest}),
+   convert_list_to_COMMA(Cdr, Rest).
+convert_list_to_COMMA([G], NewGoals) :- true | NewGoals=G.
+
+:- local_implicit info:shared, stream:oldnew, tbl:oldnew, sw:shared,
+                  exargs:shared, part:shared, goal:oldnew.
+
+convert_macros([Goal|Rest]) --> true |
+   convert_one_goal(Goal),
+   convert_macros(Rest).
+convert_macros([]) --> true | true.
+
+convert_one_goal(vector({vector(ReducedMacros)})) --> vector(ReducedMacros, N) |
+   convert_reduced_macros(0, N, ReducedMacros).
+otherwise.
+convert_one_goal(Goal) --> true |
+   convert_one_goal(outside, Goal).
+
+convert_reduced_macros(A, N, ReducedMacros0) --> A<N |
+ {{set_vector_element(ReducedMacros0, A, Goal, [], ReducedMacros)}},
+   A1 := A+1,
+   convert_one_goal(inside, Goal),
+   convert_reduced_macros(A1, N, ReducedMacros).
+convert_reduced_macros(N, N, _) --> true | true.
+
+:- local_implicit info:shared, stream:oldnew, tbl:oldnew, sw:shared,
+                  exargs:shared, part:shared, goal:oldnew, braket:shared.
+
+convert_one_goal(vector({vector(ReducedMacro)})) --> vector(ReducedMacro, N) |
+ {{convert_reduced_macros(&info, &stream, &tbl, &sw, &exargs, &part, &goal,
+      0, N, ReducedMacro)}}.
+otherwise.
+convert_one_goal(Goal) --> true |
+   convert_one_goal_(Goal, NewGoal),
+   &goal <<= [NewGoal].
+
+convert_one_goal_(atom(true), NewGoal) --> true |
+   NewGoal=atom(true).
+convert_one_goal_(atom(otherwise), NewGoal) --> true |
+   NewGoal=atom(otherwise).
+convert_one_goal_(atom(alternatively), NewGoal) --> true |
+   NewGoal=atom(alternatively).
+convert_one_goal_(vector({atom('='), X, Y}), NewGoal) --> true |
+   convert_unify(X, Y, NewGoal).
+convert_one_goal_(vector({atom('<='), X, Y}), NewGoal) --> &part=body, &sw=expand |
+   convert_single_op(X, Y, NewGoal).
+convert_one_goal_(vector({atom('<<='), X, Y}), NewGoal) --> &part=body, &sw=expand |
+   convert_double_op(X, Y, NewGoal).
+convert_one_goal_(vector({atom(':'), atom(builtin), Goal0}), NewGoal) --> true |
+   convert_one_body_goal(Goal0, NewGoal0),
+   NewGoal=vector({atom(':'), atom(builtin), NewGoal0}).
+convert_one_goal_(vector({atom(':'), atom(Module), Goal0}), NewGoal) --> true |
+   convert_one_goal_(Goal0, NewGoal0),
+   NewGoal=vector({atom(':'), atom(Module), NewGoal0}).
+convert_one_goal_(vector({atom('::'), atom(Package),
+      vector({atom(':'), atom(Module), Goal0})}), NewGoal) --> true | 
+   convert_one_goal_(Goal0, NewGoal0),
+   NewGoal=vector({atom('::'), atom(Package),
+      vector({atom(':'), atom(Module), NewGoal0})}).
+convert_one_goal_(vector({atom('@'), Goal0, Pra0}), NewGoal) --> &part=body |
+   convert_one_goal_(Goal0, NewGoal0),
+ {{convert_one_body_goal(&info, &stream, &tbl, &sw, &exargs, &part, &goal, inside,
+      Pra0, NewPra0)}},
+   NewGoal=vector({atom('@'), NewGoal0, NewPra0}).
+convert_one_goal_(vector({atom(';'), Goal0, Goal1}), NewGoal) --> &part=guard |
+ {{convert_goals(&info, &stream, &tbl, &sw, &exargs, &part, Goal0, [], NewGoal0),
+   convert_goals(&info, &stream, &tbl, &sw, &exargs, &part, Goal1, [], NewGoal1)}},
+   NewGoal=vector({atom(';'), NewGoal0, NewGoal1}).
+convert_one_goal_(vector({atom(';'), Goal0, Goal1}), NewGoal) --> &part=body |
+%   convert_one_goal_(Goal0, NewGoal0),
+%   convert_one_goal_(Goal1, NewGoal1),
+%   NewGoal=vector({atom(';'), NewGoal0, NewGoal1}).
+   &tbl<<=[get_all_args(ArgList)],
+   NewGoal=vector({atom('-->;'), &braket, ArgList, Goal0, Goal1}).
+convert_one_goal_(vector({atom('->'), Goal0, Goal1}), NewGoal) --> &part=body |
+% {{convert_goals(&info, &stream, &tbl, &sw, &exargs, guard, Goal0, [], NewGoal0),
+%   convert_goals(&info, &stream, &tbl, &sw, &exargs, body, Goal1, [], NewGoal1)}},
+%   NewGoal=vector({atom('->'), NewGoal0, NewGoal1}).
+   &tbl<<=[get_all_args(ArgList)],
+   NewGoal=vector({atom('-->->'), &braket, ArgList, Goal0, Goal1}).
+otherwise.
+convert_one_goal_(Goal0, NewGoal) --> &part=guard |
+   convert_one_guard_goal(Goal0, NewGoal).
+convert_one_goal_(Goal0, NewGoal) --> &part=body |
+   convert_one_body_goal(Goal0, NewGoal).
+%%otherwise.
+%%convert_one_goal_(vector(Goal), WrappedNewGoal) --> vector(Goal, N) |
+%%   expand_explicit_args(N, _, double, Goal, NewGoal),
+%%   WrappedNewGoal=vector(NewGoal).
+%%convert_one_goal_(atom(Goal), NewGoal) --> true | NewGoal=atom(Goal).
+
+convert_one_guard_goal(vector(Goal), WrappedNewGoal) --> vector(Goal, N) |
+   expand_explicit_args(N, _, single, Goal, NewGoal),
+   WrappedNewGoal=vector(NewGoal).
+convert_one_guard_goal(atom(Goal), NewGoal) --> true | NewGoal=atom(Goal).
+
+convert_one_body_goal(vector({atom('&'), vector({atom('++'), atom(Arg)})}), NewGoal) -->
+      &sw=expand |
+   convert_single_op(vector({atom('&'), atom(Arg)}),
+      vector({atom('+'), vector({atom('&'), atom(Arg)}), integer(1)}), NewGoal). 
+convert_one_body_goal(vector({atom('&'), vector({atom('--'), atom(Arg)})}), NewGoal) -->
+      &sw=expand | 
+   convert_single_op(vector({atom('&'), atom(Arg)}),
+      vector({atom('-'), vector({atom('&'), atom(Arg)}), integer(1)}), NewGoal).
+convert_one_body_goal(vector({atom('@'), Pra0, Pra1}), NewGoals) --> true |
+   convert_one_body_goal(Pra0, NewPra0),
+   convert_one_body_goal(Pra1, NewPra1),
+   NewGoals=vector({atom('@'), NewPra0, NewPra1}).
+otherwise.
+convert_one_body_goal(vector(Goal0), WNewGoal) -->
+      &exargs\=0, &braket=outside, vector(Goal0, A0) |
+   &tbl<<=[get_all_args(ArgList)],
+   A := &exargs+A0,
+ {{new_vector(NewGoal0, A),
+   copy_implicit_args(ArgList, A0, A1, Goal0, NewGoal0, NewGoal1)}},
+   expand_explicit_args(A1, _, double, NewGoal1, NewGoal),
+   WNewGoal=vector(NewGoal).
+convert_one_body_goal(atom(Goal), WNewGoal) -->
+      &exargs\=0, &braket=outside |
+   &tbl<<=[get_all_args(ArgList)],
+   A := &exargs+1,
+ {{new_vector(NewGoal0, A),
+   copy_implicit_args(ArgList, 1, _, {atom(Goal)}, NewGoal0, NewGoal)}},
+   WNewGoal=vector(NewGoal).
+otherwise.
+convert_one_body_goal(vector(Goal), WNewGoal) --> vector(Goal, A0) |
+   expand_explicit_args(A0, _, double, Goal, NewGoal),
+   WNewGoal=vector(NewGoal).
+otherwise.
+convert_one_body_goal(Goal, NewGoal) --> true | Goal=NewGoal.
+
+copy_implicit_args(Args, A0, A, Goal0, NewGoal0, NewGoal) :- true |
+   set_vector_element(Goal0, 0, Func, [], Goal1),
+   set_vector_element(NewGoal0, 0, _, Func, NewGoal1),
+   copy_implicit_args(Args, 1, A1, NewGoal1, NewGoal2),
+   copy_original_args(A1, A, 1, A0, Goal1, NewGoal2, NewGoal).
+
+copy_implicit_args([Arg|Rest], A0, A, NewGoal0, NewGoal) :- true |
+   set_vector_element(NewGoal0, A0, _, Arg, NewGoal1),
+   A1 := A0+1,
+   copy_implicit_args(Rest, A1, A, NewGoal1, NewGoal).
+otherwise.
+copy_implicit_args([], A0, A, NewGoal0, NewGoal) :- true |
+   NewGoal0=NewGoal, A0=A.
+
+copy_original_args(NewArgNum0, NewArgNum, A, N, Goal0, NewGoal0, NewGoal) :- A<N |
+   set_vector_element(Goal0, A, Arg, [], Goal1),
+   set_vector_element(NewGoal0, NewArgNum0, _, Arg, NewGoal1),
+   NewArgNum1 := NewArgNum0+1,
+   A1 := A+1,
+   copy_original_args(NewArgNum1, NewArgNum, A1, N, Goal1, NewGoal1, NewGoal).
+copy_original_args(NewArgNum0, NewArgNum, N, N, _, NewGoal0, NewGoal) :- true |
+   NewArgNum0=NewArgNum,
+   NewGoal0=NewGoal.
+
+convert_unify(Left, Right, NewGoal) --> true |
+   convert_arg_ref(double, Left, NewLeft),
+   convert_arg_ref(double, Right, NewRight),
+   NewGoal=vector({atom('='), NewLeft, NewRight}).
+
+convert_arg_ref(Rule, list([Car|Cdr]), New) --> true |
+   convert_arg_ref(Rule, Car, NewCar),
+   convert_arg_ref(Rule, Cdr, NewCdr),
+   New=list([NewCar|NewCdr]).
+convert_arg_ref(_, vector({atom('&'), atom(Arg)}), New) --> &sw=expand |
+   &tbl<<=[get_old(Arg, New0)],
+ {{check_arg(&stream, &tbl, New0, New)}}.
+convert_arg_ref(_, vector({atom('&'), vector({atom(Arg), atom(old)})}), New) -->
+      &sw=expand |
+   &tbl<<=[get_old(Arg, New0)],
+ {{check_arg(&stream, &tbl, New0, New)}}.
+convert_arg_ref(Rule, vector({atom('&'), vector({atom(Arg), Pos})}), New) -->
+      &sw=expand |
+   &tbl<<=[get_type(Arg, Type)],
+   convert_arg_ref_macro(Rule, Type, atom(Arg), Pos, New).
+otherwise.
+convert_arg_ref(Rule, vector(Vect0), WNew) --> vector(Vect0, N0) |
+   expand_explicit_args(N0, _, Rule, Vect0, New),
+   WNew=vector(New).
+otherwise.
+convert_arg_ref(_, Arg0, Arg) --> true | Arg0=Arg.
+
+convert_arg_ref_macro(Rule, oldnew, atom(Arg), Pos, New) --> &part=guard |
+   &tbl<<=[get_old(Arg, Old0), new_variable(New)],
+ {{check_arg(&stream, &tbl, Old0, Old)}},
+   convert_arg_ref(Rule, Pos, NewPos),
+   &goal <<= [vector({atom(vector_element), Old, NewPos, New})].
+convert_arg_ref_macro(Rule, oldnew, atom(Arg), Pos, Elm) --> &part=body |
+   &tbl<<=[get_old(Arg, Old0), get_new(Arg, New0), new_variable(Elm)],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   check_arg(&stream, &tbl, New0, New)}},
+   convert_arg_ref(Rule, Pos, NewPos),
+   &goal <<= [vector({atom(set_vector_element), Old, NewPos, Elm, Elm, New})].
+convert_arg_ref_macro(Rule, shared, atom(Arg), Pos, New) --> &part=guard |
+   &tbl<<=[get_old(Arg, Old0), new_variable(New)],
+ {{check_arg(&stream, &tbl, Old0, Old)}},
+   convert_arg_ref(Rule, Pos, NewPos),
+  &goal <<= [vector({atom(vector_element), Old, NewPos, New})].
+convert_arg_ref_macro(Rule, shared, atom(Arg), Pos, Elm) --> &part=body |
+   &tbl<<=[get_old(Arg, Old0), get_new(Arg, New0), new_variable(Elm)],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   check_arg(&stream, &tbl, New0, New)}},
+   convert_arg_ref(Rule, Pos, NewPos),
+   &goal <<= [vector({atom(vector_element), Old, NewPos, Elm, New})].
+convert_arg_ref_macro(Rule, string, atom(Arg), Pos, New) --> &part=guard |
+   &tbl<<=[get_old(Arg, Old0), new_variable(New)],
+ {{check_arg(&stream, &tbl, Old0, Old)}},
+   convert_arg_ref(Rule, Pos, NewPos),
+   &goal <<= [vector({atom(string_element), Old, NewPos, New})].
+convert_arg_ref_macro(Rule, string, atom(Arg), Pos, Elm) --> &part=body |
+   &tbl<<=[get_old(Arg, Old0), get_new(Arg, New0), new_variable(Elm)],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   check_arg(&stream, &tbl, New0, New)}},
+   convert_arg_ref(Rule, Pos, NewPos),
+   &goal <<= [vector({atom(string_element), Old, NewPos, Elm, New})].
+otherwise.
+convert_arg_ref_macro(_, _, Arg, Pos, Elm) --> true |
+   &stream <<= [error(string#"invalid macro argument: ~t", [vector({Arg, Pos})])],
+   &tbl<<=[new_variable(Elm)].
+
+%%convert_arg_ref_vect(A, N, Rule, Vect0, Vect) --> A<N |
+%% {{set_vector_element(Vect0, A, Elm, NewElm, Vect1)}},
+%%   convert_arg_ref(Rule, Elm, NewElm),
+%%   A1 := A+1,
+%%   convert_arg_ref_vect(A1, N, Rule, Vect1, Vect).
+%%convert_arg_ref_vect(N, N, _, Vect0, Vect) --> true | Vect0=Vect.
+
+convert_arg_set(Rule, list([Car|Cdr]), New) --> true |
+   convert_arg_ref(Rule, Car, NewCar),
+   convert_arg_ref(Rule, Cdr, NewCdr),
+   New=list([NewCar|NewCdr]).
+convert_arg_set(_, vector({atom('&'), atom(Arg)}), New) --> &sw=expand |
+   &tbl<<=[get_new(Arg, NewArg0)],
+ {{check_arg(&stream, &tbl, NewArg0, New)}}.
+convert_arg_set(Rule, vector({atom('&'), vector({atom(Arg), Pos})}), New) -->
+      &sw=expand |
+   &tbl<<=[get_type(Arg, Type)],
+   convert_arg_set_macro(Rule, Type, atom(Arg), Pos, New).
+otherwise.
+convert_arg_set(Rule, vector(Vect), WNew) --> vector(Vect, N) |
+   convert_arg_set_vect(0, N, Rule, Vect, New),
+   WNew=vector(New).
+otherwise.
+convert_arg_set(_, {Type, Arg}, New) --> true |
+   New={Type, Arg}.
+
+convert_arg_set_macro(Rule, oldnew, atom(Arg), Pos, Elm) --> &part=body |
+   &tbl<<=[get_old(Arg, Old0), get_new(Arg, New0),
+           new_variable(Void), new_variable(Elm)],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   check_arg(&stream, &tbl, New0, New)}},
+   convert_arg_ref(Rule, Pos, NewPos),
+   &goal <<= [vector({atom(set_vector_element), Old, NewPos, Void, Elm, New})].
+convert_arg_set_macro(Rule, shared, atom(Arg), Pos, Elm) --> &part=body |
+   &tbl<<=[get_old(Arg, Old0), get_new(Arg, New0),
+           new_variable(Void), new_variable(Elm)],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   check_arg(&stream, &tbl, New0, New)}},
+   convert_arg_ref(Rule, Pos, NewPos),
+   &goal <<= [vector({atom(set_vector_element), Old, NewPos, Void, Elm, New})].
+convert_arg_set_macro(Rule, string, atom(Arg), Pos, Elm) --> &part=body |
+   &tbl<<=[get_old(Arg, Old0), get_new(Arg, New0), new_variable(Elm)],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   check_arg(&stream, &tbl, New0, New)}},
+   convert_arg_ref(Rule, Pos, NewPos),
+   &goal <<= [vector({atom(set_string_element), Old, NewPos, Elm, New})].
+otherwise.
+convert_arg_set_macro(_, _, Arg, Pos, Elm) --> true |
+   &stream <<= [error(string#"Invalid macro expression: ~t", [vector({Arg, Pos})])],
+   &tbl<<=[new_variable(Elm)].
+
+convert_arg_set_vect(A, N, Rule, Vect0, New) --> A<N |
+ {{set_vector_element(Vect0, A, Elm, NewElm, Vect1)}},
+   convert_arg_ref(Rule, Elm, NewElm),
+   A1 := A+1,
+   convert_arg_set_vect(A1, N, Rule, Vect1, New).
+convert_arg_set_vect(N, N, _, Vect0, New) --> true | Vect0=New.
+
+expand_explicit_args(Ari, NewAri, Rule, Goal0, Goal) --> true |
+   extract_goal_args(Args, [], 0, Ari, 0, NewAri, Rule, Goal0),
+ {{new_vector(NewGoal, NewAri),
+   copy_explicit_args(0, Args, NewGoal, Goal)}}.
+
+copy_explicit_args(A, [Arg|Rest], NewGoal, Goal) :- true |
+   set_vector_element(NewGoal, A, _, Arg, NewGoal1),
+   A1 := A+1,
+   copy_explicit_args(A1, Rest, NewGoal1, Goal).
+copy_explicit_args(_, [], NewGoal, Goal) :- true | NewGoal=Goal.
+
+:- local_implicit info:shared, stream:oldnew, tbl:oldnew, sw:shared,
+                  exargs:shared, part:shared, goal:oldnew, braket:shared, args:oldnew.
+
+extract_goal_args(A, N, NewAri0, NewAri, Rule, Goal0) --> A<N |
+ {{set_vector_element(Goal0, A, Arg, [], Goal1)}},
+   extract_one_goal_arg(NewAri0, NewAri1, Rule, Arg),
+   A1 := A+1,
+   extract_goal_args(A1, N, NewAri1, NewAri, Rule, Goal1).
+extract_goal_args(N, N, NewAri0, NewAri, _, _) --> true | NewAri0=NewAri.
+
+extract_one_goal_arg(NewAri0, NewAri, Rule, list([Car|Cdr])) --> true |
+ {{convert_arg_ref(&info, &stream, &tbl, &sw, &exargs, &part, &goal, &braket,
+      Rule, Car, NewCar),
+   convert_arg_ref(&info, &stream, &tbl, &sw, &exargs, &part, &goal, &braket,
+      Rule, Cdr, NewCdr)}},
+   NewAri := NewAri0+1,
+   &args <<= [list([NewCar|NewCdr])].
+extract_one_goal_arg(NewAri0, NewAri, Rule, vector({atom('&'), atom(Arg)})) -->
+      &sw=expand |
+   &tbl <<= [get_type(Arg, Type)],
+   extract_one_goal_macro_arg(NewAri0, NewAri, Rule, Type, vector({atom('&'), atom(Arg)})).
+otherwise.
+extract_one_goal_arg(NewAri0, NewAri, Rule, Arg) --> true |
+ {{convert_arg_ref(&info, &stream, &tbl, &sw, &exargs, &part, &goal, &braket,
+      Rule, Arg, NewArg)}},
+   NewAri := NewAri0+1,
+   &args <<= [NewArg].
+
+extract_one_goal_macro_arg(NewAri0, NewAri, double, oldnew, vector({atom('&'), atom(Arg)})) -->
+      atom(Arg), &sw=expand |
+   &tbl<<=[get_old(Arg, Old0), get_new(Arg, New0)],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   check_arg(&stream, &tbl, New0, New)}},
+   NewAri := NewAri0+2,
+   &args <<= [Old, New].
+extract_one_goal_macro_arg(NewAri0, NewAri, single, oldnew, vector({atom('&'), atom(Arg)})) -->
+      atom(Arg), &sw=expand |
+   &tbl<<=[get_old(Arg, Old0)],
+ {{check_arg(&stream, &tbl, Old0, Old)}},
+   NewAri := NewAri0+1,
+   &args <<= [Old].
+extract_one_goal_macro_arg(NewAri0, NewAri, double, string, vector({atom('&'), atom(Arg)})) -->
+      atom(Arg), &sw=expand |
+   &tbl<<=[get_old(Arg, Old0), get_new(Arg, New0)],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   check_arg(&stream, &tbl, New0, New)}},
+   NewAri := NewAri0+2,
+   &args <<= [Old, New].
+extract_one_goal_macro_arg(NewAri0, NewAri, single, string, vector({atom('&'), atom(Arg)})) -->
+      atom(Arg), &sw=expand |
+   &tbl<<=[get_old(Arg, Old0)],
+ {{check_arg(&stream, &tbl, Old0, Old)}},
+   NewAri := NewAri0+1,
+   &args <<= [Old].
+otherwise.
+extract_one_goal_macro_arg(NewAri0, NewAri, Rule, _, Macro) --> true |
+ {{convert_arg_ref(&info, &stream, &tbl, &sw, &exargs, &part, &goal, &braket,
+      Rule, Macro, NewArg)}},
+   NewAri := NewAri0+1,
+   &args <<= [NewArg].
+
+:- local_implicit info:shared, stream:oldnew, tbl:oldnew, sw:shared,
+                  exargs:shared, part:shared, goal:oldnew, braket:shared.
+
+convert_single_op(X, Y, NewGoal) --> true |
+   convert_arg_ref(single, Y, NewY),
+   convert_arg_set(single, X, NewX),
+   NewGoal=vector({atom('='), NewX, NewY}).
+
+convert_double_op(vector({atom('&'), atom(Arg)}), list([Car|Cdr]), NewGoal) --> true |
+   convert_arg_ref(double, list([Car|Cdr]), NewY),
+   &tbl<<=[get_old_and_new(Arg, [Old0|New])],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   out_to_dlist(&stream, NewRight, New, NewY)}},
+   NewGoal=vector({atom('='), Old, NewRight}).
+convert_double_op(vector({atom('&'), atom(Arg)}), atom([]), NewGoal) --> atom(Arg) |
+   convert_arg_ref(double, atom([]), NewY),
+   &tbl<<=[get_old_and_new(Arg, [Old0|New])],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   out_to_dlist(&stream, NewRight, New, NewY)}},
+   NewGoal=vector({atom('='), Old, NewRight}).
+convert_double_op(vector({atom('&'), vector({atom(Arg), Pos})}), Y, NewGoal) --> true |
+   convert_arg_ref(double, Y, NewY),
+   &tbl<<=[get_old_and_new(Arg, [Old0|New0]), new_variable(NewCdr)],
+ {{check_arg(&stream, &tbl, Old0, Old),
+   check_arg(&stream, &tbl, New0, New),
+   out_to_dlist(&stream, NewRight, NewCdr, NewY)}},
+   convert_arg_ref(double, Pos, NewPos),
+   NewGoal=wrap#(set_vector_element(Old, NewPos, NewRight, NewCdr, New)).
+otherwise.
+convert_double_op(Left, Right, NewGoal) --> true |
+   &stream <<= [error(string#"invalid macro expression: ~t", [vector({Op, Left, Right})])],
+   Op=atom('<<='), NewGoal=atom(true).
+   
+:- local_implicit stream:oldnew.
+out_to_dlist(Head0, Tail, list([One|Rest])) --> true |
+   Head0=list([One|Head]),
+   out_to_dlist(Head, Tail, Rest).
+out_to_dlist(Head, Tail, atom([])) -->  true | Head=Tail.
+otherwise.
+out_to_dlist(Head, Tail, Term) --> true |
+   &stream <<= [error("The cdxxxr of the right hand side of '<<=' must be NIL : ~T", [Term])],
+   Head=Tail.
+
+:- local_implicit stream:oldnew, tbl:oldnew.
+
+check_arg(not_found(OrgArg), Arg) --> true |
+   &stream <<= [error(string#"invalid macro argument: ~t", [vector({atom('#'),atom(OrgArg)})])],
+   &tbl<<=[new_variable(Arg)].
+otherwise.
+check_arg(Arg0, Arg) --> true | Arg0=Arg.
+
+%% implicit variable table management process
+%%
+
+:- local_implicit info:shared, stream:oldnew.
+
+macro_management_process([init_tables(Args-N)|Cdr]) --> true |
+   &stream <<= [get_and_put(implicit, Gtbl0, Gtbl0),
+                get_and_put(local_implicit, Ltbl0, Ltbl0)],
+   init_table(Args, ArgsMid, 0, N1, Gtbl0, Gtbl1),
+   init_table(ArgsMid, [], N1, N, Ltbl0, Ltbl1),
+   macro_management_process(Cdr, Gtbl1, Ltbl1).
+
+macro_management_process([new_variable(Arg)|Cdr], Gtbl, Ltbl) --> true |
+ {{generate_var(&stream, Arg)}},
+   macro_management_process(Cdr, Gtbl, Ltbl).
+macro_management_process([get_type(Arg, Type)|Cdr], Gtbl0, Ltbl0) --> true |
+ {{find_arg(Gtbl0, Gtbl1, Arg, not_found(Arg), Type1),
+   find_arg(Ltbl0, Ltbl1, Arg, Type1, Type)}},
+   macro_management_process(Cdr, Gtbl1, Ltbl1).
+macro_management_process([get_all_args(ArgList)|Cdr], Gtbl0, Ltbl0) --> true |
+   get_arg(ArgList, ArgListMid, Gtbl0, Gtbl1),
+   get_arg(ArgListMid, [], Ltbl0, Ltbl1),
+   macro_management_process(Cdr, Gtbl1, Ltbl1).
+%%macro_management_process([get_one_arg(Arg, Vars)|Cdr], Gtbl0, Ltbl0) --> true |
+%%   find_and_get_arg(Vars, VarsMid, Arg, Gtbl0, Gtbl1, not_found(Arg), Flg1),
+%%   find_and_get_arg(VarsMid, [], Arg, Ltbl0, Ltbl1, Flg1, _),
+%%   macro_management_process(Cdr, Gtbl1, Ltbl1).
+macro_management_process([get_old(Arg, Old)|Cdr], Gtbl0, Ltbl0) --> true |
+   get_old(Gtbl0, Gtbl1, Arg, not_found(Arg), Old1),
+   get_old(Ltbl0, Ltbl1, Arg, Old1, Old),
+   macro_management_process(Cdr, Gtbl1, Ltbl1).
+macro_management_process([get_new(Arg, New)|Cdr], Gtbl0, Ltbl0) --> true |
+   get_new(Gtbl0, Gtbl1, Arg, not_found(Arg), New1),
+   get_new(Ltbl0, Ltbl1, Arg, New1, New),
+   macro_management_process(Cdr, Gtbl1, Ltbl1).
+macro_management_process([get_old_and_new(Arg, Ref)|Cdr], Gtbl0, Ltbl0) --> true |
+   get_old_and_new(Gtbl0, Gtbl1, Arg, [not_found(Arg)|atom([])], Ref0),
+   get_old_and_new(Ltbl0, Ltbl1, Arg, Ref0, Ref),
+   macro_management_process(Cdr, Gtbl1, Ltbl1).
+macro_management_process([terminate(Goal0)|Cdr], Gtbl0, Ltbl0) --> true |
+   clear_table(Goal0, Goal1, Gtbl0, Gtbl1),
+   clear_table(Goal1, [], Ltbl0, Ltbl1),
+   macro_management_process(Cdr, Gtbl1, Ltbl1).
+macro_management_process([], _, _) --> true | true.
+
+find_arg(Tbl, NewTbl, _, Flg0, Flg) :-
+      vector_element(Flg0, 0, Func), Func\=not_found | Tbl=NewTbl, Flg0=Flg.
+otherwise.
+find_arg([{Arg, Type, Var}|Cdr], NewTbl, Arg, _, Flg) :- true |
+   NewTbl=[{Arg, Type, Var}|Cdr],
+   Flg=Type.
+otherwise.
+find_arg([Vect|Cdr], NewTbl, Arg, Flg0, Flg) :- true |
+   NewTbl=[Vect|NewTblCdr],
+   find_arg(Cdr, NewTblCdr, Arg, Flg0, Flg).
+find_arg([], NewTbl, _, Flg0, Flg) :- true | NewTbl=[], Flg0=Flg.
+
+:- local_implicit info:shared, stream:oldnew, vars:oldnew.
+
+get_arg([{Arg, oldnew, Old-Last}|Cdr], NewTbl) --> true |
+ {{generate_var(&stream, New)}},
+   &vars <<= [Old, New],
+   NewTbl=[{Arg, oldnew, New-Last}|NewTblCdr],
+   get_arg(Cdr, NewTblCdr).
+get_arg([{Arg, stream, Args-Last}|Cdr], NewTbl) --> true |
+ {{generate_var(&stream, New)}},
+   &vars <<= [New],
+   NewTbl=[{Arg, stream, [New|Args]-Last}|NewTblCdr],
+   get_arg(Cdr, NewTblCdr).
+get_arg([{Arg, shared, Old}|Cdr], NewTbl) --> true |
+   &vars <<= [Old],
+   NewTbl=[{Arg, shared, Old}|NewTblCdr],
+   get_arg(Cdr, NewTblCdr).
+get_arg([{Arg, string, Old-Last}|Cdr], NewTbl) --> true |
+ {{generate_var(&stream, New)}},
+   &vars <<= [Old, New],
+   NewTbl=[{Arg, string, New-Last}|NewTblCdr],
+   get_arg(Cdr, NewTblCdr).
+get_arg([], NewTbl) --> true | NewTbl=[].
+
+%%find_and_get_arg(_, Tbl, NewTbl, Flg0, Flg) -->
+%%      vector_element(Flg0, 0, Func), Func\=not_found | Tbl=NewTbl, Flg0=Flg.
+%%otherwise.
+%%find_and_get_arg(Arg, [{Arg, Type, Var}|Cdr], NewTbl, Flg0, Flg) --> true |
+%%   insert_arg(Type, Var, NewVar),
+%%   Flg=found,
+%%   NewTbl=[{Arg, Type, NewVar}|Cdr].
+%%otherwise.
+%%find_and_get_arg(Arg, [Vect|Cdr], NewTbl, Flg0, Flg) -->
+%%   NewTbl=[Vect|NewTblCdr],
+%%   find_and_get_arg(Arg, Cdr, NewTblCdr, Flg0, Flg).
+%%find_and_get_arg(_, [], NewTbl, Flg0, Flg) --> true | NewTbl=[], Flg0=Flg.
+
+%%insert_arg(oldnew, Old-Last, NewVar) --> true |
+%% {{generate_var(&stream, New)}},
+%%   &vars <<= [Old, New],
+%%   NewVar=New-Last.
+%%insert_arg(stream, Args-Last, NewVar) --> true |
+%% {{generate_var(&stream, New)}},
+%%   &vars <<= [New],
+%%   NewVar=[New|Args]-Last.
+%%insert_arg(shared, Old, New) --> true |
+%%   &vars <<= [Old],
+%%   New=Old.
+%%insert_arg(string, Old-Last, NewVar) --> true |
+%% {{generate_var(&stream, New)}},
+%%   &vars <<= [Old, New],
+%%   NewVar=New-Last.
+
+:- local_implicit info:shared, stream:oldnew.
+
+get_old(Tbl, NewTbl, _, Flg0, Flg) -->
+      vector_element(Flg0, 0, Func), Func\=not_found | Tbl=NewTbl, Flg0=Flg.
+otherwise.
+get_old([{Arg, oldnew, Old-Last}|Cdr], NewTbl, Arg, _, Flg) --> true |
+   NewTbl=[{Arg, oldnew, Old-Last}|Cdr],
+   Flg=Old.
+get_old([{Arg, shared, Ele}|Cdr], NewTbl, Arg, _, Flg) --> true |
+   NewTbl=[{Arg, shared, Ele}|Cdr],
+   Flg=Ele.
+get_old([{Arg, string, Old-Last}|Cdr], NewTbl, Arg, _, Flg) --> true |
+   NewTbl=[{Arg, string, Old-Last}|Cdr],
+   Flg=Old.
+get_old([{Arg, stream, Args-Last}|Cdr], NewTbl, Arg, _, Flg) --> true | 
+ {{generate_var(&stream, New)}},
+   NewTbl=[{Arg, stream, [New|Args]-Last}|Cdr],
+   Flg=New.
+otherwise.
+get_old([Vect|Cdr], NewTbl, Arg, Flg0, Flg) --> true |
+   NewTbl=[Vect|NewTblCdr],
+   get_old(Cdr, NewTblCdr, Arg, Flg0, Flg).
+get_old([], NewTbl, _, Flg0, Flg) --> true | NewTbl=[], Flg0=Flg.
+
+get_new(Tbl, NewTbl, _, Flg0, Flg) -->
+      vector_element(Flg0, 0, Func), Func\=not_found | Tbl=NewTbl, Flg0=Flg.
+otherwise.
+get_new([{Arg, oldnew, _-Last}|Cdr], NewTbl, Arg, _, Flg) --> true |
+ {{generate_var(&stream, New)}},
+   NewTbl=[{Arg, oldnew, New-Last}|Cdr],
+   Flg=New.
+get_new([{Arg, shared, _}|Cdr], NewTbl, Arg, _, Flg) --> true |
+ {{generate_var(&stream, New)}},
+   NewTbl=[{Arg, shared, New}|Cdr],
+   Flg=New.
+get_new([{Arg, stream, Args-Last}|Cdr], NewTbl, Arg, _, Flg) --> true |
+ {{generate_var(&stream, New)}},
+   NewTbl=[{Arg, stream, [New|Args]-Last}|Cdr],
+   Flg=New.
+get_new([{Arg, string, _-Last}|Cdr], NewTbl, Arg, _, Flg) --> true |
+ {{generate_var(&stream, New)}},
+   NewTbl=[{Arg, string, New-Last}|Cdr],
+   Flg=New.
+otherwise.
+get_new([Vect|Cdr], NewTbl, Arg, Flg0, Flg) --> true |
+   NewTbl=[Vect|NewTblCdr],
+   get_new(Cdr, NewTblCdr, Arg, Flg0, Flg).
+get_new([], NewTbl, _, Flg0, Flg) --> true | NewTbl=[], Flg0=Flg.
+   
+get_old_and_new(Tbl, NewTbl, _, Flg0, Flg) -->
+      vector_element(Flg0, 0, Func), Func\=not_found | Tbl=NewTbl, Flg0=Flg.
+otherwise.
+get_old_and_new([{Arg, oldnew, Old-Last}|Cdr], NewTbl, Arg, _, Ref) --> true |
+ {{generate_var(&stream, New)}},
+   Ref=[Old|New],
+   NewTbl=[{Arg, oldnew, New-Last}|Cdr].
+get_old_and_new([{Arg, stream, Args-Old}|Cdr], NewTbl, Arg, _, Ref) --> true |
+ {{generate_var(&stream, New)}},
+   Ref=[Old|New],
+   NewTbl=[{Arg, stream, Args-New}|Cdr].
+otherwise.
+get_old_and_new([Vect|Cdr], NewTbl, Arg, Ref0, Ref) --> true |
+   NewTbl=[Vect|NewTblCdr],
+   get_old_and_new(Cdr, NewTblCdr, Arg, Ref0, Ref).
+get_old_and_new([], NewTbl, _, Ref0, Ref) --> true | NewTbl=[], Ref0=Ref.
+
+:- local_implicit info:shared, stream:oldnew, goals:oldnew.
+
+clear_table([{Arg, oldnew, Old-Last}|Cdr], NewTbl) --> true |
+   &goals <<= [vector({atom('='), Old, Last})],
+   NewTbl=[{Arg, oldnew}|NewTblCdr],
+   clear_table(Cdr, NewTblCdr).
+clear_table([{Arg, stream, Args-Out}|Cdr], NewTbl) --> true |
+ {{convert_list_to_vector(Args, ArgsVect)}},
+   &goals <<= [vector({atom('='), Out, ArgsVect})],
+   NewTbl=[{Arg, stream}|NewTblCdr],
+   clear_table(Cdr, NewTblCdr).
+clear_table([{Arg, shared, _}|Cdr], NewTbl) --> true |
+   NewTbl=[{Arg, shared}|NewTblCdr],
+   clear_table(Cdr, NewTblCdr).
+clear_table([{Arg, string, Old-Last}|Cdr], NewTbl) --> true |
+   &goals <<= [vector({atom('='), Old, Last})],
+   NewTbl=[{Arg, string}|NewTblCdr],
+   clear_table(Cdr, NewTblCdr).
+clear_table([], NewTbl) --> true | NewTbl=[].
+
+:- local_implicit info:shared, stream:oldnew, vars:oldnew, nargs:oldnew.
+
+init_table([{Arg, oldnew}|Cdr], NewTbl) --> true |
+   &nargs <= &nargs+2,
+ {{generate_var(&stream, Old),
+   generate_var(&stream, New)}},
+   &vars <<= [Old, New],
+   NewTbl=[{Arg, oldnew, Old-New}|NewTblCdr],
+   init_table(Cdr, NewTblCdr).
+init_table([{Arg, stream}|Cdr], NewTbl) --> true |
+   &nargs <= &nargs+1,
+ {{generate_var(&stream, Old)}},
+   &vars <<= [Old],
+   NewTbl=[{Arg, stream, []-Old}|NewTblCdr],
+   init_table(Cdr, NewTblCdr).
+init_table([{Arg, shared}|Cdr], NewTbl) --> true |
+   &nargs <= &nargs+1,
+ {{generate_var(&stream, Old)}},
+   &vars <<= [Old],
+   NewTbl=[{Arg, shared, Old}|NewTblCdr],
+   init_table(Cdr, NewTblCdr).
+init_table([{Arg, string}|Cdr], NewTbl) --> true |
+   &nargs <= &nargs+2,
+ {{generate_var(&stream, Old),
+   generate_var(&stream, New)}},
+   &vars <<= [Old, New],
+   NewTbl=[{Arg, string, Old-New}|NewTblCdr],
+   init_table(Cdr, NewTblCdr).
+init_table([], NewTbl) --> true | NewTbl=[].
+
+convert_list_to_vector([], Vect) :- true | Vect=atom([]).
+otherwise.
+convert_list_to_vector(List, WVect) :- true |
+   length(0, N, List, List1),
+   check_length_and_copy_elements(N, List1, 0, WVect).
+
+check_length_and_copy_elements(0, [], _, Vect) :- true | Vect=atom([]).
+check_length_and_copy_elements(1, [A], _, Vect) :- true | Vect=A.
+otherwise.
+check_length_and_copy_elements(N, List, 0, WVect) :- true |
+   new_vector(Vect0, N),
+   copy_elements(List, 0, Vect0, Vect),
+   WVect=vector(Vect).
+
+copy_elements([One|Rest], N, Vect0, Vect) :- true |
+   set_vector_element(Vect0, N, _, One, Vect1),
+   N1 := N+1,
+   copy_elements(Rest, N1, Vect1, Vect).
+copy_elements([], _, Vect0, Vect) :- true | Vect0=Vect.
+
+:- local_implicit stream:oldnew.
+
+generate_var(Var) --> true |
+   &stream <<= [new_variable(variable(N))],
+ {{convert_integer_to_string(N, Str),
+   builtin#append_string("GenVar", Str, Name)}},
+   Var=variable(Name).
+
+convert_integer_to_string(A, Astr) :- true |
+   convert_integer_to_list(Alist, [], 1, N, A),
+   new_string(Str0, N, 16),
+   convert_list_to_string(Alist, 0, Str0, Astr).
+
+:- local_implicit char_list:oldnew, len:oldnew.
+
+convert_integer_to_list(Int) --> Int<10 |
+   Int_char := Int+16#"2330",
+   &char_list <<= [Int_char].
+otherwise.
+convert_integer_to_list(Int) --> true |
+   Int1 := Int/10,
+   Mod := Int mod 10,
+   Mod_char := Mod+16#"2330",
+   convert_integer_to_list(Int1),
+   &len <= &len+1,
+   &char_list <<= [Mod_char].
+
+convert_list_to_string([C|Rest], Pos, Str0, Str) :- true |
+   set_string_element(Str0, Pos, C, Str1),
+   Pos1 := Pos+1,
+   convert_list_to_string(Rest, Pos1, Str1, Str).
+convert_list_to_string([], _, Str0, Str) :- true | Str0=Str.

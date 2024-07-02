@@ -1,0 +1,144 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi206::>sys>user>sekita>wrap>varname.kl1.29, 06-Dec-89 20:08:56, Edit by sekita
+:- module kl1cmp_variable_name.
+:- public
+    integer_to_string/3,
+    integer_to_string/4,
+    string_to_integer/3,
+    count_variables/4,
+    numbervars/2.
+
+string_to_integer(Atom0, IntTerm, Vtbl) :- atom(Atom0) |
+    Atom0=IntTerm, Vtbl={}.
+otherwise.
+string_to_integer(StrTerm0, IntTerm, VTbl) :- true |
+    numbervars(StrTerm0, IntTerm0),
+    count_variables(IntTerm0, IntTerm1, 0, Nv),
+    new_vector(VTbl0, Nv),
+    match_string_and_integer(StrTerm0, IntTerm1, IntTerm, VTbl0, VTbl).
+
+match_string_and_integer(variable(Str), variable(N), V, VT0, VT) :- true |
+    set_vector_element(VT0, N, _, Str, VT), V=variable(N).
+match_string_and_integer(vector(Vect0), vector(Vect1), WIntVect, VT0, VT) :-
+        vector(Vect0, N) |
+    match_string_and_integer(0, N, Vect0, Vect1, IntVect, VT0, VT),
+    WIntVect=vector(IntVect).
+match_string_and_integer(list([StrCar|StrCdr]), list([IntCar|IntCdr]),
+        WIntList, VT0, VT) :- true |
+    match_string_and_integer(StrCar, IntCar, NewIntCar, VT0, VT1),
+    match_string_and_integer(StrCdr, IntCdr, NewIntCdr, VT1, VT),
+    WIntList=list([NewIntCar|NewIntCdr]).
+otherwise.
+match_string_and_integer(_, Int0, Int, VT0, VT) :- true |
+   Int0=Int, VT0=VT.
+   
+
+match_string_and_integer(A, N, StrVect0, IntVect0, IntVect, VT0, VT) :- A<N |
+   set_vector_element(StrVect0, A, StrElm, [], StrVect1),
+   set_vector_element(IntVect0, A, IntElm0, IntElm, IntVect1),
+   match_string_and_integer(StrElm, IntElm0, IntElm, VT0, VT1),
+   A1 := A+1,
+   match_string_and_integer(A1, N, StrVect1, IntVect1, IntVect, VT1, VT).
+match_string_and_integer(N, N, _, IntVect0, IntVect, VT0, VT) :- true |
+   IntVect0=IntVect, VT0=VT.
+
+integer_to_string(Intterm0, VTbl0, StrTerm) :- vector(VTbl0, Size) |
+   integer_to_string(Intterm0, VTbl0, _, Size, StrTerm).
+
+integer_to_string(Intterm0, VTbl0, VTbl, StrTerm) :- vector(VTbl0, Size) |
+   integer_to_string(Intterm0, VTbl0, VTbl, Size, StrTerm).
+
+integer_to_string(Atom0, VT0, VT, _, Atom) :- atom(Atom0) |
+   VT0=VT, Atom0=Atom.
+integer_to_string(vector(IntVect0), VT0, VT, Size, WStrVect) :-
+        vector(IntVect0, N) |
+   integer_to_string(0, N, IntVect0, VT0, VT, Size, StrVect),
+   WStrVect=vector(StrVect).
+integer_to_string(list([IntCar|IntCdr]), VT0, VT, Size, WStrList) :- true |
+   integer_to_string(IntCar, VT0, VT1, Size, NewIntCar),
+   integer_to_string(IntCdr, VT1, VT, Size, NewIntCdr),
+   WStrList=list([NewIntCar|NewIntCdr]).
+integer_to_string(variable(N), VT0, VT, Size, VStr) :- N < Size |
+   set_vector_element(VT0, N, Str, Str, VT),
+   check_void(Str, N, VStr).
+integer_to_string(variable(N), VT0, VT, Size, VStr) :- N >= Size |
+   VT0=VT, VStr=variable(N).
+otherwise.
+integer_to_string(Arg0, VT0, VT, _, Arg) :- true |
+   Arg0=Arg, VT0=VT.
+
+%%check_void("_", N, VStr) :- true |
+%%   VStr=variable(N).
+%%otherwise.
+check_void(Str, _, VStr) :- true |
+   VStr=variable(Str).
+
+integer_to_string(A, N, IntVect0, VT0, VT, Size, StrVect) :- A<N |
+   set_vector_element(IntVect0, A, Ele0, Ele, IntVect1),
+   integer_to_string(Ele0, VT0, VT1, Size, Ele),
+   A1 := A+1,
+   integer_to_string(A1, N, IntVect1, VT1, VT, Size, StrVect).
+integer_to_string(N, N, IntVect0, VT0, VT, _, StrVect) :- true |
+   IntVect0=StrVect, VT0=VT.
+
+numbervars(Term0, Term) :- true |
+   pool:keyed_bag(Pool0, 100),
+   numberVars(Pool0, [], 0, N, Term0, Term).
+
+:- local_implicit pool:oldnew, num:oldnew.
+numberVars(variable(N), Var) --> true |
+    &pool <<= [empty(N, YorN)],
+    numberVars_(YorN, N, Var).
+numberVars(vector(Vect0), WVect) --> vector(Vect0, N) |
+   WVect=vector(Vect),
+   numberVars(0, N, Vect0, Vect).
+numberVars(list([Car|Cdr]), WList) --> true |
+   WList=list([NewCar|NewCdr]),
+   numberVars(Car, NewCar),
+   numberVars(Cdr, NewCdr).
+otherwise.
+numberVars(Arg0, Arg) --> true | Arg0=Arg.
+
+numberVars(A, N, Vect0, Vect) --> A<N |
+ {{set_vector_element(Vect0, A, El0, El, Vect1)}},
+   numberVars(El0, El),
+   A1 := A+1,
+   numberVars(A1, N, Vect1, Vect).
+numberVars(N, N, Vect0, Vect) --> true | Vect0=Vect.
+
+numberVars_(yes, Str, Var) --> true |
+    Var = variable(&num(old)),
+    &pool <<= [put(Str, &num(old))],
+    &num <= &num + 1.
+numberVars_(no, Str, Var) --> true |
+    &pool <<= [get_and_put(Str, N, N)],
+    Var=variable(N).
+
+count_variables(variable(N1), X, N0, N) :- N0=<N1 | N := N1+1, X=variable(N1).
+count_variables(variable(N1), X, N0, N) :- N0>N1 | N0=N, X=variable(N1).
+count_variables(list([H0|T0]), List, N0, N) :- true |
+   count_variables(H0, H, N0, N1),
+   count_variables(T0, T, N1, N),
+   List=list([H|T]).
+count_variables([H0|T0], List, N0, N) :- true |
+   count_variables(H0, H, N0, N1),
+   count_variables(T0, T, N1, N),
+   List=[H|T].
+otherwise.
+count_variables(vector(Vect0), WVect, N0, N) :- vector(Vect0,A) |
+   count_variables_args(0, A, Vect0, Vect, N0, N),
+   WVect=vector(Vect).
+otherwise.
+count_variables(X0, X, N0, N) :- true | N0=N, X0=X.
+
+count_variables_args(K, A, Vect0, Vect, N0, N) :- K<A |
+   set_vector_element(Vect0, K, E0, E, Vect1),  % debug 871014
+   count_variables(E0, E, N0, N1),
+   K1 := K+1,
+   count_variables_args(K1, A, Vect1, Vect, N1, N).
+count_variables_args(K, K, Vect0, Vect, N0, N) :- true | N0=N, Vect0=Vect.

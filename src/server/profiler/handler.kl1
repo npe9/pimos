@@ -1,0 +1,64 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module profiling_handler.
+:- with_macro pimos.
+:- public create/1, stop_profile/0.
+
+
+create(S) :- true|
+    merge(S,HDL),
+    shoen:raise(pimos_tag#task,general_request,[timer(TimReq)]),
+    create_with_timer_request(HDL,TimReq).
+
+create_with_timer_request(HDL,normal(TREQ,_,_)) :- true|
+    profiling_process:create(Prof),
+    handler(HDL,TREQ,Prof,0).   % 0 is handler ID.
+
+
+handler([create(SAb,CAb,Itv,Itm,Nds,Unit,{Nd,From,_To},USR,UAb,Att,Ctr,Ab)|HDL],
+  TREQ,Prof,Cnt) :- true|
+    TREQ=[create(Nd,TIMER)|TREQ1],
+    system_timer_or_default(TIMER,TREQ1,TREQ2,TimerStatus),
+    select_profiler(Nds,Prof,Prof1,Selected),
+    profiling_device:create(SAb,CAb,From,Itv,Itm,Unit,USR,UAb,Att,Ctr,Ab,TimerStatus,Selected,Cnt),
+    handler(HDL,TREQ2,Prof1,~(Cnt+1)).
+handler([],TREQ,Prof,_) :- true| TREQ=[], close(Prof).
+
+
+system_timer_or_default(normal(TIMER,Ab,At),TREQ,TREQ1,Status) :- true|
+    TREQ1=TREQ, Status=normal(TIMER,Ab,At).
+otherwise.
+system_timer_or_default(_,                  TREQ,TREQ1,Status) :- true|
+    TREQ=[create(Status)|TREQ1].
+
+
+select_profiler([Pe|Pes],Prof,NewProf,Selected) :- true|
+    set_vector_element(Prof,Pe,S,S2,Prof1),
+    S={S1,S2},
+    Selected=[{Pe,S1}|Selected1],
+    select_profiler(Pes,Prof1,NewProf,Selected1).
+select_profiler([],Prof,NewProf,Selected) :- true| NewProf=Prof, Selected=[].
+
+close(Prof) :- vector(Prof,N)| close(0,N,Prof).
+close(N,N,_) :- true| true.
+otherwise.
+close(N,Sz,Prof) :- true| 
+    set_vector_element(Prof,N,[],[],Prof1),
+    close(~(N+1),Sz,Prof1).
+
+stop_profile :- true| 
+    current_node(_,Nodes),
+    stop_profiles(0,Nodes).
+
+stop_profiles(N,N) :- true| true.
+otherwise.
+stop_profiles(N,Nodes) :- true| 
+    stop_prof@node(N),
+    stop_profiles(~(N+1),Nodes).
+
+stop_prof :- true| processor_profile({},_).

@@ -1,0 +1,196 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class performance_meter has
+
+nature
+    pimfep##as_pimos_string_io_device ;
+%    as_program ;
+
+
+instance
+
+attribute
+    window,
+    hidden_window,
+    pe_pool,
+    interval,
+    info,
+    pex,
+    pey,
+    reset_p := 0 ,
+    monitor ,
+    color,
+    type := rmonitor;
+
+:io(O, Command, ToFEP, FromFEP) :-
+    execute(Command, ToFEP, O, FromFEP);
+
+:kill(O) :- 
+    :kill(O!monitor);
+
+local
+
+
+execute(3, String, O, FromFEP) :- !,
+    string_element(String, 0, Type),
+    ( Type = 0 ,!, O!type := rmonitor ;
+      Type = 1 ,!, O!type := pmeter ;
+      Type = 2 ,!, O!type := amonitor ;
+      Type = 3 ,!, O!type := hmonitor ),
+    FromFEP = string#"" ;
+
+execute(1, String, O, FromFEP) :-!,      
+    string_element(String, 0, PEx),
+    string_element(String, 1, PEy),
+    string_element(String, 2, Interval),
+    string_element(String, 3, Info),
+    string_element(String, 4, Color),
+    O!pex := PEx,
+    O!pey := PEy,
+    O!interval := Interval,
+    O!info := Info,
+    ( :get_plane_count(#bitmap,PCount),
+      PCount >= 6,
+      Color = 1 ,!, O!color := color ;
+      O!color := mono ),
+    init(O!type,String,O,FromFEP);
+execute(2, String, O, FromFEP) :- !,
+    :draw(O!monitor,String),
+    FromFEP = string#"" ;
+
+execute(_, String, O, FromFEP) :- !,
+    FromFEP = string#"" ;
+
+init(rmonitor,String,O,FromFEP):-!,
+    O!pex = PEx,
+    O!pey = PEy,
+    :get_size(#screen,SW,SH),
+    set_rec_size(PEx*PEy,SW,SH,RW,RH,Cycle),
+    ( SW >= 1, SH >= 1, Cycle >= 5,!,
+     ( O!color = color ,!,
+      Attribute = [size(RW,RH),cycle(Cycle),scroll(2),display(color)] ;
+      Attribute = [size(RW,RH),cycle(Cycle),scroll(2),display(mono)] ),
+      :create(#runtime_monitor,W,PEx*PEy,Attribute),
+      :activate(W),
+      make_title(O!info,Title),
+      :set_title(W!window,Title),
+      O!monitor := W,
+      FromFEP = string#"" ;
+      :confirm(#messenger,"   Cannot create   "),
+      FromFEP = string#"abnormal" );
+            
+init(pmeter,String,O,FromFEP):-!,
+    ( O!color = color ,!,
+      :create(#c_p_meter,O!pex,O!pey,O!interval,W) ;
+      :create(#p_meter,O!pex,O!pey,O!interval,W) ),
+    make_title_p(O!info,Title),
+    :set_title(W!window,Title),
+    O!monitor := W,
+    FromFEP = string#"" ;
+
+init(amonitor,String,O,FromFEP):-!,
+    O!pex = PEx,
+    O!pey = PEy,
+    ( O!color = color ,!,
+      Attribute = [size(16,15),cycle(30),scroll(2),display(color)] ;
+      Attribute = [size(16,15),cycle(30),scroll(2),display(mono)] ),
+    :create(#overall_runtime_monitor,W,Attribute),
+    :activate(W),
+    :get_number_string(#symbolizer,PEx*PEy,PE),
+    :append(#string,[" ParaGraph Runtime Monitor (Average)  Node:",PE],TString),              
+    :set_title(W!window,TString),
+    O!monitor := W,
+    FromFEP = string#"" ;
+
+init(hmonitor,String,O,FromFEP):-!,
+    O!pex = PEx,
+    O!pey = PEy,
+    :get_size(#screen,SW,SH),
+    set_rec_size(PEx*PEy,SW,SH,RW,RH,Cycle),
+    ( SW >= 1, SH >= 1, Cycle >= 5,!,
+     ( O!color = color ,!,
+      Attribute = [size(RW,RH),cycle(10),scroll(2),display(color)] ;
+      Attribute = [size(RW,RH),cycle(10),scroll(2),display(mono)] ),
+      :create(#runtime_monitor,W,PEx*PEy,Attribute),
+      :activate(W),
+      :set_title(W!window," ParaGraph Heap Monitor"),
+      O!monitor := W,
+      FromFEP = string#"" ;
+      :confirm(#messenger,"   Cannot create   "),
+      FromFEP = string#"abnormal" );
+
+set_rec_size(PE,SW,SH,RW,RH,Cycle):-
+    PE =< 32,
+    HSpace = 69,
+    PE*15 + HSpace < SH,!,
+    RW = 16, RH = 15,
+    check_width(624,SW,RW,Cycle);
+set_rec_size(PE,SW,SH,RW,RH,Cycle):-
+    PE =< 32,!,
+    HSpace = 69,
+    RH = (SH - HSpace)/PE,
+    RW = RH+2,
+    check_width(624,SW,RW,Cycle);
+set_rec_size(PE,SW,SH,RW,RH,Cycle):-
+    PE =< 64,
+    HSpace = 69,
+    PE*10 + HSpace < SH,!,
+    RW = 12, RH = 10,
+    check_width(500,SW,RW,Cycle);
+set_rec_size(PE,SW,SH,RW,RH,Cycle):-
+    PE =< 64,!,
+    HSpace = 69,
+    RH = (SH - HSpace)/PE,
+    RW = RH+2,
+    check_width(500,SW,RW,Cycle);
+set_rec_size(PE,SW,SH,RW,RH,Cycle):-
+    PE =< 256,
+    HSpace = 69,
+    PE*3 + HSpace < SH,!,
+    RW = 16, RH = 3,
+    check_width(624,SW,RW,Cycle);
+set_rec_size(PE,SW,SH,RW,RH,Cycle):-
+    PE =< 256,!,
+    RH = 1, RW = 10, Cycle =20;
+
+check_width(Limit,SW,RW,Cycle):-
+    Limit < SW,!,
+    Cycle = 30;
+check_width(Limit,SW,RW,Cycle):-
+    Limit >= SW,!,
+    WSpace = 144,
+    Cycle = (SW - WSpace)/RW;
+ 
+
+   
+make_title(111,Title):-!,
+    Title = " ParaGraph Runtime Monitor (C+R+S)";
+make_title(100,Title):-!,
+    Title = " ParaGraph Runtime Monitor (C)";
+make_title(110,Title):-!,
+    Title = " ParaGraph Runtime Monitor (C+S)";
+make_title(101,Title):-!,
+    Title = " ParaGraph Runtime Monitor (C+R)";
+make_title(011,Title):-!,
+    Title = " ParaGraph Runtime Monitor (R+S)";
+make_title(010,Title):-!,
+    Title = " ParaGraph Runtime Monitor (S)";
+make_title(001,Title):-!,
+    Title = " ParaGraph Runtime Monitor (R)";
+
+make_title_p(111,Title):-!,
+    Title = " Performance Meter (C+R+S)";
+make_title_p(100,Title):-!,
+    Title = " Performance Meter (C)";
+make_title_p(110,Title):-!,
+    Title = " Performance Meter (C+S)";
+make_title_p(101,Title):-!,
+    Title = " Performance Meter (C+R)";
+make_title_p(011,Title):-!,
+    Title = " Performance Meter (R+S)";
+make_title_p(010,Title):-!,
+    Title = " Performance Meter (S)";
+make_title_p(001,Title):-!,
+    Title = " Performance Meter (R)";
+
+end.

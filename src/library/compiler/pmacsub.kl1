@@ -1,0 +1,788 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi540::>sys>user>sekita>MACRO>pmacsub.kl1.4, 01-Oct-91 19:22:38, Edit by sekita
+%
+% utility for PIMOS macro.
+%
+:- module kl1cmp_pimos_macro.
+:- public convertPragma/2.
+:- public convert_string_to_integer/6.
+:- public convert_math_macro/8.
+:- public calcurate_right_hand/3.
+:- public convert_list_to_vector/2.
+:- with_macro pimos.
+%
+% convert pragma
+%
+:- include("pimos.h").
+
+convertPragma(vector({atom((@)),Pragma0,Pragma1}), NewPragma) :- true |
+    convertPragma(Pragma0, NewPragma0),
+    convertPragma(Pragma1, NewPragma1),
+    NewPragma=vector({atom((@)),NewPragma0,NewPragma1}).
+%%convertPragma(vector({atom(node),P}), Pragma) :- true |
+%%    Pragma=vector({atom(processor),P}).
+convertPragma(vector({atom(processor),P}), Pragma) :- true |
+    Pragma=vector({atom(node), P}).
+convertPragma(vector({atom(priority), P}), Pragma) :- true |
+    Pragma=vector({atom(priority), atom('*'), P}).
+convertPragma(vector({atom(relative_priority), P}), Pragma) :- true |
+    Pragma=vector({atom(priority), atom('$'), P}).
+otherwise.
+convertPragma(Pragma0, Pragma) :- true | Pragma0=Pragma.
+
+
+%
+% convert string to integer
+%
+convert_string_to_integer(A, N, Str0, Arg0, Arg, Base) :- A<N |
+    convert_string_to_integer(normal, A, N, Str0, 0, Arg0, Arg, Base).
+convert_string_to_integer(N, N, _, Arg0, Arg, _) :-  true |
+    Arg=integer(Arg0).
+
+convert_string_to_integer(normal, A, N, Str0, 0, Arg0, Arg, Base) :- A<N |
+    string_element(Str0, A, Ele, Str1),
+    convert_one_element_to_integer(Ele, OneArg, Stat),
+    check_one_character(Stat, A, N, Str1, OneArg, 0, Arg0, Arg, Base).
+convert_string_to_integer(normal, N, N, _, 0, Arg0, Arg, _) :- true |
+    Arg=integer(Arg0).
+otherwise.
+convert_string_to_integer(_, _, _, Str0, _, _, Arg, Base) :- true |
+    Arg=vector({atom('`'), vector({atom(#), integer(Base), string(Str0)})}).
+
+check_one_character(normal, A, N, Str, OneArg, 0, Arg0, Arg, Base) :- OneArg < Base |
+    double_num:multiply(0, Arg0, 0, Base, Hi0, Low),
+    double_num:add(Hi0, Low, 0, OneArg, Hi1, Arg1),
+    A1 := A+1,
+    convert_string_to_integer(normal, A1, N, Str, Hi1, Arg1, Arg, Base).
+otherwise.
+check_one_character(_, _, _, Str, _, _, _, Arg, Base) :- true |
+    Arg=vector({atom('`'), vector({atom((#)), integer(Base), string(Str)})}).
+
+convert_one_element_to_integer(Ele, OneArg, Stat) :- Ele >= 16#"2330", Ele =< 16#"2339" |
+    OneArg := Ele - 16#"2330", Stat=normal.
+convert_one_element_to_integer(Ele, OneArg, Stat) :- Ele >=16#"2341", Ele =< 16#"235A" |
+    OneArg := Ele - 16#"2341" + 10, Stat=normal.
+convert_one_element_to_integer(Ele, OneArg, Stat) :- Ele >= 16#"2361", Ele =< 16#"237A" |
+    OneArg := Ele - 16#"2361" + 10, Stat=normal.
+otherwise.
+convert_one_element_to_integer(_, OneArg, Stat) :- true |
+    OneArg = '$NOT_FOUND', Stat=abnormal.
+
+%
+% convert mathematical macros
+%
+
+:- local_implicit stream:oldnew.
+convert_math_macro(Z0, Z, Type, Term0, PreInstr, Term) --> true |
+    {{checkLHS(&stream, Z0, Z),
+      calcurate_right_hand(Type, Term0, Term1),
+      convert_math_macro(&stream, Type, PreInstr, Term1, Term)}}.
+
+
+:- local_implicit stream:oldnew.
+checkLHS(variable(Z0), Z) --> true | Z=variable(Z0).
+otherwise.
+checkLHS(Z0, Z) --> true |
+%%    &stream <<= [warning("instanciated value of LHS of ':=' : ~W", [Z0])],
+    Z=Z0.
+
+convert_math_macro(Type, PreInstr, Term0, Term) --> true |
+    convert_math_macro(PreList, [], Type, Term0, Term),
+%%  {{convert_list_to_term(PreList, PreInstr)}}.
+  {{convert_list_to_vector(PreList, PreInstr0),
+    PreInstr=vector({vector(PreInstr0)})}}.
+
+convert_list_to_vector(PreList0, PreInstr) :- true |
+    length(PreList, [], PreList0, 0, N),
+    new_vector(PreInstr0, N),
+    convert_list_to_vector(PreList, 0, N, PreInstr0, PreInstr).
+
+length(P0, P, [Instr|PreList], A, N) :- true |
+    A1  := A+1,
+    P0=[Instr|P1],
+    length(P1, P, PreList, A1, N).
+length(P0, P, [], A, N) :- true | P0=P, A=N.
+
+convert_list_to_vector([Instr0|PreList], A, N, PreInstr0, PreInstr) :- A<N |
+    set_vector_element(PreInstr0, A, _, Instr0, PreInstr1),
+    A1 := A+1,
+    convert_list_to_vector(PreList, A1, N, PreInstr1, PreInstr).
+otherwise.
+convert_list_to_vector(_, N, N, PreInstr0, PreInstr) :- true | PreInstr0=PreInstr.
+
+convert_list_to_term([Goal], Instr) :- true |
+    Instr=Goal.
+otherwise.
+convert_list_to_term([Goal|Cdr], Instr0) :- true |
+    Instr0=vector(Goal, Instr),
+    convert_list_to_term(Cdr, Instr).
+convert_list_to_term([], Instr) :- true | Instr=atom(true).
+
+
+
+:- local_implicit stream:oldnew, pre:oldnew.
+convert_math_macro(integer, vector({atom((+)), integer(X), integer(Y)}), WTerm) --> add(X,Y,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom((-)), integer(X), integer(Y)}), WTerm) --> subtract(X,Y,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom((*)), integer(X), integer(Y)}), WTerm) --> multiply(X,Y,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom((/)), integer(X), integer(Y)}), WTerm) --> divide(X,Y,Term0) |
+    WTerm=integer(Term0).
+:- if_equal(floating_point, yes).
+convert_math_macro(floating, vector({atom((+)), integer(X), integer(Y)}), WTerm) -->
+        floating_point_add(X,Y,Term0) |
+    WTerm=floating_point(Term0).
+convert_math_macro(floating, vector({atom((-)), integer(X), integer(Y)}), WTerm) -->
+        floating_point_subtract(X,Y,Term0) |
+    WTerm=floating_point(Term0).
+convert_math_macro(floating, vector({atom((*)), integer(X), integer(Y)}), WTerm) -->
+        floating_point_multiply(X,Y,Term0) |
+    WTerm=floating_point(Term0).
+convert_math_macro(floating, vector({atom((/)), integer(X), integer(Y)}), WTerm) -->
+        floating_point_divide(X,Y,Term0) |
+    WTerm=floating_point(Term0).
+:- end_if.
+:- if_equal(extended_floating_point, yes).
+convert_math_macro(extended_floating,
+            vector({atom((+)), extended_floating_point(X), extended_floating_point(Y)}), WTerm) -->
+        extended_floating_point_add(X,Y,Term0) |
+    WTerm=extended_floating_point(Term0).
+convert_math_macro(extended_floating,
+            vector({atom((-)), extended_floating_point(X), extended_floating_point(Y)}), WTerm) -->
+        extended_floating_point_subtract(X,Y,Term0) |
+    WTerm=extended_floating_point(Term0).
+convert_math_macro(extended_floating,
+            vector({atom((*)), extended_floating_point(X), extended_floating_point(Y)}), WTerm) -->
+        extended_floating_point_multiply(X,Y,Term0) |
+    WTerm=extended_floating_point(Term0).
+convert_math_macro(extended_floating,
+            vector({atom((/)), extended_floating_point(X), extended_floating_point(Y)}), WTerm) -->
+        extended_floating_point_divide(X,Y,Term0) |
+    WTerm=extended_floating_point(Term0).
+convert_math_macro(floating,
+            vector({atom(xtof), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point_to_floating_point(X, Term0) |
+    WTerm=floating_point(Term0).
+convert_math_macro(integer,
+            vector({atom(xtoi), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point_to_integer(X, Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(extended_floating, vector({atom((-)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_neg(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((itox)), integer(X)}), WTerm) -->
+        integer_to_extended_floating_point(X, Term) |
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((ftox)), floating_point(X)}), WTerm) -->
+        floating_point_to_extended_floating_point(X, Term0) |
+    WTerm=extended_floating_point(Term0).
+convert_math_macro(extended_floating, vector({atom((abs)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_abs(X, Term)}}, WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((-)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_neg(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((sqrt)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _),
+        integer_to_floating_point(0, EZero),
+        extended_floating_point_not_less_than(X, EZero) |
+  {{extended_floating_point_sqrt(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((exp)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_etox(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((ln)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _),
+        integer_to_extended_floating_point(0, EZero),
+        extended_floating_point_not_less_than(X, EZero) |
+  {{extended_floating_point_logn(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((log2)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _),
+        integer_to_extended_floating_point(0, EZero),
+        extended_floating_point_not_less_than(X, EZero) |
+  {{extended_floating_point_log2(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((log)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _),
+        integer_to_extended_floating_point(0, EZero),
+        extended_floating_point_not_less_than(X, EZero) |
+  {{extended_floating_point_log10(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((sin)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_sin(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((cos)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_cos(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((tan)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_tan(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((asin)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_asin(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((acos)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_acos(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((atan)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_atan(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((sinh)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_sinh(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((cosh)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_cosh(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((tanh)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_tanh(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom((atanh)), extended_floating_point(X)}), WTerm) -->
+        extended_floating_point(X, _) |
+  {{extended_floating_point_atanh(X, Term)}},
+    WTerm=extended_floating_point(Term).
+convert_math_macro(extended_floating, vector({atom(('**')), extended_floating_point(X),
+                                                            extended_floating_point(Y)}), WTerm) -->
+        extended_floating_point(X, _), extended_floating_point(Y,_) |
+  {{extended_floating_point_logn(X, LogX),
+    extended_floating_point_multiply(Y, LogX, YLogX),
+    extended_floating_point_etox(YLogX, Z)}},
+    WTerm = extended_floating_point(Z).
+:- end_if.
+convert_math_macro(integer, vector({atom((mod)), integer(X), integer(Y)}), WTerm) --> modulo(X,Y,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom(\/), integer(X), integer(Y)}), WTerm) --> or(X,Y,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom(/\), integer(X), integer(Y)}), WTerm) --> and(X,Y,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom(xor), integer(X), integer(Y)}), WTerm) --> exclusive_or(X,Y,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom(<<), integer(X), integer(Y)}), WTerm) --> shift_left(X,Y,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom(>>), integer(X), integer(Y)}), WTerm) --> shift_right(X,Y,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom(\), integer(X)}), WTerm) --> complement(X,Term0) |
+    WTerm=integer(Term0).
+:- if_equal(floating_point, yes).
+convert_math_macro(integer, vector({atom(int), floating_point(X)}), WTerm) --> floating_point_to_integer(X,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(integer, vector({atom(ftoi), floating_point(X)}), WTerm) --> floating_point_to_integer(X,Term0) |
+    WTerm=integer(Term0).
+convert_math_macro(floating, vector({atom(float), integer(X)}), WTerm) --> integer_to_floating_point(X, Term0) |
+    WTerm=floating_point(Term0).
+convert_math_macro(floating, vector({atom(itof), integer(X)}), WTerm) --> integer_to_floating_point(X, Term0) |
+    WTerm=floating_point(Term0).
+:- end_if.
+convert_math_macro(integer, vector({atom(-), integer(X)}), WTerm) --> subtract(0, X, Term0) |
+    WTerm=integer(Term0).
+:- if_equal(floating_point, yes).
+convert_math_macro(floating, vector({atom((-)), floating_point(X)}), WTerm) -->
+        floating_point_multiply(-1.0, X, Term0) |
+    WTerm=floating_point(Term0).
+:- end_if.
+otherwise.
+convert_math_macro(integer, vector({atom((+)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(add), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((-)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(subtract), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((*)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(multiply), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((/)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(divide), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+:- if_equal(floating_point, yes).
+convert_math_macro(floating, vector({atom((+)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(floating_point_add), vector({atom(($~)), X}), vector({atom(($~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(floating, vector({atom((-)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(floating_point_subtract), vector({atom(($~)), X}), vector({atom(($~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(floating, vector({atom((*)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(floating_point_multiply), vector({atom(($~)), X}), vector({atom(($~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(floating, vector({atom((/)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(floating_point_divide), vector({atom(($~)), X}), vector({atom(($~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+:- end_if.
+:- if_equal(extended_floating_point, yes).
+convert_math_macro(extended_floating,
+            vector({atom((+)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_add),
+                vector({atom(($$~)), X}), vector({atom(($$~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(extended_floating,
+            vector({atom((-)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_subtract),
+                vector({atom(($$~)), X}), vector({atom(($$~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(extended_floating,
+            vector({atom((*)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_multiply),
+                vector({atom(($$~)), X}), vector({atom(($$~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(extended_floating,
+            vector({atom((/)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_divide),
+                vector({atom(($$~)), X}), vector({atom(($$~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(extended_floating, vector({atom((abs)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_abs), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((-)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_neg), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((sqrt)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_sqrt), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((exp)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_etox), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((ln)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_logn), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((log2)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_log2), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((log)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_log10), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((sin)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_sin), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((cos)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_cos), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((tan)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_tan), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((asin)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_asin), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((acos)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_acos), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((atan)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_atan), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((sinh)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_sinh), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((cosh)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_cosh), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((tanh)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_tanh), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom((atanh)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_atanh), vector({atom(($$~)), X}), Y})],
+    &stream <<= [new_variable(Y)], WTerm=Y.
+convert_math_macro(extended_floating, vector({atom(('**')), X, Y}), WTerm) --> true |
+    &pre <<= [vector({vector({atom(('#')), atom(builtin), atom(pow)}),
+                             vector({atom(($$~)), X}), vector({atom(($$~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(extended_floating, vector({atom((itox)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(integer_to_extended_floating_point),
+                              vector({atom((~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(extended_floating, vector({atom((ftox)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(floating_point_to_extended_floating_point),
+                              vector({atom(($~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((xtoi)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_to_integer),
+                              vector({atom(($$~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(floating, vector({atom((xtof)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(extended_floating_point_to_floating_point),
+                              vector({atom(($$~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+:- end_if.
+convert_math_macro(integer, vector({atom((\/)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(or), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((/\)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(and), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((xor)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(exclusive_or), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((<<)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(shift_left), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((>>)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(shift_right), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((mod)), X, Y}), WTerm) --> true |
+    &pre <<= [vector({atom(modulo), vector({atom((~)), X}), vector({atom((~)), Y}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((\)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(complement), vector({atom((~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom((-)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(subtract), integer(0), vector({atom((~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+:- if_equal(floating_point, yes).
+convert_math_macro(integer, vector({atom(int), X}), WTerm) --> true |
+    &pre <<= [vector({atom(floating_point_to_integer), vector({atom(($~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(integer, vector({atom(ftoi), X}), WTerm) --> true |
+    &pre <<= [vector({atom(floating_point_to_integer), vector({atom(($~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(floating, vector({atom(float), X}), WTerm) --> true |
+    &pre <<= [vector({atom(integer_to_floating_point), vector({atom((~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(floating, vector({atom(itof), X}), WTerm) --> true |
+    &pre <<= [vector({atom(integer_to_floating_point), vector({atom((~)), X}), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(floating, vector({atom((-)), X}), WTerm) --> true |
+    &pre <<= [vector({atom(floating_point_multiply), vector({atom(($~)), X}), floating_point(-1.0), Z})],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+:- end_if.
+:- if_equal(bignum, yes).
+convert_math_macro(bignum, vector({atom((+)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:add('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(bignum, vector({atom((-)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:subtract('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(bignum, vector({atom((*)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:multiply('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(bignum, vector({atom((/)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:divide('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(bignum, vector({atom((mod)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:modelo('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(bignum, vector({atom((<<)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:shift_left_abs('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(bignum, vector({atom((>>)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:shift_right_abs('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(bignum, vector({atom((-)), X}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:negate('^~'(X), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+:- end_if.
+otherwise.
+convert_math_macro(_, Term0, Term) --> true | Term0=Term.
+
+%
+% for Implicit macro
+%
+calcurate_right_hand(integer, vector({atom((/)), integer(X), integer(0)}), WAns) :- true |
+   WAns = vector({atom((/)), integer(X), integer(0)}).
+:- if_equal(floating_point, yes).
+calcurate_right_hand(floating, vector({atom((/)), floating_point(X), floating_point(Y)}), WAns) :-
+        Y $=:= 0.0 |
+   WAns = vector({atom((/)), floating_point(X), floating_point(Y)}).
+:- end_if.
+otherwise.
+calcurate_right_hand(integer, vector({atom((+)), integer(X), integer(Y)}), WAns) :- Ans := X+Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((-)), integer(X), integer(Y)}), WAns) :- Ans := X-Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((*)), integer(X), integer(Y)}), WAns) :- Ans := X*Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((/)), integer(X), integer(Y)}), WAns) :- Ans := X/Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((mod)), integer(X), integer(Y)}), WAns) :- Ans := X mod Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((<<)), integer(X), integer(Y)}), WAns) :-  Ans := X << Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((>>)), integer(X), integer(Y)}), WAns) :- Ans := X >> Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((/\)), integer(X), integer(Y)}), WAns) :- Ans := X /\ Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((\/)), integer(X), integer(Y)}), WAns) :- Ans := X \/ Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((xor)), integer(X), integer(Y)}), WAns) :- Ans := X xor Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((-)), integer(X)}), WAns) :- Ans := - X |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((\)), integer(X)}), WAns) :- Ans := -1 xor X |
+   WAns=integer(Ans).
+:- if_equal(floating_point, yes).
+calcurate_right_hand(integer, vector({atom(int), floating_point(X)}), WAns) :- Ans := int(X) |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom(ftoi), floating_point(X)}), WAns) :- Ans := int(X) |
+   WAns=integer(Ans).
+:- end_if.
+%%calcurate_right_hand(integer, vector({atom((+)), integer(X)}), WAns) :- true |
+%%    Ans = X, WAns=integer(X).
+:- if_equal(floating_point, yes).
+calcurate_right_hand(floating, vector({atom((+)), floating_point(X), floating_point(Y)}), WAns) :- 
+            Ans $:= X+Y |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom((-)), floating_point(X), floating_point(Y)}), WAns) :-
+        Ans $:= X-Y |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom((*)), floating_point(X), floating_point(Y)}), WAns) :-
+        Ans $:= X*Y |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom((/)), floating_point(X), floating_point(Y)}), WAns) :-
+        Ans $:= X/Y |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom((-)), floating_point(X)}), WAns) :- Ans $:= - X |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom(float), integer(X)}), WAns) :- Ans $:= float(X) |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom(itof), integer(X)}), WAns) :- Ans $:= float(X) |
+    WAns=floating_point(Ans).
+%%calcurate_right_hand(floating, vector({atom((+)), floating_point(X)}), WAns) :- true |
+%%    Ans = X, WAns=floating_point(Ans).
+:- end_if.
+:- if_equal(extended_floating_point, yes).
+calcurate_right_hand(extended_floating,
+            vector({atom((+)), extended_floating_point(X), extended_floating_point(Y)}), WTerm) :-
+        extended_floating_point_add(X,Y,Term0) |
+    WTerm=extended_floating_point(Term0).
+calcurate_right_hand(extended_floating,
+            vector({atom((-)), extended_floating_point(X), extended_floating_point(Y)}), WTerm) :-
+        extended_floating_point_subtract(X,Y,Term0) |
+    WTerm=extended_floating_point(Term0).
+calcurate_right_hand(extended_floating,
+            vector({atom((*)), extended_floating_point(X), extended_floating_point(Y)}), WTerm) :-
+        extended_floating_point_multiply(X,Y,Term0) |
+    WTerm=extended_floating_point(Term0).
+calcurate_right_hand(extended_floating,
+            vector({atom((/)), extended_floating_point(X), extended_floating_point(Y)}), WTerm) :-
+        extended_floating_point_divide(X,Y,Term0) |
+    WTerm=extended_floating_point(Term0).
+calcurate_right_hand(floating,
+            vector({atom(xtof), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point_to_floating_point(X, Term0) |
+    WTerm=floating_point(Term0).
+calcurate_right_hand(integer,
+            vector({atom(xtoi), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point_to_integer(X, Term0) |
+    WTerm=integer(Term0).
+calcurate_right_hand(extended_floating, vector({atom((-)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_neg(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((itox)), integer(X)}), WTerm) :-
+        integer_to_extended_floating_point(X, Term) |
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((ftox)), floating_point(X)}), WTerm) :-
+        floating_point_to_extended_floating_point(X, Term0) |
+    WTerm=extended_floating_point(Term0).
+calcurate_right_hand(extended_floating, vector({atom((abs)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_abs(X, Term)}}, WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((-)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_neg(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((sqrt)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _),
+        integer_to_floating_point(0, EZero),
+        extended_floating_point_not_less_than(X, EZero) |
+  {{extended_floating_point_sqrt(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((exp)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_etox(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((ln)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _),
+        integer_to_extended_floating_point(0, EZero),
+        extended_floating_point_not_less_than(X, EZero) |
+  {{extended_floating_point_logn(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((log2)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _),
+        integer_to_extended_floating_point(0, EZero),
+        extended_floating_point_not_less_than(X, EZero) |
+  {{extended_floating_point_log2(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((log)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _),
+        integer_to_extended_floating_point(0, EZero),
+        extended_floating_point_not_less_than(X, EZero) |
+  {{extended_floating_point_log10(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((sin)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_sin(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((cos)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_cos(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((tan)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_tan(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((asin)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_asin(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((acos)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_acos(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((atan)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_atan(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((sinh)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_sinh(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((cosh)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_cosh(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((tanh)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_tanh(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom((atanh)), extended_floating_point(X)}), WTerm) :-
+        extended_floating_point(X, _) |
+  {{extended_floating_point_atanh(X, Term)}},
+    WTerm=extended_floating_point(Term).
+calcurate_right_hand(extended_floating, vector({atom(('**')), extended_floating_point(X),
+                                                            extended_floating_point(Y)}), WTerm) :-
+        extended_floating_point(X, _), extended_floating_point(Y,_) |
+  {{extended_floating_point_logn(X, LogX),
+    extended_floating_point_multiply(Y, LogX, YLogX),
+    extended_floating_point_etox(YLogX, Z)}},
+    WTerm = extended_floating_point(Z).
+:- end_if.
+otherwise.
+calcurate_right_hand(integer, integer(X), Ans) :- true |
+    Ans=integer(X).
+:- if_equal(floating_point, yes).
+calcurate_right_hand(floating, floating_point(X), Ans) :- true |
+    Ans=floating_point(X).
+calcurate_right_hand(floating, vector({atom(float), X}), Ans) :- true |
+    calcurate_right_hand(integer, X, Ans0),
+    check_constant_or_not_float(integer, Ans0, Ans).
+calcurate_right_hand(floating, vector({atom(itof), X}), Ans) :- true |
+    calcurate_right_hand(integer, X, Ans0),
+    check_constant_or_not_float(integer, Ans0, Ans).
+:- end_if.
+%%calcurate_right_hand(floating, vector({atom(bignum_to_float), X}), Ans) :- true |
+%%    calcurate_right_hand(bignum, X, Ans0),
+%%    check_constant_or_not_float(bignum, Ans0, Ans).
+:- if_equal(floating_point, yes).
+calcurate_right_hand(integer, vector({atom(int), X}), Ans) :- true |
+    calcurate_right_hand(floating_point, X, Ans0),
+    check_constant_or_not_int(Ans0, Ans).
+:- end_if.
+%%calcurate_right_hand(bignum, Term, Ans) :- true |
+%%    calcBigNum(Term, Ans).
+otherwise.
+calcurate_right_hand(Type, vector({atom(Op), X, Y}), Ans) :- true |
+   calcurate_right_hand(Type, X, NewX),
+   calcurate_right_hand(Type, Y, NewY),
+   check_constant_or_not(Type, Op, NewX, NewY, Ans).
+calcurate_right_hand(Type, vector({atom(Op), X}), Ans) :- true |
+    calcurate_right_hand(Type, X, NewX),
+    check_constant_or_not(Type, Op, NewX, Ans).
+otherwise.
+calcurate_right_hand(Type, X, Ans) :- true | Ans=X.
+
+:- if_equal(floating_point, yes).
+check_constant_or_not_float(integer, integer(X), WAns) :- true |
+    Ans $:= float(X), WAns=floating_point(Ans).
+otherwise.
+check_constant_or_not_float(integer, X, WAns) :- true |
+    WAns=vector({atom(float), X}).
+
+check_constant_or_not_int(floating_point(X), WAns) :- true |
+    Ans := int(X), WAns=integer(Ans).
+otherwise.
+check_constant_or_not_int(X, WAns) :- true |
+    WAns=vector({atom(int), X}).
+:- end_if.
+%%check_constant_or_not(integer, (+), integer(X), Ans) :- true |
+%%    Ans = integer(X).
+check_constant_or_not(integer, (-), integer(X), Ans) :- Ans0 := -X |
+    Ans = integer(Ans0).
+%%check_constant_or_not(floating, (+), floating_point(X), Ans) :- true |
+%%    Ans = floating_point(X).
+:- if_equal(floating_point, yes).
+check_constant_or_not(floating, (-), floating_point(X), Ans) :- Ans0 $:= -X |
+    Ans = floating_point(Ans0).
+check_constant_or_not(integer, int, floating_point(X), Ans) :- Ans0 := int(X) |
+    Ans = integer(Ans0).
+check_constant_or_not(floating, float, integer(X), Ans) :- true |
+    Ans $:= float(X).
+:- end_if.
+:- if_equal(extended_floating_point, yes).
+check_constant_or_not(extended_floating, (-), extended_floating_point(X), Ans) :-
+        integer_to_extended_floating_point(0, EZero),
+        extended_floating_point_subtract(EZero, X, Ans0) |
+    Ans=extended_floating_point(Ans0).
+check_constant_or_not(extended_floating, itox, integer(X), Ans) :-
+        integer_to_extended_floating_point(X, Ans0) |
+    Ans=extended_floating_point(Ans0).
+check_constant_or_not(extended_floating, ftox, floating_point(X), Ans) :-
+        floating_point_to_extended_floating_point(X, Ans0) |
+    Ans=extended_floating_point(Ans0).
+check_constant_or_not(integer, xtoi, extended_floating_point(X), Ans) :-
+        integer_to_extended_floating_point(X, Ans0) |
+    Ans=integer(Ans0).
+check_constant_or_not(floating, xtof, extended_floating_point(X), Ans) :-
+        floating_point_to_extended_floating_point(X, Ans0) |
+    Ans=floating_point(Ans0).
+
+:- end_if.
+otherwise.
+check_constant_or_not(_, Op, Arg, Ans) :- true |
+    Ans=vector({atom(Op), Arg}).
+
+check_constant_or_not(integer, (+), integer(X), integer(Y), Ans) :- Ans0:=X+Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (-), integer(X), integer(Y), Ans) :- Ans0:=X-Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (*), integer(X), integer(Y), Ans) :- Ans0:=X*Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (/), integer(X), integer(Y), Ans) :- Ans0:=X/Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (mod), integer(X), integer(Y), Ans) :- Ans0:=X mod Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (<<), integer(X), integer(Y), Ans) :- Ans0:=X << Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (>>), integer(X), integer(Y), Ans) :- Ans0:=X >> Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (/\), integer(X), integer(Y), Ans) :- Ans0:=X /\ Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (\/), integer(X), integer(Y), Ans) :- Ans0:=X \/ Y |
+    Ans=integer(Ans0).
+:- if_equal(floating_point, yes).
+check_constant_or_not(floating, (+), floating_point(X), floating_point(Y), Ans) :- Ans0$:=X+Y |
+    Ans=floating_point(Ans0).
+check_constant_or_not(floating, (-), floating_point(X), floating_point(Y), Ans) :- Ans0$:=X-Y |
+    Ans=floating_point(Ans0).
+check_constant_or_not(floating, (*), floating_point(X), floating_point(Y), Ans) :- Ans0$:=X*Y |
+    Ans=floating_point(Ans0).
+check_constant_or_not(floating, (/), floating_point(X), floating_point(Y), Ans) :- Ans0$:=X/Y |
+    Ans=floating_point(Ans0).
+:- end_if.
+otherwise.
+check_constant_or_not(_, Op, X, Y, Ans) :- true |
+    Ans=vector({atom(Op), X, Y}).
+

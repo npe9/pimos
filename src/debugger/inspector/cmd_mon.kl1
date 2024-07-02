@@ -1,0 +1,382 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_cmd_monitor.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public execute/18,monitored_terms/12,write_monitored_terms/13,silent_mode/6,
+    if_get_term/7,check_param/7.
+
+execute(Abort,TID,X,X1,IR,IR1,WS,WS1,B,B1,V,V1,S,S1,MM,MM1,cmonitor(M,Pat,Str),Ac) :- true |
+        B=B1,V=V1,Ac=normal,
+        monitor(Abort,TID,X,X1,IR,IR1,WS,WS1,S,S1,MM,MM1,[],M,Pat,Str).
+execute(Abort,TID,X,X1,IR,IR1,WS,WS1,B,B1,V,V1,S,S1,MM,MM1,cmonitor(M,Pat),Ac) :- true |
+        B=B1,V=V1,Ac=normal,
+        builtin#new_string(Null,0),
+        monitor(Abort,TID,X,X1,IR,IR1,WS,WS1,S,S1,MM,MM1,[],M,Pat,Null).
+
+execute(Abort,TID,X,X1,IR,IR1,WS,WS1,B,B1,V,V1,S,S1,MM,MM1,cmonitor_and_fork(M,Pat,Str),Ac) :- true |
+        B=B1,V=V1,Ac=normal,
+        monitor(Abort,TID,X,X1,IR,IR1,WS,WS1,S,S1,MM,MM1,and_fork,M,Pat,Str).
+execute(Abort,TID,X,X1,IR,IR1,WS,WS1,B,B1,V,V1,S,S1,MM,MM1,cmonitor_and_fork(M,Pat),Ac) :- true |
+        B=B1,V=V1,Ac=normal,
+        builtin#new_string(Null,0),
+        monitor(Abort,TID,X,X1,IR,IR1,WS,WS1,S,S1,MM,MM1,and_fork,M,Pat,Null).
+
+execute(Abort,_,X,X1,IR,IR1,WS,WS1,B,B1,V,V1,S,S1,MM,MM1,monitored_terms,Ac) :- true |
+        X=X1,S=S1,
+        monitored_terms(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,Ac).
+
+execute(_,_,X,X1,IR,IR1,WS,WS1,B,B1,V,V1,S,S1,MM,MM1,stream_auto_mode,Ac) :- true |
+        X=X1,IR=IR1,B=B1,V=V1,S=S1,Ac=normal,
+        MM=[stream_auto_mode(normal(FStr,Info))|MM1],
+        WS=[putf(FStr,Info)|WS1].
+
+execute(_,_,X,X1,IR,IR1,WS,WS1,B,B1,V,V1,S,S1,MM,MM1,query_mode,Ac) :- true |
+        X=X1,IR=IR1,B=B1,V=V1,S=S1,Ac=normal,
+        MM=[query_mode(normal(FStr,Info))|MM1],
+        WS=[putf(FStr,Info)|WS1].
+
+execute(_,_,X,X1,IR,IR1,WS,WS1,B,B1,V,V1,S,S1,MM,MM1,silent_mode(Param),Ac) :- true |
+        X=X1,IR=IR1,B=B1,V=V1,S=S1,
+        silent_mode(WS,WS1,MM,MM1,Param,Ac).
+
+
+%*** monitor ***
+monitor(Abort,TID,X,X1,IR,IR1,WS,WS1,S,S1,MM,MM1,Fk,M,Pat,Str) :- true |
+        unbound(M,M0),
+        if_get_term(Ab,M0,X,X1,S,S1,Res),
+        wait_term(Abort,TID,Ab,Res,IR,IR1,WS,WS1,MM,MM1,Fk,Pat,Str).
+
+wait_term(Abort,_,Ab,_,IR,IR1,WS,WS1,MM,MM1,_,_,_) :- wait(Abort) |
+        Ab=abort,
+        IR=IR1,WS=WS1,MM=MM1.
+wait_term(_,_,Ab,_,[abort|IR],IR1,WS,WS1,MM,MM1,_,_,_) :- true |
+        Ab=abort,
+        IR=IR1,WS=WS1,MM=MM1.
+wait_term(_,TID,Ab,normal(Y,Y1,_),IR,IR1,WS,WS1,MM,MM1,Fk,Pat,Str) :- true |
+        Ab=[],IR=IR1,Y=Y1,
+        create_monitor(Fk,TID,Y,Pat,Str,MM,MM1,WS,WS1).
+wait_term(_,_,Ab,error(Type),IR,IR1,WS,WS1,MM,MM1,_,_,_) :- true |
+        Ab=[],IR=IR1,MM=MM1,
+        WS=[error(Type)|WS1].
+wait_term(_,_,Ab,atomic(Type,X,X1,_),IR,IR1,WS,WS1,MM,MM1,_,_,_) :- true |
+        Ab=[],X=X1,IR=IR1,MM=MM1,
+        WS=[putf(string#"~s~t~n",[string#">Cannot monitor : ",Type])|WS1].
+
+%if_get_term(_,{var(Y)},X,X1,S,S1,Res) :- true |
+%        X=X1,S=S1,Res=normal(Y,_,_).
+%otherwise.
+if_get_term(Ab,{M},X,X1,S,S1,Res) :- true |
+        inspector_cmd_inspect:temp_stack(TS,S,S1),
+        check_param(Ab,M,X,X1,TS,[repair_stack],Res).
+if_get_term(_,{_,_,M},X,X1,S,S1,Res) :- true |
+        X=X1,S=S1,Res=error(unwrapped_illegal_param(M)).
+
+check_param(Ab,{>,P,Q},X,X1,TS,TS1,Res) :- true |
+        check_param(Ab,P,X,X1,TS,TS0,R),
+        wait_first_check(Ab,Q,R,TS0,TS1,Res).
+check_param(_,'..',X,X1,TS,TS1,Res) :- true |
+        X=X1,
+        TS=[get(Parent)|TS0],
+        wait_parent(Parent,TS0,TS1,Res).
+check_param(Ab,M,X,X1,TS,TS1,Res) :- M>=0 |
+        unbound(X,X0),
+        if_term(Ab,M,X0,X1,TS,TS1,Res).
+check_param(Ab,car,X,X1,TS,TS1,Res) :- true |
+        unbound(X,X0),
+        if_term_car(Ab,car,X0,X1,TS,TS1,Res).
+check_param(Ab,cdr,X,X1,TS,TS1,Res) :- true |
+        unbound(X,X0),
+        if_term_car(Ab,cdr,X0,X1,TS,TS1,Res).
+check_param(Ab,tail,X,X1,TS,TS1,Res) :- true |
+        term_tail(Ab,X,X1,TS,TS1,CpX,CpX,Res).
+%check_param(_,var(M),X,X1,TS,TS1,Res) :- true |
+%        X=X1,TS=TS1,Res=error(unwrapped_illegal_param(var(M))).
+otherwise.
+check_param(_,M,X,X1,TS,TS1,Res) :- true |
+        X=X1,TS=TS1,Res=error(unwrapped_illegal_param(M)).
+
+wait_first_check(Ab,P,normal(X,X1,_),TS,TS1,Res) :- true |
+        check_param(Ab,P,X,X1,TS,TS1,Res).
+otherwise.
+wait_first_check(_,_,Res0,TS,TS1,Res) :- true |
+        TS=TS1,Res=Res0.
+
+wait_parent({Parent,_},TS,TS1,Res) :- true |
+        TS=[get(GranPa)|TS0],
+        wait_granpa(Parent,TS0,TS1,Res,GranPa).
+wait_parent(root,TS,TS1,Res) :- true |
+%        TS=[put(root)|TS1],
+        TS=TS1,
+        Res=error(illegal_param('..')).
+
+wait_granpa(Parent,TS,TS1,Res,{GranPa,M}) :- true |
+        TS=[put({GranPa,M})|TS1],
+        Res=normal(Parent,_,M).
+wait_granpa(Parent,TS,TS1,Res,root) :- true |
+%        TS=[put(root)|TS1],
+        TS=TS1,
+        Res=normal(Parent,_,0).
+
+if_term(Ab,M,{X},X1,TS,TS1,Res) :- true |
+        term(Ab,M,X,X1,TS,TS1,Res).
+if_term(_,M,{_,_,X},X1,TS,TS1,Res) :- true |
+        X=X1,TS=TS1,Res=error(illegal_param(M)).
+
+term(Ab,M,X,X1,TS,TS1,Res) :- vector(X,L) |
+        term_vect(Ab,M,X,X1,TS,TS1,Res,L).
+term(Ab,M,X,X1,TS,TS1,Res) :- module(X,L) |
+        term_mod(Ab,M,X,X1,TS,TS1,Res,L).
+term(Ab,M,X,X1,TS,TS1,Res) :- string(X,L,_) |
+        term_str(Ab,M,X,X1,TS,TS1,Res,L).
+term(Ab,M,X,X1,TS,TS1,Res) :- list(X) |
+        term_list(Ab,0,M,X,X1,TS,TS1,CpX,CpX,Res).
+term(_,M,X,X1,TS,TS1,Res) :- integer(X) |
+        TS=TS1,Res=atomic(integer,X,X1,M).
+:- switch(floating_point).
+:- case(yes).
+term(_,M,X,X1,TS,TS1,Res) :- floating_point(X) |
+        TS=TS1,Res=atomic(floating_point,X,X1,M).
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+term(_,M,X,X1,TS,TS1,Res) :- extended_floating_point(X,_) |
+        TS=TS1,Res=atomic(extended_floating_point,X,X1,M).
+:- end_switch.
+term(_,M,X,X1,TS,TS1,Res) :- atom(X) |
+        TS=TS1,Res=atomic(atom,X,X1,M).
+term(_,M,X,X1,TS,TS1,Res) :- code(X,_,_,_) |
+        TS=TS1,Res=atomic(code,X,X1,M).
+otherwise.
+term(_,M,X,X1,TS,TS1,Res) :- true |
+        TS=TS1,Res=atomic(unknown_data_type,X,X1,M).
+
+term_vect(_,M,X,X1,TS,TS1,Res,L) :- M<L |
+        set_vector_element(X,M,E,E1,X1),
+        Res=normal(E,E1,M),
+        TS=[put({X,M})|TS1].
+otherwise.
+term_vect(_,M,X,X1,TS,TS1,Res,_) :- true |
+        X=X1,TS=TS1,Res=error(illegal_param(M)).
+
+term_mod(_,M,X,X1,TS,TS1,Res,L) :- M<L |
+        X=X1,
+        module_element(X,M,E),
+        Res=normal(E,_,M),
+        TS=[put({X,M})|TS1].
+otherwise.
+term_mod(_,M,X,X1,TS,TS1,Res,_) :- true |
+        X=X1,TS=TS1,Res=error(illegal_param(M)).
+
+term_str(_,M,X,X1,TS,TS1,Res,L) :- M<L |
+        string_element(X,M,E,X1),
+        Res=normal(E,_,M),
+        TS=[put({X,M})|TS1].
+otherwise.
+term_str(_,M,X,X1,TS,TS1,Res,_) :- true |
+        X=X1,TS=TS1,Res=error(illegal_param(M)).
+
+term_list(abort,_,_,X,X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,X1=CpX,TS=TS1,Res=aborted.
+term_list(Ab,I,M,X,X1,TS,TS1,CpX,CpX1,Res) :- I<M |
+        unbound(X,X0),
+        if_term_list(Ab,I,M,X0,X1,TS,TS1,CpX,CpX1,Res).
+term_list(Ab,M,M,X,X1,TS,TS1,CpX,CpX1,Res) :- true |
+        unbound(X,X0),
+        if_term_list_found(Ab,M,X0,X1,TS,TS1,CpX,CpX1,Res).
+
+if_term_list(Ab,I,M,{[E|X]},X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=[E|CpX2],
+        term_list(Ab,~(I+1),M,X,X1,TS,TS1,CpX,CpX2,Res).
+otherwise.
+if_term_list(_,_,M,{X},X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,X1=CpX,TS=TS1,Res=error(illegal_param(M)).
+if_term_list(_,_,M,{_,_,X},X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,X1=CpX,TS=TS1,Res=error(illegal_param(M)).
+
+if_term_list_found(_,M,{[E|X]},X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=[E|X],X1=CpX,
+        Res=normal(E,_,M),
+        TS=[put({X1,M})|TS1].
+otherwise.
+if_term_list_found(_,M,{X},X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,X1=CpX,TS=TS1,Res=error(illegal_param(M)).
+if_term_list_found(_,M,{_,_,X},X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,X1=CpX,TS=TS1,Res=error(illegal_param(M)).
+
+if_term_car(_,car,{[E|X]},X1,TS,TS1,Res) :- true |
+        X1=[E|X],
+        Res=normal(E,_,car),
+        TS=[put({[E|X],car})|TS1].
+if_term_car(_,cdr,{[E|X]},X1,TS,TS1,Res) :- true |
+        X1=[E|X],
+        Res=normal(X,_,cdr),
+        TS=[put({[E|X],cdr})|TS1].
+otherwise.
+if_term_car(_,M,{X},X1,TS,TS1,Res) :- true |
+        X=X1,TS=TS1,Res=error(illegal_param(M)).
+if_term_car(_,M,{_,_,X},X1,TS,TS1,Res) :- true |
+        X=X1,TS=TS1,Res=error(illegal_param(M)).
+
+term_tail(abort,X,X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,X1=CpX,TS=TS1,Res=aborted.
+alternatively.
+term_tail(Ab,X,X1,TS,TS1,CpX,CpX1,Res) :- true |
+        unbound(X,X0),
+        if_term_tail(Ab,X0,X1,TS,TS1,CpX,CpX1,Res).
+
+if_term_tail(Ab,{[E|X]},X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=[E|CpX2],
+        term_tail(Ab,X,X1,TS,TS1,CpX,CpX2,Res).
+otherwise.
+if_term_tail(_,{X},X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,X1=CpX,Res=normal(X,_,tail),
+        TS=[put({X1,tail})|TS1].
+if_term_tail(_,{_,_,X},X1,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,X1=CpX,Res=normal(X,_,tail),
+        TS=[put({X1,tail})|TS1].
+
+create_monitor([],TID,E,Pat,Str,MM,MM1,WS,WS1) :- true |
+        WS=[started(ID,Str)|WS1],
+        MM=[monitor(TID,E,Pat,Str,ID)|MM1].
+create_monitor(and_fork,_,E,Pat,Str,MM,MM1,WS,WS1) :- true |
+        WS=[getenv_all(Envs)|WS1],
+        MM=[monitor_and_fork_with_envs(E,Pat,Str,Envs)|MM1].
+
+
+%*** monitored_terms ***
+monitored_terms(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End) :- true |
+        MM=[monitored_terms_list(A)|MM0],
+        write_monitored_terms(Abort,MM0,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,A).
+
+write_monitored_terms(_,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,[]) :- true |
+        MM=MM1,IR=IR1,B=B1,V=V1,End=end,
+        WS=[putf(string#" No monitored terms !!~n",[]),flush(_)|WS1].
+otherwise.
+write_monitored_terms(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,A) :- true |
+        WS=[putf(string#"~n~s",[string#" %%% MONITORED TERMS %%%"])|WS0],
+        do_write_monitored_terms(Abort,MM,MM1,IR,IR1,WS0,WS1,B,B1,V,V1,End,A,CpA,CpA).
+
+do_write_monitored_terms(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,_,_,_) :- wait(Abort) |
+%        MM=MM1,IR=IR1,WS=WS1,B=B1,V=V1,End=end.
+        MM=MM1,IR=IR1,WS=WS1,B=B1,V=V1.
+do_write_monitored_terms(_,MM,MM1,[abort|IR],IR1,WS,WS1,B,B1,V,V1,End,_,_,_) :- true |
+        MM=MM1,IR=IR1,WS=WS1,B=B1,V=V1,End=end.
+alternatively.
+do_write_monitored_terms(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,[{ID,{Mode,Pat,Str,X}}|A],CpA,CpA1) :- true |
+        variable:unwrap(Pat,{NPat,UPat}),
+        CpA1=[{ID,{Mode,NPat,Str,X}}|CpA2],
+        get_mode_mark(Mode,SAMMark,QMMark),
+        WS=[wrap(X,_,WT),wrap(UPat,_,WPat),
+            putf(string#"~n  ~s~s:~t ~s ~W == ~W",[SAMMark,QMMark,ID,Str,WPat,WT])|WS0],
+        do_write_monitored_terms(Abort,MM,MM1,IR,IR1,WS0,WS1,B,B1,V,V1,End,A,CpA,CpA2).
+do_write_monitored_terms(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,[],CpA,CpA1) :- true |
+        CpA1=[],
+        WS=[putf(string#" ? ",[]),monitored_terms_getl(Abort,Line)|WS0],
+        inspector_command_analyser:analyse_mt_cmd(Line,Cmd,Type,B,B0,V,V0),
+        wait_input(Abort,MM,MM1,IR,IR1,WS0,WS1,B0,B1,V0,V1,End,CpA,Cmd,Type).
+
+get_mode_mark({SAM,QM},SAMMark,QMMark) :- true |
+        get_sam_mode_mark(SAM,SAMMark),
+        get_qm_mode_mark(QM,QMMark).
+
+get_sam_mode_mark(on,Mark) :- true | Mark=string#"a".
+get_sam_mode_mark(off,Mark) :- true | Mark=string#" ".
+
+get_qm_mode_mark(on,Mark) :- true | Mark=string#"q".
+get_qm_mode_mark(off,Mark) :- true | Mark=string#" ".
+
+wait_input(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,_,_,_) :- wait(Abort) |
+%        MM=MM1,IR=IR1,WS=WS1,B=B1,V=V1,End=end.
+        MM=MM1,IR=IR1,WS=WS1,B=B1,V=V1.
+wait_input(_,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,_,quit,_) :- true |
+        MM=MM1,IR=IR1,WS=WS1,B=B1,V=V1,End=end.
+wait_input(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,A,kill(L),_) :- true |
+        do_command(L,A,MM,MM0,WS,WS0,kill),
+        monitored_terms(Abort,MM0,MM1,IR,IR1,WS0,WS1,B,B1,V,V1,End).
+wait_input(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,A,stream_auto_mode(L),_) :- true |
+        do_command(L,A,MM,MM0,WS,WS0,change_stream_auto_mode),
+        monitored_terms(Abort,MM0,MM1,IR,IR1,WS0,WS1,B,B1,V,V1,End).
+wait_input(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,A,query_mode(L),_) :- true |
+        do_command(L,A,MM,MM0,WS,WS0,change_query_mode),
+        monitored_terms(Abort,MM0,MM1,IR,IR1,WS0,WS1,B,B1,V,V1,End).
+wait_input(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,_,change_condition(M,Pat),_) :- true |
+        MM=[change_condition(M,Pat)|MM0],
+        monitored_terms(Abort,MM0,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End).
+wait_input(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,A,help,_) :- true |
+        WS=[putf(string#"~n~s~n",[string#"     <cr> : quit"]),
+              putf(string#"~s~n",[string#"  k N,... : kill monitor"]),
+              putf(string#"~s~n",[string#"sam N,... : change stream_auto_mode"]),
+              putf(string#"~s~n",[string#" qm N,... : change query_mode"]),
+              putf(string#"~s~n",[string#"cc N Term : change condition"]),
+              putf(string#"~s~n",[string#"        q : quit"]),
+             putf(string#"~s~2n",[string#"        h : help"]),flush(_)|WS0],
+        query(Abort,MM,MM1,IR,IR1,WS0,WS1,B,B1,V,V1,End,A).
+alternatively.
+wait_input(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,A,_,Type) :- wait(Type) |
+        WS=[error(Type)|WS0],
+        query(Abort,MM,MM1,IR,IR1,WS0,WS1,B,B1,V,V1,End,A).
+
+query(Abort,MM,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End,A) :- true |
+        WS=[putf(string#"(h for help) ? ",[]),monitored_terms_getl(Abort,Line)|WS0],
+        inspector_command_analyser:analyse_mt_cmd(Line,Cmd,Type,B,B0,V,V0),
+        wait_input(Abort,MM,MM1,IR,IR1,WS0,WS1,B0,B1,V0,V1,End,A,Cmd,Type).
+
+do_command(L,A,MM,MM1,WS,WS1,Cmd) :- true |
+        check_id(L,L1,A,Res),
+        if_do_command(L1,MM,MM1,WS,WS1,Cmd,Res).
+
+check_id([N|L],L1,A,Res) :- true |
+        member(N,A,A1,Res1),
+        if_check_id(L,L1,A1,Res,Res1,N).
+check_id([],L1,_,Res) :- true |
+        L1=[],Res=normal.
+
+member(N,[{N,E}|A],A1,Res) :- true | A1=[{N,E}|A],Res=normal.
+member(_,[],A1,Res) :- true | A1=[],Res=abnormal.
+otherwise.
+member(N,[{ID,E}|A],A1,Res) :- true |
+        A1=[{ID,E}|A2],
+        member(N,A,A2,Res).
+
+if_check_id(L,L1,A,Res,normal,N) :- true |
+        L1=[N|L2],
+        check_id(L,L2,A,Res).
+if_check_id(L,L1,_,Res,abnormal,N) :- true |
+        L=L1,Res=abnormal(N).
+
+if_do_command(L,MM,MM1,WS,WS1,Cmd,normal) :- true |
+        WS=WS1,
+        do_do_command(L,MM,MM1,Cmd).
+if_do_command(_,MM,MM1,WS,WS1,_,abnormal(N)) :- true |
+        MM=MM1,
+        WS=[error(unwrapped_illegal_param(N))|WS1].
+
+do_do_command([N|L],MM,MM1,Cmd) :- true |
+        MM=[{Cmd,N}|MM0],
+        do_do_command(L,MM0,MM1,Cmd).
+do_do_command([],MM,MM1,_) :- true | MM=MM1.
+
+% *** silent_mode ***
+silent_mode(WS,WS1,MM,MM1,Param,Ac) :- true |
+        check_param_silent_mode(Param,Res),
+        if_silent_mode(WS,WS1,MM,MM1,Param,Ac,Res).
+
+check_param_silent_mode(all_on,Res) :- true | Res=normal.
+check_param_silent_mode(all_off,Res) :- true | Res=normal.
+check_param_silent_mode(window_on,Res) :- true | Res=normal.
+check_param_silent_mode(window_off,Res) :- true | Res=normal.
+alternatively.
+check_param_silent_mode(_,Res) :- true | Res=abnormal.
+
+if_silent_mode(WS,WS1,MM,MM1,Param,Ac,normal) :- true |
+        MM=[silent_mode(Param,normal(FStr,Info))|MM1],
+        WS=[putf(FStr,Info),flush(Ac)|WS1].
+if_silent_mode(WS,WS1,MM,MM1,Param,Ac,abnormal) :- true |
+        MM=MM1,Ac=end,
+        WS=[error(unwrapped_illegal_param(Param))|WS1].
+

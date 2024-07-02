@@ -1,0 +1,397 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module init.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public go/0, dummy/2 ,dummy/0, connect/2, task_monitor/3 .
+
+/*
+:- switch(machine).
+:- case(vm).
+go0:- true|
+     bios:go(In),
+     merge(IN,In),
+     task_manager(Rep,Cont,IN),
+     predicate_to_code(module#init,go,0,Code),
+     shoen:execute(Code,{},0,4096,-1,[start|Cont],Rep).
+:- end_switch.
+*/
+
+go:- true|
+    atom_device:driver(Atom),
+    module_table_device:table(Module),
+    user_request_device:user_device_table(User),
+    shoen:raise(pimos_tag#task,bios,[timer(Timer)|BIOS]),
+    wait_start(Timer,Atom,Module,User,BIOS).
+
+wait_start(normal(Timer),Atom,Module,User,BIOS):-
+    true|
+    merge(AI,Atom),
+    merge(MI,Module),
+    merge(TI,Timer),
+    merge(UI,User),
+    merge(StdIn,Std),
+    merge(BI,BIOS),
+%    task_std_handler:distribute(Std),
+    task_std_abnormal:dummy(Std),
+    pool:keyed_set(Env),
+    merge([put(task:io_node,0,_),put(task:directory,"",_)|EnvIn],Env),
+    merge(TableIn,Table),
+    resources:table(Table),
+    monitor(Min,Mout,Abort),
+    resource_init:top_tasks(List),
+    start_top(List,AI,MI,TI,UI,StdIn,TableIn,EnvIn,BI,Min,Mout,Abort).
+
+%%%%%%%%%%%%
+start_top(List,AI,MI,TI,UI,StdIn,TableIn,EnvIn,BI,Min,Mout,Abort):-
+    true|
+    start_top(List,AI,MI,TI,UI,StdIn,TableIn,EnvIn,BI,Min,Mout,ok,Abort,1).
+start_top([],AI,MI,TI,UI,StdIn,TableIn,EnvIn,BI,Min,Mout,_,_,ID):-
+    true|
+    Min = Mout,
+    AI = [], MI = [], TI = [], UI = [], BI = [],
+    StdIn = [], TableIn = [], EnvIn = [].
+start_top([{Code,Com}|Next],AI,MI,TI,UI,StdIn,TableIn,EnvIn,BI,
+                                    Min,Mout,OK1,Abort,ID):-
+    ID1 := ID + 1|
+    AI = {AI1,AIN}, MI = {MI1,MIN}, TI = {TI1,TIN}, UI = {UI1,UIN},
+    BI = {BI1,BIN},
+    StdIn = {SI1,SIN}, TableIn = {TaI1,TaIN},
+    EnvIn = [copy(EnvIn1)|EnvN],
+    task_monitor(R,C,BI1),
+    resource_monitor:monitor([ID],task,Com,Min,MinN,Hin,Hout),
+    task_handler:handler([ID],{C,R},{SControl,SReport},{Hin,Hout},Shut,_,
+                 {AI1,MI1,UI1,TI1,TaI1,SI1},
+%%%%%%%%%        {0,[0],0,0,0,0},{0,0},EnvIn1),
+                 {0,[0],0,0,0,0},{0,0},EnvIn1),
+    shoen:execute(Code,{OK1,OK2,Abort},0,4095,16#"FFFFFFFF",
+                               [start|SControl],SReport),
+    start_top(Next,AIN,MIN,TIN,UIN,SIN,TaIN,EnvN,BIN,MinN,Mout,OK2,Abort,ID1).
+
+
+%%%%%%%%%%%%%%%%%
+task_manager([aborted|R],C,In):-
+        display_console(ascii#"ABORTED!!")|
+        task_manager(R,C,In).
+
+task_manager([started|R],C,In):-
+        true|
+        task_manager(R,C,In).
+
+task_manager([resource_low|R],C,In):-
+        true|
+%        C = [add_resource(100000),allow_resource_report|CN],
+        C = [add_resource(16#"3FFFFFFF",16#"FFFFFFFF"),
+             allow_resource_report|CN],
+        task_manager(R,CN,In).
+
+task_manager([resource_added|R],C,In):-
+        true|
+        task_manager(R,C,In).
+
+task_manager([return_resource(_,_)|R],C,In):-
+        true|
+        task_manager(R,C,In).
+
+task_manager([resource_report_allowed|R],C,In):-
+        true|
+        task_manager(R,C,In).
+
+task_manager([statistics_started|R],C,In):- true|
+        task_manager(R,C,In).
+
+task_manager([exception(raised,Info,NCode,NArgv)|R],C,In):-
+        true|
+        raised_task_manager(Info,NCode,NArgv,R,C,In).
+:- switch(virtual_machine_interface).
+:- case(yes).
+task_manager([exception(Type,Info,NCode,NArgv)|R],C,In):-
+        Type \= raised |
+%        display_console(Type),
+%        display_console(Info)|
+        shoen:raise(pimos_tag#error,'$PIMOS$'(task_manager,
+            "exception_occurred"),{Type,Info}),
+        get_dummy_code2(NCode),
+        NArgv = {},
+        C = [abort|CN],
+        task_manager(R,CN,In).
+:- default.
+task_manager([exception(Type,Info,NCode,NArgv)|R],C,In):-
+        Type \= raised,
+        display_console(Type),
+        display_console(Info)|
+        get_dummy_code2(NCode),
+        NArgv = {},
+        C = [abort|CN],
+        task_manager(R,CN,In).
+:- end_switch.
+
+task_manager([terminated|R],C,In):-
+        true|
+        In = [],
+        C = [],
+        task_manager(R,_,_).
+task_manager([],C,In):- true|
+        true.
+
+raised_task_manager({Node,bios,ExInfo},NCode,NArgv,R,C,Bios):-
+        true|
+        Bios = {Bios1,BiosN},
+        predicate_to_code(module#init,connect,2,NCode),
+        NArgv = {ExInfo,Bios1},
+        task_manager(R,C,BiosN).
+otherwise.
+:- switch(virtual_machine_interface).
+:- case(yes).
+raised_task_manager({Node,Info,Data},NCode,NArgv,R,C,Bios):- true |
+%        display_console(ascii#"Exception Occurred!!"),
+%        display_console(Type),
+%        display_console(Info)|
+        shoen:raise(pimos_tag#error,'$PIMOS$'(task_manager,
+            "raised"),{Info,Data}),
+        get_dummy_code2(NCode),
+        NArgv = {},
+        C = [abort(_)|CN],
+        task_manager(R,CN,Bios).
+:- default.
+raised_task_manager({Node,Type,Info},NCode,NArgv,R,C,Bios):-
+        display_console(ascii#"Exception Occurred!!"),
+        display_console(Type),
+        display_console(Info)|
+        get_dummy_code2(NCode),
+        NArgv = {},
+        C = [abort(_)|CN],
+        task_manager(R,CN,Bios).
+:- end_switch.
+
+
+get_dummy_code(NCode):-
+    true|
+    predicate_to_code(module#init,dummy,2,NCode).
+get_dummy_code2(NCode):-
+    true|
+    predicate_to_code(module#init,dummy,0,NCode).
+
+dummy(In,Shut):-
+    wait(Shut)|
+    true.
+dummy:- true| true.
+
+connect(In,Out):- true| In = Out.
+
+
+%%%%%%%%%%%%%%%%%
+task_monitor([terminated|R],C,Bios):- true|
+        C = [],
+        task_monitor(R,_,Bios).
+
+:- switch(virtual_machine_interface).
+:- case(yes).
+task_monitor([aborted|R],C,Bios):- true |
+%        display_console(ascii#"SYSTEM Server Aborted")|
+        C = [],
+        task_monitor(R,_,Bios).
+:- default.
+task_monitor([aborted|R],C,Bios):-
+        display_console(ascii#"SYSTEM Server Aborted")|
+        C = [],
+        task_monitor(R,_,Bios).
+:- end_switch.
+
+task_monitor([started|R],C,Bios):- true|
+        task_monitor(R,C,Bios).
+
+task_monitor([resource_low|R],C,Bios):- true|
+%        C = [add_resource(100000),allow_resource_report|CN],
+       C = [add_resource(16#"3FFFFFFF",16#"FFFFFFFF"),allow_resource_report|CN],
+        task_monitor(R,CN,Bios).
+
+task_monitor([resource_added|R],C,Bios):- true|
+        task_monitor(R,C,Bios).
+
+task_monitor([return_resource(_,_)|R],C,Bios):- true|
+        task_monitor(R,C,Bios).
+
+task_monitor([resource_report_allowed|R],C,Bios):- true|
+        task_monitor(R,C,Bios).
+
+task_monitor([statistics_started|R],C,Bios):- true|
+        task_monitor(R,C,Bios).
+
+task_monitor([exception(raised,Info,NCode,NArgv)|R],C,Bios):-
+        true|
+        raised_task_monitor(Info,NCode,NArgv,R,C,Bios).
+:- switch(virtual_machine_interface).
+:- case(yes).                            % 
+task_monitor([exception(Type,Info,NCode,NArgv)|R],C,Bios):-
+        Type \= raised |
+%        display_console(ascii#"Exception Occurred!!"),
+%        display_console(Type),
+%        display_console(Info)|
+        shoen:raise(pimos_tag#error,'$PIMOS$'(task_monitor,
+            "exception_occurred"),{Type,Info}),
+        get_dummy_code(NCode),
+        NArgv = {Goal,Shut},
+        C = [abort(_)|CN],
+        task_monitor(R,CN,Bios).
+:- default.
+task_monitor([exception(Type,Info,NCode,NArgv)|R],C,Bios):-
+        Type \= raised,
+        display_console(ascii#"Exception Occurred!!"),
+        display_console(Type),
+        display_console(Info)|
+        get_dummy_code(NCode),
+        NArgv = {Goal,Shut},
+        C = [abort(_)|CN],
+        task_monitor(R,CN,Bios).
+:- end_switch.
+
+task_monitor([],C,Bios):- true|
+        Bios = [].
+
+raised_task_monitor({Node,bios,ExInfo},NCode,NArgv,R,C,Bios):-
+        true|
+        Bios = {Bios1,BiosN},
+        predicate_to_code(module#init,connect,2,NCode),
+        NArgv = {ExInfo,Bios1},
+        task_monitor(R,C,BiosN).
+otherwise.
+:- switch(virtual_machine_interface).
+:- case(yes).
+raised_task_monitor({Node,Info,Data},NCode,NArgv,R,C,Bios):- true |
+%        display_console(ascii#"Exception Occurred!!"),
+%        display_console(Info),
+%        display_console(Data)|
+        shoen:raise(pimos_tag#error,'$PIMOS$'(task_monitor,
+            "raised"),{Info,Data}),
+        get_dummy_code2(NCode),
+        NArgv = {},
+        C = [abort(_)|CN],
+        task_monitor(R,CN,Bios).
+:- default.
+raised_task_monitor({Node,Info,Data},NCode,NArgv,R,C,Bios):- 
+        display_console(ascii#"Raised!!"),
+        display_console(Info),
+        display_console(Data)|
+        get_dummy_code2(NCode),
+        NArgv = {},
+        C = [abort(_)|CN],
+        task_monitor(R,CN,Bios).
+:- end_switch.
+
+%%%%%%%%%%%%%%%%%
+monitor(HI,[],Abort):-
+        true|
+        true.
+monitor(HI,[scsi(SCSI)|HO],Abort):-
+        true|
+        shoen:raise(pimos_tag#task,bios,[scsi(Result)]),
+        monitor(HI,HO,Abort),
+        wait_dev(Result,SCSI).
+monitor(HI,[console(Con)|HO],Abort):-
+        true|
+        shoen:raise(pimos_tag#task,bios,[console(Result)]),
+        monitor(HI,HO,Abort),
+        wait_dev(Result,Con).
+monitor(HI,[syslog(Log)|HO],Abort):-
+        true|
+        shoen:raise(pimos_tag#task,bios,[syslog(Result)]),
+        monitor(HI,HO,Abort),
+        wait_dev(Result,Log).
+monitor(HI,[terminate|HO],Abort):-
+        true|
+        HI = [],
+        monitor(_,HO,Abort).
+monitor(HI,[show_console|HO],Abort):-
+        true|
+        monitor(HI,HO,Abort).
+monitor(HI,[shut_down|HO],Abort):-
+        display_console(ascii#"Shutdown started")|
+        Abort = abort,
+        HI = [terminate|HIN],
+        monitor(HIN,HO,_).
+monitor(HI,[status_all(Type,Verb,Result)|HO],Abort):-
+        true|
+        Result = [],
+        monitor(HI,HO,Abort).
+monitor(HI,[status(Addr,Type,Verb,Result)|HO],Abort):-
+        true|
+        Result = [],
+        monitor(HI,HO,Abort).
+monitor(HI,[status_top([],Type,Verb,Result)|HO],Abort):-
+        true|
+        Result = [],
+        monitor(HI,HO,Abort).
+monitor(HI,[status_top(*,Type,Verb,Result)|HO],Abort):-
+        true|
+        HI = [status_all(Type,Verb,Result)|HIN],
+        monitor(HIN,HO,Abort).
+monitor(HI,[status_top(Addr,Type,Verb,Result)|HO],Abort):-
+        Addr \= [],
+        Addr \= * |
+        HI = [status(Addr,Type,Verb,Result)|HIN],
+        monitor(HIN,HO,Abort).
+monitor(HI,[status_up([_],Type,Verb,Result)|HO],Abort):-
+        true|
+        Result = [],
+        monitor(HI,HO,Abort).
+monitor(HI,[status_up([_|*],Type,Verb,Result)|HO],Abort):-
+        true|
+        HI = [status_all(Type,Verb,Result)|HIN],
+        monitor(HIN,HO,Abort).
+monitor(HI,[status_up([_|Addr],Type,Verb,Result)|HO],Abort):-
+        Addr \= [],
+        Addr \= *|
+        HI = [status(Addr,Type,Verb,Result)|HIN],
+        monitor(HIN,HO,Abort).
+%%% abort
+monitor(HI,[abort_all(Uid)|HO],Abort):-
+        true|
+        monitor(HI,HO,Abort).
+monitor(HI,[abort(_,Uid)|HO],Abort):-
+        true|
+        monitor(HI,HO,Abort).
+monitor(HI,[status(Addr,Uid)|HO],Abort):-
+        true|
+        monitor(HI,HO,Abort).
+monitor(HI,[abort_top([],Uid)|HO],Abort):-
+        true|
+        monitor(HI,HO,Abort).
+monitor(HI,[abort_top(*,Uid)|HO],Abort):-
+        true|
+        HI = [abort_all(Uid)|HIN],
+        monitor(HIN,HO,Abort).
+monitor(HI,[abort_top(Addr,Uid)|HO],Abort):-
+        list(Addr)|
+        HI = [abort(Addr,Uid)|HIN],
+        monitor(HIN,HO,Abort).
+monitor(HI,[abort_up([_],Uid)|HO],Abort):-
+        true|
+        monitor(HI,HO,Abort).
+monitor(HI,[abort_up([_|*],Uid)|HO],Abort):-
+        true|
+        HI = [abort_all(Uid)|HIN],
+        monitor(HIN,HO,Abort).
+monitor(HI,[abort_up([_|Addr],Uid)|HO],Abort):-
+        list(Addr)|
+        HI = [abort(Addr,Uid)|HIN],
+        monitor(HIN,HO,Abort).
+%monitor(HI,[abort(_)|HO],Abort):-
+%        true|
+%        monitor(HI,HO,Abort).
+%
+%%%
+monitor(HI,[A|HO],Abort):-
+        atom(A),
+        A \= terminate,
+        A \= show_console,
+        A \= shut_down|
+        monitor(HI,HO,Abort).
+
+wait_dev(Result,Dev):-
+        wait(Result)|
+        Result = Dev.

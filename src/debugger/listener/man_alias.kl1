@@ -1,0 +1,277 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_alias_manager.
+:- public create/1, filter/2.
+:- with_macro pimos.
+
+create(ALI) :- true|
+    merge(ALI,ALI1),
+    pool:keyed_set(Pool,256),
+    listener_alias:set_default_alias(Pool,Pool1),
+    manager(ALI1,Pool1,5).
+
+manager([alias(Arg,NewArg,St)|COM],P,N) :- 
+    set_alias(Arg,NewArg,St,P,P1),
+    manager(COM,P1,N).
+manager([alias(Arg,St)|COM],P,N) :- 
+    get_alias(Arg,St,P,P1),
+    manager(COM,P1,N).
+manager([alias(St)|COM],P,N) :- 
+    P=[carbon_copy(St)|P1],
+    manager(COM,P1,N).
+manager([unalias(Arg,St)|COM],P,N) :- 
+    reset_alias(Arg,St,P,P1),
+    manager(COM,P1,N).
+manager([expand(Arg,NewArg)|COM],P,N) :- 
+    variable_pool(VP),
+    expand(Arg,NewArg,VP,[],P,P1,N),
+    manager(COM,P1,N).
+manager([get_counter(Status)|COM],P,N) :- 
+    Status=N,
+    manager(COM,P,N).
+manager([set_counter(Count,Status)|COM],P,N) :- 
+    Status=N,
+    manager(COM,P,Count).
+manager([do(List)|COM],P,N) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,COM,COM1),
+    manager(COM1,P,N).
+manager([],P,_) :- P=[].
+
+
+set_alias(wrap#(A,B),_,S,P,P1) :- S=abnormal(wrap#(A,B)), P1=P.
+set_alias(wrap#(A;B),_,S,P,P1) :- S=abnormal(wrap#(A;B)), P1=P.
+otherwise.
+set_alias(Arg,NewArg,S,P,P1) :-
+    make_key(Arg,Key),
+    set_alias1(Key,{Arg,NewArg},S,P,P1).
+
+make_key(vector(V),  Key) :- vector(V,N), vector_element(V,0,atom(F)) | Key=normal({F,N}).
+make_key(atom(F),    Key) :- Key=normal(F).
+make_key(variable(_),Key) :- Key=abnormal.
+otherwise.
+make_key(X,          Key) :- Key=normal(X).
+
+set_alias1(normal(Key),Alias,S,P,P1) :-
+    P=[put(Key,Alias,Old)|P1],
+    S=normal(Alias,Old).
+set_alias1(abnormal,{Arg,_},S,P,P1) :-
+    S=abnormal(Arg), P1=P.
+
+get_alias(Arg,S,P,P1) :-
+    make_key(Arg,Key),
+    get_alias1(Key,Arg,S,P,P1).
+
+get_alias1(normal(Key),Arg,S,P,P1) :-
+    P=[carbon_copy(Key,Alias)|P1],
+    get_alias2(Alias,Arg,S).
+get_alias1(abnormal,Arg,S,P,P1) :- S=abnormal(Arg), P1=P.
+
+get_alias2([],     Arg,S) :- S=non_existent(Arg).
+get_alias2([Alias],_,  S) :- S=normal(Alias).
+
+
+expand(wrap#{(&),A},S,V,V1,P,P1,N) :-
+    S=wrap#{(&),A1},
+    expand(A,A1,V,V1,P,P1,N).
+
+expand(wrap#{(<=),A,B},S,V,V1,P,P1,N) :-
+    S=wrap#{(<=),A1,B},
+    expand(A,A1,V,V1,P,P1,N).
+expand(wrap#{(=>),A,B},S,V,V1,P,P1,N) :-
+    S=wrap#{(=>),A1,B},
+    expand(A,A1,V,V1,P,P1,N).
+expand(wrap#{(->),A,B},S,V,V1,P,P1,N) :-
+    S=wrap#{(->),A1,B},
+    expand(A,A1,V,V1,P,P1,N).
+
+expand(wrap#(A,B),S,V,V2,P,P2,N) :-
+    S=wrap#(A1,B1),
+    expand(A,A1,V,V1,P,P1,N),
+    expand(B,B1,V1,V2,P1,P2,N).
+expand(wrap#(A;B),S,V,V2,P,P2,N) :-
+    S=wrap#(A1;B1),
+    expand(A,A1,V,V1,P,P1,N),
+    expand(B,B1,V1,V2,P1,P2,N).
+expand(wrap#if(C,A,B),S,V,V2,P,P2,N) :-
+    S=wrap#if(C,A1,B1),
+    expand(A,A1,V,V1,P,P1,N),
+    expand(B,B1,V1,V2,P1,P2,N).
+expand(wrap#(A@B),S,V,V1,P,P1,N) :-
+    S=wrap#(A1@B),
+    expand(A,A1,V,V1,P,P1,N).
+
+expand(wrap#profile(A),S,V,V1,P,P1,N) :-
+    S=wrap#profile(A1),
+    expand(A,A1,V,V1,P,P1,N).
+expand(wrap#profile_node(A),S,V,V1,P,P1,N) :-
+    S=wrap#profile_node(A1),
+    expand(A,A1,V,V1,P,P1,N).
+expand(wrap#profile_msg(A),S,V,V1,P,P1,N) :-
+    S=wrap#profile_msg(A1),
+    expand(A,A1,V,V1,P,P1,N).
+
+expand(wrap#trace(A),S,V,V1,P,P1,N) :-
+    S=wrap#trace(A1),
+    expand(A,A1,V,V1,P,P1,N).
+expand(wrap#spy_fork(A),S,V,V1,P,P1,N) :-
+    S=wrap#spy_fork(A1),
+    expand(A,A1,V,V1,P,P1,N).
+expand(wrap#spy_reduction(A),S,V,V1,P,P1,N) :-
+    S=wrap#spy_reduction(A1),
+    expand(A,A1,V,V1,P,P1,N).
+expand(wrap#notrace(A),S,V,V1,P,P1,N) :-
+    S=wrap#notrace(A1),
+    expand(A,A1,V,V1,P,P1,N).
+
+otherwise.
+expand(Arg,S,V,V1,P,P1,N) :- N=<0 | S=Arg, V1=V, P1=P.
+expand(Arg,S,V,V1,P,P1,N) :- N>0  |
+    make_key(Arg,Key),
+    expand1(Key,Arg,S,V,V1,P,P1,N).
+
+expand1(normal(Key),Arg,S,V,V1,P,P2,N) :-
+    P=[carbon_copy(Key,Alias)|P1],
+    expand2(Alias,Arg,S,V,V1,P1,P2,N).
+expand1(abnormal,Arg,S,V,V1,P,P1,_) :- S=Arg, P1=P, V1=V.
+
+expand2([],              Arg,NewArg,V,V1,P,P1,_) :- NewArg=Arg, V1=V, P1=P.
+expand2([{Arg0,NewArg0}],Arg,NewArg,V,V2,P,P1,N) :- 
+    make_vartbl(Arg,Arg0,V,V1,normal,Status),
+    expand3(Status,Arg,NewArg0,NewArg,V1,V2,P,P1,N).
+
+expand3(normal,  _,  NewArg0,NewArg,V,V2,P,P1,N) :-
+    expand(NewArg0,NewArg1,V,[reset|V1]),
+    expand(NewArg1,NewArg,V1,V2,P,P1,~(N-1)).
+expand3(abnormal,Arg,_,      NewArg,V,V1,P,P1,_) :- NewArg=Arg, V1=V, P1=P.
+
+
+make_vartbl(vector(Vec),vector(Vec0),VT,VT1,St,St1) :- vector(Vec,N), vector(Vec0,N) |
+    make_arg_vartbl(0,N,Vec,Vec0,VT,VT1,St,St1).
+make_vartbl(list([Car|Cdr]),list([Car0|Cdr0]),VT,VT2,St,St2) :-
+    make_vartbl(Car,Car0,VT,VT1,St,St1),
+    make_vartbl(Cdr,Cdr0,VT1,VT2,St1,St2).
+make_vartbl(Trm,variable(Name),VT,VT1,St,St1) :- VT=[put(Name,Trm)|VT1], St1=St.
+otherwise.
+make_vartbl(Trm,Trm,VT,VT1,St,St1) :- VT1=VT, St1=St.
+otherwise.
+make_vartbl(_,_,VT,VT1,_,St1) :- VT1=VT, St1=abnormal.
+
+make_arg_vartbl(N,N,_,  _,   VT,VT1,St,St1) :- VT1=VT, St1=St.
+otherwise.
+make_arg_vartbl(N,S,Vec,Vec0,VT,VT2,St,St2) :- 
+    set_vector_element(Vec, N,E, 0,NVec),
+    set_vector_element(Vec0,N,E0,0,NVec0),
+    make_vartbl(E,E0,VT,VT1,St,St1),
+    make_arg_vartbl(~(N+1),S,NVec,NVec0,VT1,VT2,St1,St2).
+
+expand(vector(Vec),New,VT,VT1) :- vector(Vec,N) |
+    New=vector(NewVec),
+    new_vector(Vec1,N),
+    expand_args(0,N,Vec,Vec1,NewVec,VT,VT1).
+expand(list([Car|Cdr]),New,VT,VT2) :- 
+    New=list([NewCar|NewCdr]),
+    expand(Car,NewCar,VT,VT1),
+    expand(Cdr,NewCdr,VT1,VT2).
+expand(variable(Name),New,VT,VT1) :- VT=[get(Name,New)|VT1].
+otherwise.
+expand(Trm,New,VT,VT1) :- New=Trm, VT1=VT.
+
+expand_args(N,N,_,  Vec1,NewVec,VT,VT1) :- NewVec=Vec1, VT1=VT.
+otherwise.
+expand_args(N,S,Vec,Vec1,NewVec,VT,VT2) :- 
+    set_vector_element(Vec, N,E,0,   Vec2),
+    set_vector_element(Vec1,N,_,NewE,Vec3),
+    expand(E,NewE,VT,VT1),
+    expand_args(~(N+1),S,Vec2,Vec3,NewVec,VT1,VT2).
+
+
+reset_alias(Arg,S,P,P1) :-
+    make_key(Arg,Key),
+    reset_alias1(Key,Arg,S,P,P1).
+
+reset_alias1(normal(Key),Arg,S,P,P1) :-
+    P=[get_if_any(Key,Alias)|P1],
+    reset_alias2(Alias,Arg,S).
+reset_alias1(abnormal,Arg,S,P,P1) :- S=abnormal(Arg), P1=P.
+
+reset_alias2({},     Arg,S) :- S=non_existent(Arg).
+reset_alias2({Alias},_,  S) :- S=normal(Alias).
+
+
+variable_pool(VP) :-
+    pool:keyed_set(P,16),
+    pool(VP,0,P).
+
+pool([put(Name,Trm)|VP],N,P) :-
+    P=[put(Name,Trm,_)|P1],
+    pool(VP,N,P1).
+pool([get("_",Trm)|VP],N,P) :- 
+    Trm=variable("_"),
+    pool(VP,N,P).
+pool([reset|VP],N,P) :-
+    P=[],
+    pool:keyed_set(P1,16),
+    pool(VP,N,P1).
+pool([],_,P) :- P=[].
+otherwise.
+pool([get(Name,Trm)|VP],N,P) :-
+    P=[carbon_copy(Name,Val)|P1],
+    check_value(Val,Name,Trm,N,N1,P1,P2),
+    pool(VP,N1,P2).
+
+check_value([],Name,Trm,N,N1,P,P1) :-
+    Trm=variable(N),
+    P=[put(Name,Trm,_)|P1],
+    N1 := N+1.
+check_value([Val],_,Trm,N,N1,P,P1) :-
+    Trm=Val, N1=N, P1=P.
+
+
+filter([alias(A)|US],OS) :- 
+    OS=[alias(A1)|OS1],
+    listener_utility:ground_unify(A1,A),
+    filter(US,OS1).
+filter([alias(A,B)|US],OS) :- 
+    listener_utility:ground_unify(A,A1),
+    get_alias_filter(A1,B,OS,OS1),
+    filter(US,OS1).
+filter([alias(A,B,S)|US],OS) :- 
+    listener_utility:ground_unify(A,A1),
+    listener_utility:ground_unify(B,B1),
+    alias_filter(A1,B1,S,OS,OS1),
+    filter(US,OS1).
+filter([unalias(A,S)|US],OS) :- 
+    listener_utility:ground_unify(A,A1),
+    unalias_filter(A1,S,OS,OS1),
+    filter(US,OS1).
+filter([get_counter(S)|US],OS) :-
+    OS=[get_counter(S1)|OS1],
+    listener_utility:ground_unify(S1,S),
+    filter(US,OS1).
+filter([set_counter(A,S)|US],OS) :- A>=0 |
+    OS=[set_counter(A,S1)|OS1],
+    listener_utility:ground_unify(S1,S),
+    filter(US,OS1).
+filter([do(Msg)|US],OS) :- 
+    merge(Msg,Msg1),
+    listener_utility:prepend(Msg1,US,US1),
+    filter(US1,OS).
+
+filter([],OS) :- OS=[].
+
+
+alias_filter(A,B,S,OS,OS1) :- wait(A), wait(B) |
+    OS=[alias(A,B,S1)|OS1],
+    listener_utility:wait_unify(S1,S).
+unalias_filter(A,S,OS,OS1) :- wait(A) |
+    OS=[unalias(A,S1)|OS1],
+    listener_utility:wait_unify(S1,S).
+get_alias_filter(A,S,OS,OS1) :- wait(A) |
+    OS=[alias(A,S1)|OS1],
+    listener_utility:ground_unify(S1,S).

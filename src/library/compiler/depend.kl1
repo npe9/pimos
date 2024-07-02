@@ -1,0 +1,956 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% check dependency
+%%
+
+:- module kl1cmp_depend.
+:- public predicate_dependency/11.
+:- with_macro pimos.
+%%
+%% predicate_dependency/7
+%% top-level predicate
+%%
+%% implicit tree: stream in which `intern_clause' messages flow.
+%% Ack0,Ack: short circuit. If all messages fall on leaf,
+%%           `Ack' is instanciated to `ack'.
+%% [...]   : The lists which contains predicate.
+%% NvList0 : list which contanins numbers of variables in each CLAUSE
+%% contanins.
+%% N0 : Arity of predicate.
+%%
+:- local_implicit io:oldnew, tree:oldnew, class:shared.
+
+%% for VISTA
+predicate_dependency(Ack0, Ack, [vector({atom((:-)), vector(H0), GANDB})-Num-Info0|Cdr],
+        NvList, Max, Arity) -->
+    vector(H0, N) |
+    {{
+      string_to_integer(vector({vector(H0), GANDB}), WH0, WG0, WB0, VTbl0),
+%%      kl1cmp_variable_name:string_to_integer(
+%%            vector({atom((:-)), vector(H0), GANDB}),
+%%            vector({atom((:-)), WH0, vector({atom(('|')), WG0, WB0})}), VTbl0),
+      kl1cmp_error_filter:error_filter(&io, IO0, VTbl0, VTbl1),
+      kl1cmp_error_filter:addErrorInfo(IO0, [], IO1, Info0, Info),
+%%      kl1cmp_reader:count_variables([WH0, WG0, WB0], [vector(H1), WG1, WB1], 0, Nv0),
+      kl1cmp_reader:count_variables(WH0, vector(H1), 0, Nv0),
+      kl1cmp_reader:count_variables(WG0, WG1, Nv0, Nv1),
+      kl1cmp_reader:count_variables(WB0, WB1, Nv1, Nv2),
+%%      kl1cmp_variable_name:count_variables(WH0, vector(H1), 0, Nv0),
+%%      kl1cmp_variable_name:count_variables(WG0, WG1, Nv0, Nv1),
+%%      kl1cmp_variable_name:count_variables(WB0, WB1, Nv1, Nv2),
+      merge(Var2, PVar0),
+      kl1cmp_vargen:variable_generator(Nv2, Nv, PVar0),
+      pool:keyed_bag(Var2Pos0),        % Variable Numver -> position, type
+      unwrap_one_goal(vector(H1), H2),
+      unwrap_goals(WG1, G2),
+      unwrap_goals(WB1, B2),
+      make_dependency_list(IO1, [], Var2, [], 
+               Depend0, [], Var2Pos0, Var2Pos1, &class,
+               1, N, H2, H, G2, G, B2, B),
+      &tree <<= [intern_clause(Depend, (H:-'|'(G,B))-Max-VTbl1-Num-Info,
+                   Var2Pos2, Ack0-Ack1)],
+      make_dependency_table(Depend, [], Var2Pos1, Var2Pos2, Depend0),
+      %%     kl1cmp_disp:disp(Depend)}},
+      Arity := N-1}},
+    predicate_dependency(Ack1, Ack, Cdr, [Nv|NvList], Max, _).
+predicate_dependency(Ack0, Ack, [vector({atom((:-)), atom(H0), GANDB})-Num-Info0|Cdr],
+                    NvList, Max, Arity) -->
+    atom(H0) |
+    {{
+      string_to_integer(vector({atom(H0), GANDB}), H1, WG1, WB1, VTbl0),
+%%kl1cmp_variable_name:string_to_integer(vector({WG0, WB0}), vector({WG1, WB1}), VTbl0),
+      kl1cmp_error_filter:error_filter(&io, IO0, VTbl0, VTbl1),
+      kl1cmp_error_filter:addErrorInfo(IO0, [], IO1, Info0, Info),
+%%      kl1cmp_reader:count_variables([WG1, WB1], [WG2, WB2], 0, Nv0),
+      kl1cmp_reader:count_variables(WG1, WG2, 0, Nv0),
+      kl1cmp_reader:count_variables(WB1, WB2, Nv0, Nv1),
+%%      kl1cmp_variable_name:count_variables(WG1, WG2, 0, Nv0),
+%%      kl1cmp_variable_name:count_variables(WB1, WB2, Nv0, Nv1),
+      kl1cmp_vargen:variable_generator(Nv1, Nv, PVar),
+      merge(Var2, PVar),
+      pool:keyed_bag(Var2Pos0),
+      unwrap_goals(WG2, G1),
+      unwrap_goals(WB2, B1),
+      make_dependency_list(IO1, [], Var2, [], Depend0, [], Var2Pos0, Var2Pos1, &class,
+               0, 0, H1, H, G1, G, B1, B),
+      &tree <<= [intern_clause(Depend, (H:-'|'(G,B))-Max-VTbl1-Num-Info,
+                   Var2Pos, Ack0-Ack1)],
+      make_dependency_table(Depend, [], Var2Pos1, Var2Pos, Depend0),
+      Arity = 0}},
+    predicate_dependency(Ack1, Ack, Cdr, [Nv|NvList], Max, _).
+predicate_dependency(Ack0, Ack, [], NvList, Max, _) --> true |
+    Ack0=Ack, {{max_value(0, Max, NvList)}}.
+
+string_to_integer(INTERM, WH0, WG0, WB0, VTbl0) :- true |
+    kl1cmp_variable_name:string_to_integer(INTERM, OUTTERM, VTbl0),
+    extractParts(OUTTERM, WH0, WG0, WB0).
+
+extractParts(wrap#({H, {'|', G, B}}), WH0, WG0, WB0) :- true |
+    H=WH0, G=WG0, B=WB0.
+%%
+%% make dependency
+%%
+%% integer(INTEGER)/integer(Variale)
+%% atom(ATOM)/atom(Variable)
+%% float(FLOAT)/float(Variable)
+%% string(STRING)/string(Variable)
+%% list([Some|Some])/list(Variable)
+%% vector(Size, VECTOR)/vector(Variable)
+%% and
+%% variable(VAR) (no check is needed in head and guard for this clause)
+%%
+:- local_implicit io:oldnew, varno:oldnew, arg:oldnew, var2pos:oldnew, class:shared.
+make_dependency_list(A, N, H0, H, G0, G, B0, B) --> A<N |
+    {{set_vector_element(H0, A, Arg0, Arg, H1)}},
+    make_dependency(head, Arg0, Arg, arg(A)),
+    {{A1 := A+1}},
+    make_dependency_list(A1, N, H1, H, G0, G, B0, B).
+make_dependency_list(N, N, H0, H, G0, G, B0, B) --> true |
+    H0=H,
+    {{kl1cmp_my_pool:keyed_bag(Pos2Var0)}},
+    guard_dependency(Pos2Var0, Pos2Var1, G0, G),
+    {{put_label_variable_in_body(&var2pos, Pos2Var1, [], B0, B)}}.
+
+make_dependency(Part, list([Car|Cdr]), Arg, Pos) --> true |
+    &varno <<= [new_variable(variable(N))],
+    &var2pos <<= [put(N, {Pos, list})],
+    &arg <<= [wait(Pos, list)],
+%%  {{decidePos(Part, car(Pos), NewPosCar),
+%%    decidePos(Part, cdr(Pos), NewPosCdr)}},
+    NewPosCar=car(Pos), NewPosCdr=cdr(Pos),
+    make_dependency(Part, Car, CarArg, NewPosCar),
+    make_dependency(Part, Cdr, CdrArg, NewPosCdr),
+    Arg=list([CarArg|CdrArg]).
+make_dependency(Part, variable(N), Arg, Pos) --> true |
+    &arg <<= [wait(Pos, Variable)],
+    alloc_new_variable_if_not_first_appearance(variable(N), Pos, Variable),
+    Arg=variable(N).
+otherwise.
+make_dependency(Part, vector(Vect0), WArg, Pos) --> vector(Vect0, Size) |
+    &varno <<= [new_variable(variable(N))],
+    &arg <<= [wait(Pos, vector(Size))],
+    &var2pos <<= [put(N, {Pos, vector(Size)})],
+    make_vector_dependency(Part, 0, Size, Vect0, Arg, Pos),
+    WArg=vector(Arg).
+otherwise.
+make_dependency(_, integer(Int), Arg, Pos) --> true |
+    Arg=integer(Int),
+    &varno <<= [new_variable(variable(N))],
+    &var2pos <<= [put(N, {Pos, integer(Int)})],
+    &arg <<= [wait(Pos, integer(Int))].
+make_dependency(_, atom(Atom), Arg, Pos) --> true |
+    Arg=atom(Atom),
+    &varno <<= [new_variable(variable(N))],
+    &var2pos <<= [put(N, {Pos, atom(Atom)})],
+    &arg <<= [wait(Pos, atom(Atom))].
+make_dependency(_, floating_point(Float), Arg, Pos) --> true |
+    Arg=floating_point(Float),
+    &varno <<= [new_variable(variable(N))],
+    &var2pos <<= [put(N, {Pos, floating_point(Float)})],
+    &arg <<= [wait(Pos, floating_point(Float))].
+make_dependency(_, '$SCNST'(Str0), Arg, Pos) --> true |
+    Arg='$SCNST'(Str),
+    &varno <<= [new_variable(variable(N))],
+    {{kl1cmp_wrap:unwrap(Str0, Str)}},
+    &var2pos <<= [put(N, {Pos, string('$SCNST'(Str))})],
+    &arg <<= [wait(Pos, string('$SCNST'(Str)))].
+make_dependency(_, '$MODULE'(Str), Arg, Pos) --> true |
+    Arg='$MODULE'(Str),
+    &varno <<= [new_variable(variable(N))],
+    &var2pos <<= [put(N, {Pos, string('$MODULE'(Str))})],
+    &arg <<= [wait(Pos, string('$MODULE'(Str)))].
+
+alloc_new_variable_if_not_first_appearance(variable(N), Pos, Variable) --> true |
+    &var2pos <<= [empty(N, YorN)],
+    alloc_new_variable_if_not(YorN, variable(N), Pos, Variable).
+
+alloc_new_variable_if_not(yes, variable(N), Pos, Variable) --> true |
+    Variable=variable(N),
+    &var2pos <<= [put(N, {Pos, 0})].
+alloc_new_variable_if_not(no, variable(Old), Pos, Variable) --> true |
+    &varno <<= [new_variable(variable(N))],
+    &var2pos <<= [get_and_put(Old, {PosOld, Type}, {PosOld, Type}),
+          put(N, {Pos,Type})],
+    &arg <<= [unify(PosOld, Pos)],
+    Variable=variable(N).
+
+make_vector_dependency(Part, A, N, Vect0, Vect, Pos) -->
+    A<N |
+    {{set_vector_element(Vect0, A, Arg0, Arg, Vect1)}},
+%%    {{decidePos(Part, element(Pos, A), NewPos)}},
+    NewPos=element(Pos, A),
+    make_dependency(Part, Arg0, Arg, NewPos),
+    {{A1 := A+1}},
+    make_vector_dependency(Part, A1, N, Vect1, Vect, Pos).
+make_vector_dependency(_, N, N, Vect0, Vect, _) --> true |
+    Vect0=Vect.
+
+% put not deref mark if Pos is head.
+decidePos(head, car(Cell), NewPos) :- true | NewPos=carNotDeref(Cell).
+decidePos(head, cdr(Cell), NewPos) :- true | NewPos=cdrNotDeref(Cell).
+decidePos(guard, element(Cell, Pos), NewPos) :- true | NewPos=elementNotDeref(Cell).
+otherwise.
+decidePos(_, Pos, NewPos) :- true | Pos=NewPos.
+
+%%
+%% guard_dependency
+%%
+%%
+:- local_implicit io:oldnew, varno:oldnew, arg:oldnew, var2pos:oldnew, class:shared, pos2var:oldnew.
+guard_dependency((G0, G1), Guard) --> true |
+    guard_dependency(G0, NewG0),
+    guard_dependency(G1, NewG1),
+    Guard=(NewG0, NewG1).
+otherwise.
+guard_dependency(X=Y, Guard) --> true |
+    guard_dependency_unify(unify, X, Y, NX, NY),
+    {{Guard=(NX=NY)}}.
+guard_dependency(diff(X,Y), Guard) --> true |
+    guard_dependency_unify(notunify, X, Y, NX, NY),
+    {{Guard=(NX\=NY)}}.
+guard_dependency(true, Guard) --> true |
+    Guard=true.
+guard_dependency(vector_element(V0,P0,E0), Blt) --> true |
+    {{kl1cmp_blttbl:builtin(vector_element(V0,P0,E0), vector_element(V1,P1,E1),
+        In, [E0,E1], Pre, Post, Attr0, _, _)}},
+    extract_guard_unify(input, In, Attr0, Attr),
+    {{output_builtin(&arg, &var2pos, Pre)}},
+    &arg <<= [builtin(vector_element(V1,P1,element(V1,P1)))],
+%    &var2pos <<= [put(E1, {element(V1,P1),0})],
+%    {{extract_guard_unify(&io, &varno, Arg0, [], &var2pos, output, Out, Attr, _)}},
+    output_out_instruction(E0,V1,P1,E1),
+%    &var2pos <<= [put(E1, {element(V1,P1),0})],
+%    {{output_builtin(&arg, &var2pos, Arg0),
+     {{output_builtin(&arg, &var2pos, Post)}},
+    Blt=vector_element(V1,P1,element(V1,P1)).
+%% added two type check instructions special 
+%%guard_dependency(string(Str0,S0,N0), Blt) --> true |
+%%    {{kl1cmp_blttbl:builtin(string(Str0, S0,N0), string(Str1, S1, N1),
+%%                In, Out, _, Post, Attr0, _, _)}}, % dispost input 'wait' instruction
+%%    extract_guard_unify(input, In, Attr0, Attr1),
+%%    &arg <<= [builtin(string(Str1,S1,N1))],
+%%    extract_guard_unify(output, Out, Attr1, _),
+%%    {{output_builtin(&arg, &var2pos, Post)}},
+%%    Blt=string(Str1,S1,N1).
+%%guard_dependency(floating_point(In0), Blt) --> true |
+%%    {{kl1cmp_blttbl:builtin(floating_point(In0), floating_point(In1),
+%%                In, Out, _, Post, Attr0, _, _)}}, % dispost input 'wait' instruction
+%%    extract_guard_unify(input, In, Attr0, Attr1),
+%%    &arg <<= [builtin(floating_point(In1))],
+%%    extract_guard_unify(output, Out, Attr1, _),
+%%    {{output_builtin(&arg, &var2pos, Post)}},
+%%    Blt=floating_point(In1).
+%% end
+otherwise.
+guard_dependency(Blt0, Blt) --> true |
+    {{kl1cmp_blttbl:builtin(Blt0, Blt1, In, Out, Pre, Post, Attr0, _, Class)}},
+    check_guard_builtin(Blt1, Blt, In, Out, Pre, Post, Attr0, Class).
+
+check_guard_builtin(Blt0, Blt, In, Out, _, _, _, none) --> true |
+    Blt0=Blt,
+    {{unify_args(In), unify_args(Out)}},
+    &io <<= [error("invalid guard goal : ~t", [WBlt])],
+    {{kl1cmp_wrap:wrap(Blt0, WBlt)}},
+    Blt=Blt0.
+otherwise.
+check_guard_builtin(Blt0, Blt, In, Out, Pre, Post, Attr, Class) --> true |
+    {{check_class(&class, Class, Ans)}},
+    check_guard_builtin_(Ans, Blt0, Blt, In, Out, Pre, Post, Attr).
+
+check_class(user, user, Ans) :- true | Ans=ok.
+check_class(pimos, user, Ans) :- true | Ans=ok.
+check_class(pimos, pimos, Ans) :- true | Ans=ok.
+check_class(firm, user, Ans) :- true | Ans=ok.
+check_class(firm, pimos, Ans) :- true | Ans=ok.
+check_class(firm, firm, Ans) :- true | Ans=ok.
+otherwise.
+check_class(_, _, Ans) :- true | Ans=ng.
+
+check_guard_builtin_(ng, Blt0, Blt, In, Out, _, _, _) --> true |
+    Blt0=Blt,
+    &io <<= [error("invalid guard goal : ~t", [WBlt])],
+    {{kl1cmp_wrap:wrap(Blt0, WBlt), unify_args(In), unify_args(Out)}}.
+check_guard_builtin_(ok, Blt0, Blt, In, Out, Pre, Post, Attr0) --> true |
+    extract_guard_unify(input, In, Attr0, Attr),
+    {{output_builtin(&arg, &var2pos, Pre)}},
+    &arg <<= [builtin(Blt0)],
+    extract_guard_unify(output, Out, Attr, _),
+    {{output_builtin(&arg, &var2pos, Post)}},
+    Blt=Blt0.
+
+unify_args([X,Y|Cdr]) :- true |
+    X=Y,
+    unify_args(Cdr).
+unify_args([]) :- true | true.
+
+output_out_instruction(variable(VE0), V1, P1, E1) --> true |
+    &var2pos <<= [empty(VE0, YorN)],
+    output_out_instruction(YorN, VE0, V1, P1, E1).
+otherwise.
+output_out_instruction(E0, V1, P1, E1) --> true |
+    &varno <<= [new_variable(variable(NE1))],
+    &var2pos <<= [put(NE1, {element(V1, P1), 0})],
+    E1=variable(NE1),
+    guard_dependency_unify_(unify, E0, E1, _, _).
+
+output_out_instruction(yes, VE0, V1, P1, E1) --> true |
+    E1=variable(VE0),
+    &var2pos <<= [put(VE0, {element(V1,P1),0})].
+output_out_instruction(no, VE0, V1, P1, E1) --> true |
+    &varno <<= [new_variable(variable(NE1))],
+    E1=variable(NE1),
+    &var2pos <<= [get_and_put(VE0, {Pos, Type}, {Pos, Type}),
+                    put(NE1, {element(V1, P1), Type})],
+    &arg <<= [unify(element(V1, P1), Pos)]. 
+
+:- local_implicit arg:oldnew, var2pos:oldnew.
+output_builtin([unify(A, B)|Rest]) --> true |
+    {{convert_builtin_args(&var2pos, unify(A, B), UNIFY)}},
+    &arg <<= [UNIFY],
+    output_builtin(Rest).
+otherwise.
+output_builtin([Blt0|Rest]) --> true |
+    {{convert_builtin_args(&var2pos, Blt0, Blt)}},
+    &arg <<= [builtin(Blt)],
+    output_builtin(Rest).
+output_builtin([]) --> true | true.
+
+:- local_implicit var2pos:oldnew.
+convert_builtin_args(Blt0, Blt) --> vector(Blt0, N) |
+    convert_builtin_args(0, N, Blt0, Blt).
+otherwise.
+convert_builtin_args(Blt0, Blt) --> true | Blt0=Blt.
+
+convert_builtin_args(A, N, Blt0, Blt) --> A<N |
+    {{set_vector_element(Blt0, A, Arg0, Arg, Blt1)}},
+    get_position(Arg0, Arg),
+    {{A1 := A+1}},
+    convert_builtin_args(A1, N, Blt1, Blt).
+convert_builtin_args(N, N, Blt0, Blt) --> true |
+    Blt0=Blt.
+
+
+:- local_implicit io:oldnew, varno:oldnew, arg:oldnew, var2pos:oldnew,  class:shared, pos2var:oldnew.
+extract_guard_unify(input, [variable(N), Y|Unify],
+            [{variable(N), Type}|Attr0], Attr) --> true |
+    Y=Pos,
+    &arg <<= [check(Pos, Type)],
+    bound_check_input_arg(N),
+    {{set_type_and_get_position(&var2pos, variable(N), Type, Pos)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+extract_guard_unify(output, [variable(N), Y|Unify],
+            [{variable(N), Type}|Attr0], Attr) --> true |
+    output_unify_if_not_first_appearance(variable(N), Y),
+%%    &arg <<= [type(Pos,Type)],
+%%    {{set_type_and_get_position(&var2pos, variable(N), Type, _)}},
+    {{set_type(&var2pos, variable(N), Type)}},
+    extract_guard_unify(output, Unify, Attr0, Attr).
+extract_guard_unify(input, ['$SCNST'(CNST), Y|Unify],
+            [{'$SCNST'(CNST),_}|Attr0], Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    {{kl1cmp_wrap:unwrap(CNST, CNST1)}},
+    &arg <<= [put(string('$SCNST'(CNST1)), Pos)],
+    {{get_position(&var2pos, Y, Pos)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+extract_guard_unify(input, ['$MODULE'(CNST), Y|Unify],
+            [{'$MODULE'(CNST),_}|Attr0], Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    {{kl1cmp_wrap:unwrap(CNST, CNST1)}},
+    &arg <<= [put(string('$MODULE'(CNST1)), Pos)],
+    {{get_position(&var2pos, Y, Pos)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+otherwise.
+extract_guard_unify(input, [variable(N), Y|Unify], Attr0, Attr) --> true |
+    Y=Pos,
+    bound_check_input_arg(N),
+    {{get_position(&var2pos, variable(N), Pos)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+extract_guard_unify(output, [variable(N), Y|Unify], Attr0, Attr) --> true |
+    output_unify_if_not_first_appearance(variable(N), Y),
+    extract_guard_unify(output, Unify, Attr0, Attr).
+otherwise.
+extract_guard_unify(input, [vector(V0), Y|Unify], [{vector(V0), _}|Attr0], Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    &io <<= [error("not supported : ~t", [vector(V0)])],
+    {{set_type_and_get_position(&var2pos, Y, vector, _)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+extract_guard_unify(input, [list(L0), Y|Unify], [{list(L0), _}|Attr0], Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    &io <<= [error("not supported : ~t", [list(L0)])],
+    {{set_type_and_get_position(&var2pos, Y, list, _)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+otherwise.
+extract_guard_unify(input, [{Type, Arg}, Y|Unify], [{{Type,Arg}, _}|Attr0],
+            Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    &arg <<= [put({Type, Arg}, Pos)],
+    {{set_type_and_get_position(&var2pos, Y, Type, Pos)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+extract_guard_unify(output, [Arg, Y|Unify], [{Arg, _}|Attr0],
+            Attr) --> true |
+    &varno <<= [new_variable(Y)],
+%%    guard_dependency_unify_(unify, Arg, Y, _, _),
+    guard_dependency_unify__(unify, Arg, Y, _, _),
+    extract_guard_unify(output, Unify, Attr0, Attr).
+otherwise.
+extract_guard_unify(input, [{TypeA, Arg}, Y|Unify], [{{TypeA, Arg}, _}|Attr0],
+            Attr) --> true |
+    &io <<= [warning(string#"illegal input argment in guard builtin : ~t",
+                [{TypeA, Arg}])],
+    &varno <<= [new_variable(Y)],
+    &arg <<= [put({TypeA, Arg}, Pos)],
+    {{set_type_and_get_position(&var2pos, Y, TypeA, Pos)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+extract_guard_unify(output, [{TypeA, Arg}, Y|Unify], [{{TypeA, Arg}, _}|Attr0],
+            Attr) --> true |
+    &io <<= [warning(string#"illegal input argment in guard builtin : ~t",
+                [{TypeA, Arg}])],
+    &varno <<= [new_variable(Y)],
+%%    &arg <<= [put({TypeA, Arg}, Pos)],
+    extract_guard_unify(input, Unify, Attr0, Attr).
+otherwise.
+extract_guard_unify(input, [{'$MODULE', Arg}, Y|Unify], Attr0, Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    {{kl1cmp_wrap:unwrap(Arg, Arg1)}},
+    &arg <<= [put(string('$MODULE'(Arg1)), Pos)],
+    {{set_type_and_get_position(&var2pos, Y, string('$MODULE'(Arg1)), Pos)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+extract_guard_unify(output, [{'$MODULE', Arg}, Y|Unify], Attr0, Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    guard_dependency_unify(unify, Y, {'$MODULE', Arg}, _, _),
+    extract_guard_unify(output, Unify, Attr0, Attr).
+extract_guard_unify(input, [{'$SCNST', Arg}, Y|Unify], Attr0, Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    {{kl1cmp_wrap:unwrap(Arg, Arg1)}},
+    &arg <<= [put(string('$SCNST'(Arg1)), Pos)],
+    {{set_type_and_get_position(&var2pos, Y, string('$SCNST'(Arg1)), Pos)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+extract_guard_unify(output, [{'$SCNST', Arg}, Y|Unify], Attr0, Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    guard_dependency_unify(unify, Y, {'$SCNST', Arg}, _, _),
+    extract_guard_unify(output, Unify, Attr0, Attr).
+otherwise.
+extract_guard_unify(input, [{TypeA, Arg}, Y|Unify], Attr0, Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    &arg <<= [put({TypeA, Arg}, Pos)],
+    {{set_type_and_get_position(&var2pos, Y, TypeA, Pos)}},
+    extract_guard_unify(input, Unify, Attr0, Attr).
+extract_guard_unify(output, [{TypeA, Arg}, Y|Unify], Attr0, Attr) --> true |
+    &varno <<= [new_variable(Y)],
+    guard_dependency_unify(unify, Y, {TypeA, Arg}, _, _),
+    extract_guard_unify(output, Unify, Attr0, Attr).
+otherwise.
+extract_guard_unify(_, [], Attr0, Attr) --> true |
+    Attr0=Attr.
+
+bound_check_input_arg(N) --> true |
+    &var2pos <<= [empty(N, YorN)],
+    bound_check_input_arg_(YorN, N).
+
+bound_check_input_arg_(yes, N) --> true |
+    &io <<= [error("eternal suspension found : ~t", [variable(N)])].
+bound_check_input_arg_(no, _) --> true | true.
+
+output_unify_if_not_first_appearance(variable(N), Y) -->
+    true |
+    &var2pos <<= [empty(N, YorN)],
+    output_unify_if_not_first_appearance(YorN, variable(N), Y).
+
+output_unify_if_not_first_appearance(yes, variable(N), Y) --> true |
+    Y=variable(N),
+    &var2pos <<= [put(N, {variable(N), 0})].
+output_unify_if_not_first_appearance(no, variable(N), Y) --> true |
+    &varno <<= [new_variable(variable(New))],
+    &arg <<= [unify(Posx, variable(New))],
+    &var2pos <<= [get_and_put(N, {Posx, Type}, {Posx, Type})],
+%%          put(New, {Posy, Type})],
+%%    {{set_type_and_get_position(&var2pos, variable(New), Type, Posy)}},
+    {{set_type(&var2pos, variable(New), Type)}},
+    Y=variable(New).
+
+%%
+%% guard_dependency_unify
+%%
+% deleted 91/12/19
+%guard_dependency_unify(unify, X, X, NewX, NewY) --> true |
+%    NewX=X, NewY=X.
+%guard_dependency_unify(notunify, X, X, NewX, NewY) --> true |
+%    &io <<= [warning("guard goal always fails : ~T", [X\=X])],
+%    &arg <<= [builtin(fail)],
+%    NewX=X, NewY=X.
+%otherwise.
+guard_dependency_unify(Flag, variable(N), Y, NewX, NewY) --> true |
+    guard_dependency_unify_(Flag, Y, variable(N), NewX, NewY).
+guard_dependency_unify(Flag, X, variable(N), NewX, NewY) --> true |
+    guard_dependency_unify_(Flag, X, variable(N), NewX, NewY).
+otherwise.
+guard_dependency_unify(Flag, list([CarX|CdrX]), list([CarY|CdrY]), NewX, NewY) -->
+    true |
+    guard_dependency_unify(Flag, CarX, CarY, NewCarX, NewCarY),
+    guard_dependency_unify(Flag, CdrX, CdrY, NewCdrX, NewCdrY),
+    NewX=list([NewCarX|NewCdrX]), NewY=list([NewCarY|NewCdrY]).
+guard_dependency_unify(Flag, vector(VectX), vector(VectY), NewX, NewY) -->
+    vector(VectX, N), vector(VectY, N) |
+    guard_dependency_unify_vect_vect(0, N, Flag, VectX, VectY,
+                     NX, NY),
+    NewX=vector(NX), NewY=vector(NY).
+otherwise.
+guard_dependency_unify(unify, X, X, NewX, NewY) --> true |
+    &io <<= [warning("guard goal always succeeds : ~T", [X=X])], 
+    X=NewX, Y=NewY.
+guard_dependency_unify(notunify, X, X, NewX, NewY) --> true |
+    &io <<= [warning("guard goal always fails : ~T", [X\=X])],
+    &arg <<= [builtin(fail)],
+    X=NewX, Y=NewY.
+otherwise.
+guard_dependency_unify(unify, X, Y, NewX, NewY) --> true |
+    &io <<= [warning("guard goal always fails : ~T", [X=Y])],
+    &arg <<= [builtin(fail)],
+    X=NewX, Y=NewY.
+guard_dependency_unify(notunify, X, Y, NewX, NewY) --> true |
+    &io <<= [warning("guard goal always success : ~T", [X\=Y])],
+    X=NewX, Y=NewY.
+
+%% second argument is a vaiable.
+guard_dependency_unify_(UorN, variable(Nx), variable(Ny), NewX, NewY) --> true |
+%% add D.Sekita    
+    warnIfEq(UorN, Nx, Ny),
+    &var2pos <<= [empty(Nx, YorNX), empty(Ny, YorNY)],
+    guard_dependency_unify_var_var(UorN, YorNX, YorNY,
+                   variable(Nx), variable(Ny),
+                   NewX, NewY).
+otherwise.
+guard_dependency_unify_(UorN, Bound, variable(N), NewX, NewY) --> true |
+    &var2pos <<= [empty(N, YorN)],
+    print_error_if_not_bounded(YorN, UorN, Bound, N, NewX, NewY).
+
+warnIfEq(unify, N, N) --> true |
+   &io <<= [warning("funny guard goal : ~T", [variable(N)=variable(N)])].
+warnIfEq(notunify, N, N) --> true |
+   &io <<= [warning("funny guard goal : ~T", [variable(N)\=variable(N)])].
+otherwise.
+warnIfEq(_, _, _) --> true | true.
+
+print_error_if_not_bounded(yes, unify, atom(Atom), N, NewX, NewY) --> true |
+    &arg <<= [put(atom(Atom), Pos)],
+    {{set_type_and_get_position(&var2pos, variable(N), atom(Atom), Pos)}},
+    NewX=atom(Atom), NewY=variable(N).
+print_error_if_not_bounded(yes, unify, integer(Int), N, NewX, NewY) --> true |
+    &arg <<= [put(integer(Int), Pos)],
+    {{set_type_and_get_position(&var2pos, variable(N), integer(Int), Pos)}},
+    NewX=integer(Int), NewY=variable(N).
+print_error_if_not_bounded(yes, unify, floating_point(Int), N, NewX, NewY) --> true |
+    &arg <<= [put(floating_point(Int), Pos)],
+    {{set_type_and_get_position(&var2pos, variable(N), floating_point(Int), Pos)}},
+    NewX=floating_point(Int), NewY=variable(N).
+print_error_if_not_bounded(yes, unify, '$SCNST'(ARG), N, NewX, NewY) --> true |
+    &arg <<= [put(string('$SCNST'(ARG)), Pos)],
+    {{set_type_and_get_position(&var2pos, variable(N), string('$SCNST'(ARG)), Pos)}},
+    NewX=string('$SCNST'(ARG)), NewY=variable(N).
+otherwise.
+print_error_if_not_bounded(yes, _, Bound, N, NewX, NewY) --> true |
+    &io <<= [error("uninstanciated variable : ~t", [variable(N)])],
+    NewX=Bound, NewY=variable(N).
+print_error_if_not_bounded(no, UorN, Bound, N, NewX, NewY) --> true |
+    guard_dependency_unify__(UorN, Bound, variable(N), NewX, NewY).
+
+guard_dependency_unify__(unify, atom(Atom), Y, NewX, NewY) --> true |
+    &arg <<= [wait(Pos, atom(Atom))],
+    {{set_type_and_get_position(&var2pos, Y, atom(Atom), Pos)}},
+    NewX=atom(Atom), NewY=Y.
+%guard_dependency_unify__(unify, atom(Atom), Y, NewX, NewY) --> true |
+%    &arg <<= [wait(Pos, atom(Atom))],
+%    {{set_type_and_get_position(&var2pos, Y, atom(Atom), Pos)}},
+%    NewX=atom(Atom), NewY=Y.
+guard_dependency_unify__(notunify, atom(Atom), Y, NewX, NewY) --> true |
+    &varno <<= [new_variable(variable(Z))],
+    &var2pos <<= [put(Z, {variable(Z), atom(Atom)})],
+    &arg <<= [builtin(wait(Pos)), put(atom(Atom), variable(Z)), builtin(diff(Pos, variable(Z)))],
+    {{set_type_and_get_position(&var2pos, Y, atom(Atom), Pos)}},
+    NewX=atom(Atom), NewY=Y.
+guard_dependency_unify__(unify, integer(Int), Y, NewX, NewY) --> true |
+    &arg <<= [wait(Pos, integer(Int))],
+    {{set_type_and_get_position(&var2pos, Y, integer(Int), Pos)}},
+    NewX=integer(Int), NewY=Y.
+guard_dependency_unify__(notunify, integer(Int), Y, NewX, NewY) --> true |
+    &varno <<= [new_variable(variable(Z))],
+    &var2pos <<= [put(Z, {variable(Z), integer(Int)})],
+    &arg <<= [builtin(wait(Pos)), put(integer(Int), variable(Z)), builtin(diff(Pos, variable(Z)))],
+    {{set_type_and_get_position(&var2pos, Y, integer(Int), Pos)}},
+    NewX=integer(Int), NewY=Y.
+%guard_dependency_unify__(unify, integer(Int), Y, NewX, NewY) --> true |
+%    &arg <<= [wait(Pos, integer(Int))],
+%    {{set_type_and_get_position(&var2pos, Y, integer(Int), Pos)}},
+%    NewX=integer(Int), NewY=Y.
+guard_dependency_unify__(unify, floating_point(Int), Y, NewX, NewY) --> true |
+    &arg <<= [wait(Pos, floating_point(Int))],
+    {{set_type_and_get_position(&var2pos, Y, floating_point(Int), Pos)}},
+    NewX=floating_point(Int), NewY=Y.
+guard_dependency_unify__(notunify, floating_point(Int), Y, NewX, NewY) --> true |
+    &varno <<= [new_variable(variable(Z))],
+    &var2pos <<= [put(Z, {variable(Z), floating_point(Int)})],
+    &arg <<= [builtin(wait(Pos)), put(floating_point(Int), variable(Z)), builtin(diff(Pos, variable(Z)))],
+    {{set_type_and_get_position(&var2pos, Y, floating_point(Int), Pos)}},
+    NewX=floating_point(Int), NewY=Y.
+guard_dependency_unify__(unify, '$SCNST'(Str0), Y, NewX, NewY) --> true |
+    {{kl1cmp_wrap:unwrap(Str0, Str)}},
+    &arg <<= [wait(Pos, string('$SCNST'(Str)))],
+    {{set_type_and_get_position(&var2pos, Y, string('$SCNST'(Str)), Pos)}},
+    NewX='$SCNST'(Str0), NewY=Y.
+guard_dependency_unify__(notunify, '$SCNST'(Str0), Y, NewX, NewY) --> true |
+    {{kl1cmp_wrap:unwrap(Str0, Str)}},
+    &varno <<= [new_variable(variable(Z))],
+    &var2pos <<= [put(Z, {variable(Z), string('$SCNST'(Str))})],
+    &arg <<= [builtin(wait(Pos)),put(string('$SCNST'(Str)), variable(Z)), builtin(diff(Pos, variable(Z)))],
+    {{set_type_and_get_position(&var2pos, Y, string('$SCNST'(Str)), Pos)}},
+    NewX='$SCNST'(Str0), NewY=Y.
+guard_dependency_unify__(unify, '$MODULE'(Str), Y, NewX, NewY) --> true |
+    &arg <<= [wait(Pos, string('$MODULE'(Str)))],
+    {{set_type_and_get_position(&var2pos, Y, string('$MODULE'(Str)), Pos)}},
+    NewX='$MODULE'(Str), NewY=Y.
+guard_dependency_unify__(notunify, '$MODULE'(Str), Y, NewX, NewY) --> true |
+    &varno <<= [new_variable(variable(Z))],
+    &var2pos <<= [put(Z, {variable(Z), string('$MODULE'(Str))})],
+    &arg <<= [builtin(wait(Pos)),put(string('$MODULE'(Str)), variable(Z)), builtin(diff(Pos, variable(Z)))],
+    {{set_type_and_get_position(&var2pos, Y, string('$MODULE'(Str)), Pos)}},
+    NewX='$MODULE'(Str), NewY=Y.
+
+guard_dependency_unify__(unify, list([Car|Cdr]), Y, NewX, NewY) --> true |
+    &arg <<= [wait(Pos, list)],
+    {{set_type_and_get_position(&var2pos, Y, list, Pos),
+      make_dependency(&io, &varno, &arg, &var2pos, &class, guard, Car, NewXCar, car(Pos)),
+      make_dependency(&io, &varno, &arg, &var2pos, &class, guard, Cdr, NewXCdr, cdr(Pos))}},
+    NewX=list([NewXCar|NewXCdr]),
+    NewY=Y.
+guard_dependency_unify__(notunify, list([Car|Cdr]), Y, NewX, NewY) --> true |
+    &io <<= [error("`diff' between structure and variable is not supported : ~T",
+           [vector({atom((\=)), list([Car|Cdr]), Y})])],
+    {{set_type(&var2pos, Y, list)}},
+    NewX=list([Car|Cdr]),
+    NewY=Y.
+otherwise.
+guard_dependency_unify__(UorN, variable(N), Pos, NewX, NewY) --> true |
+    &var2pos <<= [empty(N, YorN)],
+    guard_dependency_unify_var_var(UorN, YorN, no, variable(N), Pos,
+                   NewX, NewY).
+otherwise.
+guard_dependency_unify__(unify, vector(Vect0), Y, NewX, NewY) --> vector(Vect0, N) |
+    &arg <<= [wait(Pos, vector(N))],
+    {{set_type_and_get_position(&var2pos, Y, vector(N), Pos)}},
+    guard_dependency_unify_vect(0, N, Vect0, Pos, NX, NewY),
+    NewX=vector(NX).
+guard_dependency_unify__(notunify, vector(Vect0), Y, NewX, NewY) --> true |
+    &io <<= [error("`diff' between structure and variable is not supported : ~T",
+           [vector({atom((\=)), vector(Vect0), Y})])],
+    vector(Vect0)=NewX, Y=NewY.
+
+%
+% variable-variable
+%
+guard_dependency_unify_var_var(unify, yes, no, variable(X), variable(Y),
+                   NewX, NewY) --> true |
+%% 90/06/07 D.Sekita
+    &arg <<= [wait(variable(X), Pos)],
+    &var2pos <<= [get_and_put(Y, {Pos, Type}, {Pos, Type}),
+          put(X, {Pos,Type})],
+%%    &pos2var <<= [put(Pos, Y)],
+    NewX=variable(X), NewY=variable(Y).
+guard_dependency_unify_var_var(unify, no, yes, variable(X), variable(Y),
+                   NewX, NewY) --> true |
+%% 90/06/07 D.Sekita
+    &arg <<= [wait(variable(Y), Pos)],
+    &var2pos <<= [get_and_put(X, {Pos, Type}, {Pos, Type}),
+          put(Y, {Pos, Type})],
+%%    &pos2var <<= [put(Pos, X)],
+    NewX=variable(X), NewY=variable(Y).
+guard_dependency_unify_var_var(unify, no, no, variable(X), variable(Y),
+                   NewX, NewY) --> true |
+    &var2pos <<= [get_and_put(X, {PosX, TypeX}, {PosX, TypeX}),
+          get_and_put(Y, {PosY, TypeY}, {PosY, TypeY})],
+    &arg <<= [unify(PosX, PosY)],
+    NewX=variable(X), NewY=variable(Y).
+guard_dependency_unify_var_var(notunify, no, no, variable(X), variable(Y),
+                   NewX, NewY) --> true |
+    &var2pos <<= [get_and_put(X, {PosX, TypeX}, {PosX, TypeX}),
+          get_and_put(Y, {PosY, TypeY}, {PosY, TypeY})],
+    &arg <<= [builtin(wait(PosX)), builtin(wait(PosY)), builtin(diff(PosX, PosY))],
+    NewX=variable(X), NewY=variable(Y).
+%% it must be error
+guard_dependency_unify_var_var(unify, yes, yes, variable(X), variable(Y),
+                   NewX, NewY) --> true |
+    &io <<= [error(
+           "unification between first appearared variables is not supported",
+           [X=Y])],
+    &var2pos <<= [put(X, {variable(X), 0}), put(Y, {variable(Y), 0})],
+    NewX=variable(X), NewY=variable(Y).
+guard_dependency_unify_var_var(notunify, yes, no, variable(X),
+                   Y, NewX, NewY) --> true |
+    &io <<= [error(
+           "`diff' with first appearared variable is not supported",
+           [X\=Y])],
+    &var2pos <<= [put(X, {variable(X), 0})],
+    NewX=variable(X), NewY=Y.
+guard_dependency_unify_var_var(notunify, no, yes, X,
+                   variable(Y), NewX, NewY) --> true |
+    &io <<= [error(
+           "`diff' with first appearared variable is not supported",
+           [wrap#(X\=variable(Y))])],
+    &var2pos <<= [put(Y, {variable(Y), 0})],
+    NewX=X, NewY=variable(Y).
+guard_dependency_unify_var_var(notunify, yes, yes, variable(X),
+                   variable(Y), NewX, NewY) --> true |
+    &io <<= [error(
+           "`diff' with first appearared variable is not supported",
+           [wrap#(variable(X)\=variable(Y))])],
+    &var2pos <<= [put(X, {variable(X), 0}), put(Y, {variable(Y), 0})],
+    NewX=variable(X), NewY=variable(Y).
+
+guard_dependency_unify_vect(A, N, Vect0, Y, NewX, NewY) --> A<N |
+    {{set_vector_element(Vect0, A, Arg0, Arg, Vect1),
+      make_dependency(&io, &varno, &arg, &var2pos,&class, guard, Arg0, Arg, element(Y, A)),
+      A1 := A+1}},
+    guard_dependency_unify_vect(A1, N, Vect1, Y, NewX, NewY).
+guard_dependency_unify_vect(N, N, Vect0, Y, NewX, NewY) --> true |
+    Vect0=NewX, Y=NewY.
+
+
+guard_dependency_unify_vect_vect(A, N, UorN, VectX, VectY,
+                 NewX, NewY) -->
+    A<N |
+    {{set_vector_element(VectX, A, ArgX0, ArgX, VectX1),
+      set_vector_element(VectY, A, ArgY0, ArgY, VectY1)}},
+    guard_dependency_unify(UorN, ArgX0, ArgY0, ArgX, ArgY),
+    {{A1 := A+1}},
+    guard_dependency_unify_vect_vect(A1, N, UorN, VectX1, VectY1, NewX, NewY).
+guard_dependency_unify_vect_vect(N, N, _, VectX0, VectY0,
+                 NewX, NewY) --> true |
+    VectX0=NewX, VectY0=NewY.
+
+%%
+%% make_dependency_table
+%%
+%% fill type field in the var2pos. 
+%%
+:- local_implicit
+         depend:oldnew, var2pos:oldnew.
+make_dependency_table([wait(variable(_), arg(_))|Depend]) --> true |
+    make_dependency_table(Depend).
+otherwise.
+make_dependency_table([wait(variable(N), Type)|Depend]) --> true |
+    {{access_type(&var2pos, N, OldType, Type)}},
+%%    erace_instruction_if_not_needed(OldType, Type, NewType, wait(variable(N), Type)),
+    &depend <<= [wait(variable(N), Type)],
+    make_dependency_table(Depend).
+make_dependency_table([check(variable(N), Type)|Depend]) --> true |
+    {{access_type(&var2pos, N, OldType, NewType)}},
+    erace_instruction_if_not_needed(OldType, Type, NewType, check(variable(N), Type)),
+    make_dependency_table(Depend).
+make_dependency_table([put({Type, Arg},variable(N))|Depend]) -->
+    true |
+    {{access_type(&var2pos, N, _, Type)}},
+    &depend <<= [put({Type, Arg}, variable(N))],
+    make_dependency_table(Depend).
+make_dependency_table([builtin(wait(variable(N)))|Depend]) -->
+    true |
+    {{access_type(&var2pos, N, Type0, Type)}},
+    erace_wait_if_bounded(Type0, Type, variable(N)),
+    make_dependency_table(Depend).
+make_dependency_table([builtin(integer(variable(N)))|Depend]) -->
+    true |
+    {{access_type(&var2pos, N, Type0, Type)}},
+    erace_instruction_if_not_needed(Type0, integer, Type,
+                    builtin(integer(variable(N)))),
+    make_dependency_table(Depend).
+make_dependency_table([builtin(atom(variable(N)))|Depend]) -->
+    true |
+    {{access_type(&var2pos, N, Type0, Type)}},
+    erace_instruction_if_not_needed(Type0, atom, Type,
+                    builtin(integer(variable(N)))),
+    make_dependency_table(Depend).
+make_dependency_table([builtin(vector_element(V, P, variable(Ne)))|Depend]) -->
+    true |
+    &depend <<= [builtin(vector_element(V, P, variable(Ne)))],
+    {{access_arg(&var2pos, Ne, _, element(V, P))}},
+    make_dependency_table(Depend).
+otherwise.
+make_dependency_table([wait(Pos, variable(N))|Depend]) --> true |
+    {{access_arg(&var2pos, N, _, Pos)}},
+    make_dependency_table(Depend).
+otherwise.
+make_dependency_table([Instr|Depend]) --> true |
+    &depend <<= [Instr],
+    make_dependency_table(Depend).
+make_dependency_table([]) --> true | true.
+
+erace_instruction_if_not_needed(OldType, NewType, Type, Instr) -->
+    % If NewType has more information.
+    atom(OldType), vector_element(NewType, 0, OldType) |
+    Type=NewType,
+    &depend <<= [Instr].
+erace_instruction_if_not_needed(0, NewType, Type, Instr) --> true |
+    Type=NewType,
+    &depend <<= [Instr].
+otherwise.
+erace_instruction_if_not_needed(OldType, _, Type, _) --> true |
+    Type=OldType.            % erace instruction.
+
+erace_wait_if_bounded(0, Type, Var) --> true |
+    &depend <<= [builtin(wait(Var))],
+    Type=(wait).
+erace_wait_if_bounded(string(Str), Type, Var) --> true |
+    &depend <<= [builtin(wait(Var))],
+    Type=string(Str).
+erace_wait_if_bounded(string, Type, Var) --> true |
+    &depend <<= [builtin(wait(Var))],
+    Type=string.
+otherwise.
+erace_wait_if_bounded(Type0, Type, _) --> true |
+    Type0=Type.
+
+
+%%
+%% Table manipulations
+%%
+
+:- local_implicit var2pos:oldnew.
+access_arg(N, OldArg, NewArg) --> true |
+    &var2pos <<= [empty(N, YorN)],
+    access_slot_if_not_empty(YorN, N, 0, OldArg, NewArg).
+
+access_type(N, OldType, NewType) --> true |
+    &var2pos <<= [empty(N, YorN)],
+    access_slot_if_not_empty(YorN, N, 1, OldType, NewType).
+
+access_slot_if_not_empty(no, N, Pos, OldArg, NewArg) --> true |
+    &var2pos <<= [get_and_put(N, OldSlot, NewSlot)], 
+    {{set_vector_element(OldSlot, Pos, OldArg, NewArg, NewSlot)}}.
+
+:- local_implicit var2pos:oldnew, pos2var:oldnew.
+put_label_variable_in_body((G0,G1), NewGoals) --> true |
+    put_label_variable_in_body(G0, NewG0),
+    put_label_variable_in_body(G1, NewG1),
+    NewGoals=(NewG0, NewG1).
+otherwise.
+put_label_variable_in_body(Goal, NewGoal) --> vector(Goal, N) |
+    put_label_variable_in_body(1, N, Goal, NewGoal).
+otherwise.
+put_label_variable_in_body(Goal, NewGoal) --> true |
+    Goal=NewGoal.
+
+put_label_variable_in_body(A, N, Goal0, Goal) --> A<N|
+    {{set_vector_element(Goal0, A, Arg0, Arg, Goal1),
+    A1 := A+1}},
+    put_label_variable_in_body_one_arg(Arg0, Arg),
+    put_label_variable_in_body(A1, N, Goal1, Goal).
+otherwise.
+put_label_variable_in_body(N, N, Goal0, Goal) --> true |
+    Goal0=Goal.
+
+put_label_variable_in_body_one_arg(list([Car|Cdr]), NewList) --> true |
+    put_label_variable_in_body_one_arg(Car, NewCar),
+    put_label_variable_in_body_one_arg(Cdr, NewCdr),
+    NewList=list([NewCar|NewCdr]).
+put_label_variable_in_body_one_arg(variable(N), NewVar) --> true |
+    &var2pos <<= [empty(N, YorN)],
+    copy_label(YorN, N, NewVar).
+otherwise.
+put_label_variable_in_body_one_arg(vector(Vect0), WVect) --> vector(Vect0, N) |
+    put_label_variable_in_body(0, N, Vect0, Vect),
+    WVect=vector(Vect).
+otherwise.
+put_label_variable_in_body_one_arg(Arg0, Arg) --> true |
+    Arg0=Arg.
+
+copy_label(yes, N, NewVar) --> true |
+    NewVar=variable(N).
+copy_label(no, N, NewVar) --> true |
+    &var2pos <<= [get_and_put(N, {Pos, Type}, {Pos, Type})],
+    replace_if_variable(Pos, N, NewVar).
+
+replace_if_variable(arg(A), N, NewVar) --> true |
+    &pos2var <<= [empty(arg(A), YorN)],
+    replace_if_variable(YorN, A, N, NewVar).
+otherwise.
+replace_if_variable(Pos, N, NewVar) --> true |
+    NewVar=(variable(N)@Pos).
+
+replace_if_variable(yes, A, N, NewVar) --> true |
+    NewVar=(variable(N)@arg(A)).
+replace_if_variable(no, A, _, NewVar) --> true |
+    &pos2var <<= [get_and_put(arg(A), Src, Src)],
+    NewVar=variable(Src).
+
+
+%%
+%% tiny predicates
+%% 
+:- local_implicit var2pos:oldnew.
+set_type(variable(N), Type) --> true | 
+    &var2pos <<= [empty(N, YorN)],
+    set_type(YorN, variable(N), Type).
+otherwise.
+set_type(_, _) --> true | true.
+
+set_type(yes, variable(N), Type) --> true |
+    &var2pos <<= [put(N, {variable(N), Type})].
+set_type(no, _, _) --> true | true.
+
+set_type_and_get_position(variable(N), Type, Pos) --> true |
+    &var2pos <<= [empty(N, YorN)],
+    get_position_if_not_empty(YorN, N, Type, Pos).
+otherwise.
+set_type_and_get_position(Pos0, _, Pos) --> true |
+    Pos0=Pos.
+
+get_position_if_not_empty(yes, N, Type, Pos) --> true |
+    Pos=variable(N),
+    &var2pos <<= [put(N, {variable(N), Type})].
+get_position_if_not_empty(no, N, _, Pos) --> true |
+    &var2pos <<= [get_and_put(N, {Pos, Type}, {Pos, Type})].
+%%    check_type(Type0, Type).
+
+get_position(variable(N), Pos)--> true |
+    &var2pos <<= [empty(N, YorN)],
+    get_position(YorN, variable(N), Pos).
+otherwise.
+get_position(Arg, Pos) --> true | Arg=Pos.
+
+get_position(no, variable(N), Arg) --> true |
+    &var2pos <<= [get_and_put(N, {Arg, Type}, {Arg, Type})].
+get_position(yes, variable(N), Arg) --> true |
+    &var2pos <<= [put(N, {variable(N), 0})],
+    Arg=variable(N).
+
+%%check_type(Type, Type) --> true |
+%%    &io <<= [warning("unneccesary unification : ~t", [Type])].
+%%otherwise.
+%%check_type(Type0, Type) --> true |
+%%    &io <<= [warning("invalid unification : ~t, ~t", [Type0, Type])].
+
+max_value(Max0, Max, [N|Cdr]) :- Max0>N |
+    max_value(Max0, Max, Cdr).
+max_value(Max0, Max, [N|Cdr]) :- Max0=<N |
+    max_value(N, Max, Cdr).
+max_value(Max0, Max, []) :- true | Max:=Max0+1.
+
+
+:- local_implicit code:oldnew.
+unwrap_goals(vector({atom((',')), WG0, WG1}), Goals) :- true |
+    unwrap_goals(WG0, G0),
+    unwrap_goals(WG1, G1),
+    Goals=(G0,G1).
+otherwise.
+unwrap_goals(WG0, G0) :- true |
+    unwrap_one_goal(WG0, G0).
+
+unwrap_one_goal(vector(WG), G) :- vector_element(WG, 0, WF), WF=atom(F) |
+    set_vector_element(WG, 0, _, F, G).
+unwrap_one_goal(atom(Atom), G) :- true |
+    G = Atom.
+otherwise.
+unwrap_one_goal(G0, G) :- true | G0=G.

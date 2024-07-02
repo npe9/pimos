@@ -1,0 +1,105 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- module shl_alias.
+:- public expand/3.
+
+%%%%%
+detect_first_atom(In, Out) :- true |
+    detect_first_atom(In, Out, space).
+
+% Mode = space | atom([...]) | search
+
+detect_first_atom([], Out, space) :- true | Out = [].
+detect_first_atom([], Out, atom(AtomList)) :- true |
+    ( AtomList = [] -> Out = [] ;
+    otherwise ;
+      true -> Out = [atom(AtomList)] ).
+detect_first_atom([], Out, search) :- true | Out = [].
+
+detect_first_atom([Elmnt | In], Out, space) :- true |
+    ( Elmnt = #" " -> Mode = space, Out = [Elmnt | NOut] ;
+      Elmnt = key#lf -> Mode = space, Out = [Elmnt | NOut] ;
+      Elmnt = key#cr -> Mode = space, Out = [Elmnt | NOut] ;
+    otherwise ;
+      true -> Mode = atom([Elmnt]), NOut = Out ),
+    detect_first_atom(In, NOut, Mode).
+detect_first_atom([Elmnt | In], Out, atom(AtomList)) :- true |
+    ( Elmnt = #" " -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = key#lf -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = key#cr -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"," -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"&" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"|" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"<" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #">" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"-" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"=" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"^" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"(" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #")" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"{" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"}" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"[" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"]" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"'" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+      Elmnt = #"""" -> Mode = search, Out = [atom(AtomList), Elmnt | NOut] ;
+    otherwise ;
+      true -> Mode = atom(NAtomList),
+        shellUtils:append(AtomList, [Elmnt], NAtomList), NOut = Out ),
+    detect_first_atom(In, NOut, Mode).
+detect_first_atom([Elmnt | In], Out, search) :- true |
+    ( Elmnt = #"&" -> Mode = space ;
+      Elmnt = #"|" -> Mode = space ;
+%      Elmnt = #";" -> Mode = space ;
+    otherwise ;
+      true -> Mode = search ),
+    Out = [Elmnt | NOut],
+    detect_first_atom(In, NOut, Mode).
+%%%%%
+convert_atom([], Out, _) :- Out = [].
+convert_atom([atom(AtomList) | In], Out, Pool) :- true |
+    convert_atom(AtomList, Out, NOut, Pool, NPool),
+    convert_atom(In, NOut, NPool).
+otherwise.
+convert_atom([Elmnt | In], Out, Pool) :- true |
+    Out = [Elmnt | NOut],
+    convert_atom(In, NOut, Pool).
+%%%%%
+convert_atom(AtomList, Out, NOut, Pool, NPool) :- true |
+    shellUtils:convert_list_to_string(AtomList, AtomString),
+    search_atom(AtomString, AliasString, Pool, NPool),
+    shellUtils:convert_string_to_list(AliasString, AliasList),
+    put_atom(AliasList, Out, NOut).
+
+search_atom(AtomString, AliasString, [], NPool) :- true |
+    AliasString = AtomString, NPool = [].
+search_atom(AtomString, AliasString, [{X,Y} | Pool], NPool) :- AtomString = X |
+    AliasString = Y, NPool = [{X, Y} | Pool].
+otherwise.
+search_atom(AtomString, AliasString, [{X, Y} | Pool], NPool) :- true |
+    NPool = [{X, Y} | NNPool],
+    search_atom(AtomString, AliasString, Pool, NNPool).
+
+put_atom([], Out, NOut) :- true | NOut = Out.
+put_atom([Elmnt | AliasList], Out, NOut) :- true |
+    Out = [Elmnt | NNOut],
+    put_atom(AliasList, NNOut, NOut).
+%%%%%
+%   expand(" a b & c d | e f ", X, [{"a", "aa"}, {"c", "cc"}, {"e", "ee"}]).
+%           ||
+%           \/
+%   X = " aa b & cc d | ee f "
+expand(Line, NLine, Pool) :- true |
+    shellUtils:convert_string_to_list(Line, List),
+    detect_first_atom(List, NList),
+    convert_atom(NList, NNList, Pool),
+    shellUtils:convert_list_to_string(NNList, NLine).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of Text  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%

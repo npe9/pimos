@@ -1,0 +1,362 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Module>package.kl1.3, 23-Apr-92 16:49:37, Edit by hori
+
+:- module package.
+:- with_macro pimos.
+:- public define/2, define/3, define/4.
+:- public protect/2, protect/3.
+:- public listing/0, listing/1, listing/2.
+:- public name_sort/5, time_sort/5, file_sort/5.
+
+%%%% DEFINE %%%%
+
+define(Package,Super) :- atom(Package), atom(Super) |
+    module_table:cache_table(MT0),
+    MT0 = [get_package_info(Package,Status)],
+    check_package_1(Status,Package,Super).
+
+check_package_1(non_existent,Package,Super) :- true |
+    privilege:execute(package_body:define(Package,Super,8#"755",Status),{0,100000},{0,100000}),
+    wait_status(Status,Package,Super).
+otherwise.
+check_package_1(_,Package,Super) :- true |
+    kl1_library_message:message(MESG),
+    MESG = [warning(string#"already exists : ~t",[Package])].
+
+define(Package,Super,Protect) :- atom(Package), atom(Super), integer(Protect) |
+    privilege:execute(package_body:define(Package,Super,Protect,Status),{0,100000},{0,100000}),
+    wait_status(Status,Package,Super).
+
+define(Package,Super,Protect,Status) :- atom(Package), atom(Super), integer(Protect) |
+    privilege:execute(package_body:define(Package,Super,Protect,Status),{0,100000},{0,100000}).
+
+wait_status(normal,_,_) :- true.
+wait_status(non_existent,Package,Super) :- true|
+    kl1_library_message:message(MESG),
+    MESG = [error(string#"non existent super package : ~t",[Super])].
+wait_status(protection_violation,_,_) :- true |
+    kl1_library_message:message(MESG),
+    MESG = [error(string#"protection violation",[])].
+otherwise.
+wait_status(Status,Package,Super) :- true |
+    kl1_library_message:message(MESG),
+    MESG = [error(string#"can not define package : ~t",[Package])].
+
+%%%% PROTECT %%%%
+
+protect(Package,Protection) :- atom(Package), integer(Protection) |
+    module_table:cache_table([protect_package(Package,Protection,Status)]),
+    wait_status(Status,Package,Protection).
+
+protect(Package,Protection,Status) :- atom(Package), integer(Protection) |
+    privilege:execute(package_body:protect(Package,Protection,Status),{0,100000},{0,100000}).
+
+%%%% LISTING %%%%
+
+listing :- true |
+    module_table:cache_table([get_all_packages(Status)]),
+    listing_0(Status).
+
+listing_0(normal(All)) :- true |
+    kl1_library_message:message(MESG),
+    shoen:raise(pimos_tag#task,general_request, 
+        [user(normal([create(user(normal(US,_,_))),create(group(normal(GS,_,_)))],_,_))]),
+    atom_table:cache_table(AT),
+    listing(All,US,GS,AT,List0),
+    align(List0,List1),
+    output(List1,MESG).
+otherwise.
+listing_0(Status) :- true |
+    kl1_library_message:message(MESG),
+    MESG = [error(string#"unable to get package list",[])].
+
+listing([{Package,Super,ProtectInfo}|Rest],US0,GS0,AT0,List0) :- true |
+    listing(Package,Super,ProtectInfo,US0,US1,GS0,GS1,AT0,AT1,Out),
+    List0 = [Out|List1],
+    listing(Rest,US1,GS1,AT1,List1).
+listing([],US,GS,AT,List) :- true | 
+    US = [],
+    GS = [],
+    AT = [],
+    List = [].
+
+listing(Package,normal(Super),normal({{OID,GID},Prot}),US0,US1,GS0,GS1,AT0,AT2,Out) :- true |
+    AT0 = [get_atom_name(Package,normal(PName)),get_atom_name(Super,normal(SName))|AT1],
+    get_user_name(OID,US0,US1,AT1,AT2,OName),
+    decode_protection(Prot,ProtStr),
+    Out = {PName,SName,OName,ProtStr},
+    GS0 = GS1.
+listing(Package,non_existent,normal({{OID,GID},Prot}),US0,US1,GS0,GS1,AT0,AT2,Out) :- true |
+    AT0 = [get_atom_name(Package,normal(PName))|AT1],
+    SName = string#"----",
+    get_user_name(OID,US0,US1,AT1,AT2,OName),
+    decode_protection(Prot,ProtStr),
+    Out = {PName,SName,OName,ProtStr},
+    GS0 = GS1.
+listing(Package,normal(Super),protection_violation,US0,US1,GS0,GS1,AT0,AT1,Out) :- true |
+    AT0 = [get_atom_name(Package,normal(PName)),get_atom_name(Super,normal(SName))|AT1],
+    OName = string#"****",
+    ProtStr = string#"?????????",
+    Out = {PName,SName,OName,ProtStr},
+    US0 = US1,
+    GS0 = GS1.
+listing(Package,non_existent,protection_violation,US0,US1,GS0,GS1,AT0,AT1,Out) :- true |
+    AT0 = [get_atom_name(Package,normal(PName))|AT1],
+    SName = string#"----",
+    OName = string#"****",
+    ProtStr = string#"?????????",
+    Out = {PName,SName,OName,ProtStr},
+    US0 = US1,
+    GS0 = GS1.
+
+get_user_name(OID,US0,US1,AT0,AT1,OName) :- true |
+    US0 = [get_info(OID,Status)|US1],
+    get_user_name(Status,OID,AT0,AT1,OName).
+
+get_user_name(normal({UserName,_,_,_,_,_}),OID,AT0,AT1,OName) :- true |
+    AT0 = AT1,
+    UserName = OName.
+otherwise.
+get_user_name(_,OID,AT0,AT1,OName) :- true |
+    AT0 = AT1,
+    buffer:character_pool([putt(OID),getl(OName)]).
+
+decode_protection(Prot,String) :- true |
+    new_string(String0,9,16),
+    decode_protection(8,String0,Prot,String).
+
+decode_protection(I,String0,Prot0,String) :- I >= 0 |
+    P := Prot0 /\ 16#"7",
+    decode_prot(P,I,String0,String1),
+    I1 := I - 3,
+    Prot1 := Prot0 >> 3,
+    decode_protection(I1,String1,Prot1,String).
+otherwise.
+decode_protection(_,String0,_,String) :- true | String0 = String.
+
+decode_prot(2#"000",I0,String0,String) :- true |
+    set_string_element(String0,I0,#"-",String1),
+    I1 := I0 - 1,
+    set_string_element(String1,I1,#"-",String2),
+    I2 := I1 - 1,
+    set_string_element(String2,I2,#"-",String).
+decode_prot(2#"001",I0,String0,String) :- true |
+    set_string_element(String0,I0,#"x",String1),
+    I1 := I0 - 1,
+    set_string_element(String1,I1,#"-",String2),
+    I2 := I1 - 1,
+    set_string_element(String2,I2,#"-",String).
+decode_prot(2#"010",I0,String0,String) :- true |
+    set_string_element(String0,I0,#"-",String1),
+    I1 := I0 - 1,
+    set_string_element(String1,I1,#"w",String2),
+    I2 := I1 - 1,
+    set_string_element(String2,I2,#"-",String).
+decode_prot(2#"011",I0,String0,String) :- true |
+    set_string_element(String0,I0,#"x",String1),
+    I1 := I0 - 1,
+    set_string_element(String1,I1,#"w",String2),
+    I2 := I1 - 1,
+    set_string_element(String2,I2,#"-",String).
+decode_prot(2#"100",I0,String0,String) :- true |
+    set_string_element(String0,I0,#"-",String1),
+    I1 := I0 - 1,
+    set_string_element(String1,I1,#"-",String2),
+    I2 := I1 - 1,
+    set_string_element(String2,I2,#"r",String).
+decode_prot(2#"101",I0,String0,String) :- true |
+    set_string_element(String0,I0,#"x",String1),
+    I1 := I0 - 1,
+    set_string_element(String1,I1,#"-",String2),
+    I2 := I1 - 1,
+    set_string_element(String2,I2,#"r",String).
+decode_prot(2#"110",I0,String0,String) :- true |
+    set_string_element(String0,I0,#"-",String1),
+    I1 := I0 - 1,
+    set_string_element(String1,I1,#"w",String2),
+    I2 := I1 - 1,
+    set_string_element(String2,I2,#"r",String).
+decode_prot(2#"111",I0,String0,String) :- true |
+    set_string_element(String0,I0,#"x",String1),
+    I1 := I0 - 1,
+    set_string_element(String1,I1,#"w",String2),
+    I2 := I1 - 1,
+    set_string_element(String2,I2,#"r",String).
+
+align(List0,List) :- true |
+    align(List0,0,0,0,0,M0,M1,M2,M3),
+    align(List0,M0,M1,M2,M3,List).
+
+align([{PName,SName,OName,ProtStr}|Rest],M0,M1,M2,M3,MMM0,MMM1,MMM2,MMM3) :-
+    string(PName,L0,_),
+    string(SName,L1,_),
+    string(OName,L2,_),
+    string(ProtStr,L3,_) |
+    max(M0,L0,MM0),
+    max(M1,L1,MM1),
+    max(M2,L2,MM2),
+    max(M3,L3,MM3),
+    align(Rest,MM0,MM1,MM2,MM3,MMM0,MMM1,MMM2,MMM3).
+align([],M0,M1,M2,M3,MM0,MM1,MM2,MM3) :- true |
+    M0 = MM0,
+    M1 = MM1,
+    M2 = MM2,
+    M3 = MM3.
+
+max(X,Y,Z) :- X > Y | Z = X.
+max(X,Y,Z) :- X =< Y | Z = Y.
+
+align([{Str0,Str1,Str2,Str3}|Rest],M0,M1,M2,M3,List0) :- true |
+    create_tail(Str0,M0,Tail0),
+    create_tail(Str1,M1,Tail1),
+    create_tail(Str2,M2,Tail2),
+%%    create_tail(Str3,M3,Tail3),
+%%    List0 = [{Str0,Tail0,Str1,Tail1,Str2,Tail2,Str3,Tail3}|List1],
+    List0 = [{Str0,Tail0,Str1,Tail1,Str2,Tail2,Str3}|List1],
+    align(Rest,M0,M1,M2,M3,List1).
+align([],_,_,_,_,List) :- true | List = [].
+
+create_tail(String,Max,Tail) :- string(String,Length,_) |
+    L := Max - Length,
+    new_string(Tail0,L,16),
+    fill(Tail0,0,L,Tail).
+
+fill(String0,I,L,String) :- I < L |
+    set_string_element(String0,I,#" ",String1),
+    I1 := I + 1,
+    fill(String1,I1,L,String).
+fill(String0,I,L,String) :- I >= L |
+    String0 = String.
+
+output([{Str0,Tail0,Str1,Tail1,Str2,Tail2,Str3,Tail3}|Rest],MESG0) :- true |
+    MESG0 = [info("  ~s ~s ~s ~s ~s ~s ~s ~s",
+                  [Str0,Tail0,Str1,Tail1,Str2,Tail2,Str3,Tail3])|MESG1],
+    output(Rest,MESG1).
+output([{Str0,Tail0,Str1,Tail1,Str2,Tail2,Str3}|Rest],MESG0) :- true |
+    MESG0 = [info("  ~s ~s ~s ~s ~s ~s ~s",
+                  [Str0,Tail0,Str1,Tail1,Str2,Tail2,Str3])|MESG1],
+    output(Rest,MESG1).
+output([],MESG) :- true |  MESG = [].
+
+%%%% LISTING/1 %%%%
+
+listing(Package) :- atom(Package) |
+    module_table:cache_table([get_all_modules(Package,Status)]),
+    all_modules(Status,name).
+
+listing(Package,name) :- atom(Package) |
+    module_table:cache_table([get_all_modules(Package,Status)]),
+    all_modules(Status,name).
+listing(Package,time) :- atom(Package) |
+    module_table:cache_table([get_all_modules(Package,Status)]),
+    all_modules(Status,time).
+listing(Package,file) :- atom(Package) |
+    module_table:cache_table([get_all_modules(Package,Status)]),
+    all_modules(Status,file).
+
+all_modules(normal(AllMods),Type) :- true |
+    kl1_library_message:message(MESG),
+    sorter(Type,SortCode),
+    pool:sorted_bag(SortCode,SP0),
+    sorting(AllMods,SP0,SP1),
+    SP1 = [get_all(Sorted)],
+    atom_table:cache_table(AT),
+    output_al(Sorted,AT,List0),
+    align(List0,List1),
+    output(List1,MESG).
+otherwise.
+all_modules(_,_) :- true |
+    kl1_library_message:message(MESG),
+    MESG = [error(string#"unable to get package list",[])].
+
+sorter(name,Code) :- true |
+    predicate_to_code(module#package,name_sort,5,Code).
+sorter(time,Code) :- true |
+    predicate_to_code(module#package,time_sort,5,Code).
+sorter(file,Code) :- true |
+    predicate_to_code(module#package,file_sort,5,Code).
+
+name_sort(X,Y,Small,Large,Swapped) :- 
+    X = {ModuleNameX,_,_}, Y = {ModuleNameY,_,_} |
+    atom_table:get_atom_name(ModuleNameX,normal(XString)),
+    atom_table:get_atom_name(ModuleNameY,normal(YString)),
+    comparator:sort(XString,YString,_,_,Swapped),
+    sort_0(Swapped,X,Y,Small,Large).
+
+time_sort(X,Y,Small,Large,Swapped) :-
+    X = {ModuleNameX,SizeX,normal({CDateTimeX,LDateTimeX,SourceFileX,SDateTimeX,DependsX})},
+    Y = {ModuleNameY,SizeY,normal({CDateTimeY,LDateTimeY,SourceFileY,SDateTimeY,DependsY})} |
+    comparator:sort(CDateTimeX,CDateTimeY,_,_,Swapped),
+    sort_0(Swapped,X,Y,Small,Large).
+time_sort(X,Y,Small,Large,Swapped) :-
+    X = {ModuleNameX,SizeX,normal({CDateTimeX,LDateTimeX,SourceFileX,SDateTimeX,DependsX})},
+    Y = {ModuleNameY,SizeY,non_existent} |
+    Swapped = yes,
+    sort_0(Swapped,X,Y,Small,Large).
+time_sort(X,Y,Small,Large,Swapped) :-
+    X = {ModuleNameX,SizeX,non_existent},
+    Y = {ModuleNameY,SizeY,normal({CDateTimeY,LDateTimeY,SourceFileY,SDateTimeY,DependsY})} |
+    Swapped = no,
+    sort_0(Swapped,X,Y,Small,Large).
+time_sort(X,Y,Small,Large,Swapped) :-
+    X = {ModuleNameX,SizeX,non_existent},
+    Y = {ModuleNameY,SizeY,non_existent} |
+    atom_table:get_atom_name(ModuleNameX,normal(XString)),
+    atom_table:get_atom_name(ModuleNameY,normal(YString)),
+    comparator:sort(XString,YString,_,_,Swapped),
+    sort_0(Swapped,X,Y,Small,Large).
+
+file_sort(X,Y,Small,Large,Swapped) :-
+    X = {ModuleNameX,SizeX,normal({CDateTimeX,LDateTimeX,SourceFileX,SDateTimeX,DependsX})},
+    Y = {ModuleNameY,SizeY,normal({CDateTimeY,LDateTimeY,SourceFileY,SDateTimeY,DependsY})} |
+    comparator:sort(SourceFileX,SourceFileY,_,_,Swapped),
+    sort_0(Swapped,X,Y,Small,Large).
+file_sort(X,Y,Small,Large,Swapped) :-
+    X = {ModuleNameX,SizeX,normal({CDateTimeX,LDateTimeX,SourceFileX,SDateTimeX,DependsX})},
+    Y = {ModuleNameY,SizeY,non_existent} |
+    Swapped = yes,
+    sort_0(Swapped,X,Y,Small,Large).
+file_sort(X,Y,Small,Large,Swapped) :-
+    X = {ModuleNameX,SizeX,non_existent},
+    Y = {ModuleNameY,SizeY,normal({CDateTimeY,LDateTimeY,SourceFileY,SDateTimeY,DependsY})} |
+    Swapped = no,
+    sort_0(Swapped,X,Y,Small,Large).
+file_sort(X,Y,Small,Large,Swapped) :-
+    X = {ModuleNameX,SizeX,non_existent},
+    Y = {ModuleNameY,SizeY,non_existent} |
+    atom_table:get_atom_name(ModuleNameX,normal(XString)),
+    atom_table:get_atom_name(ModuleNameY,normal(YString)),
+    comparator:sort(XString,YString,_,_,Swapped),
+    sort_0(Swapped,X,Y,Small,Large).
+
+sort_0(yes,X,Y,Small,Large) :- true | Small = Y, Large = X.
+sort_0(no,X,Y,Small,Large) :- true | Small = X, Large = Y.
+
+sorting([Item|Rest],SP0,SP) :- Item = {ModuleName,Module,Size} |
+    module_utility:get_attributes(Module,Attributes),
+    SP0 = [put({ModuleName,Size,Attributes})|SP1],
+    sorting(Rest,SP1,SP).
+sorting([],SP0,SP) :- true | SP0 = SP.
+
+output_al([{ModuleName,Size,Status}|Rest],AT0,List0) :- 
+    Status = normal({CDateTime,LDateTime,SourceFile,SDateTime,Depends}) |
+    AT0 = [get_atom_name(ModuleName,normal(Name))|AT1],
+    date_time_string(CDateTime,DStr,TStr),
+    List0 = [{Name,DStr,TStr,SourceFile}|List1],
+    output_al(Rest,AT1,List1).
+otherwise.
+output_al([{ModuleName,Size,Status}|Rest],AT0,List0) :- true |
+    AT0 = [get_atom_name(ModuleName,normal(Name))|AT1],
+    List0 = [{Name,string#"",string#"",string#"(IPL)"}|List1],
+    output_al(Rest,AT1,List1).
+output_al([],AT0,List0) :- true | AT0 = [], List0 = [].
+
+date_time_string({DateCount,TimeCount},DateString,TimeString) :- true |
+    timer_utility:get_date_string(DateCount,DateString),
+    timer_utility:get_time_string(TimeCount,TimeString).

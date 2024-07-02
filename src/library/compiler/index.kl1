@@ -1,0 +1,1494 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% make indexing tree !
+%%
+:- module kl1cmp_index.
+:- public 
+          compile_one_block_with_index/15,
+          make_node/8,
+          convert_if_variable/4,
+          pipe/3,
+          register_check/5.
+:- with_macro pimos.
+%%
+%% Top Level
+%%
+
+:- local_implicit
+                 code:oldnew,
+                 error:oldnew,
+                 ref:oldnew,
+                 opt:shared,
+                 class:shared,
+                 label:shared.
+
+compile_one_block_with_index(Clauses, F/A, C0, C, Last, Stat) --> true |
+    {{'C'(&code, Code0, Code),
+      kl1cmp_depend:predicate_dependency(&error, Stream0, [end_mark|Stream], &class,
+                                       ack, Ack, Clauses, [], _, Arity),
+      L0 := &label + C0,
+      kl1cmp_label:label_generator(&error, L0, L, Arity, _, [], Label,
+                                   F/A, Code1, Code, Last, normal, Stat1),
+      C := L - &label,
+      merge({Susp, VarOut}, Label),
+      make_code(Stream, [], Ack, Code0, Code1),
+      register_check(&error, Err0, Stat1, Stat),
+      make_node(Err0, [],  &ref, &class, VarOut, Susp, Stream0)}}.
+
+register_check(Err0, Err, [try_again(Str, _)|Cdr], _, Stat) :- true |
+    Err0=[warning(Str, [])|Err1],
+    register_check(Err1, Err, Cdr, abnormal, Stat).
+otherwise.
+register_check(Err0, Err, [One|Cdr], Stat0, Stat) :- true |
+    Err0=[One|Err1],
+    register_check(Err1, Err, Cdr, Stat0, Stat).
+register_check(Err0, Err, [], Stat0, Stat) :- true | Err0=Err, Stat0=Stat.
+
+get_tree(ack, Stream, TreeList) :- true |
+    Stream=[get_tree(Tree)],
+    TreeList=[Tree].
+
+:- local_implicit str:oldnew.
+make_code(ack, Code0, Code) --> true |
+    &str <<= [make_code(Code0-Code, [])].
+
+%%
+%% make_node
+%%
+%% make processes which are correspoinding the index-node.
+%%
+%% each node must recognizes the following messages
+%%
+%% intern_clause: intern the clause on somewhere in index tree.
+%% get_tree: get the tree which express the structure of precess
+%%            (debugging aids)
+%% make_code: get KL1-b code
+%%
+%% some other message must be neccesary 
+%% (noremalize, alloc_register, ...._)
+%%
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 var:stream.
+make_node(Susp0,
+          [intern_clause([builtin(Blt)|Args],
+                         Clause, Table, ACK)|Message]) --> true |
+    kl1cmp_guard:make_builtin_node(Susp0, builtin(Blt),
+                                   Args, Clause, Table, ACK, Message).
+make_node(Susp0,
+          [intern_clause([unify(X,Y)|Args],
+                         Clause, Table, ACK)|Message]) --> true |
+    kl1cmp_guard:make_builtin_node(Susp0, unify(X,Y),
+                                   Args, Clause, Table, ACK, Message).
+make_node(Susp0,
+          [intern_clause([put(Src,Dest)|Args],
+                         Clause, Table, ACK)|Message]) --> true |
+    kl1cmp_guard:make_builtin_node(Susp0, put(Src,Dest),
+                                   Args, Clause, Table, ACK, Message).
+make_node(Susp0,
+          [intern_clause([failed(Failed)|Args],
+                         Clause, Table, ACK)|Message]) --> true |
+%%    kl1cmp_guard:make_builtin_node(Susp0, failed(Failed),
+%%                                   Args, Clause, Table, ACK, Message).
+    make_node(Susp0,
+              [intern_clause([Failed|Args], Clause, Table, ACK)|Message]).
+otherwise.
+make_node(Susp0,
+          [intern_clause([Other|Args], Clause, Table, ACK)|Message]) -->
+        true |
+    make_arg_node(Susp0, Other, Args, Clause, Table, ACK, Message).
+make_node(Susp0,
+          [intern_clause([], Clause, Tbl, Ack0-Ack)|Message]) -->
+        true |
+    Ack0=Ack,
+    Susp0=[],
+    leaf([Clause-Tbl], Message).
+make_node(Susp0, []) --> true |
+    Susp0=[].
+
+%%
+%% make_arg_node
+%% arg means `not builtin'
+%%
+
+%%
+%% remove wait stream 91/11/10
+%%
+
+%%make_arg_node(Susp0, Other, Args,  Clause, Table, ACK, Message) --> true |
+%%    arg_node({Atom, [], Int, [], String, [], Float, [],
+%%         List, [], Vect, [], Wait, [], Var, []},
+%%         [intern_clause([Other|Args], Clause, Table, ACK)|Message]),
+%%    list_node(Lsusp5, LWait1, [], Lfail1, [], [], [], List),
+%%    atom_node(Lsusp1, LWait2, LWait1, Lfail2, Lfail1, [], [], [], Atom),
+%%    integer_node(Lsusp2, LWait3, LWait2, Lfail3, Lfail2, [], [], [], Int),
+%%    string_node(Lsusp3, LWait4, LWait3, Lfail4, Lfail3, [], [], [], String),
+%%    float_node(Lsusp4, LWait5, LWait4, Lfail5, Lfail4, [], [], [], Float),
+%%    vector_node(Lsusp6, LWait6, LWait5, Lfail6, Lfail5, [], [], [], Vect),
+%%    wait_node(Lsusp7, Lfail7, Lfail6, [], LWait6, Wait),
+%%  {{merge({Lsusp1, Lsusp2, Lsusp3, Lsusp4, Lsusp5, Lsusp6, Lsusp7}, Lsusp)}},
+%%    variable_node(Susp0, Lfail7, Lsusp, [], [], []-[], [], Var).
+
+make_arg_node(Susp0, Other, Args,  Clause, Table, ACK, Message) --> true |
+    arg_node({Atom, [], Int, [], String, [], Float, [],
+         List, [], Vect, [], Wait, [], Var, []},
+         [intern_clause([Other|Args], Clause, Table, ACK)|Message]),
+    list_node(Lsusp5, Lfail1, [], [], [], List),
+    atom_node(Lsusp1, Lfail2, Lfail1, [], [], [], Atom),
+    integer_node(Lsusp2, Lfail3, Lfail2, [], [], [], Int),
+    string_node(Lsusp3, Lfail4, Lfail3, [], [], [], String),
+    float_node(Lsusp4, Lfail5, Lfail4, [], [], [], Float),
+    vector_node(Lsusp6, Lfail6, Lfail5, [], [], [], Vect),
+    {{merge({Lsusp1, Lsusp2, Lsusp3, Lsusp4, Lsusp5, Lsusp6}, Lsusp0)}},
+    wait_node(LsuspWait, Lfail7, Lfail6, [], Lsusp0, Wait),
+    {{merge(LsuspWait, Lsusp)}},
+    variable_node(Susp0, Lfail7, Lsusp, [], [], []-[], [], Var).
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 varno:stream,
+                 strvect:shared.
+%%
+%% arg_node.
+%% The all other processes which was named `XXXX_node'
+%% is child processes of this process.
+%% 
+%% node has its' name which means to where it corresponding
+%% the `positon' in head part.
+%%
+arg_node([intern_clause([], Clause, Tbl, Ack0-Ack)|Cdr]) --> true |
+    {{leaf(&io, &isblt, &class, &varno, [Clause-Tbl], Cdr)}},
+    Ack0=Ack.
+arg_node([intern_clause([put(Src,Dst)|Args],
+                        Clause, Table0, ACK)|Cdr]) --> true |
+    Str0=[intern_clause([put(Src,Dst)|Args], Clause, Table0, ACK)|Str],
+    {{switch_on_type(&varno, &strvect, Vect, var, _, Str0, Str), % pseudo
+      arg_node(&io, &isblt, &class, &varno, Vect, Cdr)}}.
+arg_node([intern_clause([unify(A1,A2)|Args],
+                        Clause, Table0, ACK)|Cdr]) --> true |
+    Str0=[intern_clause([unify(A1,A2)|Args], Clause, Table0, ACK)|Str],
+    {{switch_on_type(&varno, &strvect, Vect, var, _, Str0, Str), % pseudo
+      arg_node(&io, &isblt, &class, &varno, Vect, Cdr)}}.
+arg_node([intern_clause([builtin(Blt)|Args],
+                        Clause, Table0, ACK)|Cdr]) --> true |
+    Str0=[intern_clause([builtin(Blt)|Args], Clause, Table0, ACK)|Str],
+    {{switch_on_type(&varno, &strvect, Vect, var, _, Str0, Str), % pseudo
+      arg_node(&io, &isblt, &class, &varno, Vect, Cdr)}}.
+otherwise.
+arg_node([intern_clause([Msg0|Args],
+                        Clause, Table0, ACK)|Cdr]) --> true |
+    {{Msg0={Head,Pos0,Type0},Msg={Head,Type}}},
+    Str0=[intern_clause([Msg|Args], Clause, Table, ACK)|Str],
+    {{alloc_register(&varno, Pos0, NewPos, Table0, Table, Register),
+      switch_on_type(&varno, &strvect, Vect, Type0, Type, Str0, Str),
+      arg_node(&io, &isblt, &class, &varno, Vect, NewPos, Register, Cdr)}}.
+arg_node([]) --> true | {{close_all_stream(&strvect)}}.
+
+close_all_stream(Vect0) :- vector(Vect0, N) |
+    close_all_stream(0, N, Vect0).
+
+close_all_stream(A0, N, Vect0) :- A0<N |
+    set_vector_element(Vect0, A0, Str, [], Vect1),
+    A1 := A0+1,
+    set_vector_element(Vect1, A1, Str, [], Vect2),
+    A2 := A1+1,
+    close_all_stream(A2, N, Vect2).
+close_all_stream(N, N, _) :- true | true.
+
+:- local_implicit varno:stream.
+
+% Table0-Table is the table which shows the position and the data type
+% for each variables.
+alloc_register(Pos, NewPos, Table0, Table, Register) --> true |
+    {{convert_if_variable(Pos, Pos1, Table0, Table)}},
+% convert variable to the Position.
+    &varno <<= [new_register(Pos1, Register)],
+% Allocate new register and bind to Register
+% if "Posl" has not been allocated to any register.
+% If "Posl" has already been allocated to some, 'Register' is binded to it.
+    NewPos=Pos1.
+
+convert_if_variable(Pos, NewPos, Tbl0, Tbl) :- true |
+    Tbl0=Tbl, Pos=NewPos.
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 varno:stream,
+                 strvect:shared.
+%% This node have the `position' of arguments
+
+arg_node(Pos0, Reg, [intern_clause([put(Src,Dst)|Args],
+                                   Clause, Table0, ACK)|Cdr]) --> true |
+    Str0=[intern_clause([put(Src,Dst)|Args], Clause, Table0, ACK)|Str],
+    {{switch_on_type(&varno, &strvect, Vect, var, _, Str0, Str), % pseudo
+      arg_node(&io, &isblt, &class, &varno, Vect, Pos0, Reg, Cdr)}}.
+arg_node(Pos0, Reg, [intern_clause([unify(A1,A2)|Args],
+                                   Clause, Table0, ACK)|Cdr]) --> true |
+    Str0=[intern_clause([unify(A1,A2)|Args], Clause, Table0, ACK)|Str],
+    {{switch_on_type(&varno, &strvect, Vect, var, _, Str0, Str), % pseudo
+      arg_node(&io, &isblt, &class, &varno, Vect, Pos0, Reg, Cdr)}}.
+arg_node(Pos0, Reg, [intern_clause([builtin(Blt)|Args],
+                                   Clause, Table0, ACK)|Cdr]) --> true |
+    Str0=[intern_clause([builtin(Blt)|Args], Clause, Table0, ACK)|Str],
+    {{switch_on_type(&varno, &strvect, Vect, var, _, Str0, Str), % pseudo
+      arg_node(&io, &isblt, &class, &varno, Vect, Pos0, Reg, Cdr)}}.
+%% added 900508
+arg_node(Pos0, Reg, [intern_clause([failed(Failed)|Args],
+                                    Clause, Table0, ACK)|Cdr]) --> true |
+    arg_node(Pos0, Reg, [intern_clause([Failed|Args], Clause, Table0, ACK)|Cdr]).
+%% added 900508
+otherwise.
+arg_node(Pos0, Reg, [intern_clause([Arg0|Args],
+                             Clause, Table0, ACK)|Cdr]) --> true |
+    {{get_type_and_position(Arg0, Head, Pos, Type, NewPos,
+                            Table0, Table),
+      send_message_to_corresponding_node(&varno, &strvect, Vect,
+                                         Pos0, NewPos, Head, Pos, Type, Args,
+                                         Clause, Table, ACK),
+      arg_node(&io, &isblt, &class, &varno, Vect, Pos0, Reg, Cdr)}}.
+%%arg_node(_, _, [intern_clause([], Clause, Tbl, Ack0-Ack)|Cdr]) --> true |
+%%%%    midium([Clause], [Table], [ACK], Cdr).
+%%    Ack0=Ack, {{close_all_stream(&strvect)}},
+%%    {{leaf(&io, &isblt, &class, &varno, [Clause-Tbl], Cdr)}}.
+arg_node(Pos0, Reg, [intern_clause([], Clause0, Tbl, Ack0-Ack)|Cdr]) --> true |
+%%    midium([Clause], [Table], [ACK], Cdr).
+    {{send_message_to_corresponding_node(&varno, &strvect, Vect,
+                        Pos0, nil, (wait), Pos0, variable(100), [],
+                           Clause0, Tbl, Ack0-Ack),
+      arg_node(&io, &isblt, &class, &varno, Vect, Pos0, Reg, Cdr)}}.
+arg_node(Pos, Reg, [get_tree(Tree)|Cdr]) --> true |
+    {{Tree=arg(Reg, Atom, Int, String, Float, List, Vect, Wait, Var),
+      send_to_all_type_node(&varno, &strvect, Vect,
+                            get_tree/1, {Reg, Atom, Int, String, Float, List,
+                                       Vect, Wait, Var}),
+      arg_node(&io, &isblt, &class, &varno, Vect, Pos, Reg, Cdr)}}.
+arg_node(Pos, Reg, [end_mark|Cdr]) --> true |
+    {{send_to_all_type_node(&varno, &strvect, Vect, end_mark/0, {}),
+      arg_node(&io, &isblt, &class, &varno, Vect, Pos, Reg, Cdr)}}.
+arg_node(Pos, Reg, [make_code(Code0-Code, Collect)|Cdr]) --> true |
+%%    {{send_to_all_type_node(&varno, &strvect, Vect,
+%%                            make_code/3, {Code2-Code3, Collect, Pos,
+%%                                          Code3-Code4, Collect, Pos,
+%%                                          Code4-Code5, Collect, Pos,
+%%                                          Code5-Code6, Collect, Pos,
+%%                                          Code0-Code1, Collect, Pos,
+%%                                          Code1-Code2, Collect, Pos,
+%%                                          Code6-Code7, Collect, Pos,
+%%                                          Code7-Code, Collect, Pos}),
+    {{send_to_all_type_node(&varno, &strvect, Vect,
+                            make_code/3, {Code1-Code2, Collect, Pos, % atom
+                                          Code2-Code3, Collect, Pos, % integer
+                                          Code3-Code4, Collect, Pos, % string
+                                          Code4-Code5, Collect, Pos, % float
+                                          Code0-Code1, Collect, Pos, % list
+                                          Code5-Code6, Collect, Pos, % vector
+                                          Code6-Code7, Collect, Pos, % wait
+                                          Code7-Code, Collect, Pos}),
+      arg_node(&io, &isblt, &class, &varno, Vect, Pos, Reg, Cdr)}}.
+arg_node(_, _, []) --> true | {{close_all_stream(&strvect)}}.
+
+get_type_and_position(wait(Pos0, Type0), Head, Pos, Type,
+                      NewPos, Table0, Table) :- true |
+    Pos0=Pos, Type0=Type, Head=(wait),
+    convert_if_variable(Pos0, NewPos, Table0, Table).
+get_type_and_position(check(Pos0, Type0), Head, Pos, Type,
+                      NewPos, Table0, Table) :- true |
+    Pos0=Pos, Type0=Type, Head=check,
+    convert_if_variable(Pos0, NewPos, Table0, Table).
+
+:- local_implicit
+                 varno:stream,
+                 strvect:oldnew.
+%%
+%% message_dispatcher.
+%%
+send_to_all_type_node(Func/Ari, Args) --> vector(&strvect(old), Size) |
+   send_to_all_type_node(0, Size, 0, Func, Ari, Args).
+
+:- local_implicit varno:stream.
+send_to_all_type_node(Str0, Str, StrInd0, Size, ArgInd0, Func, 0, Args) -->
+        StrInd0<Size |
+    {{set_vector_element(Str0, StrInd0, Head0, NewHead, Str1),
+      Head0=[Func|NewHead],
+      StrInd:=StrInd0+2}},
+    send_to_all_type_node(Str1, Str, StrInd, Size, ArgInd0, Func, 0, Args).
+otherwise.
+send_to_all_type_node(Str0, Str, StrInd0, Size, ArgInd0, Func, Ari, Args0) -->
+        StrInd0<Size |
+    {{set_vector_element(Str0, StrInd0, Head0, NewHead, Str1),
+      Ari1 := Ari+1,
+      new_vector(Msg0, Ari1),
+      set_vector_element(Msg0, 0, _, Func, Msg1),
+      copy_arguments(1, Ari1, ArgInd0, ArgInd1, Args0, Args, Msg1, Msg),
+      Head0=[Msg|NewHead],
+      StrInd:=StrInd0+2}},
+    send_to_all_type_node(Str1, Str, StrInd, Size, ArgInd1, Func, Ari, Args).
+send_to_all_type_node(Str0, Str, Size, Size, _, _, _, _) --> true |
+    Str0=Str.
+
+copy_arguments(A, Ari, ArgInd0, ArgInd, Args0, Args, Msg0, Msg) :- A<Ari |
+    set_vector_element(Args0, ArgInd0, Arg, [], Args1),
+    set_vector_element(Msg0, A, _, Arg, Msg1),
+    A1 := A+1,
+    ArgInd1 := ArgInd0+1,
+    copy_arguments(A1, Ari, ArgInd1, ArgInd, Args1, Args, Msg1, Msg).
+copy_arguments(Ari, Ari, ArgInd0, ArgInd, Args0, Args, Msg0, Msg) :- true |
+    ArgInd0=ArgInd,
+    Args0=Args,
+    Msg0=Msg.
+
+:- local_implicit
+                 var:stream,
+                 strvect:oldnew.
+send_message_to_corresponding_node(Pos, Pos, Head, _, Type0, Args,
+                                   Clause, Nv, ACK) --> true |
+    switch_on_type(Type0, Type, Str0, Str),
+    {{Str0=[intern_clause([{Head, Type}|Args], Clause, Nv, ACK)|Str]}}.
+otherwise.
+send_message_to_corresponding_node(_, _, Head, Pos, Type, Args,
+                                   Clause, Nv, ACK) --> true |
+    {{get_stream(&strvect, variable, Str0, Tail, Str, Tail),
+      Str0=[intern_clause([{Head, Pos, Type}|Args], Clause, Nv, ACK)|Str]}}.
+
+switch_on_type(atom(Atom), Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, atom, Str0, Tail, Str, Tail),
+      Arg=atom(Atom)}}.
+switch_on_type(atom, Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, atom, Str0, Tail, Str, Tail),
+      Arg=atom}}.
+switch_on_type(integer(Int), Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, integer, Str0, Tail, Str, Tail),
+      Arg=integer(Int)}}.
+switch_on_type(integer, Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, integer, Str0, Tail, Str, Tail),
+      Arg=integer}}.
+switch_on_type(string(String), Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, string, Str0, Tail, Str, Tail),
+      Arg=string(String)}}.
+switch_on_type(string, Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, string, Str0, Tail, Str, Tail),
+      Arg=string}}.
+switch_on_type(floating_point(Float), Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, floating_point, Str0, Tail, Str, Tail),
+      Arg=floating_point(Float)}}.
+switch_on_type(floating_point, Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, floating_point, Str0, Tail, Str, Tail),
+      Arg=floating_point}}.
+switch_on_type(vector(Vect), Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, vector, Str0, Tail, Str, Tail),
+      Arg=vector(Vect)}}.
+switch_on_type(vector, Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, vector, Str0, Tail, Str, Tail),
+      Arg=vector}}.
+switch_on_type(list(List), Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, list, Str0, Tail, Str, Tail),
+      Arg=list(List)}}.
+switch_on_type(list, Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, list, Str0, Tail, Str, Tail),
+      Arg=list}}.
+switch_on_type((wait), Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, (wait), Str0, Tail, Str, Tail),
+      Arg=(wait)}}.
+switch_on_type(variable(N), Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, variable, Str0, Tail, Str, Tail),
+      Arg=variable(N)}}.
+otherwise.
+%% deleted D.Sekita 92.2.20
+%%switch_on_type(var(Var), Arg, Str0, Str) --> true |
+%%  {{get_stream(&strvect, variable, Str0, Tail, Str, Tail),
+%%      Arg=var(Var)}}.
+%%switch_on_type(var, Arg, Str0, Str) --> true |
+%%    {{get_stream(&strvect, variable, Str0, Tail, Str, Tail),
+%%      Arg=var}}.
+switch_on_type(Arg0, Arg, Str0, Str) --> true |
+    {{get_stream(&strvect, variable, Str0, Tail, Str, Tail),
+      Arg=Arg0}}.
+
+:- local_implicit strvect:oldnew.
+send_message(Type, Msg) --> true |
+    get_stream(Type, OldStr0, OldStr, NewStr0, OldStr),
+    send_message(OldStr0, NewStr0, Msg).
+
+send_message(Str0, Str, [Msg|Cdr]) --> true |
+    Str0=[Msg|Str1],
+    send_message(Str1, Str, Cdr).
+send_message(Str0, Str, []) --> true | Str0=Str.
+
+get_stream(Vect0, Vect, atom, OldStr0, OldStr, NewStr0, NewStr) :- true |
+    set_vector_element(Vect0, 0, OldStr0, NewStr0, Vect1),
+    set_vector_element(Vect1, 1, OldStr, NewStr, Vect).
+get_stream(Vect0, Vect, integer, OldStr0, OldStr, NewStr0, NewStr) :- true |
+    set_vector_element(Vect0, 2, OldStr0, NewStr0, Vect1),
+    set_vector_element(Vect1, 3, OldStr, NewStr, Vect).
+get_stream(Vect0, Vect, string, OldStr0, OldStr, NewStr0, NewStr) :- true |
+    set_vector_element(Vect0, 4, OldStr0, NewStr0, Vect1),
+    set_vector_element(Vect1, 5, OldStr, NewStr, Vect).
+get_stream(Vect0, Vect, floating_point, OldStr0, OldStr, NewStr0, NewStr) :- true |
+    set_vector_element(Vect0, 6, OldStr0, NewStr0, Vect1),
+    set_vector_element(Vect1, 7, OldStr, NewStr, Vect).
+get_stream(Vect0, Vect, list, OldStr0, OldStr, NewStr0, NewStr) :- true |
+    set_vector_element(Vect0, 8, OldStr0, NewStr0, Vect1),
+    set_vector_element(Vect1, 9, OldStr, NewStr, Vect).
+get_stream(Vect0, Vect, vector, OldStr0, OldStr, NewStr0, NewStr) :- true |
+    set_vector_element(Vect0, 10, OldStr0, NewStr0, Vect1),
+    set_vector_element(Vect1, 11, OldStr, NewStr, Vect).
+get_stream(Vect0, Vect, (wait), OldStr0, OldStr, NewStr0, NewStr) :- true |
+    set_vector_element(Vect0, 12, OldStr0, NewStr0, Vect1),
+    set_vector_element(Vect1, 13, OldStr, NewStr, Vect).
+get_stream(Vect0, Vect, variable, OldStr0, OldStr, NewStr0, NewStr) :- true |
+    set_vector_element(Vect0, 14, OldStr0, NewStr0, Vect1),
+    set_vector_element(Vect1, 15, OldStr, NewStr, Vect).
+
+%%
+%% atom
+%%
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 varno:stream,
+                 susp:stream,
+%%                 towait:oldnew,
+                 fail:oldnew.
+atom_node(Branch0, Any, Susps,
+          [intern_clause([wait(atom(Atom))|Args], Clause, Nv, ACK)|Cdr]) -->
+        atom(Atom) |
+  {{pass_branch(&io, &isblt, &class, &varno, Susp,
+                Branch0, Branch, Atom, Args, Clause, Nv, ACK)}},
+    atom_node(Branch, Any, [Susp|Susps], Cdr).
+atom_node(Branch, Any0, Susps,
+          [intern_clause([check(atom)|Args], Clause, Nv, ACK)|Cdr]) --> true |
+  {{pass_any(&io, &isblt, &class, &varno, &susp,
+             Any0, Any, Args, Clause, Nv, ACK)}},
+    atom_node(Branch, Any, Susps, Cdr).
+atom_node(Branch0, Any0, Susps, [get_tree(Tree)|Cdr]) --> true |
+    Tree=atom(BranchTree, AnyTree),
+    {{fork_message_to_branch(Branch0, Branch, BranchTree, get_tree/1),
+      send_message_to_any(Any0, Any, AnyTree, get_tree/1)}},
+    atom_node(Branch, Any, Susps, Cdr).
+atom_node(Branch0, Any0, Susps, [end_mark|Cdr]) --> true |
+    {{fork_message_to_branch(Branch0, Branch, _, end_mark/0),
+      send_message_to_any(Any0, Any, _, end_mark/0)}},
+    atom_node(Branch, Any, Susps, Cdr).
+atom_node([], [], Susps,
+          [make_code(Code0-Code, _, _)|Cdr]) --> true |
+    Code0=Code,
+    atom_node([], [], Susps, Cdr).
+atom_node([], stream(Any0), Susps,
+          [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_register(Pos, Reg)],
+    Code2=[switch_on_non_atom(Reg, Fail)|Code3],
+    Any0=[make_code(Code3-Code, Collect)|Any]}},
+    atom_node([], stream(Any), Susps, Cdr).
+otherwise.
+atom_node(Branch0, [], Susps,
+          [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+%%    &towait <<= [get_label(Wait)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_register(Pos, Reg)]}},
+    Code2=[switch_on_non_atom(Reg, Fail),
+%%            switch_on_constant(Reg, Hash, Fail)|Code3],
+            switch_on_constant(Reg, Hash, Susp)|Code3],
+%%            switch_on_constant(Reg, Hash, Wait)|Code3],
+    {{make_hash_table(&varno, &susp,
+                      Branch0, Branch1, Hash, [], Code3, Code, Collect)}},
+    atom_node(Branch1, [], Susps, Cdr).
+atom_node(Branch0, stream(Any0), Susps,
+          [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_label(ToAny), new_register(Pos, Reg)]}},
+    Code2=[switch_on_non_atom(Reg, Fail),
+            switch_on_constant(Reg, Hash, ToAny)|Code3],
+    {{make_hash_table(&varno, &susp,
+                      Branch0, Branch1, Hash, [], Code3, Code4, Collect),
+      merge_suspend_streams(Suspend, Susps),
+      generate_label(&varno, &susp, Suspend, Code4, [label(ToAny)|Code5], [])}},
+    Any0=[make_code(Code5-Code, Collect)|Any],
+    atom_node(Branch1, stream(Any), [], Cdr).
+atom_node(Branch, Any, Susps, []) --> true |
+    {{close_branch(Branch), close_any(Any),
+      merge_suspend_streams(&susp, Susps)}}.
+
+%%
+%% integer
+%%
+integer_node(Branch0, Any, Susps,
+             [intern_clause([wait(integer(Int))|Args],
+                            Clause, Nv, ACK)|Cdr]) --> true |
+  {{pass_branch(&io, &isblt, &class, &varno, Susp,
+                Branch0, Branch, Int, Args, Clause, Nv, ACK)}},
+    integer_node(Branch, Any, [Susp|Susps], Cdr).
+integer_node(Branch, Any0, Susps,
+             [intern_clause([wait(integer)|Args],
+                            Clause, Nv, ACK)|Cdr]) --> true |
+  {{pass_any(&io, &isblt, &class, &varno, &susp,
+             Any0, Any, Args, Clause, Nv, ACK)}},
+    integer_node(Branch, Any, Susps, Cdr).
+integer_node(Branch, Any0, Susps,
+             [intern_clause([check(integer)|Args],
+                            Clause, Nv, ACK)|Cdr]) --> true |
+  {{pass_any(&io, &isblt, &class, &varno, &susp,
+             Any0, Any, Args, Clause, Nv, ACK)}},
+    integer_node(Branch, Any, Susps, Cdr).
+integer_node(Branch0, Any0, Susps, [get_tree(Tree)|Cdr]) --> true |
+    Tree=integer(BranchTree, AnyTree),
+    {{fork_message_to_branch(Branch0, Branch, BranchTree, get_tree/1),
+      send_message_to_any(Any0, Any, AnyTree, get_tree/1)}},
+    integer_node(Branch, Any, Susps, Cdr).
+integer_node(Branch0, Any0, Susps, [end_mark|Cdr]) --> true |
+    {{fork_message_to_branch(Branch0, Branch, _, end_mark/0),
+      send_message_to_any(Any0, Any, _, end_mark/0)}},
+    integer_node(Branch, Any, Susps, Cdr).
+integer_node([], [], Susps,
+             [make_code(Code0-Code, _, _)|Cdr]) --> true |
+    Code0=Code,
+    integer_node([], [], Susps, Cdr).
+integer_node([], stream(Any0), Susps,
+             [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_register(Pos, Reg)]}},
+    Code2=[switch_on_non_integer(Reg, Fail)|Code3],
+    Any0=[make_code(Code3-Code, Collect)|Any],
+    integer_node([], stream(Any), Susps, Cdr).
+otherwise.
+integer_node(Branch0, [], Susps,
+             [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+%%    &towait <<= [get_label(Wait)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_register(Pos, Reg)]}},
+    Code2=[switch_on_non_integer(Reg, Fail),
+%%            switch_on_constant(Reg, Hash, Fail)|Code3],
+            switch_on_constant(Reg, Hash, Susp)|Code3],
+%%            switch_on_constant(Reg, Hash, Wait)|Code3],
+    {{make_hash_table(&varno, &susp,
+                      Branch0, Branch1, Hash, [], Code3, Code, Collect)}},
+    integer_node(Branch1, [], Susps, Cdr).
+integer_node(Branch0, stream(Any0), Susps,
+             [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_register(Pos, Reg)]}},
+    &varno <<= [new_label(ToAny)],
+    Code2=[switch_on_non_integer(Reg, Fail),
+            switch_on_constant(Reg, Hash, ToAny)|Code3],
+    {{make_hash_table(&varno, &susp,
+                      Branch0, Branch1, Hash, [], Code3, Code4, Collect),
+      merge_suspend_streams(Suspend, Susps),
+      generate_label(&varno, &susp, Suspend, Code4, [label(ToAny)|Code5], [])}},
+%%    Code4=[label(ToAny)|Code5],
+    Any0=[make_code(Code5-Code, Collect)|Any],
+    integer_node(Branch1, stream(Any), [], Cdr).
+integer_node(Branch, Any, Susps, []) --> true |
+    {{close_branch(Branch), close_any(Any),
+      merge_suspend_streams(&susp, Susps)}}.
+
+%%
+%% string
+%%
+string_node(Branch0, Any, Susps,
+            [intern_clause([wait(string(Str))|Args], Clause, Tbl, ACK)|Cdr])
+--> true |
+    {{pass_branch(&io, &isblt, &class, &varno, &susp,
+                  Branch0, Branch, Str, Args, Clause, Tbl, ACK)}},
+    string_node(Branch, Any, Susps, Cdr).
+string_node(Branch, Any0, Susps,
+            [intern_clause([check(string)|Args],
+                           Clause, Tbl, ACK)|Cdr]) --> true |
+    {{pass_any(&io, &isblt, &class, &varno, &susp,
+               Any0, Any, Args, Clause, Tbl, ACK)}},
+    string_node(Branch, Any, Susps, Cdr).
+string_node(Branch0, Any0, Susps, [get_tree(Tree)|Cdr]) --> true |
+    Tree=string(BranchTree, AnyTree),
+    {{fork_message_to_branch(Branch0, Branch, BranchTree, get_tree/1),
+      send_message_to_any(Any0, Any, AnyTree, get_tree/1)}},
+    string_node(Branch, Any, Susps, Cdr).
+string_node(Branch0, Any0, Susps, [end_mark|Cdr]) --> true |
+    {{fork_message_to_branch(Branch0, Branch, _, end_mark/0),
+      send_message_to_any(Any0, Any, _, end_mark/0)}},
+    string_node(Branch, Any, Susps, Cdr).
+string_node([], [], Susps,
+            [make_code(Code0-Code, _, _)|Cdr]) --> true |
+    Code0=Code,
+    string_node([], [], Susps, Cdr).
+string_node([], stream(Any0), Susps,
+            [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    {{&fail <<= [get_label(Fail)],
+%%      &susp <<= [get_label(Susp)],
+      generate_label(&varno, &fail, Code0, Code1, []),
+      &varno <<= [new_register(Pos, Reg), new_register(nil, R0), new_register(another, R1)]}},
+%%    Code1=[try_me_else(Susp),is_string(Reg,Fail)|Code2],
+    Code1=[try_me_else(Fail),string(Reg,R0,R1)|Code2],
+    Any0=[make_code(Code2-Code, Collect)|Any],
+    string_node([], stream(Any), Susps, Cdr).
+otherwise.
+string_node(Branch0, [], Susps,
+            [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    {{%'C'(&fail, Fail0, Fail1),
+      &fail <<= [get_label(FailLabel)],
+      generate_label(&varno, &fail, Code0, Code1, []),
+      &varno <<= [new_register(Pos, Reg)],
+      make_try_clauses(&varno, &susp, FailLabel, Reg,
+                       Branch0, Branch1, Code1, Code, Collect)}},
+    string_node(Branch1, [], Susps, Cdr).
+string_node(Branch0, stream(Any0), Susps,
+            [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    {{%'C'(&fail, Fail0, Fail1),
+      &varno <<= [new_label(FailLabel)],
+      generate_label(&varno, &fail, Code0, Code1, []),
+      &varno <<= [new_register(Pos, Reg)],
+      make_try_clauses(&varno, &susp, FailLabel, Reg,
+                       Branch0, Branch1, Code1, Code2, Collect),
+      merge_suspend_streams(Suspend, Susps),
+      generate_label(&varno, &susp, Suspend, Code2, [label(FailLabel)|Code3], [])}},
+    Any0=[make_code(Code3-Code, Collect)|Any],
+    string_node(Branch1, stream(Any), [], Cdr).
+string_node(Branch, Any, Susps, []) --> true |
+    {{close_branch(Branch), close_any(Any),
+      merge_suspend_streams(&susp, Susps)}}.
+
+%%
+%% floating
+%%
+float_node(Branch0, Any, Susps,
+           [intern_clause([wait(floating_point(Float))|Args],
+                          Clause, Nv, ACK)|Cdr]) --> true |
+    {{pass_branch(&io, &isblt, &class, &varno, &susp,
+                  Branch0, Branch, Float, Args, Clause, Nv, ACK)}},
+    float_node(Branch, Any, Susps, Cdr).
+float_node(Branch, Any0, Susps,
+           [intern_clause([check(floating_point)|Args],
+                          Clause, Nv, ACK)|Cdr]) --> true |
+    {{pass_any(&io, &isblt, &class, &varno, &susp,
+               Any0, Any, Args, Clause, Nv, ACK)}},
+    float_node(Branch, Any, Susps, Cdr).
+float_node(Branch0, Any0, Susps, [get_tree(Tree)|Cdr]) --> true |
+    Tree=float(BranchTree, AnyTree),
+    {{fork_message_to_branch(Branch0, Branch, BranchTree, get_tree/1),
+      send_message_to_any(Any0, Any, AnyTree, get_tree/1)}},
+    float_node(Branch, Any, Susps, Cdr).
+float_node(Branch0, Any0, Susps, [end_mark|Cdr]) --> true |
+    {{fork_message_to_branch(Branch0, Branch, _, end_mark/0),
+      send_message_to_any(Any0, Any, _, end_mark/0)}},
+    float_node(Branch, Any, Susps, Cdr).
+float_node([], [], Susps,
+           [make_code(Code0-Code, _, _)|Cdr]) --> true |
+    Code0=Code,
+    float_node([], [], Susps, Cdr).
+float_node([], stream(Any0), Susps,
+           [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    {{&fail <<= [get_label(Fail)],
+      &susp <<= [get_label(Susp)],
+      generate_label(&varno, &fail, Code0, Code1, []),
+      &varno <<= [new_register(Pos, Reg)]}},
+      Code1=[try_me_else(Susp), is_float(Reg,Fail)|Code2],
+    Any0=[make_code(Code2-Code, Collect)|Any],
+    float_node([], stream(Any), Susps, Cdr).
+otherwise.
+float_node(Branch0, [], Susps,
+           [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    {{
+      %'C'(&fail, Fail0, Fail1),
+      &fail <<= [get_label(FailLabel)],
+      generate_label(&varno, &fail, Code0, Code1, []),
+      &varno <<= [new_register(Pos, Reg)],
+      make_try_clauses(&varno, &susp, FailLabel, Reg,
+                       Branch0, Branch1, Code1, Code, Collect)}},
+    float_node(Branch1, [], Susps, Cdr).
+float_node(Branch0, stream(Any0), Susps,
+           [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    {{
+      %'C'(&fail, Fail0, Fail1),
+      &varno <<= [new_label(FailLabel)],
+      generate_label(&varno, &fail, Code0, Code1, []),
+      &varno <<= [new_register(Pos, Reg)],
+      make_try_clauses(&varno, &susp, FailLabel, Reg,
+                       Branch0, Branch1, Code1, [label(FailLabel)|Code2], Collect),
+      merge_suspend_streams(Suspend, Susps),
+      generate_label(&varno, &susp, Suspend, Code2, [label(FailLabel)|Code3], [])}},
+    Any0=[make_code(Code3-Code, Collect)|Any],
+    float_node(Branch1, stream(Any), [], Cdr).
+float_node(Branch, Any, Susps, []) --> true |
+    {{close_branch(Branch), close_any(Any),
+      merge_suspend_streams(&susp, Susps)}}.
+
+%%
+%% list
+%%
+list_node(Stream0, Any,
+          [intern_clause([wait(list)|Args], Clause, Nv, ACK)|Message]) -->
+        true |
+    make_list_nodes(Stream0, Stream, Args, Clause, Nv, ACK),
+    list_node(Stream, Any, Message).
+list_node(Stream, Any0,
+          [intern_clause([check(list)|Args],
+                         Clause, Nv, ACK)|Message]) --> true |
+    {{pass_any(&io, &isblt, &class, &varno, &susp,
+               Any0, Any, Args, Clause, Nv, ACK)}},
+    list_node(Stream, Any, Message).
+list_node(Stream0, Any0, [get_tree(Tree)|Cdr]) --> true |
+    Tree=list(BranchTree, AnyTree),
+    {{send_message_to_any(Stream0, Stream, BranchTree, get_tree/1),
+      send_message_to_any(Any0, Any, AnyTree, get_tree/1)}},
+    list_node(Stream, Any, Cdr).
+list_node(Stream0, Any0, [end_mark|Cdr]) --> true |
+    {{send_message_to_any(Stream0, Stream, _, end_mark/0),
+      send_message_to_any(Any0, Any, _, end_mark/0)}},
+    list_node(Stream, Any, Cdr).
+list_node([], [],
+          [make_code(Code0-Code, _, _)|Cdr]) --> true |
+    Code0=Code,
+    list_node([], [], Cdr).
+list_node([], stream(Any0),
+          [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp),switch_on_non_list(Reg, Fail)|Code2],
+      &varno <<= [new_register(Pos, Reg)]}},
+%%    Any0=[make_code(Code2-Code, [collect_list(Pos)|Collect])|Any],
+    Any0=[make_code(Code2-Code, Collect)|Any],
+    list_node([], stream(Any), Cdr).
+list_node(stream(Str0), [],
+          [make_code(Code0-Code, Collect0, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_register(Pos, Reg),
+                  new_register(car(Pos), CarReg),
+                  new_register(cdr(Pos), CdrReg)]}},
+    Code2=[switch_on_non_list(Reg, Fail),
+           read_variable(CarReg),
+           read_variable(CdrReg)|Code3],
+    Str0=[make_code(Code3-Code, [collect_list(Pos)|Collect0])|Str],
+    list_node(stream(Str), [], Cdr).
+list_node(stream(Str0), stream(Any0),
+          [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_register(Pos, Reg),
+                  new_register(car(Pos), CarReg),
+                  new_register(cdr(Pos), CdrReg)]}},
+    Code2=[switch_on_non_list(Reg, Fail),
+           read_variable(CarReg),
+           read_variable(CdrReg)|Code3],
+    Str0=[make_code(Code3-Code4, [collect_list(Pos)|Collect])|Str],
+%    Any0=[make_code(Code4-Code, [collect_list(Pos)|Collect])|Any],
+    Any0=[make_code(Code4-Code, Collect)|Any],
+    list_node(stream(Str), stream(Any), Cdr).
+list_node(Stream, Any, []) --> true |
+    {{close_any(Stream), close_any(Any)}}.
+
+make_list_nodes([], Str, Args, Clause, Nv, ACK) --> true |
+    {{make_node(&io, &isblt, &class, &varno, &susp,
+                [intern_clause(Args, Clause, Nv, ACK)|Stream]),
+      Str=stream(Stream)}}.
+make_list_nodes(stream(Stream0), Str, Args, Clause, Nv, ACK) --> true |
+    Stream0=[intern_clause(Args,
+                           Clause, Nv, ACK)|Stream],
+    {{Str=stream(Stream)}}.
+
+%%
+%% vector
+%%
+%%
+%% When the failue ocuures at the elements of vector,
+%% FAILURE message must go through the `any' process.
+%%
+vector_node(Branch0, Any, Susps,
+            [intern_clause([wait(vector(N))|Args],
+                           Clause, Nv, ACK)|Cdr]) --> true |
+    {{pass_branch_vector(&io, &isblt, &class, &varno, Susp,
+                       Branch0, Branch, N, Args, Clause, Nv, ACK)}},
+    vector_node(Branch, Any, [Susp|Susps], Cdr).
+vector_node(Branch, Any0, Susps,
+            [intern_clause([check(vector)|Args], Clause, Nv, ACK)|Cdr]) -->
+        true |
+    {{pass_any(&io, &isblt, &class, &varno, &susp,
+               Any0, Any, Args, Clause, Nv, ACK)}},
+    vector_node(Branch, Any, Susps, Cdr).
+vector_node(Branch0, Any0, Susps, [get_tree(Tree)|Cdr]) --> true |
+    Tree=vector(BranchTree, AnyTree),
+    {{fork_message_to_branch(Branch0, Branch, BranchTree, get_tree/1),
+      send_message_to_any(Any0, Any, AnyTree, get_tree/1)}},
+    vector_node(Branch, Any, Susps, Cdr).
+vector_node(Branch0, Any0, Susps, [end_mark|Cdr]) --> true |
+    {{fork_message_to_branch(Branch0, Branch, _, end_mark/0),
+      send_message_to_any(Any0, Any, _, end_mark/0)}},
+    vector_node(Branch, Any, Susps, Cdr).
+vector_node([], [], Susps, [make_code(Code0-Code, _, _)|Cdr]) --> true |
+    Code0=Code,
+    vector_node([], [], Susps, Cdr).
+vector_node([], stream(Any0), Susps,
+            [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      &varno <<= [new_register(Pos, Reg),new_register(nil,Ari)],
+      Code1=[try_me_else(Fail),switch_on_non_vector(Reg, Ari, Fail)|Code2],
+%% 900424
+%%      Any0=[make_code(Code2-[label(Fail)|Code], [collect_value(Pos)|Collect])|Any]}},
+%% 900424
+      Any0=[make_code(Code2-Code, [collect_value(Pos)|Collect])|Any]}},
+    vector_node([], stream(Any), Susps, Cdr).
+otherwise.
+% for a register optimize
+vector_node([{Key, Stream0}], [], Susps,
+            [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Fail)|Code2],
+      &varno <<= [new_register(Pos, Reg)]}},
+    Code2=[wait_vector(Reg, Key)|Code3],
+    {{load_element(&varno, &susp, &fail,
+                   Key, Stream0, Stream, Code3, Code, Pos, Reg, Collect)}},
+    vector_node([{Key, Stream}], [], Susps, Cdr).
+vector_node([{Key, Stream0}], stream(Any0), Susps,
+            [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    Any0=[make_code(Code6-Code, Collect)|Any],
+    {{generate_label(&varno, &fail, Code0, [try_me_else(ToAny)|Code2], []),
+%%    {{generate_label(&varno, &fail, Code0, Code1, []),
+%%      Code1=[try_me_else(ToAny)|Code2],
+      &varno <<= [new_register(Pos, Reg), new_label(ToAny)]}},
+    Code2=[wait_vector(Reg, Key)|Code3],
+    {{load_element(&varno, &susp, &fail,
+                   Key, Stream0, Stream, Code3, Code4, Pos, Reg, Collect),
+      merge_suspend_streams(Suspends, Susps),
+      generate_label(&varno, &susp, Suspends, Code4, [label(ToAny)|Code6], [])}},
+%%      generate_label(&varno, &susp, Suspends, Code4, Code5, [])}},
+%%    Code5=[label(ToAny)|Code6],
+    vector_node([{Key, Stream}], stream(Any), [], Cdr).
+otherwise.
+vector_node(Branch0, [], Susps,
+            [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+%%    &towait <<= [get_label(Wait)],
+    {{generate_label(&varno, &fail, Code0, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_register(Pos, Reg), new_register(nil,Ari)]}},
+    Code2=[switch_on_non_vector(Reg, Ari, Fail),
+%%           switch_on_constant(Ari, Hash, Fail)|Code3],
+           switch_on_constant(Ari, Hash, Susp)|Code3],
+%%           switch_on_constant(Ari, Hash, Wait)|Code3],
+    {{make_hash_table_and_load_element(&varno, &susp, &fail,
+                                       Branch0, Branch1,
+                                       Hash, [], Code3, Code, Pos, Reg,
+                                       Collect)}},
+    vector_node(Branch1, [], Susps, Cdr).
+vector_node(Branch0, stream(Any0), Susps,
+            [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    Any0=[make_code(Code6-Code, Collect)|Any],
+    &fail <<= [get_label(Fail)],
+    &susp <<= [get_label(Susp)],
+    {{generate_label(&varno, &fail, Code0, [try_me_else(Susp),
+                        switch_on_non_vector(Reg, Ari, Fail),
+                        switch_on_constant(Ari, Hash, ToAny)|Code3], []),
+%%      Code1=[try_me_else(Susp)|Code2],
+      makeLabels(&varno, Pos, Reg, nil, Ari, ToAny)}},
+%%      &varno <<= [new_register(Pos, Reg),
+%%                  new_register(nil,Ari), new_label(ToAny)]}},
+%%    Code2=[switch_on_non_vector(Reg, Ari, Fail),
+%%           switch_on_constant(Ari, Hash, ToAny)|Code3],
+    {{make_hash_table_and_load_element(&varno, &susp, &fail,
+                                       Branch0, Branch1,
+                                       Hash, [], Code3, Code4, Pos, Reg,
+                                       Collect),
+      merge_suspend_streams(Suspends, Susps),
+      generate_label(&varno, &susp, Suspends, Code4, [label(ToAny)|Code6], [])}},
+%%      generate_label(&varno, &susp, Suspends, Code4, Code5, [])}},
+%%    Code5=[label(ToAny)|Code6],
+    vector_node(Branch1, stream(Any), [], Cdr).
+vector_node(Branch, Any, Suspends, []) --> true |
+    {{close_branch(Branch), close_any(Any),
+      merge_suspend_streams(&susp, Suspends)}}.
+
+:- local_implicit varno:stream.
+makeLabels(Pos, Reg, Ari, RAri, Lab) --> true |
+    &varno <<= [new_register(Pos, Reg), new_register(Ari, RAri), new_label(Lab)].
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 varno:stream,
+                 susp:stream.
+
+pass_branch_vector([{N,Stream0}|Cdr], Branch, N,
+                   Args, Clause, Nv, ACK) --> true |
+    Stream0=[intern_clause(Args, Clause, Nv, ACK)|Stream],
+    Branch=[{N,Stream}|Cdr].
+otherwise.
+pass_branch_vector([KeyStr|Cdr], Branch0,
+                   N, Args, Clause, Nv, ACK) --> true |
+    Branch0=[KeyStr|Branch],
+    pass_branch_vector(Cdr, Branch, N, Args, Clause, Nv, ACK).
+pass_branch_vector([], Branch,
+                   N, Args, Clause, Nv, ACK) --> true |
+    {{make_node(&io, &isblt, &class, &varno, &susp,
+                [intern_clause(Args, Clause, Nv, ACK)|Stream])}},
+    Branch=[{N,Stream}].
+
+%%
+%% wait
+%%
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 varno:stream,
+                 susp:stream,
+                 fail:oldnew.
+wait_node(Any0, Wait, [intern_clause([check((wait))|Args],
+                               Clause, Nv, ACK)|Cdr]) --> true |
+    {{pass_any(&io, &isblt, &class, &varno, &susp,
+               Any0, Any, Args, Clause, Nv, ACK)}},
+    wait_node(Any, Wait, Cdr).
+wait_node(Any0, Wait, [end_mark|Cdr]) --> true |
+    {{send_message_to_any(Any0, Any, _, end_mark/0)}},
+    wait_node(Any, Wait, Cdr).
+wait_node([], Wait, [make_code(Code0-Code, _, _)|Cdr]) --> true |
+    Code0=Code,
+    wait_node([], Wait, Cdr).
+wait_node(stream(Any0), Wait0, [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    &susp <<= [get_label(Susp)],
+    {{generate_label(&varno, &fail, Code0, Code11, []),
+      generate_label(&varno, Wait1, Wait0, Code11, Code1, []),
+      Code1=[try_me_else(Susp)|Code2],
+      &varno <<= [new_register(Pos, Reg)]}},
+    Code2=[wait(Reg)|Code3],
+    Any0=[make_code(Code3-Code, [collect_value(Pos)|Collect])|Any],
+    wait_node(stream(Any), Wait1, Cdr).
+wait_node(Any0, Wait, []) --> true |
+    {{unify(&susp, Wait)}},
+    {{close_any(Any0)}}.
+
+unify(A, B) :- A=B.
+
+%%
+%% pass_branch
+%%
+%% pass the message throught a stream if the input `key' is the same with
+%% the key binding to the stream.
+%%
+%% If there is no corresponding `key', a `node' process is generated and
+%% a stream is built for the communication with the procecess.
+%%
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 varno:stream,
+                 susp:stream.
+pass_branch([{Key,Str0}|Cdr], Branch, Key, Args, Clause, Nv, ACK) -->
+        true |
+    Str0=[intern_clause(Args, Clause, Nv, ACK)|Str],
+    Branch=[{Key,Str}|Cdr].
+otherwise.
+pass_branch([KeyStream|Cdr],
+            Branch0, Key, Args, Clause, Nv, ACK) --> true |
+    Branch0=[KeyStream|Branch],
+    pass_branch(Cdr, Branch, Key, Args, Clause, Nv, ACK).
+pass_branch([], Branch0, Key, Args, Clause, Nv, ACK) --> true |
+   {{make_node(&io, &isblt, &class, &varno, &susp,
+                [intern_clause(Args, Clause, Nv, ACK)|Cdr])}},
+    Branch0=[{Key,Cdr}].
+
+%%
+%% pass_any
+%%
+%% pass the message to the `any' stream. If no `any' stream,
+%% generate a new `node' process and a stream for the communication 
+%% with it.
+%%
+
+pass_any([], Str, Args, Clause, Nv, ACK) --> true |
+    {{make_node(&io, &isblt, &class, &varno, &susp,
+                [intern_clause(Args, Clause, Nv, ACK)|Any]),
+      Str=stream(Any)}}.
+pass_any(stream(Any0), Str, Args, Clause, Nv, ACK) --> true |
+    Any0=[intern_clause(Args, Clause, Nv, ACK)|Any],
+    Str=stream(Any).
+
+%%
+%% variables
+%%
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 varno:stream,
+                 susp:stream.
+
+%%variable_node(Fail, Susp, _, [], LABEL, BLTSTREAM, % BUGGY !!!!!
+%%              [intern_clause([wait(variable(_))|Args],
+%%                             Clause, Nv, ACK)|Cdr]) -->
+%%        true |
+%%    {{make_node(&io, &isblt, &class, &varno, ChildSusp,
+%%            [intern_clause(Args, Clause, Nv, ACK)|Stream])}},
+%%    variable_node(Fail, Susp, ChildSusp, stream(Stream), LABEL, BLTSTREAM, Cdr).
+%%variable_node(Fail, Susp, ChildSusp, stream(Str0), LABEL, BLTSTREAM, % BUGGY !!!!!
+%%              [intern_clause([wait(variable(_))|Args],
+%%                             Clause, Nv, ACK)|Cdr]) -->
+%%        true |
+%%    Str0=[intern_clause(Args, Clause, Nv, ACK)|Str],
+%%    variable_node(Fail, Susp, ChildSusp, stream(Str), LABEL, BLTSTREAM, Cdr).
+variable_node(Fail, Susp, _, [], LABEL, BLTSTREAM, % BUGGY !!!!!
+              [intern_clause([wait(_)|Args],
+                             Clause, Nv, ACK)|Cdr]) -->
+        true |
+    {{make_node(&io, &isblt, &class, &varno, ChildSusp,
+            [intern_clause(Args, Clause, Nv, ACK)|Stream])}},
+    variable_node(Fail, Susp, ChildSusp, stream(Stream), LABEL, BLTSTREAM, Cdr).
+variable_node(Fail, Susp, ChildSusp, stream(Str0), LABEL, BLTSTREAM, % BUGGY !!!!!
+              [intern_clause([wait(_)|Args],
+                             Clause, Nv, ACK)|Cdr]) -->
+        true |
+    Str0=[intern_clause(Args, Clause, Nv, ACK)|Str],
+    variable_node(Fail, Susp, ChildSusp, stream(Str), LABEL, BLTSTREAM, Cdr).
+variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, [],
+              [intern_clause([put(Src,Dst)|Args],
+                             Clause, Tbl, ACK)|Cdr]) --> true |
+    kl1cmp_guard:make_builtin_node(put(Src,Dst), Args, Clause, Tbl, ACK,
+                                   Stream),
+    variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, stream(Stream), Cdr).
+variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, [],
+              [intern_clause([unify(Src,Dst)|Args],
+                             Clause, Tbl, ACK)|Cdr]) --> true |
+    kl1cmp_guard:make_builtin_node(unify(Src,Dst), Args, Clause, Tbl, ACK,
+                                   Stream),
+    variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, stream(Stream), Cdr).
+variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, [],
+              [intern_clause([builtin(Blt)|Args],
+                             Clause, Tbl, ACK)|Cdr]) --> true |
+    kl1cmp_guard:make_builtin_node(builtin(Blt), Args, Clause, Tbl, ACK,
+                                   Stream),
+    variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, stream(Stream), Cdr).
+%% added D.Sekita 900509
+variable_node(Fail, Susp, ChildSusp, VARSTREAM, Label, stream(Stream0),
+            [intern_clause([builtin(Blt)|Args], Clause, Tbl, ACK)|Cdr]) --> true |
+    Stream0=[intern_clause([builtin(Blt)|Args], Clause, Tbl, ACK)|Stream],
+    variable_node(Fail, Susp, ChildSusp, VARSTREAM, Label, stream(Stream), Cdr).
+variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, stream(Stream0),
+              [intern_clause([put(Src,Dst)|Args],
+                             Clause, Tbl, ACK)|Cdr]) --> true |
+    Stream0=[intern_clause([put(Src,Dst)|Args], Clause, Tbl, ACK)|Stream],
+    variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, stream(Stream), Cdr).
+variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, stream(Stream0),
+              [intern_clause([unify(Src,Dst)|Args],
+                             Clause, Tbl, ACK)|Cdr]) --> true |
+    Stream0=[intern_clause([unify(Src,Dst)|Args], Clause, Tbl, ACK)|Stream],
+    variable_node(Fail, Susp, ChildSusp, VARSTREAM, LABEL, stream(Stream), Cdr).
+%% added D.Sekita 900509
+otherwise.
+variable_node(Fail, Susp, ChildSusp, stream(Str0), LABEL, BLTSTREAM,
+              [intern_clause([Other|Args], Clause, Nv, ACK)|Cdr]) -->
+        vector(Other, 3) |                % only pass !
+    Str0=[intern_clause([Other|Args], Clause, Nv, ACK)|Str],
+   variable_node(Fail, Susp, ChildSusp, stream(Str), LABEL, BLTSTREAM, Cdr).
+variable_node(Fail, Susp, _, [], LABEL, BLTSTREAM,
+              [intern_clause([Other|Args], Clause, Nv, ACK)|Cdr]) -->
+        vector(Other, 3) |
+    {{make_node(&io, &isblt, &class, &varno, ChildSusp,
+            [intern_clause([Other|Args], Clause, Nv, ACK)|Stream])}},
+    variable_node(Fail, Susp, ChildSusp, stream(Stream), LABEL, BLTSTREAM, Cdr).
+variable_node(Fail, Susp, ChildSusp, Stream0, LABEL, BLTSTREAM0,
+              [get_tree(Tree)|Cdr]) --> true |
+    {{Tree=var(VarTree, BltTree),
+      send_message_to_any(Stream0, Stream1, VarTree, get_tree/1),
+      send_message_to_any(BLTSTREAM0, BLTSTREAM, BltTree, get_tree/1)}},
+    variable_node(Fail, Susp, ChildSusp, Stream1, LABEL, BLTSTREAM, Cdr).
+variable_node(Fail, Susp, ChildSusp, Stream0, LABEL, BLTSTREAM0,
+              [end_mark|Cdr]) --> true |
+    {{send_message_to_any(Stream0, Stream, _, end_mark/0),
+      send_message_to_any(BLTSTREAM0, BLTSTREAM, _, end_mark/0)}},
+    variable_node(Fail, Susp, ChildSusp, Stream, LABEL, BLTSTREAM, Cdr).
+%% no variable
+%% send messages from brother nodes
+variable_node([get_label(Label)|Fail], Susp, ChildSusp, [], LABELS, [],
+              Cdr) --> true |
+    &susp <<= [get_label(Label)],
+    variable_node(Fail, Susp, ChildSusp, [], LABELS, [], Cdr).
+variable_node([get_label(LAB)|Fail], Susp, ChildSusp,
+            stream(VARSTR), Label0-BLT, [], Cdr) --> true |
+    {{make_label_or_not(Label0, Label, LAB, &varno)}},
+    variable_node(Fail, Susp, ChildSusp, stream(VARSTR), Label-BLT, [], Cdr).
+variable_node([get_label(LAB)|Fail], Susp, ChildSusp,
+            [], Label0-BLT, stream(BLTSTR), Cdr) --> true |
+    {{make_label_or_not(Label0, Label, LAB, &varno)}},
+    variable_node(Fail, Susp, ChildSusp, [], Label-BLT, stream(BLTSTR), Cdr).
+variable_node([get_label(LAB)|Fail], Susp, ChildSusp,
+            stream(VARSTR), Label0-BLT, stream(BLTSTR), Cdr) --> true |
+    {{make_label_or_not(Label0, Label, LAB, &varno)}},
+    variable_node(Fail, Susp, ChildSusp, stream(VARSTR), Label-BLT, stream(BLTSTR), Cdr).
+%% Suspend
+variable_node(Fail, [get_label(LAB)|Susp], ChildSusp, [], LABEL, [],
+              Cdr) --> true |
+    &susp <<= [get_label(LAB)],
+    variable_node(Fail, Susp, ChildSusp, [], LABEL, [], Cdr).
+variable_node(Fail, [get_label(LAB)|Susp], ChildSusp, [], Label0-BLT, stream(BLTSTR),
+              Cdr) --> true |
+    {{make_label_or_not(Label0, Label, LAB, &varno)}},
+    variable_node(Fail, Susp, ChildSusp, [], Label-BLT, stream(BLTSTR), Cdr).
+variable_node(Fail, [get_label(LAB)|Susp], ChildSusp, stream(VARSTR), Label0-BLT, [],
+              Cdr) --> true |
+    {{make_label_or_not(Label0, Label, LAB, &varno)}},
+    variable_node(Fail, Susp, ChildSusp, stream(VARSTR), Label-BLT, [], Cdr).
+variable_node(Fail, [get_label(LAB)|Susp], ChildSusp, stream(VARSTR),
+                Label0-BLT, stream(BLTSTR), Cdr) --> true |
+    {{make_label_or_not(Label0, Label, LAB, &varno)}},
+    variable_node(Fail, Susp, ChildSusp, stream(VARSTR), Label-BLT, stream(BLTSTR), Cdr).
+%%
+%% make code
+%%
+variable_node(Fail, Susp, ChildSusp, [], LABEL, [],
+              [make_code(Code0-Code, _, _)|Cdr]) --> true |
+    Code0=Code,
+    variable_node(Fail, Susp, ChildSusp, [], LABEL, [], Cdr).
+variable_node(Fail, Susp, ChildSusp, stream(VARSTR0), VAR0-BLT0, [],
+              [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    {{make_label_or_not(VAR0, VAR, _, &varno),
+      Code0=[VAR|Code1],
+      send_make_code(stream(VARSTR0), stream(VARSTR), Code1, Code, Pos, Collect)}},
+    variable_node(Fail, Susp, ChildSusp, stream(VARSTR), VAR-BLT0, [], Cdr).
+variable_node(Fail, Susp, ChildSusp, [], VAR0-BLT, stream(BLTSTR0),
+              [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    {{make_label_or_not(VAR0, VAR, _, &varno),
+      Code0=[VAR|Code1],
+      send_make_code(stream(BLTSTR0), stream(BLTSTR), Code1, Code, Pos, Collect)}},
+    variable_node(Fail, Susp, ChildSusp, [], VAR-BLT, stream(BLTSTR), Cdr).
+variable_node(Fail, Susp, ChildSusp, stream(VARSTR0), VAR0-BLT0, stream(BLTSTR0),
+            [make_code(Code0-Code, Collect, Pos)|Cdr]) --> true |
+    {{make_label_or_not(VAR0, VAR, _, &varno),
+      Code0=[VAR|Code1],
+      send_make_code(stream(VARSTR0), stream(VARSTR), Code1, Code2, Pos, Collect),
+      make_label_or_not(BLT0, BLT, _, &varno),
+      Code2=[BLT|Code3],
+      send_make_code(stream(BLTSTR0), stream(BLTSTR), Code3, Code, Pos, Collect)}},
+    variable_node(Fail, Susp, ChildSusp, stream(VARSTR), VAR-BLT, stream(BLTSTR), Cdr).
+%% added for suspention of child
+variable_node(Fail, Susp, [get_label(Label)|ChildSusp], [], LABEL, [], Cdr) --> true |
+    &susp <<= [get_label(Label)],
+    variable_node(Fail, Susp, ChildSusp, [], LABEL, [], Cdr).
+variable_node(Fail, Susp, [get_label(Label)|ChildSusp],
+        [], VAR-BLT, stream(BLTSTR), Cdr) --> true |
+    &susp <<= [get_label(Label)],
+    variable_node(Fail, Susp, ChildSusp, [], VAR-BLT, stream(BLTSTR), Cdr).
+variable_node(Fail, Susp, [get_label(Label)|ChildSusp],
+        stream(VARSTR), VAR-BLT, [], Cdr) --> true |
+    &susp <<= [get_label(Label)],
+    variable_node(Fail, Susp, ChildSusp, stream(VARSTR), VAR-BLT, [], Cdr).
+variable_node(Fail, Susp, [get_label(LAB)|ChildSusp],
+        stream(STR), VAR-Label0, stream(BLTSTR), Cdr) --> true |
+    {{make_label_or_not(Label0, Label, LAB, &varno)}},
+    variable_node(Fail, Susp, ChildSusp, stream(STR), VAR-Label, stream(BLTSTR), Cdr).
+variable_node([], [], ChildSusp, [], _, [], []) --> true |
+    label_processing(ChildSusp).
+variable_node([], [], ChildSusp, stream(STR), _, [], []) --> true |
+    {{close_any(stream(STR))}},
+    label_processing(ChildSusp).
+variable_node([], [], ChildSusp, [], _, stream(STR), []) --> true |
+    {{close_any(stream(STR))}},
+    label_processing(ChildSusp).
+variable_node([], [], ChildSusp, stream(VARSTR), LABELS, stream(BLTSTR), []) --> true |
+    {{close_any(stream(VARSTR)), close_any(stream(BLTSTR))}},
+    label_processing(ChildSusp, LABELS).
+
+label_processing([get_label(LAB)|Cdr], VAR-Label0) --> true |
+    {{make_label_or_not(Label0, Label, LAB, &varno)}},
+    label_processing(Cdr, VAR-Label).
+label_processing([], _) --> true | true.
+
+label_processing([get_label(Label)|Cdr]) --> true |
+    &susp <<= [get_label(Label)],
+    label_processing(Cdr).
+label_processing([]) --> true | true.
+
+make_label_or_not([], LABEL, Label, Var) :- true |
+    Var=[new_label(Label)],
+    LABEL=label(Label).
+make_label_or_not(label(Label0), LABEL, Label, Var) :- true |
+    Var=[],
+    Label=Label0,
+    LABEL=label(Label0).
+
+send_make_code(stream(Str0), Stream, Code0, Code, Pos, Collect) :- true |
+    Str0=[make_code(Code0-Code, [collect_value(Pos)|Collect])|Str],
+    Stream=stream(Str).
+send_make_code([], Stream, Code0, Code, _, _) :- true |
+    Stream=[], Code0=Code.
+
+%%
+%% close_branch
+%%
+%% close the branch streams.
+%%
+close_branch([{_,Str}|Cdr]) :- true |
+    Str=[],
+    close_branch(Cdr).
+close_branch([]) :- true .
+
+close_any([]) :- true | true.
+close_any(stream(Stream)) :- true | Stream=[].
+
+'C'(A0, A, B0, B) :- true | A0=B0, A=B.
+
+
+%%
+%% message handling
+%%
+
+fork_message_to_branch(Branch0, Branch, _, F/0) :- true |
+    fork_simple_message_to_branch(Branch0, Branch, F).
+otherwise.
+fork_message_to_branch([{Key, Str0}|Cdr],  Branch, BranchTree0, F/A) :- true |
+    BranchTree0=[SubTree|BranchTree],
+    kl1cmp_reader:gen_functor(Message0, F, A),
+    set_vector_element(Message0, 0, _, Key, SubTree),
+    Str0=[Message0|Str],
+    Branch=[{Key, Str}|NewCdr],
+    fork_message_to_branch(Cdr, NewCdr, BranchTree, F/A).
+fork_message_to_branch([], Branch, BranchTree, _) :- true |
+    Branch=[], BranchTree=[].
+
+fork_simple_message_to_branch([{Key, Str0}|Cdr], NewBranch0, Msg) :- true |
+    Str0=[Msg|Str],
+    NewBranch0=[{Key,Str}|NewBranch],
+    fork_simple_message_to_branch(Cdr, NewBranch, Msg).
+fork_simple_message_to_branch([], NewBranch0, _) :- true |
+    NewBranch0=[].
+
+send_message_to_any([], Any, Tree, _) :- true |
+    Tree=[], Any=[].
+send_message_to_any(stream(Str0), Any, _, F/0) :- true |
+    Str0=[F|Str],
+    Any=stream(Str).
+send_message_to_any(stream(Str0), Any, Tree, F/A) :- A>0 |
+    kl1cmp_reader:gen_functor(Message0, F, A),
+    get_message_contents(Message0, Tree),
+    Str0=[Message0|Str],
+    Any=stream(Str).
+
+get_message_contents(Message0, Cont) :- vector(Message0, N) |
+    N1 := N-1,
+    new_vector(Cont0, N1),
+    copy_contents(0, N1, Message0, Cont0, Cont).
+get_message_contents(Message0, Cont) :- atom(Message0) |
+    Cont=[].
+
+copy_contents(A, N, Message0, Cont0, Cont) :- A<N |
+    A1 := A+1,
+    set_vector_element(Message0, A1, Elm, [], Message1),
+    set_vector_element(Cont0, A, _, Elm, Cont1),
+    copy_contents(A1, N, Message1, Cont1, Cont).
+copy_contents(N, N, _, Cont0, Cont) :- true | Cont0=Cont.
+
+%%
+%% generate_code
+%%
+
+%%
+%% generate_label
+%%
+
+:- local_implicit
+                 varno:stream.
+generate_label(Fail0, [get_label(Label)|Fail], Code0, Code, []) --> true |
+    &varno <<= [new_label(Label)],
+    Code0=['label'(Label)|Code1],
+    generate_label(Fail0, Fail, Code1, Code, label(Label)).
+generate_label(Fail0, [get_label(NewLabel)|Fail],
+               Code0, Code, label(Label)) --> true |
+    NewLabel = Label,
+    generate_label(Fail0, Fail, Code0, Code, label(Label)).
+generate_label(Fail0, [], Code0, Code, _) --> true |
+    Fail0=[], Code0=Code.
+
+:- local_implicit
+                 varno:stream,
+                 susp:stream.
+
+make_hash_table([{Key, Stream0}|Branch], NewBranch0,
+                Hash0, Hash, Code0, Code, Collect) --> true |
+    Hash0=[Key=Label|Hash1],
+    &varno <<= [new_label(Label)],
+    Code0=[label(Label)|Code1],
+    Stream0=[make_code(Code1-Code2, Collect)|Stream],
+    NewBranch0=[{Key, Stream}|NewBranch],
+    make_hash_table(Branch, NewBranch, Hash1, Hash, Code2, Code, Collect).
+make_hash_table([], NewBranch, Hash0, Hash, Code0, Code, _) --> true |
+    NewBranch=[], Hash0=Hash, Code0=Code.
+
+:- local_implicit
+                 varno:stream,
+                 susp:stream,
+                 fail:oldnew.
+
+load_element(Key, Stream0, Stream, Code0, Code, Pos, _, Collect) --> true |
+    {{load_element(&varno, 0, Key, Pos, Code0, Code1)}},
+    Stream0=[make_code(Code1-Code, [collect_vector(Pos, Key)|Collect])|Stream].
+
+make_hash_table_and_load_element([{Key, Stream0}|Branch], NewBranch0,
+                                 Hash0, Hash, Code0, Code, Pos,
+                                 Reg, Collect) -->
+        true |
+    Hash0=[Key=Label|Hash1],
+    &varno <<= [new_label(Label)],
+    Code0=[label(Label)|Code1],
+    {{load_element(&varno, 0, Key, Pos, Code1, Code2)}},
+    Stream0=[make_code(Code2-Code3,
+                       [collect_vector(Pos, Key)|Collect])|Stream],
+    NewBranch0=[{Key, Stream}|NewBranch],
+    make_hash_table_and_load_element(Branch, NewBranch, Hash1, Hash,
+                                     Code3, Code, Pos, Reg, Collect).
+make_hash_table_and_load_element([], NewBranch,
+                                 Hash0, Hash, Code0, Code, _, _, _) -->
+        true |
+    NewBranch=[], Hash0=Hash, Code0=Code.
+
+:- local_implicit varno:stream.
+load_element(A, N, Pos, Code0, Code) --> A<N |
+    Code0=[read_variable(Var)|Code1],
+    &varno <<= [new_register(element(Pos, A), Var)],
+  {{A1 := A+1}},
+    load_element(A1, N, Pos, Code1, Code).
+load_element(N, N, _, Code0, Code) --> true |
+    Code0=Code.
+
+:- local_implicit
+                 varno:stream,
+                 susp:stream.
+%%                 fail:oldnew.
+
+
+make_try_clauses(Fail,
+        Reg, [{Key0, Stream0}], NewBranch0, Code0, Code, Collect) --> floating_point(Key0) |
+%%    &fail <<= [get_label(Fail)],
+    {{kl1cmp_wrap:unwrap(Key0, Key)}},
+    Code0=[try_me_else(Fail), wait_constant(Reg, Key)|Code1],
+    Stream0=[make_code(Code1-Code, Collect)|Stream],
+    NewBranch0=[{Key0, Stream}].
+otherwise.
+make_try_clauses(Label, Reg, [{Key0, Stream0}|Cdr], NewBranch0,
+                 Code0, Code, Collect) --> floating_point(Key0) |
+    &varno <<= [new_label(Fail)],
+%%    &fail <<= [get_label(Fail)],
+    {{kl1cmp_wrap:unwrap(Key0, Key)}},
+    Code0=[try_me_else(Fail), wait_constant(Reg, Key)|Code1],
+    Stream0=[make_code(Code1-[label(Fail)|Code2], Collect)|Stream],
+    NewBranch0=[{Key0, Stream}|NewBranch],
+    make_try_clauses(Label,Reg, Cdr, NewBranch, Code2, Code, Collect).
+otherwise.
+make_try_clauses(Fail, Reg, [{Key0, Stream0}], NewBranch0, Code0, Code, Collect) --> true |
+    &varno <<= [new_register(nil, Var)],
+%%    &fail <<= [get_label(Fail)],
+    Code0=[try_me_else(Fail), put_structured_constant(Var, Key0),
+           wait_value(Reg, Var)|Code1], 
+    Stream0=[make_code(Code1-Code, Collect)|Stream],
+    NewBranch0=[{Key0, Stream}].
+otherwise.
+make_try_clauses(Label, Reg, [{Key0, Stream0}|Cdr], NewBranch0,
+                 Code0, Code, Collect) --> true |
+    &varno <<= [new_register(nil, Var), new_label(Fail)],
+%%    &fail <<= [get_label(Fail)],
+    Code0=[try_me_else(Fail), put_structured_constant(Var, Key0),
+           wait_value(Reg, Var)|Code1], 
+    Stream0=[make_code(Code1-[label(Fail)|Code2], Collect)|Stream],
+    NewBranch0=[{Key0, Stream}|NewBranch],
+    make_try_clauses(Label, Reg, Cdr, NewBranch, Code2, Code, Collect).
+make_try_clauses(_, _, [], NewBranch, Code0, Code, _) --> true |
+    NewBranch=[], Code0=Code.
+
+:- local_implicit stream:oldnew.
+pipe([Msg|Cdr]) --> true |
+    &stream <<= [Msg],
+    pipe(Cdr).
+pipe([]) --> true | true.
+
+merge_suspend_streams(Out, In) :- true |
+    merge(MergeIn, Out),
+    merge_suspend_streams_(MergeIn, In).
+
+merge_suspend_streams_(MergeIn, [Str|Rest]) :- true |
+    MergeIn={NewMergeIn, Str},
+    merge_suspend_streams_(NewMergeIn, Rest).
+merge_suspend_streams_(MergeIn, []) :- true |
+    MergeIn=[].
+
+
+%%
+%% leaf
+%%
+%% connected to body
+%%
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 var:stream.
+leaf(ClauseList, [intern_clause([], Clause, Tbl, Ack0-Ack)|Cdr]) --> true |
+    leaf([Clause-Tbl|ClauseList], Cdr),
+    Ack0=Ack.
+leaf(ClauseList, [intern_clause([_|_], Clause-_-VTbl0-_-Info, Tbl, Ack0-Ack)|Cdr]) --> true |
+%% It's obviously unnessesary D.Sekita
+%%    leaf(ClauseList, Cdr),
+    {{kl1cmp_error_filter:error_filter(&io, [warning("No exclusiveness in the guards. Deleted Clause : ~T",
+                [Clause], Info)], VTbl0, _)}},
+    Tbl=[],
+    Ack0=Ack,
+    leaf(ClauseList, Cdr).
+leaf(ClauseList, [get_tree(Tree)|Cdr]) --> true |
+    Tree=[],
+    leaf(ClauseList, Cdr).
+leaf(ClauseList0, [make_code(Code0-Code, Collect)|Cdr]) --> true |
+  {{get_variable_table_and_clause_number(ClauseList0, ClauseList, VTbl0, C),
+    kl1cmp_error_filter:error_filter(&io, Error, VTbl0, _),
+    kl1cmp_body:compile_body(Error, [], &isblt, &class, &var, Code0, Code1, ClauseList, Collect)}},
+    Code1=[clause_info(C)|Code],
+    leaf(ClauseList, Cdr).
+leaf(ClauseList, [end_mark|Cdr]) --> true |
+    leaf(ClauseList, Cdr).
+leaf(_, []) --> true | true.
+
+get_variable_table_and_clause_number([Clause-Nv-VTbl0-C0-Info-Str|Cdr], ClauseList, VTbl, C) :- true |
+    ClauseList=[Clause-Nv-Info-Str|NewCdr], VTbl=VTbl0,
+    get_variable_table(Cdr, NewCdr),
+    C0=C.
+
+get_variable_table([Clause-Nv-_-_-Info-Str|Cdr], ClauseList) :- true |
+    ClauseList=[Clause-Nv-Info-Str|New],
+    get_variable_table(Cdr, New).
+get_variable_table([], Clauses) :- true | Clauses=[].

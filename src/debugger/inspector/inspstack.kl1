@@ -1,0 +1,60 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_data_stack.
+:- with_macro pimos.
+:- public stack/1.
+
+stack(In) :- true |
+        pool:stack(S),
+        stack(In,0,root,S).
+
+stack([put({X,Pos1})|In],D,Pos,Out) :- true |
+        Out=[put({X,Pos})|Out1],
+        stack(In,~(D+1),Pos1,Out1).
+stack([get(X)|In],D,Pos,Out) :- true |
+        get(D,D1,Pos,Pos1,Out,Out1,X),
+        stack(In,D1,Pos1,Out1).
+stack([get_history(N,HistList)|In],D,Pos,Out) :- true |
+        get_history(~(N-1),D,Pos,HistList,Out,Out1),
+        stack(In,D,Pos,Out1).
+otherwise.
+stack([Message|In],D,Pos,Out) :- true |
+        Out=[Message|Out1],
+        stack(In,D,Pos,Out1).
+stack([],_,_,Out) :- true | Out=[].
+
+get(0,D1,Pos,Pos1,Out,Out1,X) :- true |
+        D1:=0,Pos=Pos1,Out=Out1,X=root.
+get(D,D1,Pos,Pos1,Out,Out1,X) :- D>0 |
+        D1:=D-1,
+        Out=[get(Data)|Out1],
+        wait_data(Data,X,Pos,Pos1).
+%        Out=[get({X0,Pos1})|Out1],
+%        X={X0,Pos}.
+
+wait_data({X0,P},X,Pos,Pos1) :- true | X={X0,Pos},Pos1=P.
+
+get_history(N,D,Pos,List,Out,Out1) :- true |
+        how_many(N,D,N1),
+        get_data(N1,L,[],Out,Out0),
+        put_data(L,~(D-N1),Pos,List,Out0,Out1).
+
+how_many(N,D,N1) :- N=<D | N1:=N.
+how_many(N,D,N1) :- N>D | N1:=D.
+
+get_data(N,L,L2,Out,Out1) :- N>0 |
+        Out=[get(X)|Out0],
+        L1=[X|L2],
+        get_data(~(N-1),L,L1,Out0,Out1).
+get_data(0,L,L1,Out,Out1) :- true | L=L1,Out=Out1.
+
+put_data([{X,P}|L],D,Pos,List,Out,Out1) :- true |
+        List=[{D,X,P}|List1],
+        Out=[put({X,P})|Out0],
+        put_data(L,~(D+1),Pos,List1,Out0,Out1).
+put_data([],D,Pos,List,Out,Out1) :- true | List=[{D,Pos}],Out=Out1.
+

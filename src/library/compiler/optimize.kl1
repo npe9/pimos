@@ -1,0 +1,424 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% KL1 code optimizer
+%%
+
+:- module kl1cmp_optimize.
+:- public optimize/3.
+
+:- local_implicit
+                 code:oldnew.
+
+optimize(Code0) --> wait(Code0) |
+    {{optimize1(Code1, [], [], SuspLabel, Code0)}},        % delete inneccesary try_me_else and
+    optimize2(SuspLabel, Code1, []).
+
+:- local_implicit
+                 code:oldnew,
+                 susplabel:oldnew.
+
+optimize1(Code0) --> true |                
+    {{pool:keyed_bag(Pool0)}},                % contanins inneccesary labels
+    optimize1(Pool0, [], Code0).
+
+:- local_implicit
+                 code:oldnew,
+                 susplabel:oldnew,
+                 pool:oldnew.
+      
+optimize1([try_me_else(Label), switch_on_non_atom(R, Label),
+           switch_on_constant(R, [Key=Jump], Label)|Cdr]) --> true |
+    &code <<= [try_me_else(Label), wait_atom(R, Key)],
+    &pool <<= [put(Jump, notuse),
+               put(Label, use), empty(reg(R), YorN)],
+  {{registrateOrNot(&pool, YorN, R, atom)}},
+    optimize1(Cdr).
+optimize1([try_me_else(Label), switch_on_non_integer(R, Label),
+           switch_on_constant(R, [Key=Jump], Label)|Cdr]) --> true |
+    &code <<= [try_me_else(Label), wait_constant(R, Key)],
+    &pool <<= [put(Jump, notuse),
+               put(Label, use), empty(reg(R), YorN)],
+%    registrateOrNot(YorN, R, atom)
+  {{registrateOrNot(&pool, YorN, R, integer)}},
+    optimize1(Cdr).
+%%%%optimize1([try_me_else(Label1), switch_on_non_list(R, Label2)|Cdr]) -->
+%%%%        true |
+%%%%    &code <<= [switch_on_non_list(R, Label2)],
+%%%%    &pool <<= [put(Label1, notuse), put(Label2, use)],
+%%%%    optimize1(Cdr).
+%% 900606
+optimize1([try_me_else(Label1), switch_on_non_vector(R, _, Label2),
+            vector(R, N)|Cdr]) --> true |
+    optimize1([try_me_else(Label1), switch_on_non_vector(R, N, Label2)|Cdr]).
+%% 900606
+optimize1([try_me_else(Label), switch_on_non_vector(R, A, Label),
+           switch_on_constant(A, [Key=Jump], Label)|Cdr]) --> true |
+    &code <<= [try_me_else(Label), wait_vector(R, Key)],
+    &pool <<= [put(Label, use), put(Jump, notuse), empty(reg(R), YorN)],
+  {{registrateOrNot(&pool, YorN, R, vector)}},
+    optimize1(Cdr).
+%% These two type check instructions are buggy. see depend.kl1
+optimize1([try_me_else(Susp), is_string(R, Fail)|Cdr]) --> true |
+    &code <<= [try_me_else(Susp), wait(R), try_me_else(Fail)],
+    &pool <<= [put(Susp, use), put(Fail, use), empty(reg(R), YorN)],
+  {{registrateOrNot(&pool, YorN, R, deref)}},
+    optimize1(Cdr).
+optimize1([try_me_else(Susp), is_float(R, Fail)|Cdr]) --> true |
+%% for optimization
+%%    &code <<= [try_me_else(Susp), wait(R), try_me_else(Fail), floating_point(R)],
+%%    &pool <<= [put(Susp, use), put(Fail, use), empty(reg(R), YorN)],
+%%    registrateOrNot(YorN, R, deref),
+    &pool <<= [empty(reg(R), YorN)],
+    outputFloatOrNot(YorN, Susp, Fail, R), 
+    optimize1(Cdr).
+%% These two type check instructions are buggy. see depend.kl1
+optimize1([label(Label)|Cdr]) --> true |
+    &pool <<= [get_all(Label, Flags)],
+    {{output_if_uses(&code, Flags, Label)}},
+    optimize1(Cdr).
+optimize1([unify(X, Y)|Cdr]) --> true |
+    &code <<= [wait_value(X, Y)],
+    optimize1(Cdr).
+%%optimize1([switch_on_constant(R, [Key=Label], ELabel), label(Label)|Cdr]) --> atom(Key) |
+%%    &code <<= [try_me_else(ELabel), wait_atom(R, Key)], 
+%%    &pool <<= [put(Label, notuse), put(ELabel, use), put(reg(R), atom)],
+%%    optimize1(Cdr).
+%%optimize1([switch_on_constant(R, [Key=Label], ELabel), label(Label)|Cdr]) --> integer(Key) |
+%%    &code <<= [try_me_else(ELabel), wait_constant(R, Key)], 
+%%    &pool <<= [put(Label, notuse), put(ELabel, use), put(reg(R), atom)],
+%%    optimize1(Cdr).
+optimize1([switch_on_non_list(R, Label)|Cdr]) --> true |
+    &code <<= [switch_on_non_list(R, Label)],
+    &pool <<= [put(Label, use), empty(reg(R), YorN)],
+  {{registrateOrNot(&pool, YorN, R, list)}},
+    optimize1(Cdr).
+%% 900606
+optimize1([switch_on_non_vector(R0, R1, Label)|Cdr]) --> true |
+    &pool <<= [put(Label, use), empty(reg(R0), YorN)],
+    outputSwitchOnVectOrNot(YorN, R0, R1, Label),
+    optimize1(Cdr).
+optimize1([switch_on_non_atom(R0, Label)|Cdr]) --> true |
+    &pool <<= [empty(reg(R0), YorN)],
+    outputSwitchOrNot(YorN, atom, R0, Label),
+    optimize1(Cdr).
+optimize1([switch_on_non_integer(R0, Label)|Cdr]) --> true |
+    &pool <<= [empty(reg(R0), YorN)],
+    outputSwitchOrNot(YorN, integer, R0, Label),
+    optimize1(Cdr).
+%% 900606
+optimize1([put_constant(R0, C)|Cdr]) --> integer(C) |
+    &code <<= [put_constant(R0, C)],
+    &pool <<= [empty(reg(R0), YorN)],
+  {{registrateOrNot(&pool, YorN, R0, integer)}},
+    optimize1(Cdr).
+optimize1([put_atom(R0, C)|Cdr]) --> true |
+    &code <<= [put_atom(R0, C)],
+    &pool <<= [empty(reg(R0), YorN)],
+  {{registrateOrNot(&pool, YorN, R0, atom)}},
+    optimize1(Cdr).
+optimize1([collect_value(R0)|Cdr]) --> true |
+    &pool <<= [empty(reg(R0), YorN)],
+    delete_collect(YorN, R0),
+    optimize1(Cdr).
+%%otherwise.
+%% 900606
+optimize1([switch_on_constant(R, [Key=Label1|HashTable], Label)|Cdr]) --> atom(Key) |
+%%    &code <<= [switch_on_constant(R, HashTable0, Label)],
+    &pool <<= [put(Label, use), empty(reg(R), YorN)],
+  {{registrateOrNot(&pool, YorN, R, atom)}},
+    {{registrate_labels(&pool, HashTable0, [], [Key=Label1|HashTable])}},
+    {{switch_or_hash(&code, HashTable0, R, Label)}},
+    optimize1(Cdr).
+optimize1([switch_on_constant(R, [Key=Label1|HashTable], Label)|Cdr]) --> integer(Key) |
+%%    &code <<= [switch_on_constant(R, HashTable0, Label)],
+    &pool <<= [put(Label, use), empty(reg(R), YorN)],
+    {{registrateOrNot(&pool, YorN, R, atom)}},
+    {{registrate_labels(&pool, HashTable0, [], [Key=Label1|HashTable])}},
+    {{switch_or_hash(&code, HashTable0, R, Label)}},
+    optimize1(Cdr).
+%% 900606
+optimize1([proceed|Cdr]) --> true |
+    {{removeRegisterInfo(&pool)}},
+    &code <<= [proceed],
+    optimize1(Cdr).
+optimize1([execute(A, Label)|Cdr]) --> true |
+    {{removeRegisterInfo(&pool)}},
+    &code <<= [execute(A, Label)],
+    optimize1(Cdr).
+optimize1([execute_external(A, Label)|Cdr]) --> true |
+    {{removeRegisterInfo(&pool)}},
+    &code <<= [execute_external(A, Label)],
+    optimize1(Cdr).
+%% 900606
+optimize1([try_me_else(_), try_me_else(Label2)|Cdr]) --> true |
+    optimize1([try_me_else(Label2)|Cdr]).
+otherwise.
+%% 900606
+%%optimize1([try_me_else(Label0), switch_on_non_integer(R0, Label)|Cdr]) --> true |
+%%    &pool <<= [put(Label0, use), empty(reg(R0), YorN)],
+%%    &code <<= [try_me_else(Label0)],
+%%    outputSwitchOrNot(YorN, integer, R, Label),
+%%    optimize1(Cdr).
+%%optimize1([try_me_else(Label0), switch_on_non_atom(R0, Label)|Cdr]) --> true |
+%%    &pool <<= [put(Label0, use), empty(reg(R0), YorN)],
+%%    &code <<= [try_me_else(Label0)],
+%%    outputSwitchOrNot(YorN, atom, R, Label),
+%%    optimize1(Cdr).
+%%otherwise.
+optimize1([try_me_else(Label0), switch_on_non_integer(R0, Label),
+        switch_on_constant(R0, Table, Label)|Cdr]) --> true |
+    optimize1([try_me_else(Label0), switch_on_constant(R0, Table, Label)|Cdr]).
+optimize1([try_me_else(Label0), switch_on_non_atom(R0, Label),
+        switch_on_constant(R0, Table, Label)|Cdr]) --> true |
+    optimize1([try_me_else(Label0), switch_on_constant(R0, Table, Label)|Cdr]).
+optimize1([try_me_else(Label)|Cdr]) --> true |
+    &pool <<= [put(Label, use)],
+    &code <<= [try_me_else(Label)],
+    optimize1(Cdr).
+optimize1([wait(R)|Cdr]) --> true |
+    &pool <<= [empty(reg(R), YorN)],
+    outputWaitOrNot(YorN, R),
+    optimize1(Cdr).
+optimize1([integer(R)|Cdr]) --> true |
+    &pool <<= [empty(reg(R), YorN)],
+    outputInstrOrNot(YorN, integer, R),
+    optimize1(Cdr).
+optimize1([atom(R)|Cdr]) --> true |
+    &pool <<= [empty(reg(R), YorN)],
+    outputInstrOrNot(YorN, atom, R),
+    optimize1(Cdr).
+optimize1([floating_point(R)|Cdr]) --> true |
+    &pool <<= [empty(reg(R), YorN)],
+    outputInstrOrNot(YorN, floating_point, R),
+    optimize1(Cdr).
+optimize1([list(R)|Cdr]) --> true |
+    &pool <<= [empty(reg(R), YorN)],
+    outputInstrOrNot(YorN, list, R),
+    optimize1(Cdr).
+optimize1([label(Label),suspend(N,L)]) --> true |
+    &susplabel <= Label,
+    &code <<= [label(Label),suspend(N,L)].
+otherwise.
+%%optimize1([Instr|Cdr]) --> true |
+%%    &code <<= [Instr],
+%%    optimize1(Cdr).
+optimize1([Instr0|Cdr]) --> true |
+  {{kl1cmp_blttbl:builtin(Instr0, Instr, In, Out, _, _, Attr, _, _)}},
+  {{unifyArg(In), unifyArg(Out)}},
+    outputAttr(Attr),
+    &code <<= [Instr],
+    optimize1(Cdr).
+optimize1([]) --> true | true.
+
+delete_collect(yes, R0) --> true |
+    &code <<= [collect_value(R0)].
+delete_collect(no, R0) --> true |
+    &pool <<= [get_and_put(reg(R0), M, M)],
+    delete_collect_(M, R0).
+
+delete_collect_(atom, R0) --> true | true.
+delete_collect_(integer, R0) --> true | true.
+delete_collect_(floating_point, R0) --> true | true.
+otherwise.
+delete_collect_(_, R0) --> true | &code <<= [collect_value(R0)].
+
+unifyArg([X0,X|Cdr]) :- true | X0=X, unifyArg(Cdr).
+unifyArg([]) :- true | true.
+
+outputAttr([{R,Type}|Cdr]) --> true |
+    &pool <<= [empty(reg(R), YorN)],
+    outputAttr(YorN, R, Type),
+    outputAttr(Cdr).
+outputAttr([]) --> true | true.
+
+outputAttr(yes, R, Type) --> true |
+    &pool <<= [put(reg(R), Type)].
+otherwise.
+outputAttr(no, _, _) --> true | true.
+
+outputInstrOrNot(yes, Type, R0) --> true |
+    &code <<= [{Type, R0}],
+    &pool <<= [put(reg(R0), Type)].
+outputInstrOrNot(no, Type0, R0) --> true |
+    &pool <<= [get_and_put(reg(R0),Type, Type)],
+    outputInstrOrNot_(Type0, Type, R0).
+
+outputInstrOrNot_(Type, Type, _) --> true | true.
+otherwise.
+outputInstrOrNot_(Type, _, R0) --> true |
+    &code <<= [{Type, R0}],
+    &pool <<= [get_and_put(reg(R0), _, Type)].
+
+%%outputFloatOrNot(yes, Susp, Susp, R) --> true |
+%%    &pool <<= [put(Susp, use), put(reg(R), floating_point)],
+%%    &code <<= [try_me_else(Susp), floating_point(R)].
+%%otherwise.
+outputFloatOrNot(yes, Susp, Fail, R) --> true |
+    &pool <<= [put(Susp, use), put(Fail, use), put(reg(R), floating_point)],
+    &code <<= [try_me_else(Susp), wait(R), try_me_else(Fail), floating_point(R)].
+% already instanciated
+outputFloatOrNot(no, _, Fail, R) --> true |
+    &pool <<= [get_and_put(reg(R), Type0, Type)],
+    outputFloatOrNot_(Type0, Type, Fail, R).
+
+outputFloatOrNot_(floating_point, Type, _, _) --> true | Type=floating_point.
+otherwise.
+outputFloatOrNot_(_, Type, Fail, R) --> true |
+    &code <<= [try_me_else(Fail), floating_point(R)],
+    Type=floating_point,
+    &pool <<= [put(Fail, use)].
+
+outputSwitchOrNot(yes, atom, R0, Label) --> true |
+    &code <<= [switch_on_non_atom(R0, Label)],
+    &pool <<= [put(reg(R0), atom), put(Label, use)].
+outputSwitchOrNot(yes, integer, R0, Label) --> true |
+    &code <<= [switch_on_non_integer(R0, Label)],
+    &pool <<= [put(reg(R0), integer), put(Label, use)].
+outputSwitchOrNot(no, Type0, R0, Label) --> true |
+    &pool <<= [get_and_put(reg(R0),Type, Type)],
+    outputSwitchOrNot_(Type, Type0, R0, Label).
+
+outputSwitchOrNot_(Type, Type, _, Label) --> true | true.
+otherwise.
+outputSwitchOrNot_(_, atom, R0, Label) --> true |
+    &code <<= [switch_on_non_atom(R0, Label)],
+    &pool <<= [put(Label, use), get_and_put(reg(R0), _, atom)].
+outputSwitchOrNot_(_, integer, R0, Label) --> true |
+    &code <<= [switch_on_non_integer(R0, Label)],
+    &pool <<= [put(Label, use), get_and_put(reg(R0), _, integer)].
+
+outputSwitchOnVectOrNot(yes, R0, RN, Label) --> true |
+    &code <<= [switch_on_non_vector(R0, RN, Label)],
+    &pool <<= [put(reg(R0), vector), put(Label, use)].
+outputSwitchOnVectOrNot(no, R0, RN, Label) --> true |
+    &pool <<= [get_and_put(reg(R0), Type0, Type0)],
+    outputSwitchOnVectOrNot_(Type0, R0, RN, Label).
+
+outputSwitchOnVectOrNot_(vector, _, _, Label) --> true | true.
+otherwise.
+outputSwitchOnVectOrNot_(_, R0, RN, Label) --> true |
+    &code <<= [switch_on_non_vector(R0, RN, Label)],
+    &pool <<= [put(Label, use), get_and_put(reg(R0), _, vector)].
+
+outputWaitOrNot(yes, R) --> true |
+    &code <<= [wait(R)],
+    &pool <<= [put(reg(R), deref)].
+outputWaitOrNot(no, R) --> true | true.
+
+:- local_implicit pool:oldnew.
+removeRegisterInfo --> true |
+    &pool <<= [get_all(All)],
+    removeRegisterInfo(All).
+
+removeRegisterInfo([{reg(R), _}|Cdr]) --> true |
+    removeRegisterInfo(Cdr).
+otherwise.
+removeRegisterInfo([{Key, Cont}|Cdr]) --> true |
+    &pool <<= [put(Key, Cont)],
+    removeRegisterInfo(Cdr).
+removeRegisterInfo([]) --> true | true.
+
+:- local_implicit pool:oldnew, hash:oldnew.
+registrate_labels([Key=Label|Cdr]) --> true |
+    &pool <<= [put(Label, use)],
+    &hash <<= [Key=Label],
+    registrate_labels(Cdr).
+registrate_labels([]) --> true | true.
+
+:- local_implicit code:oldnew.
+output_if_uses([use|_], Label) --> true |
+    &code <<= [label(Label)].
+output_if_uses([notuse|Cdr], Label) --> true |
+    output_if_uses(Cdr, Label).
+output_if_uses([], _) --> true | true.
+    
+% 
+% optimize2 delete unneccesary try_me_else and collect_value
+% 
+
+:- local_implicit
+                 code:oldnew,
+                 susplabel:shared.
+optimize2([try_me_else(ACP)|Cdr], ACP) --> true | % delete try_me_else
+    optimize2(Cdr, ACP).
+%% added 92/2/4
+optimize2([label(Label)|Cdr], _) --> true |
+    &code <<= [label(Label)],
+    optimize2(Cdr, []).
+%% end add
+optimize2([switch_on_non_integer(R0, Label),
+          switch_on_constant(R0, HashLabel, Label)|Cdr], Label) --> &susplabel = Label |
+    optimize2([switch_on_constant(R0, HashLabel, Label)|Cdr], Label).
+optimize2([switch_on_non_integer(R0, Label),
+          hash_on_constant(R0, HashLabel, Label)|Cdr], Label) --> &susplabel = Label |
+    optimize2([hash_on_constant(R0, HashLabel, Label)|Cdr], Label).
+optimize2([switch_on_non_atom(R0, Label),
+          switch_on_constant(R0, HashLabel, Label)|Cdr], Label) --> &susplabel = Label |
+    optimize2([switch_on_constant(R0, HashLabel, Label)|Cdr], Label).
+optimize2([switch_on_non_atom(R0, Label),
+          hash_on_constant(R0, HashLabel, Label)|Cdr], Label) --> &susplabel = Label |
+    optimize2([hash_on_constant(R0, HashLabel, Label)|Cdr], Label).
+otherwise.
+optimize2([try_me_else(NewACP)|Cdr], _) --> true |
+    &code <<= [try_me_else(NewACP)],
+    optimize2(Cdr, NewACP).
+optimize2([execute(A, Label)|Cdr], _) --> true |
+    &code <<= [execute(A, Label)],
+    optimize2(Cdr, []).
+optimize2([execute_external(A, Label)|Cdr], _) --> true |
+    &code <<= [execute_external(A, Label)],
+    optimize2(Cdr, []).
+optimize2([proceed|Cdr], _) --> true |
+    &code <<= [proceed],
+    optimize2(Cdr, []).
+otherwise.
+optimize2([Instr|Cdr], ACP) --> true |
+    &code <<= [Instr],
+    optimize2(Cdr, ACP).
+optimize2([], _) --> true | true.
+
+:- local_implicit
+                 pool:oldnew.
+
+registrateOrNot(yes, R, Type) --> true |
+    &pool <<= [put(reg(R), Type)].
+registrateOrNot(no, R, Type) --> true |
+    &pool <<= [get(reg(R), Type0)],
+    registrateOrNot_(Type0, R, Type).
+
+registrateOrNot_(deref, R, Type) --> true |
+    &pool <<= [put(reg(R), Type)].
+registrateOrNot_(Type, R, deref) --> true |
+    &pool <<= [put(reg(R), Type)].
+otherwise.
+registrateOrNot_(_, R, Type) --> true |
+    &pool <<= [put(reg(R), Type)].
+
+
+:- local_implicit code:oldnew.
+
+switch_or_hash(Hash0, R, Label) --> true |
+   {{switch_or_hash(Hash0, Hash, 0, Ans)}},
+     switch_or_hash(Ans, Hash, R, Label).
+
+switch_or_hash(switch, Hash, R, Label) --> true |
+   &code <<= [switch_on_constant(R, Hash, Label)].
+switch_or_hash(hash, Hash, R, Label) --> true |
+   &code <<= [hash_on_constant(R, Hash, Label)].
+%%   &code <<= [switch_on_constant(R, Hash, Label)].
+
+switch_or_hash(Hash0, Hash, N, Ans) :- N > 7 |
+     Hash0=Hash,
+     Ans=hash.
+otherwise.
+switch_or_hash([One|Hash0], NewHash0, N, Ans) :- true |
+     NewHash0=[One|NewHash],
+     N1 := N+1,
+     switch_or_hash(Hash0, NewHash, N1, Ans).
+switch_or_hash([], NewHash, _, Ans) :- true |
+     NewHash=[], Ans=switch.

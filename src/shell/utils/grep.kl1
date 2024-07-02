@@ -1,0 +1,196 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>PATHNAME>grep.kl1.7, 28-Sep-90 18:54:41, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   grep grogram                                                            %
+%   Usage: prompt> grep( ListOfFiles, StringOfPattern )                     %
+%           ListOfFIles     ::= [ Pathname | ListOfFiles] |                 %
+%                               Wildcard                                    %
+%           Pathname        ::= String                                      %
+%           Wildcard        ::= String                                      %
+%           StringOfPattern : Regular Expression has not supported.         %
+%         prompt> grep                                                      %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro  pimos.
+:- module  grep.
+:- public  go/0, go/1 ,go/2.
+:- public usage/1.
+
+go  :- true |
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    usage(Usage),
+    putUsage( Usage, StdOut).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   go(  StringOfPattern )                                                  %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+go(StringOfPattern) :-
+    string(StringOfPattern, _, _) |
+    shoen:raise(pimos_tag#shell, get_std_in, StdIn),
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    stdin_file_handling( StringOfPattern, StdIn, StdOut).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   go( ListOfFiles, StringOfPattern)                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+go( ListOfFiles, StringOfPattern) :-
+    string(StringOfPattern, _, _) |
+    shoen:raise(pimos_tag#task, general_request, GeneralRequestDevice),
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    GeneralRequestDevice = [file(normal(FileRequest, _, _))],
+    FileRequest=[current_directory(normal(Pathname))|FileRequest1],
+    StdOut=[ putb("Default directory is "),putb(Pathname),nl,flush(_)
+            ,do(NewStdOut)],
+    multiple_file_handling( ListOfFiles, StringOfPattern, 
+                            FileRequest1, NewStdOut).
+otherwise.
+go( _, _) :- true |
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    usage(Usage),
+    putUsage( Usage, StdOut).
+
+usage(Usage) :- true |
+Usage = [{"Usage: grep( ListOfFiles, StringOfPattern )",[]},
+         {"        ListOfFIles     ::= [ Pathname | ListOfFiles] |",[]},
+         {"                            Wildcard",[]},
+         {"        Pathname        ::= String",[]},
+         {"        Wildcard        ::= String",[]},  % 
+         {"        StringOfPattern : Regular Expression has not been supported yet.",[]},
+         {"       grep( StringOfPattern )",[]}].
+
+putUsage( [Usage|UsageList], StdOut) :- 
+    vector_element( Usage, 0, FormatString),
+    vector_element( Usage, 1, ArgumentList) |
+    StdOut=[putf(FormatString, ArgumentList),nl,flush(_) | NewStdOut],
+    putUsage( UsageList, NewStdOut).
+putUsage( [], StdOut) :- true |
+    StdOut = [].
+
+
+multiple_file_handling( Wildcard, Pattern, FileRequest, StdOut) :-
+    string(Wildcard,_,_) |
+    pathname:expandPathname( Wildcard, ListOfFiles),
+    check_and_multiple_file_handling( ListOfFiles, Pattern, FileRequest, StdOut).
+multiple_file_handling( [Pathname|ListOfFiles], Pattern, FileRequest, StdOut) :-
+    string(Pathname,_,_) |
+    FileRequest=[open( Pathname, read(Status))|NewFileRequest],
+    file_handling( Pathname, Status, Pattern, StdOut, StdOut1),
+    check_and_multiple_file_handling( ListOfFiles, Pattern, NewFileRequest, StdOut1).
+multiple_file_handling( [file(Pathname)|ListOfFiles], Pattern, FileRequest, StdOut) :-
+    string(Pathname,_,_) |
+    FileRequest=[open( Pathname, read(Status))|NewFileRequest],
+    file_handling( Pathname, Status, Pattern, StdOut, StdOut1),
+    check_and_multiple_file_handling( ListOfFiles, Pattern, NewFileRequest, StdOut1).
+multiple_file_handling( [directory(Pathname)|ListOfFiles], Pattern, FileRequest, StdOut):-
+    string(Pathname,_,_) |
+%    StdOut=[putb(Pathname),putl(" is directory.")|NewStdOut],
+    multiple_file_handling( ListOfFiles, Pattern, FileRequest, StdOut).
+multiple_file_handling( [abnormal(Pathname)|ListOfFiles], Pattern, FileRequest, StdOut) :-
+    string(Pathname,_,_) |
+    StdOut=[putb("invalid pathname "), putb(Pathname), nl | NewStdOut],
+    multiple_file_handling( ListOfFiles, Pattern, FileRequest, NewStdOut).
+multiple_file_handling( [non_existent(File)|ListOfFiles], Pattern, FileRequest, StdOut) :-
+    true |
+%    StdOut=[put("no match"),nl | NewStdOut],
+    multiple_file_handling( ListOfFiles, Pattern, FileRequest, StdOut).
+multiple_file_handling( [], _, FileRequest, StdOut) :-
+    true |
+    FileRequest = [],
+    StdOut = [].                        % 
+otherwise.
+multiple_file_handling( _, _, FileRequest, StdOut) :-
+    true |
+    FileRequest = [],
+    StdOut = [].
+
+stdin_file_handling(  Pattern, StdIn, StdOut) :-
+    true |
+    StdIn = [prompt(string#"GREP> "),getl(Line)|NewStdIn],
+    loop( Line, NewStdIn, StdOut, StdOut1, 0, Pattern),
+    StdOut1 = [].
+
+check_and_multiple_file_handling( ListOfFiles, Pattern, FileRequest, StdOut) :-
+    list(ListOfFiles) |
+    multiple_file_handling( ListOfFiles, Pattern, FileRequest, StdOut).
+check_and_multiple_file_handling( [], _, FileRequest, StdOut) :-
+    true |
+%    StdOut = [putb(string#"no match."),nl,flush(_)],
+    StdOut = [flush(_)],
+    FileRequest = [].
+
+file_handling( Pathname, normal(FileRequest, _, _), Pattern, StdOut, RStdOut) :-
+    true |
+    StdOut = [ putb("*** "),putb(Pathname),putb(" ***"),nl,flush(_)|NewStdOut],
+    buffer:input_filter(FileRequestWithBuf, FileRequest),
+    FileRequestWithBuf = [prompt(string#"GREP> "),getl(Line)|NewFileRequest],
+    loop(Line, NewFileRequest, NewStdOut, RStdOut, 0, Pattern).
+file_handling( Pathname, abnormal, _, StdOut, RStdOut) :-
+    true |
+    StdOut = [ putb(string#"Cannot open "),putb(Pathname),nl,flush(_) | RStdOut].
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   Following program has been copied on 30 Aug. '89                        %
+%   from "icpsi277::>sys>user>pimos>v1f>src>shell>utils>grep.kl1"           %
+%   by H.Yashiro                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+loop(Line, File, StdOut, NStdOut, LC, Ptn) :-    %%% normal %%%
+    string(Line, L, _), string(Ptn, LPtn, _), L >= LPtn |
+    subtract(L, LPtn, Max),
+    include(Ptn, Line, LPtn, Max, 0, Stat, NL),
+    add(LC, 1, NLC),
+    loopCheck(Stat, NL, StdOut, NewStdOut, NLC),
+    File = [prompt(string#"GREP> "), getl(NewLine) | NewFile],
+    loop(NewLine, NewFile, NewStdOut, NStdOut, NLC, Ptn).
+loop(Line, File, StdOut, NStdOut, LC, Ptn) :-
+    string(Line, L, _), string(Ptn, LPtn, _), L < LPtn |
+    add(LC, 1, NLC),
+    File = [prompt(string#"GREP> "), getl(NewLine) | NewFile],
+    loop(NewLine, NewFile, StdOut,NStdOut, NLC, Ptn).
+%loop(Line, File, StdOut, NStdOut, _, _) :- string(Line, 0, _) |    %%% pseudo_eof %%%
+%    StdOut = NStdOut,
+%    File = [].
+loop(Line, File, StdOut, NStdOut, _, _) :- integer(Line), Line = -1 |%%% end_of_file %%%
+    StdOut = NStdOut,
+    File = [].
+otherwise.
+loop(_, File, StdOut, NStdOut, _, _) :- true |            %%% abnormal %%%
+    StdOut = NStdOut, File = [].
+
+loopCheck(yes, Line, StdOut, NStdOut, LC) :- true |
+    StdOut = [putb(string#"Line "), putt(LC), putb(": "), putb(Line),nl,flush(_)
+            | NStdOut].
+loopCheck(no, _, StdOut, NStdOut, _) :- true | StdOut = NStdOut.
+
+include(_, Line, _, Max, Cnt, Stat, NL) :- Cnt > Max |
+    Stat = no, NL = Line.
+otherwise.                                      %%% inserted by H.Yashiro 
+include(Ptn, Line, LPtn, Max, Cnt, Stat1, NL) :- true |
+    builtin#substring(Line, Cnt, LPtn, Sub, NLine),
+    compare(Sub, Ptn, 0, LPtn, Stat2),
+    check(Stat2, Ptn, NLine, LPtn, Max, Cnt, Stat1, NL).
+
+check(yes, _, Line, _, _, _, Stat, NL) :- true |
+    Stat = yes, NL = Line.
+check(no, Ptn, Line, LPtn, Max, Cnt, Stat, NL) :- true |
+    add(Cnt, 1, NCnt),
+    include(Ptn, Line, LPtn, Max, NCnt, Stat, NL).
+
+compare(_, _, Cnt, Len, Stat) :- Cnt = Len | Stat = yes.
+compare(Src, Dst, Cnt, Len, Stat) :-
+    string_element(Src, Cnt, ESrc), string_element(Dst, Cnt, EDst),
+    ESrc = EDst |
+    add(Cnt, 1, NCnt),
+    compare(Src, Dst, NCnt, Len, Stat).
+otherwise.
+compare(_, _, _, _, Stat) :- true | Stat = no.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                           %%%%%
+%%%%%  End of 'grep' module.    %%%%%
+%%%%%                           %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

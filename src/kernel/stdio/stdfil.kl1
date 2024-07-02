@@ -1,0 +1,168 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module task_std_filter.
+:- with_macro pimos.
+:- public dist/3.
+
+dist({Type,{FInfo1,FInfo2},{FCode1,FCode2}},In,{Str1,Str2}):-
+    true|
+    apply(FCode1,{FInfo1,In1,Str1}),
+    apply(FCode2,{FInfo2,In2,Str2}),
+    distbody(Type,In,In1,In2).
+dist({Type,{FInfo1,FInfo2,FInfo3},{FCode1,FCode2,FCode3}},In,{Str1,Str2,Str3}):-
+    true|
+    apply(FCode1,{FInfo1,In1,Str1}),
+    apply(FCode2,{FInfo2,In2,Str2}),
+    apply(FCode3,{FInfo3,In3,Str3}),
+    distbody(Type,In,In1,In2,In3).
+
+%----------
+distbody(Type, X, X1, X2) :- Type \= switch |
+    ( Type = inOut_inter -> stdio_distributer:mesDis04(X, X1, X2) ;
+      Type = inInter_out -> stdio_distributer:mesDis03(X, X1, X2) ;
+      Type = in_outInter -> stdio_distributer:mesDis02(X, X1, X2) ).
+
+%%  a following will be revised !!
+distbody(switch,[{Msg,Stat}|In],In1,In2):- true| % detach & kill
+    In1 = [{Msg,Stat1}|In1N],
+    In2 = [{Msg,Stat2}|In2N],
+    wait_di_status(Stat1, Stat2, Stat),
+    distbody(switch,In,In1N,In2N).
+distbody(switch,[attach(Stat,DTCT)|In],In1,In2):- true |
+    In1 = [attach(Stat1,DTCT1)|In1N],
+    In2 = [attach(Stat2,DTCT2)|In2N],
+    wait_di_status(Stat1, Stat2, Stat),
+    wait_di_detect(DTCT1, DTCT2, DTCT),
+    distbody(switch,In,In1N,In2N).
+distbody(switch,[{Msg,ID,Stat}|In],In1,In2):- Msg\=attach| % detach & kill
+    In1 = [{Msg,ID,Stat1}|In1N],
+    In2 = [{Msg,ID,Stat2}|In2N],
+    wait_di_status(Stat1, Stat2, Stat),
+    distbody(switch,In,In1N,In2N).
+distbody(switch,[attach(ID,Stat,DTCT)|In],In1,In2):- true |
+    In1 = [attach(ID,Stat1,DTCT1)|In1N],
+    In2 = [attach(ID,Stat2,DTCT2)|In2N],
+    wait_di_status(Stat1, Stat2, Stat),
+    wait_di_detect(DTCT1, DTCT2, DTCT),
+    distbody(switch,In,In1N,In2N).
+distbody(switch,[],In1,In2):-
+    true|
+    In1 = [],
+    In2 = [].
+
+%----------
+distbody(in_out_inter, X, X1, X2, X3) :- true |
+    stdio_distributer:mesDis05(X, X1, X2, X3).
+
+%%  a following will be revised !!
+distbody(switch,[{Msg,Stat}|In],In1,In2,In3):- true| % detach & kill
+    In1 = [{Msg,Stat1}|In1N],
+    In2 = [{Msg,Stat2}|In2N],
+    In3 = [{Msg,Stat3}|In3N],
+    wait_tri_status(Stat1, Stat2, Stat3, Stat),
+    distbody(switch,In,In1N,In2N,In3N).
+distbody(switch,[attach(Stat,DTCT)|In],In1,In2,In3):- true|
+    In1 = [attach(Stat1,DTCT1)|In1N],
+    In2 = [attach(Stat2,DTCT2)|In2N],
+    In3 = [attach(Stat3,DTCT3)|In3N],
+    wait_tri_status(Stat1, Stat2, Stat3, Stat),
+    wait_tri_detect(DTCT1, DTCT2, DTCT3, DTCT),
+    distbody(switch,In,In1N,In2N,In3N).
+distbody(switch,[{Msg,ID,Stat}|In],In1,In2,In3):- Msg\=attach | % detach & kill
+    In1 = [{Msg,ID,Stat1}|In1N],
+    In2 = [{Msg,ID,Stat2}|In2N],
+    In3 = [{Msg,ID,Stat3}|In3N],
+    wait_tri_status(Stat1, Stat2, Stat3, Stat),
+    distbody(switch,In,In1N,In2N,In3N).
+distbody(switch,[attach(ID,Stat,DTCT)|In],In1,In2,In3):- true|
+    In1 = [attach(ID,Stat1,DTCT1)|In1N],
+    In2 = [attach(ID,Stat2,DTCT2)|In2N],
+    In3 = [attach(ID,Stat3,DTCT3)|In3N],
+    wait_tri_status(Stat1, Stat2, Stat3, Stat),
+    wait_tri_detect(DTCT1, DTCT2, DTCT3, DTCT),
+    distbody(switch,In,In1N,In2N,In3N).
+distbody(switch,[],In1,In2,In3):-
+    true|
+    In1 = [],
+    In2 = [],
+    In3 = [].
+
+%%%%% non_existent, abnormal, normal, non_execute
+wait_di_status(Stat1,Stat2,Stat) :- true |
+    ( Stat1 = Stat2 -> Stat = Stat1 ;
+     otherwise ;
+      true -> check_status([Stat1, Stat2],normal,Stat) ).
+wait_tri_status(Stat1,Stat2,Stat3,Stat) :- true |
+    ( Stat1 = Stat2, Stat2 = Stat3 -> Stat = Stat1 ;
+     otherwise ;
+      true -> check_status([Stat1, Stat2, Stat3],normal,Stat) ).
+
+check_status([],OLD,NEW) :- OLD = NEW.
+check_status([aborted|CDR],_,NEW) :- true | check_status(CDR,aborted,NEW).
+
+check_status([abnormal|CDR],OLD,NEW) :- true |
+    ( OLD = aborted -> OLD1 = OLD ;
+     otherwise ;
+      true -> OLD1 = abnormal ),
+    check_status(CDR,OLD1,NEW).
+
+check_status([non_existent|CDR],OLD,NEW) :- true |
+    ( OLD = aborted -> OLD1 = OLD ;
+      OLD = abnormal -> OLD1 = OLD ;
+     otherwise ;
+      true -> OLD1 = non_existent ),
+    check_status(CDR,OLD1,NEW).
+
+check_status([non_execute|CDR],OLD,NEW) :- true |
+    ( OLD = aborted -> OLD1 = OLD ;
+      OLD = abnormal -> OLD1 = OLD ;
+      OLD = non_existent -> OLD1 = OLD ;
+     otherwise ;
+      true -> OLD1 = non_execute ),
+    check_status(CDR,OLD1,NEW).
+check_status([normal|CDR],OLD,NEW) :- true | check_status(CDR,OLD,NEW).
+
+%%%%% detected, closed, disconnected, deserted, non_existent, error
+wait_di_detect(X,Y,DTCT) :- true |
+    ( X = Y -> DTCT = X ;
+     otherwise ;
+      true -> check_detect([X,Y],[],DTCT) ).
+
+wait_tri_detect(X,Y,Z,DTCT) :- true |
+    ( X = Y, Y = Z -> DTCT = X ;
+     otherwise ;
+      true -> check_detect([X,Y,Z],[],DTCT) ).
+
+check_detect([],OLD,NEW) :- true | OLD=NEW.
+check_detect([error|CDR],_,NEW) :- true | check_detect(CDR,error,NEW).
+check_detect([detected|CDR],OLD,NEW) :- true |
+    ( OLD = error -> OLD1 = OLD ;
+     otherwise; true -> OLD1 = detected ),
+    check_detect(CDR,OLD1,NEW).
+check_detect([non_existent|CDR],OLD,NEW) :- true |
+    ( OLD = error -> OLD1 = OLD ;
+      OLD = detected -> OLD1 = OLD ;
+     otherwise; true -> OLD1 = non_existent ),
+    check_detect(CDR,OLD1,NEW).
+check_detect([deserted|CDR],OLD,NEW) :- true |
+    ( OLD = error -> OLD1 = OLD ;
+      OLD = detected -> OLD1 = OLD ;
+      OLD = non_existent -> OLD1 = OLD ;
+     otherwise; true -> OLD1 = deserted ),
+    check_detect(CDR,OLD1,NEW).
+check_detect([disconnected|CDR],OLD,NEW) :- true |
+    ( OLD = error -> OLD1 = OLD ;
+      OLD = detected -> OLD1 = OLD ;
+      OLD = non_existent -> OLD1 = OLD ;
+      OLD = deserted -> OLD1 = OLD ;
+     otherwise; true -> OLD1 = disconnected ),
+    check_detect(CDR,OLD1,NEW).
+check_detect([closed|CDR],OLD,NEW) :- true |
+    ( OLD = [] -> OLD1 = closed ;
+     otherwise ;
+      true -> OLD1 = OLD ),
+    check_detect(CDR,OLD1,NEW).

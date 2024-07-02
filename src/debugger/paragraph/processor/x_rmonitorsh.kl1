@@ -1,0 +1,40 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module x_r_monitor_shoen.
+:- public go/5, go1/5,  go/7, go1/7.
+:- with_macro pimos.
+:- include("pimos.h").
+
+
+go(SockD,Prof,PE,InF,T) :- true |
+    predicate_to_code(module#x_r_monitor_shoen, go1, 5, Code),
+    shoen:execute(Code,{SockD,Prof,PE,InF,T},0,4096,0,Shoen,Rep),
+    Shoen = [start|NewSho],
+    monitor(Rep, NewSho).
+
+go(SockD, Timer, PE, Interval,CF,InF,T) :- true |
+    predicate_to_code(module#x_r_monitor_shoen, go1, 7, Code),
+    shoen:execute(Code,{SockD,Timer,PE,Interval,CF,InF,T},0,4096,0,Shoen,Rep),
+    Shoen = [start|NewSho],
+    monitor(Rep, NewSho).
+
+monitor([resource_low|Rep], Shoen) :- true |
+    Shoen = [add_resource(16#"7FFFFFFF",16#"FFFFFFFF"),
+             allow_resource_report|NewSh],
+    monitor(Rep, NewSh).
+monitor([], Shoen) :- true |
+    Shoen = [].
+otherwise.
+monitor([_|Rep], Shoen) :- true|
+    monitor(Rep, Shoen).    
+
+go1(SockD,Prof, PE, InF,T) :- true |
+    x_r_monitor:p_meter(SockD,Prof,PE,InF,T).
+
+go1(SockD,Timer, PE, Interval,CF,InF,3) :- true |
+    x_h_monitor:p_meter(SockD,Timer, PE, Interval,CF,InF,3).

@@ -1,0 +1,103 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module csp_atom_table_utility.
+:- public save/1,save/1,dec_to_hex/3.
+:- with_macro pimos.
+
+save(FileName) :- true |
+    save(16#"200",FileName).
+
+save(From,FileName) :- integer(From) ,string(FileName,_,16)| 
+    atom_table:cache_table([get_all_atoms(All)]),
+    get_atoms(All,From,FileName).
+otherwise.
+save(_,_) :- true | true.
+
+get_atoms(normal(AtomsList),From,FileName) :- true |
+    output_file(FileName,Stream),
+% The first one line of the symbol file have to be a normal atom which does not contain a space.
+    hash([],Value,_),
+    dec_to_hex(Value,6,Hex),
+    put(Hex,"[]",Stream,Stream1),
+    save_atoms(AtomsList,From,Stream1).
+otherwise.
+get_atoms(_,_,_) :- true | true.
+
+save_atoms([{Atom,String}|AtomList],From,Stream) :- atom(Atom),string(String,_,_) |
+    hash(Atom,Value,_),
+    convert_and_put(Value,From,String,Stream,Stream1),
+    save_atoms(AtomList,From,Stream1).
+save_atoms([],From,Stream) :- true | Stream = [].
+
+%convert_and_put(Value,String,Stream,Stream1) :- integer(Value), 1 =:= Value >> 23 |
+convert_and_put(Value,From,String,Stream,Stream1) :- integer(Value), Value >= From |
+    dec_to_hex(Value,6,Hex),
+    put(Hex,String,Stream,Stream1).
+otherwise.
+convert_and_put(Value,From,String,Stream,Stream1) :- true | Stream = Stream1. 
+
+put(Hex,String,Stream,Stream1) :- string(Hex,_,_) |
+    Stream = [putf(string#"      ~s     ~s~n",[Hex,String])|Stream1].
+
+output_file(FileName,File) :- true |
+% General Request Device
+    shoen:raise(pimos_tag#task,general_request,GeneralRequestDevice),
+% File Request Device
+    GeneralRequestDevice = [file(Status)],
+    output_file1(Status,File,FileName,Abort,Attention)@priority(*,4096).
+    
+output_file1(normal(Request,A,At),File,FileName,Abort,Attention) :- true |
+% Creat
+    Request = [open(FileName,write(Result))],
+    output_file2(Result,File,Abort,Attention).
+otherwise.
+output_file1(X,File,FileName,Abort,Attention) :- true | Abort = abnormal.
+
+output_file2(normal(Result,Ab,Att),File,Abort,Attention) :- true |
+    buffer:output_filter(File,Result),
+    Abort = Ab, Attention = Att.
+otherwise.    
+output_file2(X,File,Abort,Attention) :- true | Abort = abnormal.
+
+dec_to_hex(Dec,N,Hex) :- true |
+    new_string(Hex0,N,16),
+    d_to_h(Dec,N,List),
+    N1 := N-1,
+    fill(List,N1,Hex0,Hex).
+
+fill([A|B],K,Hex,Hex1) :- true | set_string_element(Hex,K,A,Hex0), K1 := K-1, fill(B,K1,Hex0,Hex1).
+fill([],K,Hex,Hex1) :- true | Hex = Hex1.
+
+d_to_h(Dec,N,List) :- 0 =< Dec, Dec =< 15 | dh(Dec,K), List = [K|List1], N1 := N-1, dh0(N1,List1).
+d_to_h(Dec,N,List) :- Dec > 15 | 
+    D1 := Dec /\ 15, D2 := Dec >> 4,
+    N1 := N-1,
+    dh(D1,C),
+    List = [C|List1],
+    d_to_h(D2,N1,List1).
+
+dh0(0,List) :- true  | List = [].
+dh0(N,List) :- N > 0 | N1 := N-1, List = [#" "|List1],dh0(N1,List1).
+
+dh(  0, Hex) :- true | Hex = #"0".
+dh(  1, Hex) :- true | Hex = #"1".
+dh(  2, Hex) :- true | Hex = #"2".
+dh(  3, Hex) :- true | Hex = #"3".
+dh(  4, Hex) :- true | Hex = #"4".
+dh(  5, Hex) :- true | Hex = #"5".
+dh(  6, Hex) :- true | Hex = #"6".
+dh(  7, Hex) :- true | Hex = #"7".
+dh(  8, Hex) :- true | Hex = #"8".
+dh(  9, Hex) :- true | Hex = #"9".
+dh( 10, Hex) :- true | Hex = #"A".
+dh( 11, Hex) :- true | Hex = #"B".
+dh( 12, Hex) :- true | Hex = #"C".
+dh( 13, Hex) :- true | Hex = #"D".
+dh( 14, Hex) :- true | Hex = #"E".
+dh( 15, Hex) :- true | Hex = #"F".
+
+

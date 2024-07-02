@@ -1,0 +1,208 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class color_grade_example has
+    
+   :create(Class,Obj,Attribute):-
+        :new(Class,Obj),
+        set_attribute(Attribute,Obj);
+
+   instance
+        attribute
+           x := 0,
+           y := 0,
+           x_size :=100,
+           y_size :=300,
+           max ,
+           string,
+           window,
+           draw_flag;
+  
+   :draw(Obj,G_Win):-
+         Obj!draw_flag \== invisible,!,
+         Max=Obj!max,
+         X = Obj!x,
+         Y = Obj!y,
+         W = Obj!x_size,
+         H = Obj!y_size/10,
+         Win=G_Win!window,
+         Obj!window:=Win,
+         :set_color(Win,1),
+        (H>=11,!,
+         set_count(Obj,X+W+3,Y-5,10,Max,List,G_Win);
+         draw_max(Obj,X+W+3,Y-5,Max,List,G_Win)),
+         :execute_graphics_command(Win,List),
+         draw_element(Obj,X,Y,10),
+         :set_color(Win,1);
+         
+  :draw(Obj,_):-!;
+
+
+ local  
+
+  draw_element(Obj,_,_,0):-!;
+  draw_element(Obj,X,Y,N):-
+          set_pattern(N,Pattern),
+          Obj!window = Win,
+          :set_color(Win,Pattern),
+          W = Obj!x_size,
+          H = Obj!y_size/10,
+          :draw_filled_rectangle(Win,X,Y,W,H,1,fix,set),
+  %       (N=4,!,
+  %        List = [{draw_filled_rectangle,
+  %                {X,Y,W,H,1,dotted,set}}|R];
+  %        N=3,!,
+  %        List = [{draw_filled_rectangle,
+  %                {X,Y,W,H,1,rough_dotted,set}}|R];
+  %        N1=N-1, 
+  %        make_pattern_string(N1,S),
+  %        List = [{draw_filled_rectangle,
+  %                {X,Y,W,H,1,S,set}}|R]),
+  %        new_string(S1,256,16),
+          draw_element(Obj,X,Y+H,N-1);
+
+  set_pattern(1,Pattern):-!,
+          Pattern = 11;
+  set_pattern(N,Pattern):-
+          N = Pattern;
+ 
+  set_count(Obj,_,_,-1,_,[],G_Win):-!;
+  set_count(Obj,X,Y,N,Max,List,G_Win):-
+          H = Obj!y_size/10,
+          UnitX = Max*N/10,
+          :get_number_string(#symbolizer,UnitX,Unit_String),
+          string(Unit_String,L,T),
+          G_Win!font=Font_7,
+          (L>=6,!,
+           substring(Unit_String,0,1,US1),
+           substring(Unit_String,1,2,US2),
+           L2 = L-1,
+           :get_number_string(#symbolizer,L2,LS2),
+           List = [{draw_string,{X,Y,US1,Font_7,set}},
+                   {draw_string,{X+7,Y,".",Font_7,set}},
+                   {draw_string,{X+14,Y,US2,Font_7,set}},
+                   {draw_string,{X+28,Y,"E",Font_7,set}},
+                   {draw_string,{X+35,Y,LS2,Font_7,set}}|R];
+           List = [{draw_string,
+                   {X,Y,Unit_String,Font_7,set}}|R]),
+          set_count(Obj,X,Y+H,N-1,Max,R,G_Win);
+ 
+  draw_max(Obj,X,Y,Max,List,G_Win):-!,
+          :get_number_string(#symbolizer,Max,MaxS),
+          string(MaxS,L,T),
+          G_Win!font=Font_7,
+          (L>=6,!,
+           substring(MaxS,0,1,MS1),
+           substring(MaxS,1,2,MS2),
+           L2 = L-1,
+           :get_number_string(#symbolizer,L2,LS2),
+           List = [{draw_string,{X,Y,MS1,Font_7,set}},
+                   {draw_string,{X+7,Y,".",Font_7,set}},
+                   {draw_string,{X+14,Y,MS2,Font_7,set}},
+                   {draw_string,{X+28,Y,"E",Font_7,set}},
+                   {draw_string,{X+35,Y,LS2,Font_7,set}},
+                   {draw_string,{X,Y+Obj!y_size,"0",Font_7,set}}];
+           List = [{draw_string,{X,Y,MaxS,Font_7,set}},
+                   {draw_string,{X,Y+Obj!y_size,"0",Font_7,set}}]);
+ 
+   make_pattern_string(9,S):-!,
+          set_pattern(0,S,16#"FFFF",16#"FFFF");
+   make_pattern_string(8,S):-!,
+          set_pattern(0,S,16#"7777",16#"FFFF");
+   make_pattern_string(7,S):-!,
+          set_pattern(0,S,16#"5555",16#"BBBB");
+   make_pattern_string(6,S):-!,
+          set_pattern(0,S,16#"5555",16#"AAAA");
+   make_pattern_string(5,S):-!,
+          set_pattern(0,S,16#"1111",16#"AAAA",16#"5555",16#"AAAA");
+   make_pattern_string(4,S):-!,
+          set_pattern(0,S,16#"0000",16#"AAAA");
+   make_pattern_string(1,S):-!,
+          set_pattern(0,S,16#"0101",16#"0000",16#"0000",16#"0000",
+                          16#"1010",16#"0000",16#"0000",16#"0000");
+   make_pattern_string(0,S):-!,
+          set_pattern(0,S,16#"0000",16#"0000");
+
+  set_pattern(256,_,_,_):-!;
+  set_pattern(N,S,P1,P2):-
+    set_string_element(S,N,P1),
+    set_string_element(S,N+1,P1),
+    set_string_element(S,N+2,P1),
+    set_string_element(S,N+3,P1),
+    set_string_element(S,N+4,P2),
+    set_string_element(S,N+5,P2),
+    set_string_element(S,N+6,P2),
+    set_string_element(S,N+7,P2),
+    set_pattern(N+8,S,P1,P2),!;
+
+set_pattern(256,_,_,_,_,_):-!;
+set_pattern(N,S,P1,P2,P3,P4):-
+    set_string_element(S,N,P1),
+    set_string_element(S,N+1,P1),
+    set_string_element(S,N+2,P1),
+    set_string_element(S,N+3,P1),
+    set_string_element(S,N+4,P2),
+    set_string_element(S,N+5,P2),
+    set_string_element(S,N+6,P2),
+    set_string_element(S,N+7,P2),
+    set_string_element(S,N+8,P3),
+    set_string_element(S,N+9,P3),
+    set_string_element(S,N+10,P3),
+    set_string_element(S,N+11,P3),
+    set_string_element(S,N+12,P4),
+    set_string_element(S,N+13,P4),
+    set_string_element(S,N+14,P4),
+    set_string_element(S,N+15,P4),
+    set_pattern(N+16,S,P1,P2,P3,P4);
+
+set_pattern(256,_,_,_,_,_,_,_,_,_):-!;
+set_pattern(N,S,P1,P2,P3,P4,P5,P6,P7,P8):-
+    set_string_element(S,N,P1),
+    set_string_element(S,N+1,P1),
+    set_string_element(S,N+2,P1),
+    set_string_element(S,N+3,P1),
+    set_string_element(S,N+4,P2),
+    set_string_element(S,N+5,P2),
+    set_string_element(S,N+6,P2),
+    set_string_element(S,N+7,P2),
+    set_string_element(S,N+8,P3),
+    set_string_element(S,N+9,P3),
+    set_string_element(S,N+10,P3),
+    set_string_element(S,N+11,P3),
+    set_string_element(S,N+12,P4),
+    set_string_element(S,N+13,P4),
+    set_string_element(S,N+14,P4),
+    set_string_element(S,N+15,P4),
+    set_string_element(S,N+16,P5),
+    set_string_element(S,N+17,P5),
+    set_string_element(S,N+18,P5),
+    set_string_element(S,N+19,P5),
+    set_string_element(S,N+20,P6),
+    set_string_element(S,N+21,P6),
+    set_string_element(S,N+22,P6),
+    set_string_element(S,N+23,P6),
+    set_string_element(S,N+24,P7),
+    set_string_element(S,N+25,P7),
+    set_string_element(S,N+26,P7),
+    set_string_element(S,N+27,P7),
+    set_string_element(S,N+28,P8),
+    set_string_element(S,N+29,P8),
+    set_string_element(S,N+30,P8),
+    set_string_element(S,N+31,P8),
+    set_pattern(N+32,S,P1,P2,P3,P4,P5,P6,P7,P8);
+
+  set_attribute([],Obj):-!;
+  set_attribute([max(Max)|R],Obj):-
+          Obj!max:=Max,
+          set_attribute(R,Obj);
+  set_attribute([size(X,Y)|R],Obj):-
+          Obj!x_size:=X,
+          Obj!y_size:=Y,
+          set_attribute(R,Obj);
+  set_attribute([position(X,Y)|R],Obj):-
+          Obj!x:=X,
+          Obj!y:=Y,
+          set_attribute(R,Obj);
+ set_attribute([H|R],Obj):-
+          set_attribute(R,Obj);
+
+end.

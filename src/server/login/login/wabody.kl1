@@ -1,0 +1,45 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module write_all_body.
+:- with_macro pimos.
+:- public go/1.
+
+go(Mes):- true|
+   shoen:raise(pimos_tag#task,general_request,
+                             [request(login_server,_,RR),
+                              get_puid(PUID)|GR]),
+   wait_go(RR,PUID,Mes,GR).
+
+wait_go(normal(LS),PUID,Mes,GR):-
+   true|
+   LS = [reset(_)|LSN],
+   wait_go2(PUID,LSN,Mes,GR).
+
+wait_go2(normal(PUID),LS,Mes,GR):-
+   true|
+   GR = [user(UR)],
+   wait_ur(UR,PUID,LS,Mes).
+
+wait_ur(normal(UR,_,_),PUID,LS,Mes):-
+   true|
+   UR = [create(user(UU))],
+   wait_u(UU,PUID,LS,Mes).
+
+wait_u(normal(UU,_,_),PUID,LS,Mes):-
+   true|
+   UU = [get_info(PUID,UINFO)],
+   wait_uinfo(UINFO,LS,Mes).
+
+wait_uinfo(normal(UINFO),LS,Mes):-
+   vector_element(UINFO,0,UName)|
+   get_lf(LF),
+   builtin#append_string([LF,"Message from ",UName," ...",LF,Mes,LF],MSG),
+   LS = [message(MSG,_)].
+
+get_lf(LF):- true|
+    new_string(LF0,1,16),
+    set_string_element(LF0,0,key#lf,LF).

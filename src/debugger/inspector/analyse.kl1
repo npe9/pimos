@@ -1,0 +1,640 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_command_analyser.
+:- with_macro pimos.
+:- public analyse/8,get_printparam/7,analyse_monitor_cmd/7,
+analyse_mt_cmd/7,analyse_winman_cmd/5.
+
+analyse(Str,Cmd,Type,B,B1,V,V1,shell) :- true |
+        analyse_shell_cmd(Str,Cmd,Type,B,B1,V,V1).
+analyse(Str,Cmd,Type,B,B1,V,V1,listener) :- true |
+        analyse(Str,Cmd0,Type0,B,B1,V,V1),
+        cannot_change_condition(Cmd0,Cmd,Type0,Type).
+analyse(Str,Cmd,Type,B,B1,V,V1,inspector) :- true |
+        analyse(Str,Cmd0,Type0,B,B1,V,V1),
+        cannot_change_condition(Cmd0,Cmd,Type0,Type).
+
+analyse(Str,Cmd,Type,B,B1,V,V1) :- string(Str,N,_) |
+        skip_blank(0,N,P,Str,Str1),
+        get_command(P,N,Str1,Cmd,Type,B,B1,V,V1).
+otherwise.
+analyse(_,Cmd,Type,B,B1,V,V1) :- true |
+        Cmd=[],Type=[],B=B1,V=V1.
+
+skip_blank(I,N,P,Str,Str1) :- I<N |
+        string_element(Str,I,E,Str0),
+        if_skip_blank(I,N,P,Str0,Str1,E).
+skip_blank(N,N,P,Str,Str1) :- true | P:=N,Str=Str1.
+
+if_skip_blank(I,N,P,Str,Str1,#" ") :- true |
+        skip_blank(~(I+1),N,P,Str,Str1).
+otherwise.
+if_skip_blank(I,_,P,Str,Str1,_) :- true | P:=I,Str=Str1.
+
+cannot_change_condition(change_condition(_),Cmd,_,Type) :- true |
+        Cmd=[],Type=unknown.
+otherwise.
+cannot_change_condition(Cmd0,Cmd,Type0,Type) :- true | Cmd0=Cmd,Type0=Type.
+
+
+get_command(I,N,Str,Cmd,Type,B,B1,V,V1) :- I<N |
+        get_a_wt(I,N,I,Q,Str,Str1,B,B0,WT),
+        get_cmd_name(Q,N,Str1,Cmd,Type,B0,B1,V,V1,WT).
+get_command(N,N,_,Cmd,Type,B,B1,V,V1) :- true | Cmd=[],Type=[],B=B1,V=V1.
+
+get_cmd_name(I,N,Str,Cmd,Type,B,B1,V,V1,normal(WT)) :- true |
+        do_get_cmd_name(I,N,Str,Cmd,Type,B,B1,V,V1,WT).
+otherwise.
+get_cmd_name(_,_,_,Cmd,Type,B,B1,V,V1,abnormal(ErrorType)) :- true |
+        Cmd=[],Type=abnormal(ErrorType),B=B1,V=V1.
+
+do_get_cmd_name(I,N,Str,Cmd,Type,B,B1,V,V1,vector(M0)) :- true |
+        inspector_variable:unwrap(vector(M0),Res,V,V1),
+        unify_result(Res,_,M),
+        B=B1,
+        no_param(I,N,Str,down(M),Cmd,inspect,Type).
+do_get_cmd_name(I,N,Str,Cmd,Type,B,B1,V,V1,integer(M)) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,down(M),Cmd,inspect,Type).
+do_get_cmd_name(I,N,Str,Cmd,Type,B,B1,V,V1,atom(A)) :- true |
+        trans_abbreviation(A,A1),
+        get_param(I,N,Str,Cmd,Type,B,B1,V,V1,A1).
+do_get_cmd_name(I,N,Str,Cmd,Type,B,B1,V,V1,empty) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,clear,Cmd,var_pool,Type).
+otherwise.
+do_get_cmd_name(_,_,_,Cmd,Type,B,B1,V,V1,_) :- true |
+        Cmd=[],Type=unknown,B=B1,V=V1.
+
+get_param(I,N,Str,C,T,B,B1,V,V1,'..') :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,down('..'),C,inspect,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,car) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,down(car),C,inspect,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,cdr) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,down(cdr),C,inspect,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,tail) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,down(tail),C,inspect,T).
+
+get_param(I,N,Str,C,T,B,B1,V,V1,me) :- true |
+        get_me(I,N,Str,C,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,down) :- true |
+        get_1(I,N,Str,down,C,inspect,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,up) :- true |
+        get_1orno(I,N,Str,up,C,inspect,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,show) :- true |
+        get_1(I,N,Str,show,C,inspect,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,history) :- true |
+        get_1orno(I,N,Str,history,C,inspect,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,push_root) :- true |
+        get_1(I,N,Str,push_root,C,inspect,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,length) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,length,C,inspect,T).
+
+get_param(I,N,Str,C,T,B,B1,V,V1,monitor) :- true |
+        get_monitor(I,N,Str,cmonitor,C,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,monitor_and_fork) :- true |
+        get_monitor(I,N,Str,cmonitor_and_fork,C,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,cmonitor) :- true |
+        get_cmonitor(I,N,Str,cmonitor,C,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,cmonitor_and_fork) :- true |
+        get_cmonitor(I,N,Str,cmonitor_and_fork,C,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,monitored_terms) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,monitored_terms,C,monitor,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,stream_auto_mode) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,stream_auto_mode,C,monitor,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,query_mode) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,query_mode,C,monitor,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,silent_mode) :- true |
+        get_1(I,N,Str,silent_mode,C,monitor,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,change_condition) :- true |
+        get_a_wt(I,N,I,P,Str,Str1,B,B1,WT),
+        wait_change_condition(P,N,Str1,C,T,V,V1,WT).
+get_param(I,N,Str,C,T,B,B1,V,V1,name) :- true |
+        B=B1,V=V1,
+        get_name(I,N,Str,C,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,list) :- true |
+        get_1orno(I,N,Str,list,C,var_pool,T,B,B1,V,V1).
+
+get_param(I,N,Str,C,T,B,B1,V,V1,exit) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,exit,C,basic0,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,fork) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,fork,C,basic0,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,inspect) :- true |
+        get_1(I,N,Str,inspect,C,basic0,T,B,B1,V,V1).
+
+get_param(I,N,Str,C,T,B,B1,V,V1,help) :- true |
+        get_1orno(I,N,Str,help,C,basic,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,commands) :- true |
+        get_1orno(I,N,Str,commands,C,basic,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,set_title) :- true |
+        get_title(I,N,Str,C,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,version) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,version,C,basic,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,bigger) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,bigger,C,basic,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,a_little_bigger) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,a_little_bigger,C,basic,T).
+
+get_param(I,N,Str,C,T,B,B1,V,V1,print_depth) :- true |
+        get_1orno(I,N,Str,print_depth,C,env,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,print_length) :- true |
+        get_1orno(I,N,Str,print_length,C,env,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,print_string_length) :- true |
+        get_1orno(I,N,Str,print_string_length,C,env,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,print_atom_length) :- true |
+        get_1orno(I,N,Str,print_atom_length,C,env,T,B,B1,V,V1).
+get_param(I,N,Str,C,T,B,B1,V,V1,print_string_mode) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,print_string_mode,C,env,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,print_mode) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,print_mode,C,env,T).
+get_param(I,N,Str,C,T,B,B1,V,V1,environment) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,environment,C,env,T).
+
+otherwise.
+get_param(_,_,_,C,T,B,B1,V,V1,_) :- true | C=[],T=unknown,B=B1,V=V1.
+
+
+% no_param
+no_param(N,N,_,C,C1,T,T1) :- true | C=C1,T=T1.
+no_param(I,N,Str,_,C,_,T) :- I<N |
+        builtin#substring(Str,I,~(N-I),Sub,_),
+        C=[],T=illegal_param_str(Sub).
+
+% get_me
+get_me(N,N,_,C,T,B,B1,V,V1) :- true | C=me,T=inspect,B=B1,V=V1.
+get_me(I,N,Str,C,T,B,B1,V,V1) :- I<N |
+        get_a_wt_before_comma(I,N,I,P,Str,Str1,B,B0,WT),
+        get_me_mparam(P,N,Str1,C,T,B0,B1,V,V1,WT).
+
+get_me_mparam(I,N,Str,C,T,B,B1,V,V1,normal(WT)) :- true |
+        do_get_me_mparam(I,N,Str,C,T,B,B1,V,V1,WT).
+get_me_mparam(_,_,_,C,T,B,B1,V,V1,abnormal(ErrorType)) :- true |
+        C=[],T=abnormal(ErrorType),B=B1,V=V1.
+
+do_get_me_mparam(I,N,Str,C,T,B,B1,V,V1,empty) :- true |
+        if_get_me_nparam(I,N,Str,C,T,B,B1,V,V1,0).
+otherwise.
+do_get_me_mparam(I,N,Str,C,T,B,B1,V,V1,WT) :- true |
+        inspector_variable:unwrap(WT,Res,V,V0),
+        unify_result(Res,_,PM),
+        if_get_me_nparam(I,N,Str,C,T,B,B1,V0,V1,PM).
+
+if_get_me_nparam(I,N,Str,C,T,B,B1,V,V1,PM) :- I<N |
+        string_element(Str,I,E,Str1),
+        find_comma(~(I+1),N,Str1,C,T,B,B1,V,V1,PM,E).
+if_get_me_nparam(N,N,_,C,T,B,B1,V,V1,PM) :- true | C=me(PM),T=inspect,B=B1,V=V1.
+
+find_comma(I,N,Str,C,T,B,B1,V,V1,PM,#",") :- true |
+        skip_blank(I,N,P,Str,Str1),
+        get_me_nparam(P,N,Str1,C,T,B,B1,V,V1,PM).
+otherwise.
+find_comma(I,N,Str,C,T,B,B1,V,V1,_,_) :- true |
+        builtin#substring(Str,~(I-1),~(N-I+1),Sub,_),
+        C=[],T=illegal_param_str(Sub),B=B1,V=V1.
+
+get_me_nparam(I,N,Str,C,T,B,B1,V,V1,PM) :- I<N |
+        get_a_wt(I,N,I,P,Str,Str1,B,B1,WT),
+        do_get_me_nparam(P,N,Str1,C,T,V,V1,PM,WT).
+get_me_nparam(N,N,_,C,T,B,B1,V,V1,PM) :- true |
+        C=me_with_print_length(PM),T=inspect,B=B1,V=V1.
+
+do_get_me_nparam(I,N,Str,C,T,V,V1,PM,normal(WT)) :- true |
+        inspector_variable:unwrap(WT,Res,V,V1),
+        unify_result(Res,_,PN),
+        no_param(I,N,Str,me(PM,PN),C,inspect,T).
+do_get_me_nparam(_,_,_,C,T,V,V1,_,abnormal(ErrorType)) :- true |
+        C=[],T=abnormal(ErrorType),V=V1.
+
+% get_1
+get_1(I,N,Str,C,C1,T,T1,B,B1,V,V1) :- I<N |
+        get_a_wt(I,N,I,P,Str,Str1,B,B1,WT),
+        do_get_1(P,N,Str1,C,C1,T,T1,V,V1,WT).
+get_1(N,N,_,_,C,_,T,B,B1,V,V1) :- true |
+        C=[],T=illegal_param,B=B1,V=V1.
+
+do_get_1(I,N,Str,C,C1,T,T1,V,V1,normal(WT)) :- true |
+        inspector_variable:unwrap(WT,Res,V,V1),
+        unify_result(Res,_,M),
+        no_param(I,N,Str,{C,M},C1,T,T1).
+do_get_1(_,_,_,_,C,_,T,V,V1,abnormal(ErrorType)) :- true |
+        C=[],T=abnormal(ErrorType),V=V1.
+
+unify_result({NWT,T},NWT1,T1) :- true | NWT=NWT1,T=T1.
+
+% get_1orno
+get_1orno(N,N,_,C,C1,T,T1,B,B1,V,V1) :- true | C=C1,T=T1,B=B1,V=V1.
+get_1orno(I,N,Str,C,C1,T,T1,B,B1,V,V1) :- I<N |
+        get_1(I,N,Str,C,C1,T,T1,B,B1,V,V1).
+
+% get_monitor
+get_monitor(I,N,Str,C0,C,T,B,B1,V,V1) :- I<N |
+        get_a_wt(I,N,I,P,Str,Str1,B,B1,WT),
+        do_get_monitor(P,N,Str1,C0,C,T,V,V1,WT).
+get_monitor(N,N,_,_,C,T,B,B1,V,V1) :- true |
+        C=[],T=illegal_param,B=B1,V=V1.
+
+do_get_monitor(I,N,Str,C0,C,T,V,V1,normal(WT)) :- true |
+        inspector_variable:unwrap(WT,Res,V,V1),
+        unify_result(Res,_,M),
+        get_namestring(I,N,Str,C0,C,T,M,variable("_")).
+do_get_monitor(_,_,_,_,C,T,V,V1,abnormal(ErrorType)) :- true |
+        C=[],T=abnormal(ErrorType),V=V1.
+
+% get_cmonitor
+get_cmonitor(I,N,Str,C0,C,T,B,B1,V,V1) :- I<N |
+        get_a_wt(I,N,I,P,Str,Str1,B,B0,WT),
+        do_get_cmonitor(P,N,Str1,C0,C,T,B0,B1,V,V1,WT).
+get_cmonitor(N,N,_,_,C,T,B,B1,V,V1) :- true |
+        C=[],T=illegal_param,B=B1,V=V1.
+
+do_get_cmonitor(I,N,Str,C0,C,T,B,B1,V,V1,normal(WT)) :- true |
+        inspector_variable:unwrap(WT,Res,V,V0),
+        unify_result(Res,_,M),
+        get_a_wt(I,N,I,P,Str,Str1,B,B1,NWT),
+        wait_condition(P,N,Str1,C0,C,T,V0,V1,M,NWT).
+do_get_cmonitor(_,_,_,_,C,T,B,B1,V,V1,abnormal(ErrorType)) :- true |
+        C=[],T=abnormal(ErrorType),B=B1,V=V1.
+
+wait_condition(_,_,_,_,C,T,V,V1,_,normal(empty)) :- true |
+        C=[],T=illegal_param,V=V1.
+wait_condition(_,_,_,_,C,T,V,V1,_,normal(end_of_file)) :- true |
+        C=[],T=illegal_param,V=V1.
+otherwise.
+wait_condition(I,N,Str,C0,C,T,V,V1,M,normal(WT)) :- true |
+        inspector_variable:unwrap(WT,Res,V,V1,Sts),
+        unify_result(Res,_,Pat),
+        wait_unwrapped_and_wrap(Pat,WPat,Sts),
+        get_namestring(I,N,Str,C0,C,T,M,WPat).
+wait_condition(_,_,_,_,C,T,V,V1,_,abnormal(ErrorType)) :- true |
+        C=[],T=abnormal(ErrorType),V=V1.
+
+wait_unwrapped_and_wrap(Pat,WPat,normal) :- true |
+        variable:wrap(Pat,{_,WPat},999,999).
+
+wait_change_condition(_,_,_,C,T,V,V1,normal(empty)) :- true |
+        C=[],T=illegal_param,V=V1.
+wait_change_condition(_,_,_,C,T,V,V1,normal(end_of_file)) :- true |
+        C=[],T=illegal_param,V=V1.
+otherwise.
+wait_change_condition(I,N,Str,C,T,V,V1,normal(WT)) :- true |
+        inspector_variable:unwrap(WT,Res,V,V1,Sts),
+        unify_result(Res,_,Pat),
+        wait_unwrapped_and_wrap(Pat,WPat,Sts),
+        no_param(I,N,Str,change_condition(WPat),C,monitor,T).
+wait_change_condition(_,_,_,C,T,V,V1,abnormal(ErrorType)) :- true |
+        C=[],T=abnormal(ErrorType),V=V1.
+
+get_namestring(I,N,Str,C0,C,T,M,Pat) :- I<N |
+        get_a_word(I,N,I,P,Str,Str1,Name),
+        no_param(P,N,Str1,{C0,M,Pat,Name},C,monitor,T).
+get_namestring(N,N,_,C0,C,T,M,Pat) :- true | C={C0,M,Pat},T=monitor.
+
+% get_name
+get_name(I,N,Str,C,T) :- I<N |
+        get_a_word(I,N,I,P,Str,Str1,Word),
+        no_param(P,N,Str1,name(Word),C,var_pool,T).
+get_name(N,N,_,C,T) :- true | C=[],T=illegal_param.
+
+% get_title
+get_title(I,N,Str,C,T,B,B1,V,V1) :- I<N |
+        builtin#substring(Str,I,~(N-I),Sub,_),
+        B=[putb(Sub),putl(string#" . "),flush,getwt(WT),abandon_pool|B1],
+        do_get_title(WT,C,T,V,V1).
+get_title(N,N,_,C,T,B,B1,V,V1) :- true |
+        B=B1,V=V1,
+        C=[],T=illegal_param.
+
+do_get_title(normal(WT),C,T,V,V1) :- true |
+        inspector_variable:unwrap(WT,Res,V,V1),
+        unify_result(Res,_,Title),
+        C=set_title(Title),T=basic.
+do_get_title(abnormal(ErrorType),C,T,V,V1) :- true |
+        C=[],T=abnormal(ErrorType),V=V1.
+
+
+get_a_wt(I,N,P,Q,Str,Str1,B,B1,WT) :- true |
+        get_a_word(I,N,P,Q,Str,Str1,Word),
+        do_get_a_wt(Word,WT,B,B1).
+
+do_get_a_wt(Word,WT,B,B1) :- string(Word,N,_) |
+        do_get_a_wt(Word,WT,B,B1,0,N).
+otherwise.
+do_get_a_wt(Word,WT,B,B1) :- true |
+        B=[putb(Word),putl(string#" . "),flush,getwt(WT),abandon_pool|B1].
+
+do_get_a_wt(Word,WT,B,B1,I,N) :- I1:=I+1,I1<N,
+    string_element(Word,I,#"."),string_element(Word,I1,#".") |
+        B=[putt('..')|B0],
+        do_get_a_wt(Word,WT,B0,B1,~(I+2),N).
+do_get_a_wt(Word,WT,B,B1,I,N) :- I<N,string_element(Word,I,#">") |
+        B=[putt('>')|B0],
+        do_get_a_wt(Word,WT,B0,B1,~(I+1),N).
+otherwise.
+do_get_a_wt(Word,WT,B,B1,I,N) :- I<N,string_element(Word,I,C) |
+        B=[putc(C)|B0],
+        do_get_a_wt(Word,WT,B0,B1,~(I+1),N).
+do_get_a_wt(_,WT,B,B1,N,N) :- true |
+        B=[putl(string#" . "),flush,getwt(WT),abandon_pool|B1].
+
+get_a_wt_before_comma(I,N,P,Q,Str,Str1,B,B1,WT) :- true |
+        get_a_word_before_comma(I,N,P,Q,Str,Str1,Word),
+        do_get_a_wt(Word,WT,B,B1).
+
+get_a_word(I,N,P,Q,Str,Str1,Word) :- I<N |
+        string_element(Str,I,E,Str0),
+        get_a_word_if(I,N,P,Q,Str0,Str1,Word,E).
+get_a_word(N,N,P,Q,Str,Str1,Word) :- true |
+        Q:=N,
+        builtin#substring(Str,P,~(N-P),Word,Str1).
+
+get_a_word_if(I,N,P,Q,Str,Str1,Word,#" ") :- true |
+        builtin#substring(Str,P,~(I-P),Word,Str0),
+        skip_blank(~(I+1),N,Q,Str0,Str1).
+otherwise.
+get_a_word_if(I,N,P,Q,Str,Str1,Word,_) :- true |
+        get_a_word(~(I+1),N,P,Q,Str,Str1,Word).
+
+get_a_word_before_comma(I,N,P,Q,Str,Str1,Word) :- I<N |
+        string_element(Str,I,E,Str0),
+        get_a_word_com_if(I,N,P,Q,Str0,Str1,Word,E).
+get_a_word_before_comma(N,N,P,Q,Str,Str1,Word) :- true |
+        Q:=N,
+        builtin#substring(Str,P,~(N-P),Word,Str1).
+
+get_a_word_com_if(I,N,P,Q,Str,Str1,Word,#" ") :- true |
+        builtin#substring(Str,P,~(I-P),Word,Str0),
+        skip_blank(~(I+1),N,Q,Str0,Str1).
+get_a_word_com_if(I,_,P,Q,Str,Str1,Word,#",") :- true |
+        builtin#substring(Str,P,~(I-P),Word,Str1),
+        Q:=I.
+otherwise.
+get_a_word_com_if(I,N,P,Q,Str,Str1,Word,_) :- true |
+        get_a_word_before_comma(~(I+1),N,P,Q,Str,Str1,Word).
+
+
+trans_abbreviation(u,A) :- true | A=up.
+trans_abbreviation(sh,A) :- true | A=show.
+trans_abbreviation(pu,A) :- true | A=push_root.
+trans_abbreviation(len,A) :- true | A=length.
+
+trans_abbreviation(m,A) :- true | A=monitor.
+trans_abbreviation(mf,A) :- true | A=monitor_and_fork.
+trans_abbreviation(cm,A) :- true | A=cmonitor.
+trans_abbreviation(cmf,A) :- true | A=cmonitor_and_fork.
+trans_abbreviation(cc,A) :- true | A=change_condition.
+trans_abbreviation(mt,A) :- true | A=monitored_terms.
+trans_abbreviation(sam,A) :- true | A=stream_auto_mode.
+trans_abbreviation(qm,A) :- true | A=query_mode.
+trans_abbreviation(sm,A) :- true | A=silent_mode.
+
+trans_abbreviation(n,A) :- true | A=name.
+trans_abbreviation(ls,A) :- true | A=list.
+
+trans_abbreviation(pd,A) :- true | A=print_depth.
+trans_abbreviation(pl,A) :- true | A=print_length.
+trans_abbreviation(psl,A) :- true | A=print_string_length.
+trans_abbreviation(pal,A) :- true | A=print_atom_length.
+trans_abbreviation(psm,A) :- true | A=print_string_mode.
+trans_abbreviation(pm,A) :- true | A=print_mode.
+trans_abbreviation(env,A) :- true | A=environment.
+
+trans_abbreviation(ex,A) :- true | A=exit.
+trans_abbreviation(f,A) :- true | A=fork.
+trans_abbreviation(i,A) :- true | A=inspect.
+trans_abbreviation(he,A) :- true | A=help.
+trans_abbreviation(h,A) :- true | A=help.
+trans_abbreviation(com,A) :- true | A=commands.
+trans_abbreviation(big,A) :- true | A=bigger.
+trans_abbreviation(lbig,A) :- true | A=a_little_bigger.
+
+otherwise.
+trans_abbreviation(A,A1) :- true | A=A1.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+get_printparam(Str,Cmd,Type,B,B1,V,V1) :- string(Str,N,_) |
+        skip_blank(0,N,P,Str,Str1),
+        do_get_printparam(P,N,Str1,Cmd,Type,B,B1,V,V1).
+otherwise.
+get_printparam(_,Cmd,Type,B,B1,V,V1) :- true |
+        Cmd=[],Type=[],B=B1,V=V1.
+
+do_get_printparam(I,N,Str,Cmd,Type,B,B1,V,V1) :- I<N |
+        get_1(I,N,Str,printparam,Cmd,normal,Type,B,B1,V,V1).
+do_get_printparam(N,N,_,Cmd,Type,B,B1,V,V1) :- true | Cmd=[],Type=[],B=B1,V=V1.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+analyse_monitor_cmd(Str,Cmd,Type,B,B1,V,V1) :- string(Str,N,_) |
+        skip_blank(0,N,P,Str,Str1),
+        get_command(P,N,Str1,Cmd0,Type0,B,B1,V,V1),
+        get_monitor_command(Cmd0,Type0,Cmd,Type).
+otherwise.
+analyse_monitor_cmd(_,Cmd,Type,B,B1,V,V1) :- true |
+        Cmd=[],Type=[],B=B1,V=V1.
+
+get_monitor_command([],[],Cmd,Type) :- true | Cmd=[],Type=basic0.
+get_monitor_command(push_root(_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_monitor_command(inspect(_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_monitor_command(help,_,Cmd,Type) :- true | Cmd=help_monitor,Type=basic.
+get_monitor_command(help(T),_,Cmd,Type) :- true | Cmd=help_monitor(T),Type=basic.
+get_monitor_command(commands,_,Cmd,Type) :- true | Cmd=commands_monitor,Type=basic.
+get_monitor_command(commands(T),_,Cmd,Type) :- true | Cmd=commands_monitor(T),Type=basic.
+otherwise.
+get_monitor_command(Cmd0,Type0,Cmd,Type) :- true | Cmd=Cmd0,Type=Type0.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+analyse_shell_cmd(Str,Cmd,Type,B,B1,V,V1) :- string(Str,N,_) |
+        skip_blank(0,N,P,Str,Str1),
+        get_command(P,N,Str1,Cmd0,Type0,B,B1,V,V1),
+        get_shell_command(Cmd0,Type0,Cmd,Type).
+otherwise.
+analyse_shell_cmd(_,Cmd,Type,B,B1,V,V1) :- true |
+        Cmd=[],Type=[],B=B1,V=V1.
+
+get_shell_command(show(_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(push_root(_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(fork,_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(inspect(_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(monitor(_,_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(monitor(_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(monitor_and_fork(_,_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(monitor_and_fork(_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(cmonitor(_,_,_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(cmonitor(_,_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(cmonitor_and_fork(_,_,_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(cmonitor_and_fork(_,_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(monitored_terms,_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(stream_auto_mode,_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(query_mode,_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(silent_mode(_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(change_condition(_),_,Cmd,Type) :- true | Cmd=[],Type=unknown.
+get_shell_command(list(T),_,Cmd,Type) :- true | Cmd=[],Type=unwrapped_illegal_param(T).
+get_shell_command(help,_,Cmd,Type) :- true | Cmd=help_shell,Type=basic.
+get_shell_command(help(T),_,Cmd,Type) :- true | Cmd=help_shell(T),Type=basic.
+get_shell_command(commands,_,Cmd,Type) :- true | Cmd=commands_shell,Type=basic.
+get_shell_command(commands(T),_,Cmd,Type) :- true | Cmd=commands_shell(T),Type=basic.
+otherwise.
+get_shell_command(Cmd0,Type0,Cmd,Type) :- true | Cmd=Cmd0,Type=Type0.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+analyse_mt_cmd(Str,Cmd,Type,B,B1,V,V1) :- string(Str,N,_) |
+        skip_blank(0,N,P,Str,Str1),
+        get_mt_command(P,N,Str1,Cmd,Type,B,B1,V,V1).
+otherwise.
+analyse_mt_cmd(_,Cmd,Type,B,B1,V,V1) :- true |
+        Cmd=[],Type=[],B=B1,V=V1.
+
+get_mt_command(I,N,Str,Cmd,Type,B,B1,V,V1) :- I<N |
+        get_a_wt(I,N,I,Q,Str,Str1,B,B0,WT),
+        get_mt_cmd_name(Q,N,Str1,Cmd,Type,B0,B1,V,V1,WT).
+get_mt_command(N,N,_,Cmd,Type,B,B1,V,V1) :- true | Cmd=quit,Type=mt,B=B1,V=V1.
+
+get_mt_cmd_name(I,N,Str,Cmd,Type,B,B1,V,V1,normal(WT)) :- true |
+        do_get_mt_cmd_name(I,N,Str,Cmd,Type,B,B1,V,V1,WT).
+otherwise.
+get_mt_cmd_name(_,_,_,Cmd,Type,B,B1,V,V1,abnormal(ErrorType)) :- true |
+        Cmd=[],Type=abnormal(ErrorType),B=B1,V=V1.
+
+do_get_mt_cmd_name(I,N,Str,Cmd,Type,B,B1,V,V1,atom(A)) :- true |
+        get_mt_param(I,N,Str,Cmd,Type,B,B1,V,V1,A).
+otherwise.
+do_get_mt_cmd_name(_,_,_,Cmd,Type,B,B1,V,V1,_) :- true |
+        Cmd=[],Type=unknown,B=B1,V=V1.
+
+get_mt_param(I,N,Str,Cmd,Type,B,B1,V,V1,k) :- true |
+        V=V1,
+        get_numlist(I,N,Str,Cmd,Type,B,B1,L,L,kill).
+get_mt_param(I,N,Str,Cmd,Type,B,B1,V,V1,sam) :- true |
+        V=V1,
+        get_numlist(I,N,Str,Cmd,Type,B,B1,L,L,stream_auto_mode).
+get_mt_param(I,N,Str,Cmd,Type,B,B1,V,V1,qm) :- true |
+        V=V1,
+        get_numlist(I,N,Str,Cmd,Type,B,B1,L,L,query_mode).
+get_mt_param(I,N,Str,Cmd,Type,B,B1,V,V1,cc) :- true |
+        get_a_wt(I,N,I,P,Str,Str1,B,B0,WT),
+        get_new_condition(P,N,Str1,Cmd,Type,B0,B1,V,V1,WT).
+get_mt_param(I,N,Str,Cmd,Type,B,B1,V,V1,q) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,quit,Cmd,mt,Type).
+get_mt_param(I,N,Str,Cmd,Type,B,B1,V,V1,h) :- true |
+        B=B1,V=V1,
+        no_param(I,N,Str,help,Cmd,mt,Type).
+otherwise.
+get_mt_param(_,_,_,Cmd,Type,B,B1,V,V1,_) :- true |
+        Cmd=[],Type=unknown,B=B1,V=V1.
+
+get_new_condition(I,N,Str,Cmd,Type,B,B1,V,V1,normal(WT)) :- true |
+        inspector_variable:unwrap(WT,Res,V,V0),
+        unify_result(Res,_,M),
+        get_a_wt(I,N,I,P,Str,Str1,B,B1,NWT),
+        wait_condition(P,N,Str1,Cmd,Type,V0,V1,M,NWT).
+get_new_condition(_,_,_,Cmd,Type,B,B1,V,V1,abnormal(ErrorType)) :- true |
+        Cmd=[],Type=abnormal(ErrorType),B=B1,V=V1.
+
+wait_condition(I,N,Str,Cmd,Type,V,V1,M,normal(WT)) :- true |
+        inspector_variable:unwrap(WT,Res,V,V1,Sts),
+        unify_result(Res,_,Pat),
+        wait_unwrapped_and_wrap(Pat,WPat,Sts),
+        no_param(I,N,Str,change_condition(M,WPat),Cmd,mt,Type).
+wait_condition(_,_,_,Cmd,Type,V,V1,_,abnormal(ErrorType)) :- true |
+        Cmd=[],Type=abnormal(ErrorType),V=V1.
+
+get_numlist(I,N,Str,Cmd,Type,B,B1,L,L1,Cmd0) :- I<N |
+        get_a_wt_before_comma(I,N,I,P,Str,Str1,B,B0,WT),
+        if_id(P,N,Str1,Cmd,Type,B0,B1,L,L1,Cmd0,WT).
+get_numlist(N,N,_,Cmd,Type,B,B1,_,_,_) :- true |
+        Cmd=[],Type=illegal_param,B=B1.
+
+if_id(I,N,Str,Cmd,Type,B,B1,L,L1,Cmd0,normal(WT)) :- true |
+        if_if_id(I,N,Str,Cmd,Type,B,B1,L,L1,Cmd0,WT).
+if_id(_,_,_,Cmd,Type,B,B1,_,_,_,abnormal(ErrorType)) :- true |
+        Cmd=[],Type=abnormal(ErrorType),B=B1.
+
+if_if_id(I,N,Str,Cmd,Type,B,B1,L,L1,Cmd0,integer(ID)) :- ID>0 |
+        L1=[ID|L2],
+        if_next(I,N,Str,Cmd,Type,B,B1,L,L2,Cmd0).
+otherwise.
+if_if_id(_,_,_,Cmd,Type,B,B1,_,_,_,_) :- true |
+        Cmd=[],Type=illegal_param,B=B1.
+
+if_next(I,N,Str,Cmd,Type,B,B1,L,L1,Cmd0) :- I<N |
+        string_element(Str,I,E,Str1),
+        find_mt_comma(~(I+1),N,Str1,Cmd,Type,B,B1,L,L1,Cmd0,E).
+if_next(N,N,_,Cmd,Type,B,B1,L,L1,Cmd0) :- true |
+        Cmd={Cmd0,L},
+        L1=[],
+        Type=mt,
+        B=B1.
+
+find_mt_comma(I,N,Str,Cmd,Type,B,B1,L,L1,Cmd0,#",") :- true |
+        skip_blank(I,N,P,Str,Str1),
+        get_numlist(P,N,Str1,Cmd,Type,B,B1,L,L1,Cmd0).
+otherwise.
+find_mt_comma(I,N,Str,Cmd,Type,B,B1,_,_,_,_) :- true |
+        builtin#substring(Str,~(I-1),~(N-I+1),Sub,_),
+        Cmd=[],Type=illegal_param_str(Sub),B=B1.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+analyse_winman_cmd(Str,Cmd,Type,B,B1) :- string(Str,N,_) |
+        skip_blank(0,N,P,Str,Str1),
+        get_winman_command(P,N,Str1,Cmd,Type,B,B1).
+otherwise.
+analyse_winman_cmd(_,Cmd,Type,B,B1) :- true |
+        Cmd=[],Type=[],B=B1.
+
+get_winman_command(I,N,Str,Cmd,Type,B,B1) :- I<N |
+        get_a_wt(I,N,I,Q,Str,Str1,B,B0,WT),
+        get_winman_cmd_name(Q,N,Str1,Cmd,Type,B0,B1,WT).
+get_winman_command(N,N,_,Cmd,Type,B,B1) :- true | Cmd=continue,Type=winman,B=B1.
+
+get_winman_cmd_name(I,N,Str,Cmd,Type,B,B1,normal(WT)) :- true |
+        do_get_winman_cmd_name(I,N,Str,Cmd,Type,B,B1,WT).
+otherwise.
+get_winman_cmd_name(_,_,_,Cmd,Type,B,B1,abnormal(ErrorType)) :- true |
+        Cmd=[],Type=abnormal(ErrorType),B=B1.
+
+do_get_winman_cmd_name(I,N,Str,Cmd,Type,B,B1,atom(A)) :- true |
+        B=B1,
+        get_winman_param(I,N,Str,Cmd,Type,A).
+otherwise.
+do_get_winman_cmd_name(_,_,_,Cmd,Type,B,B1,_) :- true |
+        Cmd=[],Type=unknown,B=B1.
+
+get_winman_param(I,N,Str,Cmd,Type,sam) :- true |
+        no_param(I,N,Str,stream_auto_mode,Cmd,winman,Type).
+get_winman_param(I,N,Str,Cmd,Type,qm) :- true |
+        no_param(I,N,Str,query_mode,Cmd,winman,Type).
+get_winman_param(I,N,Str,Cmd,Type,mt) :- true |
+        no_param(I,N,Str,monitored_terms,Cmd,winman,Type).
+get_winman_param(I,N,Str,Cmd,Type,ex) :- true |
+        no_param(I,N,Str,exit,Cmd,winman,Type).
+get_winman_param(I,N,Str,Cmd,Type,h) :- true |
+        no_param(I,N,Str,help,Cmd,winman,Type).
+otherwise.
+get_winman_param(_,_,_,Cmd,Type,_) :- true |
+        Cmd=[],Type=unknown.
+

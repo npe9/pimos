@@ -1,0 +1,56 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a 'rs' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module rs.
+:- public usage/1, go/0, go/1.
+
+usage(Usage) :- true | Usage = [{string#"~s~n~s~n~s~n~s", [S1, S2, S3, S4]}],
+    S1 = string#"Usage : rs",
+    S2 = string#"Usage : rs(ResourceID)",
+    S3 = string#"           ResourceID = [] | [N, ...] | '*'",
+    S4 = string#"           N = integer | '*'".
+
+go :- true |
+    shoen:raise(pimos_tag#task,general_request,
+                    [status([-3|'*'],'*',brief,Info)]),
+    go1(Info).
+
+go1(InfoWithStatus) :- InfoWithStatus = normal(Info) |
+    shoen:raise(pimos_tag#shell, get_std_in, In),
+    shoen:raise(pimos_tag#shell, get_std_out, Out),
+    print:printrs(0, Info, Out, NOut), NOut = [flush(Stat)],
+    waitStat(Stat, In, [prompt(string#"OK? "), getl(_)]).
+otherwise.
+go1(_) :- true |
+    shoen:raise(pimos_tag#shell, get_std_in, In),
+    shoen:raise(pimos_tag#shell, get_std_out, Out),
+    Out = [putl(string#"Status information request has ignored."), flush(Stat)],
+    waitStat(Stat, In, [prompt(string#"OK? "), getl(_)]).
+
+go(Dir) :- string(Dir, _, _) |
+    buffer:character_pool(IO),
+    IO = [putb(Dir), putl(string#" . "), gett(NDir)],
+    shoen:raise(pimos_tag#task,general_request,[status(NDir,'*',brief,Info)]),
+    go1(Info).
+otherwise.
+go(Dir) :- true |
+    shoen:raise(pimos_tag#task,general_request,[status(Dir,'*',brief,Info)]),
+    go1(Info).
+
+waitStat(Stat, In, Out) :- wait(Stat) | In = Out.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of 'rs' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

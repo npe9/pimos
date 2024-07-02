@@ -1,0 +1,222 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_cmd_window.
+:- public do_command/1.
+:- with_macro pimos.
+
+do_command(operator) :- true |
+    listener_utility:buffer(BUF),
+    BUF=[operator(Def)],
+    pool:keyed_sorted_bag(S),
+    op_sort(Def,S,NewDef),
+    listener_utility:out([do(OUT)]),
+    list_op(NewDef,OUT).
+do_command(operator(OP)) :- atom(OP) |
+    listener_utility:buffer(BUF),
+    BUF=[operator(OP,Def)],
+    listener_utility:out([putf(" ~t : ~t~n",[OP,Def])]).
+do_command(operator(OP,Def)) :- atom(OP) |
+    listener_utility:buffer(BUF),
+    BUF=[operator(OP,Def)].
+
+do_command(add_op(P,T,OP)) :- P>0, P=<1200, atom(T), atom(OP) |
+    listener_buffer:op_type(T,Status),
+    send(Status,add_op(P,T,OP)).
+
+do_command(remove_op(P,T,OP)) :- P>0, P=<1200, atom(T), atom(OP) |
+    listener_buffer:op_type(T,Status),
+    send(Status,remove_op(P,T,OP)).
+
+/*
+do_command(position) :- true |
+    WIN=[do([get_position(Pos)|Do])],
+    listener_utility:resource([window(WIN)]),
+    position(Pos,Do).
+do_command(position(Pos)) :- true |
+    WIN=[do(Do)],
+    listener_utility:resource([window(WIN)]),
+    listener_utility:inter([do(INT)]),
+    position1(Pos,INT,Do).
+
+do_command(size) :- true |
+    WIN=[do([get_char_size(Size)|Do])],
+    listener_utility:resource([window(WIN)]),
+    size(Size,Do).
+do_command(size(Size)) :- true |
+    WIN=[do(Do)],
+    listener_utility:resource([window(WIN)]),
+    listener_utility:inter([do(INT)]),
+    size1(Size,INT,Do).
+
+do_command(font) :- true |
+    WIN=[do([get_font(Font)|Do])],
+    listener_utility:resource([window(WIN)]),
+    font(Font,Do).
+do_command(font(Font)) :- true |
+    WIN=[do(Do)],
+    listener_utility:resource([window(WIN)]),
+    listener_utility:inter([do(INT)]),
+    font1(Font,INT,Do).
+
+do_command(hide) :- true |
+    WIN=[hide(_)],
+    listener_utility:resource([window(WIN)]),
+
+do_command(title(New)) :- string(New,_,16) |
+    listener_cmd_basic:format_string(New,L),
+    title_format_check(L,Status,Title),
+    (
+    Status=illegal_end ->
+        listener_utility:out(OUT),
+        OUT=[putf(" Non format character after ""\"".~n",[])];
+    Status=illegal_character(Char) ->
+        listener_utility:out(OUT),
+        OUT=[putf(" Illegal format character: ""~c""~n",[Char])];
+    otherwise;
+    true ->
+        listener_utility:resource([environment(ENV)]),
+        ENV=[set(title,{yes,New,Title},_)]
+    ).
+do_command(title(Old,New)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(title,{_,Old,_})],
+    do_command(title(New)).
+
+do_command(close) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[do(Do)],
+    Do=[get(position,Pos)|Do1],
+    close(Pos,Do1).
+do_command(open) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[do(Do)],
+    Do=[get(position,Pos),get(size,Size)|Do1],
+    open(Pos,Size,Do1).
+*/
+otherwise.
+do_command(Goal) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(macro#module_name,"Illegal argument"),Goal).
+
+
+op_sort([{OP,Def}|OPS],PL,DEF) :-
+    PL=[put(Def,OP)|PL1],
+    op_sort(OPS,PL1,DEF).
+op_sort([],PL,DEF) :- PL=[get_all(DEF)].
+
+list_op([{Def,OP}|DEF],OUT) :-
+    OUT=[putf("~t : ~t~n",[Def,OP])|OUT1],
+    list_op(DEF,OUT1).
+list_op([],OUT) :- OUT=[].
+
+
+send(normal,Msg) :- true |
+    listener_utility:buffer([Msg]).
+otherwise.
+send(_,Msg):-
+    listener_utility:out(
+        [putf(" Illegal operator type>> ~t~n",[Msg])]).
+
+
+/*
+position(abnormal,   Do) :- Do=[].
+position(normal(X,Y),Do) :- 
+    listener_utility:inter([do(INT)]),
+    INT=[putf(" X(left-top): ~t~n Y(left-top): ~t (? for help)=> ",[X,Y]),
+         getl(I)|INT1],
+    listener_utility:string_to_term(I,I1),
+    position1(I1,INT1,Do).
+
+position1(at(X,Y),OUT,WIN) :- X>=0, Y>=0 | OUT=[], WIN=[set_position(at(X,Y),_)].
+position1((X,Y),  OUT,WIN) :- X>=0, Y>=0 | OUT=[], WIN=[set_position(at(X,Y),_)].
+position1(mouse,  OUT,WIN) :-              OUT=[], WIN=[set_position(mouse,_)].
+position1('?',    OUT,WIN) :- position1(h,OUT,WIN).
+position1(h,      OUT,WIN) :-
+    OUT=[nl,
+         putb(" at(X,Y): Change position at (X,Y)."),nl,
+         putb(" X,Y    : Change position at (X,Y)."),nl,
+         putb(" mouse  : Change position by mouse."),nl,
+         putb(" <cr>   : No operation."),nl,nl,
+         putb(" => "), getl(I)|OUT1],
+    listener_utility:string_to_term(I,I1),
+    position1(I1,OUT1,WIN).
+otherwise.
+position1(_,      OUT,WIN) :-              OUT=[], WIN=[].
+
+
+size(abnormal,   Do) :- Do=[].
+size(normal(X,Y),Do) :- 
+    listener_utility:inter([do(INT)]),
+    INT=[putf(" Characters : ~t~n Lines      : ~t (? for help)=> ",[X,Y]),
+         getl(I)|INT1],
+    listener_utility:string_to_term(I,I1),
+    size1(I1,INT1,Do).
+
+size1(char(X,Y),OUT,WIN) :- X>0, Y>0 | OUT=[], WIN=[set_size(char(X,Y),_)].
+size1((X,Y),    OUT,WIN) :- X>0, Y>0 | OUT=[], WIN=[set_size(char(X,Y),_)].
+size1(mouse,    OUT,WIN) :-            OUT=[], WIN=[set_size(mouse,_)].
+size1('?',      OUT,WIN) :- size1(h,OUT,WIN).
+size1(h,        OUT,WIN) :-
+    OUT=[nl,
+         putb(" char(W,H): Change size to W characters and H lines."),nl,
+         putb(" W,H      : Change size to W characters and H lines."),nl,
+         putb(" mouse    : Change size by mouse."),nl,
+         putb(" <cr>     : No operation."),nl,nl,
+         putb(" => "), getl(I)|OUT1],
+    listener_utility:string_to_term(I,I1),
+    size1(I1,OUT1,WIN).
+otherwise.
+size1(_,        OUT,WIN) :-            OUT=[], WIN=[].
+
+
+font(abnormal, Do) :- Do=[].
+font(normal(F),Do) :-
+    listener_utility:inter([do(INT)]),
+    INT=[putf(" Font: ~s => ",[F]), getl(I)|INT1],
+    font1(I,INT1,Do).
+
+font1("",OUT,WIN) :-                    OUT=[], WIN=[].
+otherwise.
+font1(Path,     OUT,WIN) :- string(Path,_,_) | OUT=[], WIN=[set_font(Path,_)].
+otherwise.
+font1(_,        OUT,WIN) :-                    OUT=[], WIN=[].
+
+
+close(opened,ENV) :- true |
+    listener_utility:resource([window(WIN)]),
+    WIN=[do(Do)],
+    Do=[get_position(Pos),
+        get_char_size(Size),
+        set_size(char(5,3),_),
+        set_position(at(0,0),_)],
+    set_closed_status(Pos,Size,ENV).
+otherwise.
+close(_,ENV) :- ENV=[].
+
+set_closed_status(normal(X,Y),normal(Char,Line),ENV) :-
+    ENV=[set(position,{X,Y},_),set(size,{Char,Line},_)].
+otherwise.
+set_closed_status(_,_,ENV) :- ENV=[].
+
+open({X,Y},{Char,Line},ENV) :-
+    listener_utility:resource([window(WIN)]),
+    WIN=[do(Do)],
+    Do=[set_position(at(X,Y),_),set_size(char(Char,Line),_)],
+    ENV=[set(position,opened,_)].
+otherwise.
+open(_,_,ENV) :- ENV=[].
+
+
+title_format_check([illegal_end|_],            Status,_) :- Status=illegal_end.
+title_format_check([illegal_character(Char)|_],Status,_) :- Status=illegal_character(Char).
+title_format_check([event_number|_],           Status,_) :- Status=illegal_character(#"!").
+title_format_check([nl|_],                     Status,_) :- Status=illegal_character(#"n").
+title_format_check([],                         Status,L) :- Status=normal, L=[].
+otherwise.
+title_format_check([X|Y],                      Status,L) :- L=[X|L1], title_format_check(Y,Status,L1).
+*/

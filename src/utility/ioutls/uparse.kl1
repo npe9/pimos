@@ -1,0 +1,916 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module(unparse).
+:- include("pimos.h").
+:- with_macro pimos.
+:- public unparse0/12,portray0/10,printError/3,printText/3.
+
+:- implicit penv:shared,op:stream,atom:stream,tm:shared,qtd:shared.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% unparse0(&penv,&op,&atom,&tm,&qtd,&pr,&pr1,&pt,&pt1,Out,Out1,Term)
+%%      penv    :: Environment parameters (vector)
+%%                 = {Print_depth, Print_length, Print_string_length,
+%%                          Print_atom_length, Print_integer_radix}
+%%      op      :: Output stream to operator_pool through do_message
+%%      atom    :: Output stream to atom_table
+%%      out     :: Output stream to buffer process
+%%      ptry    :: Information for portray
+%%      tm      :: Term mode
+%%                 = variable ; nonVariable ; wrapped
+%%      qtd     :: = quote ; nonQuote
+
+:- local_implicit pr:shared,pr1:shared,pt:shared,pt1:shared.
+
+unparse0(H,T,Term) --> &tm\= wrapped |
+        unparse(H,T,Term).
+unparse0(H,T,Term) --> &tm=wrapped,Term=variable(Name),
+    string(Name,_,_) |
+        &pr1=1200,&pt1=variable,
+        H1=[putb(Name)|T0],
+        {{checkQuote(&pt,&pt1,H,H1,T0,T,&qtd)}}.
+unparse0(H,T,Term) --> &tm=wrapped,Term=variable({PE,ADR}),
+    integer(PE),integer(ADR) |
+        &pr1=1200,&pt1=variable,
+        H1=[#"_"|H2],
+        {{buffer_utility:integer_to_string_code(PE,16,H2,[#"$"|H3])}},
+        {{buffer_utility:integer_to_string_code(ADR,16,H3,T0)}},
+        {{checkQuote(&pt,&pt1,H,H1,T0,T,&qtd)}}.
+otherwise.
+unparse0(H,T,Term) --> true |               % &tm=wrapped
+        {{unwrap(Term,UTerm)}},
+        unparse(H,T,UTerm).
+
+unwrap(atom(X),X1) :- atom(X) | X=X1.
+unwrap(integer(X),X1) :- integer(X) | X=X1.
+:- switch(floating_point).
+:- case(yes).
+unwrap(floating_point(X),X1) :- floating_point(X) | X=X1.
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+unwrap(extended_floating_point(X),X1) :- extended_floating_point(X,_) | X=X1.
+:- end_switch.
+unwrap(string(X),X1) :- string(X,_,_) | X=X1.
+unwrap(list(X),X1) :- list(X) | X=X1.
+unwrap(module(X),X1) :- module(X,_) | X=X1.
+unwrap(code(X),X1) :- code(X,_,_,_) | X=X1.
+unwrap(unknown(X),X1) :- true | X=X1.
+unwrap(X,X1) :- bignum#wrapped(X) | mklib:unwrap(X,X1).
+% 93.8.23 K.Nakao
+unwrap('$exceedDepth',  X1) :- true| X1='$exceedDepth'.
+unwrap('$exceedLength', X1) :- true| X1='$exceedLength'.
+unwrap(0,               X1) :- true| X1=0.
+%%%%%%%%%%%%%
+otherwise.  % The bignum#wrapped(X) is specified by vector(...) .
+unwrap(vector(X),X1) :- vector(X,_) | X=X1.
+
+otherwise.
+unwrap(WT,X) :- true |
+        X='$illegal_wrapped_term$',
+        shoen:raise(pimos_tag#error,'$PIMOS$'(buffer:output_filter,
+            "illegal wrapped term in putwt(q)/printwt"),WT).
+
+unparse(H,T,[]) --> true |
+        H=[#"[",#"]"|T],
+        &pr1=1200,
+        &pt1=normal.        % ']'
+unparse(H,T,Term) --> atom(Term),Term\=[] |
+        &op <<= [operator(Term,OPs)],
+        &atom <<= [get_atom_name(Term,Res)],
+        {{atomType(Res,AtomName,AtomType)}},
+        {{unparse_atom(&pt,&pt1,H,T,AtomName,&penv(3),&qtd,&pr,&pr1,AtomType,OPs)}}.
+unparse(H,T,Term) --> integer(Term) |
+        &pr1=1200,&pt1=integer,
+        {{buffer_utility:integer_to_string_code(Term,&penv(4),H0,T0)}},
+        {{checkQuote(&pt,&pt1,H,H0,T0,T,&qtd)}}.
+
+/*
+unparse(H,T,Term) --> integer(Term),&penv(4)=10 |
+        &pr1=1200,&pt1=integer,
+        {{buffer_utility:integer_to_string_code(Term,10,H1,T0)}},
+        {{checkQuote(&pt,&pt1,H,H1,T0,T,&qtd)}}.
+unparse(H,T,Term) --> integer(Term),&penv(4)=PIR,PIR\=10 |
+        &pr1=1200,&pt1=integer,
+        {{buffer_utility:integer_to_string_code(PIR,10,H0,[#"#",#""""|H1])}},
+        {{buffer_utility:integer_to_string_code(Term,PIR,H1,[#""""|T0])}},
+        {{checkQuote(&pt,&pt1,H,H0,T0,T,&qtd)}}.
+*/
+
+:- switch(floating_point).
+:- case(yes).
+unparse(H,T,Term) --> floating_point(Term) |
+        &pr1=1200,&pt1=integer,
+        {{buffer_utility:get_float_type(Term,Sign,Type)}},
+        {{floatToList(Term,&pt,H,T,&qtd,Sign,Type)}}.
+:- end_switch.
+
+:- switch(extended_floating_point).
+:- case(yes).
+unparse(H,T,Term) --> extended_floating_point(Term,_) |
+        &pr1=1200,&pt1=integer,
+        {{exfloatToList(Term,&pt,H,T,&qtd,Term)}}.
+:- end_switch.
+
+unparse(H,T,Term) --> string(Term,Size,16) |
+        &pr1=1200,&pt1=string,
+        {{write_string16(Term,&penv(2),Size,H1,[#""""|T0])}},
+        {{checkQuote(&pt,&pt1,H,[#""""|H1],T0,T,&qtd)}}.
+unparse(H,T,Term) --> string(Term,Size,ESize),ESize=\=16 |
+        &pr1=1200,&pt1=normal,      % '}'
+        {{buffer_utility:integer_to_string_code(ESize,10,H,[#"#",#"{"|H1])}},
+        {{write_string(Term,&penv(2),Size,H1,[#"}"|T])}}.
+unparse(H,T,Term) --> module(Term,Size) |
+        &pr1=1200,&pt1=specialAtom,
+        {{moduleToList(Term,Size,H,T,&atom)}}.
+unparse(H,T,Term) --> code(Term,Arity,Mod,Pos) |
+        &pr1=1200,&pt1=specialAtom,
+        {{codeToList({Term,{Arity,Mod,Pos}},H,T,&atom)}}.
+unparse(H,T,Term) --> list(Term) |
+        unparse_list(H,T,Term).
+unparse(H,T,{}) --> true |
+        &pr1=1200,&pt1=normal,      % '}'
+        H=[#"{",#"}"|T].
+unparse(H,T,'$VAR'(N,Name)) --> &tm=variable,
+    integer(N),string(Name,_,_) |
+        &pr1=1200,&pt1=variable,
+        H1=[putb(Name)|T0],
+        {{checkQuote(&pt,&pt1,H,H1,T0,T,&qtd)}}.
+unparse(H,T,Term) --> bignum#bignum(Term) |
+        &pr1=1200,&pt1=integer,
+        {{bignumToList(Term,&pt,H,T,&qtd)}}.
+otherwise.
+unparse(H,T,Term) --> vector(Term,Size),Size>0 |
+        unparse_vect(H,T,Term,Size).
+otherwise.
+unparse(H,T,Term) --> tag_and_value(Term,Tag,Val) |
+        &pr1=1200,&pt1=specialAtom,
+        {{unparse_unknown(Tag,Val,H,T)}}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% unparse_atom(+PreType,-Type,H,T,+AtomName,+AL,+Quoted,+PrePrec,-CurPrec,+AtomType,OPs)
+
+unparse_atom(Pt,Pt1,H,T,AtomName,AL,Qtd,_,Pr1,AtomType,[]) :- true |
+        Pr1=0,Pt1=AtomType,
+        atom_name_to_list(Pt,Pt1,H,T,AtomName,AL,Qtd).
+unparse_atom(Pt,Pt1,H,T,AtomName,AL,Qtd,Pr,Pr1,AtomType,[{Pr0,_}|OPs]) :- true |
+        get_min_prec(OPs,Pr0,Pr1),
+        wait_min_prec(Pt,Pt1,H,T,AtomName,AL,Qtd,Pr,Pr1,AtomType).
+
+get_min_prec([{Prec,_}|OPs],P,P1) :- P=<Prec | get_min_prec(OPs,P,P1).
+get_min_prec([{Prec,_}|OPs],P,P1) :- P>Prec | get_min_prec(OPs,Prec,P1).
+get_min_prec([],P,P1) :- true | P=P1.
+
+wait_min_prec(Pt,Pt1,H,T,AtomName,AL,Qtd,Pr,Pr1,AtomType) :- Pr>=Pr1 |
+        Pt1=AtomType,
+        atom_name_to_list(Pt,Pt1,H,T,AtomName,AL,Qtd).
+wait_min_prec(_,Pt1,H,T,AtomName,AL,Qtd,Pr,Pr1,AtomType) :- Pr<Pr1 |
+        H=[#"("|H1],T0=[#")"|T],
+        Pt1=normal,         % ')'
+        atom_name_to_list(('('),AtomType,H1,T0,AtomName,AL,Qtd).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% unparse_vect(&penv,&op,&atom,&tm,&qtd,&pr,&pr1,&pt,&pt1,H,T,Term,Size)
+%%      penv    :: ={D,L,SL,AL,PIR}
+%%      op      :: Output stream to operator pool (merged)
+%%      atom    :: Output stream to atom_device (merged)
+%%      tm      :: Term mode (=wrapped ; variable ; nonVariable)
+%%      qtd     :: Quote mode (=quote ; nonQuote)
+%%      pr,pr1  :: Allowed max precedence
+%%      pt,pt1  :: PreOutType,CurOutType
+%%      H,T     :: Output stream to buffer (d-list)
+%%      Term    :: Term (vector)
+%%      Size    :: Vector size of Term
+
+%:- implicit penv:shared,op:stream,atom:stream,tm:shared,qtd:shared.
+%:- local_implicit pr:shared,pr1:shared,pt:shared,pt1:shared.
+
+unparse_vect(H,T,_,_) --> &penv(0)=0 |
+        &pr1=1200,&pt1=quotedAtom,
+        H=[putb(" & ")|T].              % bottom: " & "
+unparse_vect(H,T,Term,N) --> &penv={D,L,SL,AL,PIR},D>0,N>1,
+    ((vector_element(Term,0,atom(F)),F\=[],&tm=wrapped) ;
+     (vector_element(Term,0,F),atom(F),F\=[],&tm\=wrapped)) |
+        &penv <= {~(D-1),L,SL,AL,PIR},
+        unparse_funct(H,T,Term,N,F).
+otherwise.
+unparse_vect(H,T,Term,N) --> &penv={D,L,SL,AL,PIR},0<L,L<N |
+        H=[#"{"|H1],
+        T0=[putb(", ... }")|T],         % edge: " ... "
+        &pr1=1200,&pt1=normal,          % '}'
+        &penv <= {~(D-1),L,SL,AL,PIR},
+        {{unparse_vect_args(&penv,&op,&atom,&tm,&qtd,999,normal,H1,T0,Term,0,~(L-1))}}. % '{'
+unparse_vect(H,T,Term,N) --> &penv={D,L,SL,AL,PIR},N=<L |
+        H=[#"{"|H1],
+        &pr1=1200,&pt1=normal,          % '}'
+        &penv <= {~(D-1),L,SL,AL,PIR},
+        {{unparse_vect_args(&penv,&op,&atom,&tm,&qtd,999,normal,H1,[#"}"|T],Term,0,~(N-1))}}. % '{'
+unparse_vect(H,T,_,_) --> &penv(1)=0 |
+        &pr1=1200,&pt1=normal,          % '}'
+        H=[putb("{ ... }")|T].          % edge: " ... "
+
+:- local_implicit.
+
+unparse_vect_args(Pr,Pt,H,T,Term,I,N) --> I<N |
+        {{set_vector_element(Term,I,E,0,Term1)}},
+        unparse0(Pr,_,Pt,_,H,[#","|H1],E),
+        unparse_vect_args(Pr,normal,H1,T,Term1,~(I+1),N).       % ','
+unparse_vect_args(Pr,Pt,H,T,Term,N,N) --> true |
+        {{set_vector_element(Term,N,E,0,_)}},
+        unparse0(Pr,_,Pt,_,H,T,E).
+
+%:- implicit penv:shared,op:stream,atom:stream,tm:shared,qtd:shared.
+:- local_implicit pr:shared,pr1:shared,pt:shared,pt1:shared.
+
+unparse_list(H,T,_) --> &penv(0)=0 |
+        &pr1=1200,&pt1=quotedAtom,
+        {{checkQuote(&pt,quotedAtom,H,[#"["|H1],H1,H2,&qtd)}},
+        H2=[putb(" & ")|H3],            % bottom: " & "
+        {{checkQuote(quotedAtom,quotedAtom,H3,[#"]"|H4],H4,T,&qtd)}}.
+unparse_list(H,T,Term) --> &penv={D,L,SL,AL,PIR},D>0 |      % Term\=[]
+        H=[#"["|H1],
+        &pr1=1200,&pt1=normal,
+        &penv <= {~(D-1),L,SL,AL,PIR},
+        {{unparse_list1(&penv,&op,&atom,&tm,&qtd,L,H1,[#"]"|T],Term)}}.
+
+:- local_implicit.
+
+unparse_list1(0,H,T,_) --> true |
+        H=[putb(" ... ")|T].            % edge: " ... "
+otherwise.
+unparse_list1(_,H,T,[A]) --> &tm\=wrapped |
+        unparse(999,_,normal,_,H,T,A).                  % '[' ; ','
+unparse_list1(_,H,T,[A|atom([])]) --> &tm=wrapped |
+        unparse0(999,_,normal,_,H,T,A).                 % '[' ; ','
+unparse_list1(L,H,T,[A,B|X]) --> &tm\=wrapped |
+        unparse(999,_,normal,_,H,[#","|H1],A),          % '[' ; ','
+        unparse_list1(~(L-1),H1,T,[B|X]).
+unparse_list1(L,H,T,[A|list(Cdr)]) --> &tm=wrapped,list(Cdr) |
+        unparse0(999,_,normal,_,H,[#","|H1],A),         % '[' ; ','
+        unparse_list1(~(L-1),H1,T,Cdr).
+otherwise.
+unparse_list1(_,H,T,[A|X]) --> true |
+        unparse0(999,_,normal,_,H,[#"|"|H1],A),         % '[' ; ','
+        unparse0(999,_,normal,_,H1,T,X).                % '[' ; ','
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% unparse_funct(&penv,&op,&atom,&tm,&qtd,&pr,&pr1,&pt,&pt1,H,T,Term,N,F)
+%%      N       :: Vector size of Term (N>1)
+
+%:- implicit penv:shared,op:stream,atom:stream,tm:shared,qtd:shared.
+:- local_implicit pr:shared,pr1:shared,pt:shared,pt1:shared.
+
+unparse_funct(H,T,Term,2,F) --> true |
+        &op <<= [operator(F,OPs)],
+        {{get_ops2(OPs,OPs2)}},
+        unparse_funct2(H,T,Term,OPs2,F).
+unparse_funct(H,T,Term,3,F) --> true |
+        &op <<= [operator(F,OPs)],
+        {{get_ops3(OPs,OPs3)}},
+        unparse_funct3(H,T,Term,OPs3,F).
+unparse_funct(H,T,Term,N,F) --> N>3,&penv={_,L,_,AL,_} |
+        &pr1=1200,&pt1=normal,                          % ')'
+        &atom <<= [get_atom_name(F,Res)],
+        {{atomType(Res,AtomName,Pt0)}},
+        {{atom_name_to_list(&pt,Pt0,H,[#"("|H1],AtomName,AL,&qtd)}},
+        {{unparse_funct_normal(&penv,&op,&atom,&tm,&qtd,L,normal,H1,[#")"|T],Term,N)}}. % '('
+
+:- local_implicit.
+
+unparse_funct_normal(L,Pt,H,T,Term,N) --> 0<L,L+1<N |
+        T0=[putb(", ... ")|T],          % edge: " ... "
+        unparse_vect_args(999,Pt,H,T0,Term,1,L).
+unparse_funct_normal(L,Pt,H,T,Term,N) --> 0<L,L+1>=N |
+        unparse_vect_args(999,Pt,H,T,Term,1,~(N-1)).
+unparse_funct_normal(0,_,H,T,_,_) --> true |
+        H=[putb(" ... ")|T].            % edge: " ... "
+
+:- local_implicit pr:shared,pr1:shared,pt:shared,pt1:shared.
+
+unparse_funct3(H,T,Term,[],F) --> &penv={_,L,_,AL,_} |
+        &pr1=1200,&pt1=normal,                              % ')'
+        &atom <<= [get_atom_name(F,Res)],
+        {{atomType(Res,AtomName,Pt0)}},
+        {{atom_name_to_list(&pt,Pt0,H,[#"("|H1],AtomName,AL,&qtd)}},
+        {{unparse_funct_normal(&penv,&op,&atom,&tm,&qtd,L,normal,H1,[#")"|T],Term,3)}}. % '('
+unparse_funct3(H,T,Term,[{Prec,Type}|_],F) --> Prec> &pr,
+    Term={_,E1,E2} |
+        &pr1=1200,&pt1=normal,                              % ')'
+        H=[#"("|H1],
+        {{unparse_funct3_get_prec(Type,Prec,Prec1,Prec2)}},
+        {{unparse0(&penv,&op,&atom,&tm,&qtd,Prec1,_,normal,Pt0,H1,H2,E1)}}, % '('
+        {{unparse_operator(F,&penv,H2,H3,&qtd,&atom,Pt0,Pt1)}},
+        {{unparse0(&penv,&op,&atom,&tm,&qtd,Prec2,_,Pt1,_,H3,[#")"|T],E2)}}.
+unparse_funct3(H,T,Term,[{Prec,Type}|_],F) --> Prec=< &pr,
+    Term={_,E1,E2} |
+        {{unparse_funct3_get_prec(Type,Prec,Prec1,Prec2)}},
+        {{unparse0(&penv,&op,&atom,&tm,&qtd,Prec1,_,&pt,Pt0,H,H1,E1)}},
+        {{unparse_operator(F,&penv,H1,H2,&qtd,&atom,Pt0,Pt1)}},
+        {{unparse0(&penv,&op,&atom,&tm,&qtd,Prec2,_,Pt1,&pt1,H2,T,E2)}}.
+
+unparse_operator((','),_,H,T,_,At,_,Pt1) :- true |
+        At=[],Pt1=normal,           % ','
+        H=[#","|T].
+unparse_operator(('|'),_,H,T,_,At,_,Pt1) :- true |
+        At=[],Pt1=normal,           % '|'
+        H=[#"|"|T].
+unparse_operator(F,Env,H,T,Qtd,At,Pt,Pt1) :- F\=(','),F\=('|'),
+    Env={_,_,_,AL,_} |
+        At=[get_atom_name(F,Res)],
+        atomType(Res,AtomName,Pt1),
+        atom_name_to_list(Pt,Pt1,H,T,AtomName,AL,Qtd).
+
+unparse_funct3_get_prec(xfx,P,P1,P2) :- true | P1:=P-1,P2:=P1.
+unparse_funct3_get_prec(xfy,P,P1,P2) :- true | P1:=P-1,P2:=P.
+unparse_funct3_get_prec(yfx,P,P1,P2) :- true | P1:=P,  P2:=P-1.
+
+unparse_funct2(H,T,Term,[],F) --> &penv={_,L,_,AL,_} |
+        &pr1=1200,&pt1=normal,      % ')'
+        &atom <<= [get_atom_name(F,Res)],
+        {{atomType(Res,AtomName,Pt0)}},
+        {{atom_name_to_list(&pt,Pt0,H,[#"("|H1],AtomName,AL,&qtd)}},
+        {{unparse_funct_normal(&penv,&op,&atom,&tm,&qtd,L,normal,H1,[#")"|T],Term,2)}}. % '('
+unparse_funct2(H,T,Term,[{Prec,Type}|_],F) --> Prec> &pr,
+    Term={_,E1} |
+        &pr1=1200,&pt1=normal,      % ')'
+        H=[#"("|H1],
+        {{unparse_funct2_prec(F,&penv(3),&qtd,&atom,normal,Pt0,
+                                        H1,H2,T1,[#")"|T],Type,Prec,Prec1)}},       % '('
+        {{unparse0(&penv,&op,&atom,&tm,&qtd,Prec1,_,Pt0,_,H2,T1,E1)}}.
+unparse_funct2(H,T,Term,[{Prec,Type}|_],F) --> Prec=< &pr,
+    Term={_,E1} |
+        {{unparse_funct2_prec(F,&penv(3),&qtd,&atom,&pt,Pt0,H,H2,T1,T,Type,Prec,Prec1)}},
+        {{unparse0(&penv,&op,&atom,&tm,&qtd,Prec1,&pr1,Pt0,&pt1,H2,T1,E1)}}.
+
+unparse_funct2_prec(F,AL,Qtd,At,Pt,Pt1,H,H1,T1,T,fx,P,P1) :- true |
+        P1:=P-1,T1=T,
+        operator_to_list(F,AL,Qtd,At,Pt,Pt1,H,H1).     % H=[F|H1],T1=T.
+unparse_funct2_prec(F,AL,Qtd,At,Pt,Pt1,H,H1,T1,T,fy,P,P1) :- true |
+        P1:=P,T1=T,
+        operator_to_list(F,AL,Qtd,At,Pt,Pt1,H,H1).     % H=[F|H1],T1=T.
+unparse_funct2_prec(F,AL,Qtd,At,Pt,Pt1,H,H1,T1,T,xf,P,P1) :- true |
+        P1:=P-1,H=H1,
+        operator_to_list(F,AL,Qtd,At,Pt,Pt1,T1,T).     % H=H1,T1=[F|T].
+unparse_funct2_prec(F,AL,Qtd,At,Pt,Pt1,H,H1,T1,T,yf,P,P1) :- true |
+        P1:=P,H=H1,
+        operator_to_list(F,AL,Qtd,At,Pt,Pt1,T1,T).     % H=H1,T1=[F|T].
+
+operator_to_list(',',_,_,At,_,Pt1,H,T) :- true |
+        At=[],Pt1=normal,       % ','
+        H=[#","|T].
+operator_to_list('|',_,_,At,_,Pt1,H,T) :- true |
+        At=[],Pt1=normal,       % '|'
+        H=[#"|"|T].
+operator_to_list(F,AL,Qtd,At,Pt,Pt1,H,T) :- F\=',',F\='|' |
+        At=[get_atom_name(F,Res)],
+        atomType(Res,AtomName,Pt1),
+        atom_name_to_list(Pt,Pt1,H,T,AtomName,AL,Qtd).
+
+get_ops2([PrecType|OPs],OPs1) :- PrecType={_,Type},
+    (Type=xf ; Type=yf ; Type=fx ; Type=fy) |
+        OPs1=[PrecType|OPs2],
+        get_ops2(OPs,OPs2).
+get_ops2([PrecType|OPs],OPs1) :- PrecType={_,Type},
+    (Type=xfx ; Type=xfy ; Type=yfx) |
+        get_ops2(OPs,OPs1).
+get_ops2([],OPs) :- true | OPs=[].
+
+get_ops3([PrecType|OPs],OPs1) :- PrecType={_,Type},
+    (Type=xfx ; Type=xfy ; Type=yfx) |
+        OPs1=[PrecType|OPs2],
+        get_ops3(OPs,OPs2).
+get_ops3([PrecType|OPs],OPs1) :- PrecType={_,Type},
+    (Type=xf ; Type=yf ; Type=fx ; Type=fy) |
+        get_ops3(OPs,OPs1).
+get_ops3([],OPs) :- true | OPs=[].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% unparse_unknown(Tag,Val,H,T)
+
+unparse_unknown(Tag,Val,H,T) :- integer(Tag),integer(Val) |
+        H=[putb(" $Unknown/")|H0],
+        buffer_utility:integer_to_string_code(Tag,10,H0,[#"/"|H1]),
+        buffer_utility:integer_to_string_code(Val,10,H1,[#" "|T]).
+otherwise.
+unparse_unknown(_,_,H,T) :- true | H=[putb(" $Unknown")|T].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% atom_name_to_list(+PreType,+Type,H,T,+AtomName,+AL,+Quoted)
+
+atom_name_to_list(PreType,Type,H,T,Str,AL,Quoted) :- Type=quotedAtom |
+        checkQuote(PreType,Type,H,H1,T0,T,Quoted),
+        if_name_to_list(Str,AL,Quoted,H1,T0).
+atom_name_to_list(PreType,Type,H,T,Str,AL,Quoted) :- Type\=quotedAtom,
+    string(Str,N,_),N=<AL |
+        H1=[putb(Str)|T0],
+        checkQuote(PreType,Type,H,H1,T0,T,Quoted).
+atom_name_to_list(PreType,Type,H,T,Str,AL,Quoted) :- Type\=quotedAtom,
+    string(Str,N,_),N>AL |
+        H1=[putb(Str,0,AL),#"?",#"?",#" "|T0],
+        checkQuote(PreType,Type,H,H1,T0,T,Quoted).
+
+if_name_to_list("'",_,nonQuote,H,T) :- true | H=[#"'"|T].
+otherwise.
+if_name_to_list(Str,AL,_,H,T) :- true |
+        name_to_list(Str,AL,#"'",H,T).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% name_to_list(+String,+L,+Esc,InHead,InTail)
+%%      String      :: String ; Atom name ; Variable name
+%%      L           :: Print string length ; print atom length ; -1 to be infinite
+%%      Esc         :: Code of control charactor
+%%                     (= #"""" for string, = #"'" for atom name,
+%%                      = 0 for variable name (?) )
+
+name_to_list(Str,L,Esc,H,T) :- string(Str,N,_),0=<L,L<N |
+        name_to_list1(Str,L,Esc,H,[#"?",#"?",#" "|T],0).
+name_to_list(Str,L,Esc,H,T) :- string(Str,N,_),(L<0 ; N=<L) |
+        name_to_list1(Str,N,Esc,H,T,0).
+
+name_to_list1(Str,N,Esc,H,T,I) :- I<N,string_element(Str,I,Esc) |
+        H=[Esc,Esc|H1],
+        name_to_list1(Str,N,Esc,H1,T,~(I+1)).
+name_to_list1(Str,N,Esc,H,T,I) :- I<N,string_element(Str,I,C),C\=Esc |
+        H=[C|H1],
+        name_to_list1(Str,N,Esc,H1,T,~(I+1)).
+name_to_list1(_,N,_,H,T,N) :- true | H=T.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% write_string16(+String, +PrintStringLength, +StringSize InHead,InTail)
+%%      String      :: 16bit string
+
+write_string16(Str,SL,Size,H,T) :- SL>=Size,Size>0 |
+        search_character(Str,0,~(Size-1),#"""",Pos,Str1),
+        if_esc_code(Str1,Size,Pos,H,T).
+write_string16(_,_,Size,H,T) :- Size=0 | H=T.
+write_string16(Str,SL,Size,H,T) :- SL<Size,SL>0 |
+        search_character(Str,0,~(SL-1),#"""",Pos,Str1),
+        if_esc_code(Str1,SL,Pos,H,[#"?",#"?",#" "|T]).
+write_string16(_,SL,Size,H,T) :- SL<Size,SL=0 |
+        H=[#"?",#"?",#" "|T].
+
+if_esc_code(Str,N,-1,H,T) :- true | H=[putb(Str,0,N)|T].
+if_esc_code(Str,N,Pos,H,T) :- Pos>=0 |
+        name_to_list1(Str,N,#"""",H,T,0).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% write_string(+String, +PrintStringLength, +StringSize, InHead,InTail)
+%%      String      :: string (element-size \= 16)
+
+write_string(Str,SL,Size,H,T) :- SL>=Size,Size>0 |
+        write_str(Str,0,~(Size-1),H,T).
+write_string(_,_,Size,H,T) :- Size=0 | H=T.
+write_string(Str,SL,Size,H,T) :- SL<Size,SL>0 |
+        write_str(Str,0,~(SL-1),H,[putb(", ... ")|T]).
+write_string(_,SL,Size,H,T) :- SL<Size,SL=0 |
+        H=[putb(" ... ")|T].
+
+write_str(Str,I,N,H,T) :- I<N,string_element(Str,I,C) |
+        buffer_utility:integer_to_string_code(C,10,H,[#","|H1]),
+        write_str(Str,~(I+1),N,H1,T).
+write_str(Str,N,N,H,T) :- string_element(Str,N,C) |
+        buffer_utility:integer_to_string_code(C,10,H,T).
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% variableToList(+Name,+PreType,InHead,InTail,+Quoted)
+
+variableToList(Name,PreType,H,T,Quoted) :- true |
+        checkQuote(PreType,variable,H,H1,T0,T,Quoted),
+        name_to_list(Name,-1,0,H1,T0).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% integerToList(+Integer,+PreType,InHead,InTail,+Quoted)
+
+integerToList(N,PreType,H,T,Quoted) :- true |
+        buffer_utility:integer_to_string(N,10,Str),
+        checkQuote(PreType,integer,H,H1,T0,T,Quoted),
+        name_to_list(Str,-1,#"""",H1,T0).
+*/
+bignumToList(N,PreType,H,T,Quoted) :- true |
+        H1=[putb(Str)|T0],
+        bignum:portray(N,Str),
+        checkQuote(PreType,integer,H,H1,T0,T,Quoted).
+
+:- switch(floating_point).
+:- case(yes).
+
+floatToList(Float,PreType,H,T,Qtd,0,Type) :- (Type=normalized ; Type=denormalized) |
+        buffer_utility:float_to_cod2(Float,H1,T0),
+        checkQuote(PreType,integer,H,H1,T0,T,Qtd).
+floatToList(Float,PreType,H,T,Qtd,1,Type) :- (Type=normalized ; Type=denormalized) |
+        H=[#"-"|H0],
+        Float1 $:= -Float,
+        buffer_utility:float_to_cod2(Float1,H1,T0),
+        checkQuote(PreType,integer,H0,H1,T0,T,Qtd).
+floatToList(Float,PreType,H,T,Qtd,Sign,Type) :- Type\=normalized,Type\=denormalized |
+        buffer_utility:get_special_float_string_code(Type,Sign,H,T).
+
+:- end_switch.
+
+:- switch(extended_floating_point).
+:- case(yes).
+
+exfloatToList(Term,Pt,H,T,Qtd,Term) :- true |
+        buffer_utility:extended_floating_point_to_string_code(Term,H1,T0),
+        checkQuote(Pt,integer,H,H1,T0,T,Qtd).
+
+:- end_switch.
+
+%
+% moduleToList(+Module,+Size, Head,Tail, AtomDevice)
+%
+moduleToList(Mod,Size,H,T,At) :- true |
+        At={At0,At1},
+        H=[putb(" module$")|H2],
+        module:get_module_name(Mod,PacName,ModName),
+        module_name_to_list(PacName,At0,H2,[#":",#":"|H3]),
+        module_name_to_list(ModName,At1,H3,[#"$"|H4]),
+        buffer_utility:integer_to_string_code(Size,10,H4,[#" "|T]).
+
+module_name_to_list(ModName,At,H,T) :- atom(ModName) |
+        At=[get_atom_name(ModName,Res)],
+        atomType(Res,AtomName,AtomType),
+        modname_to_list(AtomName,AtomType,H,T).
+otherwise.
+module_name_to_list(_,At,H,T) :- true |
+        At=[],
+        modname_to_list("unknown",normalAtom,H,T).
+
+modname_to_list(Str,Type,H,T) :- Type=quotedAtom |
+        checkQuote(normal,Type,H,H1,T0,T,nonQuote),
+        if_name_to_list(Str,-1,nonQuote,H1,T0).
+modname_to_list(Str,Type,H,T) :- Type\=quotedAtom |
+        H1=[putb(Str)|T0],
+        checkQuote(normal,Type,H,H1,T0,T,nonQuote).
+
+%
+% codeToList(+{Code, {Arity,Module,Position}}, Head,Tail, AtomDevice)
+%
+codeToList({Code, {Arity,Module,Position}}, H,T, At) :- module(Module, Size) |
+        code_to_predicate(Code, Module1,Name1,Arity1, _),
+        module:get_module_name(Module1, PacName,ModName),
+        H=[putb(" code$")|H2],
+        At=[get_atom_name(Name1,NameRes)|{At0,At1}],
+        module_name_to_list(PacName,At0,H2,[#":",#":"|H3]),
+        module_name_to_list(ModName,At1,H3,[#":"|H4]),
+        atomType(NameRes,AtomName,AtomType),
+        modname_to_list(AtomName,AtomType,H4,[#"/"|H5]),
+        buffer_utility:integer_to_string_code(Arity1,10,H5,[#"$"|H6]),
+        buffer_utility:integer_to_string_code(Size,10,H6,[#" "|T]).
+
+%
+% checkQuote(+PreType,+CurrentType, Head,NewHead, Tail,NewTail, +Quoted)
+%
+checkQuote(Pre,Cur,H,H1,T,T1,_) :-
+    Cur=normalAtom,
+    (Pre=normalAtom ; Pre=variable ; Pre=specialAtom ; Pre=quotedAtom) |
+        H=[#" "|H1],
+        T=T1.
+checkQuote(Pre,Cur,H,H1,T,T1,_) :-
+    Cur=specialAtom,
+    (Pre=normal ; Pre=variable ; Pre=specialAtom ; Pre=quotedAtom) |
+        H=[#" "|H1],
+        T=T1.
+checkQuote(Pre,Cur,H,H1,T,T1,Quoted) :-
+    Cur=quotedAtom |
+        checkQuoteQuotedAtom(Pre,H,H1,T,T1,Quoted).
+checkQuote(Pre,Cur,H,H1,T,T1,_) :-
+    Cur=string,
+    Pre=string |
+        H=[#" "|H1],
+        T=T1.
+checkQuote(Pre,Cur,H,H1,T,T1,_) :-
+    Cur=integer,
+    (Pre=normalAtom ; Pre=specialAtom) |
+        H=[#" "|H1],
+        T=T1.
+checkQuote(Pre,Cur,H,H1,T,T1,_) :-
+    Cur=variable,
+    (Pre=normalAtom ; Pre=quotedAtom ; Pre=specialAtom ; Pre=string ; Pre=integer) |
+        H=[#" "|H1],
+        T=[#" "|T1].
+otherwise.
+checkQuote(_,_,H,H1,T,T1,_) :- true | H=H1,T=T1.
+
+checkQuoteQuotedAtom(Pre,H,H1,T,T1,Quoted) :- (Pre=quotedAtom ; Pre=integer) |
+        H=[#" "|H0],
+        checkQuoteInsert(Quoted,H0,H1,T,T1).
+otherwise.
+checkQuoteQuotedAtom(_,H,H1,T,T1,Quoted) :- true |
+        checkQuoteInsert(Quoted,H,H1,T,T1).
+
+checkQuoteInsert(quote,H,H1,T,T1) :- true | H=[#"'"|H1],T=[#"'"|T1].
+checkQuoteInsert(nonQuote,H,H1,T,T1) :- true | H=H1,T=T1.
+
+%
+% atomType(+Status, -String, -AtomType)
+%        AtomType :==: normalAtom || specialAtom || quotedAtom 
+%
+atomType(normal(Str),Str1,Type) :- string(Str,0,_) |
+        Str=Str1,Type=quotedAtom.
+atomType(normal(Str),Str1,Type) :- string(Str,N,_),N>0,string_element(Str,0,C),
+    #"a" =<C, C=< #"z" |
+        check_if_normal(1,N,Str,Str1,Type).
+atomType(normal(Str),Str1,Type) :- string(Str,N,_),N>0,string_element(Str,0,C),
+    (C< #"a" ; #"z" <C) |
+        token:ct(C,T),
+        wait_1st_char_type(T,N,Str,Str1,Type).
+atomType(abnormal,Str1,Type) :- true |
+        atomType0("$AtomDeviceAbnormal",Str1,Type).
+atomType(aborted,Str1,Type) :- true |
+        atomType0("$AtomDeviceAborted",Str1,Type).
+atomType(non_existent(Atom),Str1,Type) :- atom(Atom) |
+        hash(Atom,AtomNo,_),
+        buffer_utility:integer_to_string(AtomNo,10,AtomNoStr),
+        builtin#append_string("atom$",AtomNoStr,Str),
+        atomType0(Str,Str1,Type).
+
+atomType0(Str,Str1,Type) :- string(Str,0,_) |
+        Str=Str1,Type=quotedAtom.
+atomType0(Str,Str1,Type) :- string(Str,N,_),N>0,string_element(Str,0,C) |
+        token:ct(C,T),
+        wait_1st_char_type(T,N,Str,Str1,Type).
+
+wait_1st_char_type(0,N,Str,Str1,Type) :- true |             % lowercase
+        check_if_normal(1,N,Str,Str1,Type).
+wait_1st_char_type(T,N,Str,Str1,Type) :- (T=4 ; T=5) |      % specialcharacter ; period
+        check_if_special(1,N,Str,Str1,Type).
+otherwise.
+wait_1st_char_type(_,_,Str,Str1,Type) :- true | Str=Str1,Type=quotedAtom.
+
+check_if_normal(N,N,Str,Str1,Type) :- true | Str=Str1,Type=normalAtom.
+check_if_normal(I,N,Str,Str1,Type) :- I<N,string_element(Str,I,C),
+    ((#"a" =<C, C=< #"z") ;
+     (#"0" =<C, C=< #"9") ;
+     (#"A" =<C, C=< #"Z") ;
+      C= #"_" ) |
+        check_if_normal(~(I+1),N,Str,Str1,Type).
+otherwise.
+check_if_normal(I,N,Str,Str1,Type) :- I<N,string_element(Str,I,C) |
+        token:ct(C,T),
+        wait_char_type_normal(I,N,Str,Str1,Type,T).
+
+wait_char_type_normal(I,N,Str,Str1,Type,T) :- 0=<T,T=<3 |
+        check_if_normal(~(I+1),N,Str,Str1,Type).
+wait_char_type_normal(_,_,Str,Str1,Type,T) :- (T<0 ; 3<T) |
+        Str=Str1,Type=quotedAtom.
+
+check_if_special(I,N,Str,Str1,Type) :- I<N,string_element(Str,I,C) |
+        token:ct(C,T),
+        wait_char_type_special(I,N,Str,Str1,Type,T).
+check_if_special(N,N,Str,Str1,Type) :- true | Str=Str1,Type=specialAtom.
+
+wait_char_type_special(I,N,Str,Str1,Type,T) :- (T=4 ; T=5) |
+        check_if_special(~(I+1),N,Str,Str1,Type).
+wait_char_type_special(_,_,Str,Str1,Type,T) :- (T<4 ; 5<T) |
+         Str=Str1,Type=quotedAtom.
+
+
+%
+% printError(-InHead,+InTail,+ErrorINFO)
+%
+printError(H,T,empty) :- true |
+        H=[putl("*** Empty Expression ***")|T].
+printError(H,T,error({TL,Pos})) :- true |
+        H=[putl("*** Syntax Error ***")|H1],
+        print_error(TL,H1,T,1,Pos).
+printError(H,T,error({TL,Reason,Pos})) :- true |
+        H=[putb("*** Syntax Error on "),putt(Reason),putl(" ***")|H1],
+        print_error(TL,H1,T,1,Pos).
+printError(H,T,ambiguous({TL,Pos})) :- true |
+        H=[putl("*** Syntax Error(Ambiguous) ***")|H1],
+        print_error(TL,H1,T,1,Pos).
+
+print_error([Terminator],H,T,_,_) :- true | H=[nl|T].
+otherwise.
+print_error([Token|TL],H,T,I,Pos) :- true |
+        printErrorCheckPosition(Pos,H,H1,I),
+        printText2(Token,H1,H2),
+        print_error(TL,H2,T,~(I+1),Pos).
+
+printErrorCheckPosition(Pos,H,T,Pos) :- true |
+        H=[nl,putl("**** Here ****")|T].
+printErrorCheckPosition(Pos,H,T,I) :- Pos=\=I | H=T.
+
+printText2(Token, H,T) :- Token = variable(Name) | H = [putb(Name)|T].
+printText2(Token, H,T) :- Token = atom(Atom) | H = [putt(Atom)|T].
+printText2(Token, H,T) :- Token = open(Atom) | H = [putt(Atom), putt('(')|T].
+printText2(Token, H,T) :- Token = int(Integer) | H = [putt(Integer)|T].
+printText2(Token, H,T) :- Token = limit(Integer) | H = [putt(Integer)|T].
+printText2(Token, H,T) :- Token = float(Float) | H = [putt(Float)|T].
+printText2(Token, H,T) :- Token = string(String) | H = [putt(String)|T].
+otherwise.
+printText2(Token, H,T) :- true | H = [putt(Token)|T].
+
+%
+% printText(-InHead,+InTail,+ErrorINFO)
+%
+printText(H,T,empty) :- true | H = T.
+printText(H,T,error({TL,_})) :- true | printText1(TL, H,T).
+printText(H,T,error({TL,_,_})) :- true | printText1(TL, H,T).
+printText(H,T,ambiguous({TL,_})) :- true | printText1(TL, H,T).
+otherwise.
+printText(H,T,WT) :- true | H = [putwtq(WT)|T].
+
+printText1([Terminator], H,T) :- true | H = T.
+otherwise.
+printText1([Token|TL], H,T) :- true |
+        printText2(Token, H,[tab(1)|H1]),
+        printText1(TL, H1,T).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% portray0(&penv,&op,&atom,&tm,&qtd,Ptry,Ptry1,Out,Out1,Term)
+
+:- local_implicit.
+
+portray0(default,Ptry1,Out,Out1,Term) --> true |
+        Ptry1=default,
+        unparse0(1200,_,normal,_,Out,Out1,Term).
+portray0({Pr,Pt,P,Ab},Ptry1,Out,Out1,Term) --> true |
+        Ptry1={Pr1,Pt1,P1,Ab},
+        portray(Pr,Pr1,Pt,Pt1,P,P1,Ab,Out,Out1,Term).
+
+:- local_implicit pr:shared,pr1:shared,pt:shared,pt1:shared,p:oldnew,abort:shared.
+
+portray(H,T,Term) --> &abort=aborted |
+        {{unparse0(&penv,&op,&atom,&tm,&qtd,1200,&pr1,normal,&pt1,H,T,Term)}}.
+alternatively.
+portray(H,T,Term) --> &tm=wrapped |
+        &p <<= [portray(Term,&penv,&qtd,&pr,&pt,Res)],
+        wait_printed(H,T,Res).
+portray(H,T,Term) --> &tm\=wrapped,&penv={D,L,_,_,_} |
+        {{wrap(Term,WTerm,D,L)}},
+        &p <<= [portray(WTerm,&penv,&qtd,&pr,&pt,Res)],
+        &tm <= wrapped,
+        wait_printed(H,T,Res).
+
+wrap(T,WT,_,_) :- atom(T) | WT=atom(T).
+wrap(T,WT,_,_) :- integer(T) | WT=integer(T).
+:- switch(floating_point).
+:- case(yes).
+wrap(T,WT,_,_) :- floating_point(T) | WT=floating_point(T).
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+wrap(T,WT,_,_) :- extended_floating_point(T,_) |
+        WT=extended_floating_point(T).
+:- end_switch.
+wrap(T,WT,_,_) :- string(T,_,_) | WT=string(T).
+wrap(T,WT,_,_) :- module(T,_) | WT=module(T).
+wrap(T,WT,_,_) :- code(T,_,_,_) | WT=code(T).
+
+wrap([_|_],WT,0,_) :- true | WT=list(['$exceedDepth'|atom([])]).
+wrap([Car|Cdr],WT,D,L) :- D>0 |
+        D1:=D-1,
+        WT=list([CarWT|CdrWT]),
+        wrap(Car,CarWT,D1,L),
+        wrap_list(Cdr,CdrWT,D1,L,L).
+
+wrap(T,WT,D,_) :- vector(T,_),D=0 | WT=vector({'$exceedDepth'}).
+wrap(T,WT,D,L) :- vector(T,N),D>0,N>3,L1:=L+1,L1<N |
+        WT=vector(WT2),
+        new_vector(WT0,N),
+        set_vector_element(WT0,L1,_,'$exceedLength',WT1),
+        wrap_vect(T,WT1,WT2,~(D-1),L,0,L1).
+wrap(T,WT,D,L) :- vector(T,N),D>0,N>3,L1:=L+1,L1>=N |
+        WT=vector(WT1),
+        new_vector(WT0,N),
+        wrap_vect(T,WT0,WT1,~(D-1),L,0,N).
+wrap(T,WT,D,L) :- vector(T,N),D>0,N=<3 |
+        WT=vector(WT1),
+        new_vector(WT0,N),
+        wrap_vect(T,WT0,WT1,~(D-1),L,0,N).
+
+otherwise.
+wrap(T,WT,_,_) :- true | WT=unknown(T).
+
+wrap_list(_,WT,_,_,0) :- true | WT='$exceedLength'.
+wrap_list(T,WT,D,L,L1) :- L1=\=0,T=[Car|Cdr] |
+        WT=list([CarWT|CdrWT]),
+        wrap(Car,CarWT,D,L),
+        wrap_list(Cdr,CdrWT,D,L,~(L1-1)).
+wrap_list(T,WT,_,_,L1) :- L1=\=0,T=[] | WT=atom([]).
+otherwise.
+wrap_list(T,WT,D,L,_) :- true |
+        wrap(T,WT,D,L).
+
+wrap_vect(T,WT,WT1,D,L,I,N) :- I<N |
+        set_vector_element(T,I,E,0,T1),
+        set_vector_element(WT,I,_,EWT,WT0),
+        wrap(E,EWT,D,L),
+        wrap_vect(T1,WT0,WT1,D,L,~(I+1),N).
+wrap_vect(_,WT,WT1,_,_,N,N) :- true | WT=WT1.
+
+wait_printed(H,T,_) --> &abort=aborted |
+        &pr1=1200,&pt1=normal,H=T.
+alternatively.
+wait_printed(H,T,normal(H0,T0,Pr,Pt)) --> true |
+        &pr1=Pr,&pt1=Pt,H=H0,T=T0.
+wait_printed(H,T,abnormal(Term)) --> true |
+        ptry0(H,T,Term).
+
+ptry0(H,T,Term) --> &tm\=wrapped |
+        ptry(H,T,Term).
+ptry0(H,T,Term) --> &tm=wrapped,Term=variable(Name),
+    string(Name,_,_) |
+        &pr1=1200,&pt1=variable,
+        H1=[putb(Name)|T0],
+        {{checkQuote(&pt,&pt1,H,H1,T0,T,&qtd)}}.
+ptry0(H,T,Term) --> &tm=wrapped,Term=variable({PE,ADR}),
+    integer(PE),integer(ADR) |
+        &pr1=1200,&pt1=variable,
+        H1=[#"_"|H2],
+        {{buffer_utility:integer_to_string_code(PE,16,H2,[#"$"|H3])}},
+        {{buffer_utility:integer_to_string_code(ADR,16,H3,T0)}},
+        {{checkQuote(&pt,&pt1,H,H1,T0,T,&qtd)}}.
+otherwise.
+ptry0(H,T,Term) --> true |                  % &tm=wrapped
+        {{unwrap(Term,UTerm)}},
+        ptry(H,T,UTerm).
+
+ptry(H,T,Term) --> list(Term) |
+        ptry_list(H,T,Term).
+ptry(H,T,'$VAR'(N,Name)) --> &tm=variable,
+    integer(N),string(Name,_,_) |
+        &pr1=1200,&pt1=variable,
+        H1=[putb(Name)|T0],
+        {{checkQuote(&pt,&pt1,H,H1,T0,T,&qtd)}}.
+ptry(H,T,Term) --> bignum#bignum(Term) |
+        {{unparse(&penv,&op,&atom,&tm,&qtd,&pr,&pr1,&pt,&pt1,H,T,Term)}}.
+otherwise.
+ptry(H,T,Term) --> vector(Term,Size),Size>0 |
+        ptry_vect(H,T,Term,Size).
+otherwise.
+ptry(H,T,Term) --> true |
+        {{unparse(&penv,&op,&atom,&tm,&qtd,&pr,&pr1,&pt,&pt1,H,T,Term)}}.
+
+ptry_list(H,T,_) --> &penv(0)=0 |
+        &pr1=1200,&pt1=quotedAtom,
+        {{checkQuote(&pt,quotedAtom,H,[#"["|H1],H1,H2,&qtd)}},
+        H2=[putb(" & ")|H3],            % bottom: " & "
+        {{checkQuote(quotedAtom,quotedAtom,H3,[#"]"|H4],H4,T,&qtd)}}.
+ptry_list(H,T,Term) --> &penv={D,L,SL,AL,PIR},D>0 |      % Term\=[]
+        H=[#"["|H1],
+        &pr1=1200,&pt1=normal,
+        &penv <= {~(D-1),L,SL,AL,PIR},
+        {{ptry_list1(&penv,&op,&atom,&tm,&qtd,999,_,normal,_,&p,&abort,H1,[#"]"|T],Term,L)}}.
+
+
+ptry_list1(H,T,_,0) --> true |
+        H=[putb(" ... ")|T].            % edge: " ... "
+otherwise.
+ptry_list1(H,T,[A],_) --> &tm\=wrapped |
+        portray(H,T,A).
+ptry_list1(H,T,[A|atom([])],_) --> &tm=wrapped |
+        portray(H,T,A).
+ptry_list1(H,T,[A,B|X],L) --> &tm\=wrapped |
+        {{portray(&penv,&op,&atom,&tm,&qtd,999,_,normal,_,&p,&abort,H,[#","|H1],A)}},
+        {{ptry_list1(&penv,&op,&atom,&tm,&qtd,&pr,&pr1,normal,&pt1,
+                    &p,&abort,H1,T,[B|X],~(L-1))}}.  % ','
+ptry_list1(H,T,[A|list(Cdr)],L) --> &tm=wrapped,list(Cdr) |
+        {{portray(&penv,&op,&atom,&tm,&qtd,999,_,normal,_,&p,&abort,H,[#","|H1],A)}},
+        {{ptry_list1(&penv,&op,&atom,&tm,&qtd,999,&pr1,normal,&pt1,
+                    &p,&abort,H1,T,Cdr,~(L-1))}}.    % ','
+otherwise.
+ptry_list1(H,T,[A|X],_) --> true |
+        {{portray(&penv,&op,&atom,&tm,&qtd,999,_,normal,_,&p,&abort,H,[#"|"|H1],A)}},
+        {{portray(&penv,&op,&atom,&tm,&qtd,999,&pr1,normal,&pt1,&p,&abort,H1,T,X)}}.    % '|'
+
+ptry_vect(H,T,_,_) --> &penv(0)=0 |
+        &pr=1200,&pt=quotedAtom,
+        H=[putb(" & ")|T].
+ptry_vect(H,T,Term,N) --> &penv={D,L,SL,AL,PIR},D>0,0<L,L<N |
+        H=[#"{"|H1],
+        T0=[putb(", ... }")|T],
+        &pr1=1200,&pt1=normal,                  % '}'
+        &penv <= {~(D-1),L,SL,AL,PIR},
+        {{ptry_vect_args(&penv,&op,&atom,&tm,&qtd,999,_,normal,_,
+                    &p,&abort,H1,T0,Term,0,~(L-1))}}.       % '{'
+ptry_vect(H,T,Term,N) --> &penv={D,L,SL,AL,PIR},D>0,N=<L |
+        H=[#"{"|H1],
+        &pr1=1200,&pt1=normal,                  % '}'
+        &penv <= {~(D-1),L,SL,AL,PIR},
+        {{ptry_vect_args(&penv,&op,&atom,&tm,&qtd,999,_,normal,_,
+                    &p,&abort,H1,[#"}"|T],Term,0,~(N-1))}}. % '{'
+ptry_vect(H,T,_,_) --> &penv={D,L,_,_,_},D>0,L=0 |
+        &pr1=1200,&pt1=normal,                  % '}'
+        H=[putb("{ ... }")|T].
+
+ptry_vect_args(H,T,Term,I,N) --> I<N |
+        {{set_vector_element(Term,I,E,0,Term1)}},
+        {{portray(&penv,&op,&atom,&tm,&qtd,&pr,_,&pt,_,&p,&abort,H,[#","|H1],E)}},
+        {{ptry_vect_args(&penv,&op,&atom,&tm,&qtd,999,&pr1,normal,&pt1,
+                    &p,&abort,H1,T,Term1,~(I+1),N)}}.       % ','
+ptry_vect_args(H,T,Term,N,N) --> true |
+        {{set_vector_element(Term,N,E,0,_)}},
+        portray(H,T,E).
+

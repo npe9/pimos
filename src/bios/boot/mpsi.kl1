@@ -1,0 +1,136 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>SCSI_TEST>mpsi.kl1.4, 27-Feb-92 15:27:22, Edit by yashiro
+:- module mpsi.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public go/8, dummy/2, get_dummy_code/1, message/1.
+
+version(Version) :- true |  Version = string#"V2.3".
+message(Message) :- true | builtin#append_string([string#"* BIOS/MPSI ",Version," *"],Message),
+                version(Version).
+
+go(Atoms,Modules,Comments,N,FEP1,FEP2,FEP3,FEP4) :-
+    true |
+        mpsifep:fep_manager(GR,N,FEP1,FEP2,FEP3,FEP4),
+        predicate_to_code(module#pim,go,4,FEP_TOP),
+        shoen:execute(FEP_TOP,{string#"",Atoms,Modules,Comments},0,4050,-1,[start|Control],Report),
+        merge({GR1,GR2},GR),
+        scsi_fep_monitor(Report,Control,GR1,Shut),
+        wait_shut(Shut,GR2).
+
+scsi_fep_monitor([terminated|R],C,FEP,Shut):-
+    true|
+%        C = [statistics],
+        C = [],
+        scsi_fep_monitor(R,_,FEP,Shut).
+scsi_fep_monitor([started|R],C,FEP,Shut):-
+    true|
+        scsi_fep_monitor(R,C,FEP,Shut).
+scsi_fep_monitor([aborted|R],C,FEP,Shut):-
+    display_console(ascii#"PIMOS PROCESSES WERE ABORTED")|
+        C = [],
+        scsi_fep_monitor(R,_,FEP,Shut).
+scsi_fep_monitor([resource_low|R],C,FEP,Shut):-
+    true|
+        C = [add_resource(16#"3FFFFFFF",16#"FFFFFFFF"),allow_resource_report|CN],
+        scsi_fep_monitor(R,CN,FEP,Shut).
+scsi_fep_monitor([resource_added|R],C,FEP,Shut):-
+    true|
+        scsi_fep_monitor(R,C,FEP,Shut).
+scsi_fep_monitor([return_resource(_,_)|R],C,FEP,Shut):-
+    true|
+        scsi_fep_monitor(R,C,FEP,Shut).
+scsi_fep_monitor([resource_report_allowed|R],C,FEP,Shut):-
+    true|
+        scsi_fep_monitor(R,C,FEP,Shut).
+scsi_fep_monitor([statistics_started|R],C,FEP,Shut):-
+    true|
+        scsi_fep_monitor(R,C,FEP,Shut).
+scsi_fep_monitor([statistics(ResH,ResL)|R],C,FEP,Shut):-
+    display_console(ascii#"Statistics in Multi-PSI TOP:"),
+    display_console(ResH),
+    display_console(ResL)|
+        scsi_fep_monitor(R,C,FEP,Shut).
+scsi_fep_monitor([exception(Type,Info,NewCode,NewArgv)|R],C,FEP,Shut):-
+    Type \= raised,
+    display_console(ascii#"EXCEPTION WAS OCCURRED in Multi-PSI TOP : error code:"),
+    display_console(Type),
+    display_console(Info) |
+        get_dummy_code(NewCode),
+        NewArgv = {{Type,Info},FEP},
+        scsi_fep_monitor(R,C,FEP,Shut).
+scsi_fep_monitor([exception(Type,Info,NewCode,NewArgv)|R],C,FEP,Shut):-
+    Type = raised |
+        get_dummy_code(NewCode),
+        NewArgv = {{Type,Info},Shut},
+        FEP = {FEP1,FEP2},
+        raised_handler(Info,FEP1),
+        scsi_fep_monitor(R,C,FEP2,Shut).
+scsi_fep_monitor([],C,FEP,Shut):-
+    display_console(ascii#"SCSI-FEP END********")|
+        Shut = shut,
+        FEP = [],
+        C = [].
+otherwise.
+scsi_fep_monitor([R|Rest],C,FEP,Shut):-
+    display_console(R)|
+        scsi_fep_monitor(Rest,C,FEP,Shut).
+
+wait_shut(Shut,FEP) :-
+    wait(Shut) |
+        FEP = [].
+
+:-switch(virtual_machine_interface).
+:-case(yes).
+raised_handler({_,Info,Data},FEP) :-
+    Info = get_std_out |
+        FEP = [],
+        shoen:raise(pimos_tag#shell, get_std_out, STDOUT),
+        Data = STDOUT.
+:-end_switch.
+raised_handler({_,general_request(Node),Data},FEP) :-
+    integer(Node) |
+        FEP = [general_request(Node,GR)],
+        GR = Data.
+raised_handler({_,general_request,Data},FEP) :-
+    true|
+        FEP = [general_request(0,GR)],
+        GR = Data.
+raised_handler({_,'$PIMOS$'(Kind,Message),Data},FEP) :-
+    true |
+        error_kind(Kind,KindS),
+        jis_to_ascii:convert(Message,AscMessage),
+        builtin#append_string([ascii#"'$PIMOS'",KindS,ascii#" ",AscMessage],MoreInfo),
+        display_error(MoreInfo,Data),
+        FEP = [].
+otherwise.
+raised_handler({_,Info,_},FEP) :-
+    display_console(ascii#"illegal message to mpsifep"),
+    display_console(Info) |
+        FEP = [].
+
+dummy(A,B):- true | true.
+get_dummy_code(Code):- true|
+    predicate_to_code(module#mpsi,dummy,2,Code).
+
+
+error_kind(invalid_protocol_to_SCSI_STRING_IO,KindS) :-
+    true |
+        KindS = ascii#"invalid_protocol_to_SCSI_STRING_IO".
+error_kind(scsi_io_error,Kinds) :-
+    true |
+        KindS = ascii#"scsi_io_error".
+otherwise.
+error_kind(_,KindS) :-
+    true |
+        KindS = ascii#"unknown".
+
+display_error(Message,Info) :-
+    display_console(Message),
+    display_console(Info ) |
+        true .

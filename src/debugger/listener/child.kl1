@@ -1,0 +1,84 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_child_tracer.
+:- public create/18, invoker/15, main/15.
+:- with_macro pimos.
+
+% Create New Tracer
+create(TrID,Msg,Rpt,GM,MM,Mon,VP,ENV,
+        Macro,Tracing,Spying,Pos,Size,Font,Abort,Ctr,GStr,Start) :- true |
+    Tag=pimos_tag#task,
+    position(Pos,Pos1), size(Size,Size1), font(Font,Font1),
+    buffer_utility:integer_to_string(TrID,10,Str),
+    builtin#append_string([" ",Str,": CHILD LISTENER  (",GStr,")"],Title),
+    predicate_to_code(module#listener_child_tracer,invoker,15,Cde),
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[execute(Cde,{TrID,Msg,Rpt,GM,MM,Mon,VP,ENV,Macro,Tracing,Spying,Abort,Ctr,GStr,Start},
+                   [stdio(STDIO,Status),
+                    name(string#"TracerInvoker"),
+                    prio(0,4000),
+                    tag(Tag),
+                    resource(0,16#"FFFFFFFF")],
+                        TskStatus)],
+    STDIO=[{in_out_inter,DEV}],
+    DEV={window_request,{Title,Pos1,Size1,Font1},OutInfo},
+    listener_invoker:invoker_mon(OutInfo,Status,TskStatus).
+
+position(normal(at(X,Y)),Pos) :- X>=0, Y>=0| Pos = at(X,Y).
+otherwise.
+position(_,              Pos) :- true| Pos = mouse.
+
+size(normal(char(W,H)),Size) :- W>0, H>0| Size = char(W,H).
+size(normal(mouse),    Size) :- true    | Size = mouse.
+otherwise.
+size(_,                Size) :- true    | Size = char(50,14).
+
+font(normal(Path),Font) :- string(Path,_,_) | Font=Path.
+otherwise.
+font(_,           Font) :- true             | Font= "" .
+
+invoker(TrID,Msg,Rpt,GM,MM,Mon,VP,ENV,
+  Macro,Tracing,Spying,Abort,Ctr,GStr,Start) :- true|
+    Tag := pimos_tag#task\/pimos_tag#shell,
+    predicate_to_code(module#listener_child_tracer,main,15,Cde),
+    buffer_utility:integer_to_string(TrID,10,Str),
+    builtin#append_string([string#"Tracer_",Str],Name),
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[execute(Cde,{TrID,Msg,Rpt,GM,MM,Mon,VP,ENV,Macro,Tracing,Spying,Abort,Ctr,GStr,Start},
+           [name(Name),
+            prio(0,4000),
+            tag(Tag),
+            resource(0,16#"FFFFFFFF")],
+                TskStatus)],
+    shoen:raise(pimos_tag#task,get_std(io),IO),
+    merge(IO1,IO),
+    listener_invoker:listener_mon(TskStatus,IO1).
+
+main(TrID,Msg,Rpt,GM,MM,Mon,VP,ENV,Macro,Tracing,Spying,Abort,Ctr,GStr,Start) :- true|
+    merge(LIS,IO),
+    merge(SW1,SW),
+    shoen:raise(pimos_tag#task,get_std(io),IO),
+    shoen:raise(pimos_tag#task,get_std(switch),[detach(Detach)|SW]),
+    macro(Macro,Macro1),
+    listener_rsc_manager:create(child(ENV),TrID,Macro1,ATM,Package,RSC),
+    listener_buffer:interaction_filter(ATM,VP,IN,LIS,Package),
+    listener_io_switch:create(CTR,IN),
+    set_debug(Tracing,trace,RSC,RSC1),
+    set_debug(Spying,spy,RSC1,RSC2),
+    listener_task_manager:
+        create_with_tracer(Detach,CTR,[Msg|Rpt],Ctr,SW1,RSC2,GM,MM,Mon,Abort,GStr,Start).
+
+macro(normal(Mac),      Macro) :- true| Macro=Mac.
+macro(abnormal,         Macro) :- true| Macro=0.
+% 92.7.2
+macro(abnormal(_Reason),Macro) :- true| Macro=0.
+
+set_debug([Spy|Spied],Mode,RSC,RSC2) :- true|
+    RSC=[spy({Mode,Spy})|RSC1],
+    set_debug(Spied,Mode,RSC1,RSC2).
+set_debug([],         _,   RSC,RSC1) :- true| RSC1=RSC.

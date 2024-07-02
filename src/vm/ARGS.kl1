@@ -1,0 +1,320 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%---------%
+% history %
+%---------%
+%-----------%
+% version 1 %
+%-----------%
+%--------------------------------------------------------------------------------------------------------%
+% This module checks the arguments of the predicates and message protocols in physical_volume_simulator. %
+%--------------------------------------------------------------------------------------------------------%
+
+%-----------%
+% version 2 %
+%-----------%
+% 1. The module name is renamed from pv_args to dks_arguments.
+% 2. pvs/9 is changed to create/7.
+% 3. write/5 is changed to write/6.
+% 4. set_errors/5 is renamed to set_contents/6.
+
+:- module dks_arguments.
+
+:- public   create/7,
+            read/6,
+            write/6,
+            set_contents/6.
+
+:- with_macro pimos.
+
+%==========%
+% create/7 %
+%==========%
+create(BlockSize, CylinderSize, DiskSize, Contents, NewContents, TotalBlocks, ErrorList):-
+    true |
+        block_size(BlockSize, ErrorList, ErrorList2),
+        cylinder_size(CylinderSize, ApprovedCylinderSize, ErrorList2, ErrorList3),
+        disk_size(DiskSize, ApprovedDiskSize, ErrorList3, ErrorList4),
+        total_blocks(ApprovedCylinderSize, ApprovedDiskSize, TotalBlocks),
+        contents(Contents, TotalBlocks, NewContents, ErrorList4, []).
+
+%--------------%
+% block_size/3 %
+%--------------%
+block_size(Size, ErrorList, ErrorTail):-
+    integer(Size),
+    Size >= 1 |
+        ErrorList = ErrorTail.
+otherwise.
+block_size(Size, ErrorList, ErrorTail):-
+    true |
+        ErrorList = [illegal_parameter(block_size(Size))|ErrorTail].
+
+%-----------------%
+% cylinder_size/4 %
+%-----------------%
+cylinder_size(Size, ApprovedSize, ErrorList, ErrorTail):-
+    integer(Size),
+    Size >= 1 |
+        ApprovedSize = Size,
+        ErrorList = ErrorTail.
+otherwise.
+cylinder_size(Size, Disapproval, ErrorList, ErrorTail):-
+    true |
+        Disapproval = 0,
+        ErrorList = [illegal_parameter(cylinder_size(Size))|ErrorTail].
+
+%-------------%
+% disk_size/4 %
+%-------------%
+disk_size(Size, ApprovedSize, ErrorList, ErrorTail):-
+    integer(Size),
+    Size >= 1 |
+        ApprovedSize = Size,
+        ErrorList = ErrorTail.
+otherwise.
+disk_size(Size, Disapproval, ErrorList, ErrorTail):-
+    true |
+        Disapproval = 0,
+        ErrorList = [illegal_parameter(disk_size(Size))|ErrorTail].
+
+%----------------%
+% total_blocks/3 %
+%----------------%
+total_blocks(CylinderSize, DiskSize, TotalBlocks):-
+    true |
+        TotalBlocks := CylinderSize * DiskSize.
+
+%------------%
+% contents/5 %
+%------------%
+contents([], _, NewContents, ErrorList, ErrorTail):-
+    true |
+        NewContents = [],
+        ErrorList = ErrorTail.
+contents(Contents, 0, NewContents, ErrorList, ErrorTail):-
+    vector(Contents, _) |
+        NewContents = Contents,
+        ErrorList = ErrorTail.
+contents(Contents, TotalBlocks, NewContents, ErrorList, ErrorTail):-
+    TotalBlocks =\= 0,
+    vector(Contents, TotalBlocks) |
+        NewContents = Contents,
+        ErrorList = ErrorTail.
+otherwise.
+contents(Contents, _, NewContents, ErrorList, ErrorTail):-
+    true |
+        NewContents = Contents,
+        ErrorList = [illegal_parameter(contents(Contents))|ErrorTail].
+
+
+%========%
+% read/6 %
+%========%
+read(Block, Size, Buffer, {BlockSize, _, _, TotalBlocks}, ApprovedBuffer, ErrorList):-
+    true |
+        io_domain(Block, Size, TotalBlocks, ApprovedBlock, ApprovedSize, ErrorList, ErrorList1),
+        byte_size(ApprovedBlock, ApprovedSize, BlockSize, ByteSize),
+        buffer(Buffer, ByteSize, ApprovedBuffer, ErrorList1, []).
+
+%-------------%
+% io_domain/5 %
+%-------------%
+io_domain(Block, Size, TotalBlocks, ErrorList, ErrorTail):-
+    true |
+        io_position(Block, TotalBlocks, ApprovedBlock, ErrorList, ErrorList1),
+        io_amount(Size, ProvisionalSize, ErrorList1, ErrorList2),
+        range(ApprovedBlock, ProvisionalSize, TotalBlocks, _, ErrorList2, ErrorTail).
+
+%---------------%
+% io_position/5 %
+%---------------%
+io_position(Block, TotalBlocks, ApprovedBlock, ErrorList, ErrorTail):-
+    integer(Block),
+    Block >= 0,
+    Block < TotalBlocks |
+        ApprovedBlock = Block,
+        ErrorList = ErrorTail.
+otherwise.
+io_position(Block, _, ApprovedBlock, ErrorList, ErrorTail):-
+    true |
+        ApprovedBlock = [],
+        ErrorList = [illegal_parameter(block(Block))|ErrorTail].
+
+%-------------%
+% io_amount/4 %
+%-------------%
+io_amount(Size, ProvisionalSize, ErrorList, ErrorTail):-
+    integer(Size),
+    Size >= 1 |
+        ProvisionalSize = Size,
+        ErrorList = ErrorTail.
+otherwise.
+io_amount(Size, ProvisionalSize, ErrorList, ErrorTail):-
+    true |
+        ProvisionalSize = [],
+        ErrorList = [illegal_parameter(size(Size))|ErrorTail].
+
+%---------%
+% range/6 %
+%---------%
+range([], _, _, ApprovedSize, ErrorList, ErrorTail):-
+    true |
+        ApprovedSize = [],
+        ErrorList = ErrorTail.
+range(_, [], _, ApprovedSize, ErrorList, ErrorTail):-
+    true |
+        ApprovedSize = [],
+        ErrorList = ErrorTail.
+otherwise.
+range(Block, Size, TotalBlocks, ApprovedSize, ErrorList, ErrorTail):-
+    End := Block + Size |
+    range1(End, TotalBlocks, Size, ApprovedSize, ErrorList, ErrorTail).
+
+%----------%
+% range1/6 %
+%----------%
+range1(End, TotalBlocks, Size, ApprovedSize, ErrorList, ErrorTail):-
+    End =< TotalBlocks |
+        ApprovedSize = Size,
+        ErrorList = ErrorTail.
+otherwise.
+range1(_, _, Size, ApprovedSize, ErrorList, ErrorTail):-
+    true |
+        ApprovedSize = [],
+        ErrorList = [illegal_parameter(size(Size))|ErrorTail].
+
+%----------%
+% buffer/5 %
+%----------%
+buffer(_, 0, ApprovedBuffer, ErrorList, Tail):-
+    true |
+        ApprovedBuffer = [],
+        ErrorList = Tail.
+buffer(Buffer, ByteSize, ApprovedBuffer, ErrorList, Tail):-
+    ByteSize =\= 0,
+    string(Buffer, BufferSize, 8),
+    BufferSize >= ByteSize |
+        ApprovedBuffer = Buffer,
+        ErrorList = Tail.
+otherwise.
+buffer(Buffer, _, ApprovedBuffer, ErrorList, Tail):-
+    true |
+        ApprovedBuffer = [],
+        ErrorList = [illegal_parameter(buffer(Buffer))|Tail].
+
+%=========%
+% write/6 %
+%=========%
+write(Block, Size, Buffer, {BlockSize, _, _, TotalBlocks}, ApprovedBuffer, ErrorList):-
+    true |
+        io_domain(Block, Size, TotalBlocks, ApprovedBlock, ApprovedSize, ErrorList, ErrorList1),
+        byte_size(ApprovedBlock, ApprovedSize, BlockSize, ByteSize),
+        buffer(Buffer, ByteSize, ApprovedBuffer, ErrorList1, []).
+
+%-------------%
+% io_domain/7 %
+%-------------%
+io_domain(Block, Size, TotalBlocks, ApprovedBlock, ApprovedSize, ErrorList, ErrorTail):-
+    true |
+        io_position(Block, TotalBlocks, ApprovedBlock, ErrorList, ErrorList1),
+        io_amount(Size, ProvisionalSize, ErrorList1, ErrorList2),
+        range(ApprovedBlock, ProvisionalSize, TotalBlocks, ApprovedSize, ErrorList2, ErrorTail).
+
+%-------------%
+% byte_size/4 %
+%-------------%
+byte_size([], _, _, ByteSize):-
+    true |
+        ByteSize = 0.
+byte_size(_, [], _, ByteSize):-
+    true |
+        ByteSize = 0.
+otherwise.
+byte_size(_, Size, BlockSize, ByteSize):-
+    true |
+        ByteSize := Size * BlockSize.
+
+%--------%
+% data/5 %
+%--------%
+%data(_, 0, ApprovedData, ErrorList, ErrorTail):-
+%    true |
+%        ApprovedData = [],
+%        ErrorList = ErrorTail.
+%data(Data, ByteSize, ApprovedData, ErrorList, ErrorTail):-
+%    ByteSize =\= 0,
+%    string(Data, DataSize, 8) |
+%        data1(Data, DataSize, ByteSize, ApprovedData, ErrorList, ErrorTail).
+%        ErrorList = ErrorTail.
+%otherwise.
+%data(Data, _, ApprovedData, ErrorList, ErrorTail):-
+%    true |
+%        ApprovedData = [],
+%        ErrorList = [illegal_parameter(data(Data))|ErrorTail].
+
+%---------%
+% data1/6 %
+%---------%
+%data1(Data, DataSize, RightSize, ApprovedData, ErrorList, Tail):-
+%    DataSize >= RightSize |
+%        ApprovedData = Data,
+%        ErrorList = Tail.
+%data1(Data, DataSize, RightSize, ApprovedData, ErrorList, Tail):-
+%    DataSize > RightSize |
+%        builtin#substring(Data, 0, RightSize, ApprovedData, _),
+%        Data = ApprovedData,
+%        ErrorList = Tail.
+%data1(Data, DataSize, RightSize, ApprovedData, ErrorList, Tail):-
+%    DataSize < RightSize |
+%        ApprovedData = [],
+%        ErrorList = [illegal_parameter(buffer(Data))|Tail].
+%        new_string(CurrentData, RightSize, 8),
+%        builtin#set_substring(CurrentData, 0, Data, ApprovedData).
+
+%================%
+% set_contents/6 %
+%================%
+set_contents(Block, Size, Condition, {BlockSize, _, _, TotalBlocks}, ApprovedCondition, ErrorList):-
+    true |
+        io_domain(Block, Size, TotalBlocks, ErrorList, ErrorList1),
+        condition(Condition, BlockSize, ApprovedCondition, ErrorList1, []).
+
+%-------------%
+% condition/5 %
+%-------------%
+condition(Condition, BlockSize, ApprovedCondition, ErrorList, ErrorTail):-
+    string(Condition, ConditionSize, 8) |
+        data2(Condition, ConditionSize, BlockSize, ApprovedCondition),
+        ErrorList = ErrorTail.
+condition(Condition, _, ApprovedCondition, ErrorList, ErrorTail):-
+    integer(Condition) |
+        ApprovedCondition = Condition,
+        ErrorList = ErrorTail.
+condition(Condition, _, ApprovedCondition, ErrorList, ErrorTail):-
+    atom(Condition) |
+        ApprovedCondition = Condition,
+        ErrorList = ErrorTail.
+otherwise.
+condition(Condition, _, ApprovedCondition, ErrorList, ErrorTail):-
+    true |
+        ApprovedCondition = [],
+        ErrorList = [illegal_parameter(condition(Condition))|ErrorTail].
+
+%---------%
+% data2/4 %
+%---------%
+data2(Data, DataSize, RightSize, ApprovedData):-
+    DataSize =:= RightSize |
+        ApprovedData = Data.
+data2(Data, DataSize, RightSize, ApprovedData):-
+    DataSize > RightSize |
+        builtin#substring(Data, 0, RightSize, ApprovedData, _).
+data2(Data, DataSize, RightSize, ApprovedData):-
+    DataSize < RightSize |
+        new_string(CurrentData, RightSize, 8),
+        builtin#set_substring(CurrentData, 0, Data, ApprovedData).

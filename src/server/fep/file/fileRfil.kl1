@@ -1,0 +1,1192 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ :- module filereq_filter .
+ :- public filereq_filter /2 .
+:- with_macro pimos.
+
+filereq_filter(User,OS) :-true|
+        filereq_filter(User,OS,_,[]) .
+filereq_filter(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$1'(_1,__1,Flag,[file_request]),
+        '-attention'(_3,__3,Flag,[file_request]) .
+filereq_filter(User,abnormal,_,Error) :-true|
+        User =abnormal .
+filereq_filter(User,aborted,_,Error) :-true|
+        User =aborted .
+filereq_filter(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+normal$$$stream$1'([User|U2],OS,_,Error) :-true|
+        '+filereq_command'(User,OS1,Flag,[file_request]),
+        '+normal$$$stream$1$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$1'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$1$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$1'(U2,OS2,_,Error) .
+'+normal$$$stream$1$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'-attention'(User,attention,_,Error) :-true|
+        User =attention .
+'-attention'(User,[],_,Error) :-true|
+        User =[] .
+'+filereq_command'(open(_1,_2),OS,_,Error) :-true|
+        '+filereq_command$wait'(open(__1,__2),OS,Flag,Error),
+        '+pathname'(_1,__1,Flag,[pathname,'open /2'|Error]),
+        '+open$$$enu$1'(_2,__2,Flag,[file_mode,'open /2'|Error]) .
+'+filereq_command'(directory(_1,_2),OS,_,Error) :-true|
+        '+filereq_command$wait'(directory(__1,_2),OS,Flag,Error),
+        '+pathname'(_1,__1,Flag,[pathname,'directory /2'|Error]) .
+'+filereq_command'(make_directory(_1,_2),OS,_,Error) :-true|
+        '+filereq_command$wait'(make_directory(__1,_2),OS,Flag,Error),
+        '+pathname'(_1,__1,Flag,[pathname,'make_directory /2'|Error]) .
+'+filereq_command'(current_directory(_1),OS,_,Error) :-true|
+        current_directory(__1) =OS,
+        '-current_directory$$$enu$1'(_1,__1,Flag,['current_directory /1'|Error]) .
+'+filereq_command'(set_current_directory(_1,_2),OS,_,Error) :-true|
+        '+filereq_command$wait'(set_current_directory(__1,_2),OS,Flag,Error),
+        '+set_current_directory$string$1'(_1,__1,Flag,[pathname,'set_current_directory /2'|Error]) .
+otherwise .
+'+filereq_command'(User,OS,Flag,Error) :-true|
+        '+aa_command'(User,OS,Flag,Error) .
+'+filereq_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+filereq_command$wait'(open(__1,__2),OS,_,Error) :-wait(__1),wait(__2)|
+        open(__1,__2) =OS .
+'+filereq_command$wait'(directory(__1,_2),OS,_,Error) :-wait(__1)|
+        directory(__1,__2) =OS,
+        '-directory$$$enu$1'(_2,__2,Flag,[directory]) .
+'+filereq_command$wait'(make_directory(__1,_2),OS,_,Error) :-wait(__1)|
+        make_directory(__1,__2) =OS,
+        '-make_directory$$$enu$1'(_2,__2,Flag,[directory]) .
+'+filereq_command$wait'(set_current_directory(__1,_2),OS,_,Error) :-wait(__1)|
+        set_current_directory(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['set_current_directory /2'|Error]) .
+'+set_current_directory$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+set_current_directory$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+open$$$enu$1'(read(_1),OS,_,Error) :-true|
+        read(__1) =OS,
+        '-read$$$enu$1'(_1,__1,Flag,[read_file_text]) .
+'+open$$$enu$1'(read_text(_1),OS,_,Error) :-true|
+        read_text(__1) =OS,
+        '-read_text$$$enu$1'(_1,__1,Flag,[read_file_text]) .
+'+open$$$enu$1'(write_text(_1),OS,_,Error) :-true|
+        write_text(__1) =OS,
+        '-write_text$$$enu$1'(_1,__1,Flag,[write_file_text]) .
+'+open$$$enu$1'(append_text(_1),OS,_,Error) :-true|
+        append_text(__1) =OS,
+        '-append_text$$$enu$1'(_1,__1,Flag,[append_file_text]) .
+'+open$$$enu$1'(read_binary(_1),OS,_,Error) :-true|
+        read_binary(__1) =OS,
+        '-read_binary$$$enu$1'(_1,__1,Flag,[read_file_binary]) .
+'+open$$$enu$1'(write_binary(_1),OS,_,Error) :-true|
+        write_binary(__1) =OS,
+        '-write_binary$$$enu$1'(_1,__1,Flag,[write_file_binary]) .
+'+open$$$enu$1'(append_binary(_1),OS,_,Error) :-true|
+        append_binary(__1) =OS,
+        '-append_binary$$$enu$1'(_1,__1,Flag,[append_file_binary]) .
+'+open$$$enu$1'(write(_1),OS,_,Error) :-true|
+        write(__1) =OS,
+        '-write$$$enu$1'(_1,__1,Flag,[write_file_text]) .
+'+open$$$enu$1'(append(_1),OS,_,Error) :-true|
+        append(__1) =OS,
+        '-append$$$enu$1'(_1,__1,Flag,[append_file_text]) .
+otherwise .
+'+open$$$enu$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+pathname'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+pathname'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-directory$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$2'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-directory$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-directory$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-directory$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-make_directory$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$3'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-make_directory$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-make_directory$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-make_directory$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-current_directory$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$1'(_1,__1,Flag,Error) .
+'-current_directory$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-current_directory$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-current_directory$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-read$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$4'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-read$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-read$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-read$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-read_text$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$5'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-read_text$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-read_text$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-read_text$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-write_text$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$6'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-write_text$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-write_text$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-write_text$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-append_text$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$7'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-append_text$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-append_text$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-append_text$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-read_binary$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$8'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-read_binary$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-read_binary$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-read_binary$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-write_binary$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$9'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-write_binary$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-write_binary$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-write_binary$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-append_binary$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$10'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-append_binary$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-append_binary$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-append_binary$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-write$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$11'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-write$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-write$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-write$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-append$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$12'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-append$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-append$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-append$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+normal$$$stream$2'([User|U2],OS,_,Error) :-true|
+        '+dir_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$2$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$2'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$2$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$2'(U2,OS2,_,Error) .
+'+normal$$$stream$2$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'-normal$string$1'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-status'(User,normal,_,Error) :-true|
+        User =normal .
+'-status'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-status'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-status'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+aa_command'(reset(_1),OS,_,Error) :-true|
+        reset(__1) =OS,
+        '-reset$$$enu$1'(_1,__1,Flag,['reset /1'|Error]) .
+'+aa_command'(next_attention(_1),OS,_,Error) :-true|
+        next_attention(__1) =OS,
+        '-next_attention$$$enu$1'(_1,__1,Flag,['next_attention /1'|Error]) .
+'+aa_command'(resend(_1,_2),OS,_,Error) :-true|
+        '+aa_command$wait'(resend(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'resend /2'|Error]) .
+'+aa_command'(cancel(_1,_2),OS,_,Error) :-true|
+        '+aa_command$wait'(cancel(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'cancel /2'|Error]) .
+otherwise .
+'+aa_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+aa_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+aa_command$wait'(resend(__1,_2),OS,_,Error) :-wait(__1)|
+        resend(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['resend /2'|Error]) .
+'+aa_command$wait'(cancel(__1,_2),OS,_,Error) :-wait(__1)|
+        cancel(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['cancel /2'|Error]) .
+'+normal$$$stream$3'([User|U2],OS,_,Error) :-true|
+        '+dir_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$3$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$3'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$3$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$3'(U2,OS2,_,Error) .
+'+normal$$$stream$3$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'-reset$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(__1,_2,_3),
+        '-attention'(_2,__2,Flag,[attention|Error]),
+        '-msgid'(_3,__3,Flag,[msgid|Error]) .
+'-reset$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-reset$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-reset$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-next_attention$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-attention'(_1,__1,Flag,Error) .
+'-next_attention$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-next_attention$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-next_attention$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+normal$$$stream$4'([User|U2],OS,_,Error) :-true|
+        '+rfile_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$4$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$4'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$4'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$4$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$4'(U2,OS2,_,Error) .
+'+normal$$$stream$4$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$5'([User|U2],OS,_,Error) :-true|
+        '+rfile_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$5$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$5'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$5'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$5$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$5'(U2,OS2,_,Error) .
+'+normal$$$stream$5$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$6'([User|U2],OS,_,Error) :-true|
+        '+wfile_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$6$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$6'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$6'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$6$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$6'(U2,OS2,_,Error) .
+'+normal$$$stream$6$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$7'([User|U2],OS,_,Error) :-true|
+        '+wfile_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$7$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$7'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$7'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$7$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$7'(U2,OS2,_,Error) .
+'+normal$$$stream$7$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$8'([User|U2],OS,_,Error) :-true|
+        '+rfile_command_bin'(User,OS1,Flag,Error),
+        '+normal$$$stream$8$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$8'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$8'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$8$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$8'(U2,OS2,_,Error) .
+'+normal$$$stream$8$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$9'([User|U2],OS,_,Error) :-true|
+        '+wfile_command_bin'(User,OS1,Flag,Error),
+        '+normal$$$stream$9$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$9'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$9'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$9$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$9'(U2,OS2,_,Error) .
+'+normal$$$stream$9$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$10'([User|U2],OS,_,Error) :-true|
+        '+wfile_command_bin'(User,OS1,Flag,Error),
+        '+normal$$$stream$10$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$10'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$10'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$10$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$10'(U2,OS2,_,Error) .
+'+normal$$$stream$10$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$11'([User|U2],OS,_,Error) :-true|
+        '+wfile_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$11$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$11'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$11'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$11$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$11'(U2,OS2,_,Error) .
+'+normal$$$stream$11$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$12'([User|U2],OS,_,Error) :-true|
+        '+wfile_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$12$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$12'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$12'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$12$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$12'(U2,OS2,_,Error) .
+'+normal$$$stream$12$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+dir_command'(pathname(_1),OS,_,Error) :-true|
+        pathname(__1) =OS,
+        '-pathname$$$enu$1'(_1,__1,Flag,['pathname /1'|Error]) .
+'+dir_command'(listing(_1,_2),OS,_,Error) :-true|
+        '+dir_command$wait'(listing(__1,_2),OS,Flag,Error),
+        '+wildcard'(_1,__1,Flag,[wildcard,'listing /2'|Error]) .
+'+dir_command'(delete(_1,_2),OS,_,Error) :-true|
+        '+dir_command$wait'(delete(__1,_2),OS,Flag,Error),
+        '+wildcard'(_1,__1,Flag,[wildcard,'delete /2'|Error]) .
+'+dir_command'(undelete(_1,_2),OS,_,Error) :-true|
+        '+dir_command$wait'(undelete(__1,_2),OS,Flag,Error),
+        '+wildcard'(_1,__1,Flag,[wildcard,'undelete /2'|Error]) .
+'+dir_command'(kill(_1,_2),OS,_,Error) :-true|
+        '+dir_command$wait'(kill(__1,_2),OS,Flag,Error),
+        '+wildcard'(_1,__1,Flag,[wildcard,'kill /2'|Error]) .
+'+dir_command'(deleted(_1,_2),OS,_,Error) :-true|
+        '+dir_command$wait'(deleted(__1,_2),OS,Flag,Error),
+        '+wildcard'(_1,__1,Flag,[wildcard,'deleted /2'|Error]) .
+'+dir_command'(purge(_1,_2),OS,_,Error) :-true|
+        '+dir_command$wait'(purge(__1,_2),OS,Flag,Error),
+        '+wildcard'(_1,__1,Flag,[wildcard,'purge /2'|Error]) .
+'+dir_command'(expunge(_1),OS,_,Error) :-true|
+        expunge(__1) =OS,
+        '-status'(_1,__1,Flag,['expunge /1'|Error]) .
+otherwise .
+'+dir_command'(User,OS,Flag,Error) :-true|
+        '+aa_command'(User,OS,Flag,Error) .
+'+dir_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+dir_command$wait'(listing(__1,_2),OS,_,Error) :-wait(__1)|
+        listing(__1,__2) =OS,
+        '-listing$$$enu$1'(_2,__2,Flag,['listing /2'|Error]) .
+'+dir_command$wait'(delete(__1,_2),OS,_,Error) :-wait(__1)|
+        delete(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['delete /2'|Error]) .
+'+dir_command$wait'(undelete(__1,_2),OS,_,Error) :-wait(__1)|
+        undelete(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['undelete /2'|Error]) .
+'+dir_command$wait'(kill(__1,_2),OS,_,Error) :-wait(__1)|
+        kill(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['kill /2'|Error]) .
+'+dir_command$wait'(deleted(__1,_2),OS,_,Error) :-wait(__1)|
+        deleted(__1,__2) =OS,
+        '-deleted$$$enu$1'(_2,__2,Flag,['deleted /2'|Error]) .
+'+dir_command$wait'(purge(__1,_2),OS,_,Error) :-wait(__1)|
+        purge(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['purge /2'|Error]) .
+'+msgid'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+msgid'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+rfile_command'(end_of_file(_1),OS,_,Error) :-true|
+        end_of_file(__1) =OS,
+        '-end_of_file$$$enu$1'(_1,__1,Flag,['end_of_file /1'|Error]) .
+'+rfile_command'(flush(_1),OS,_,Error) :-true|
+        flush(__1) =OS,
+        '-status'(_1,__1,Flag,['flush /1'|Error]) .
+'+rfile_command'(pathname(_1),OS,_,Error) :-true|
+        pathname(__1) =OS,
+        '-pathname$$$enu$2'(_1,__1,Flag,['pathname /1'|Error]) .
+'+rfile_command'(attributes(_1),OS,_,Error) :-true|
+        attributes(__1) =OS,
+        '-file_attributes'(_1,__1,Flag,['attributes /1'|Error]) .
+'+rfile_command'(getb(_1,_2),OS,_,Error) :-true|
+        '+rfile_command$wait'(getb(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb /2'|Error]) .
+'+rfile_command'(ungetb(_1,_2),OS,_,Error) :-true|
+        '+rfile_command$wait'(ungetb(__1,_2),OS,Flag,Error),
+        '+ungetb$string$1'(_1,__1,Flag,[ungetb,'ungetb /2'|Error]) .
+'+rfile_command'(prompt(_1,_2),OS,_,Error) :-true|
+        '+rfile_command$wait'(prompt(__1,_2),OS,Flag,Error),
+        '+prompt$string$1'(_1,__1,Flag,[prompt,'prompt /2'|Error]) .
+'+rfile_command'(getb_noecho(_1,_2),OS,_,Error) :-true|
+        '+rfile_command$wait'(getb_noecho(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb_noecho /2'|Error]) .
+'+rfile_command'(get_attributes(_1),OS,_,Error) :-true|
+        get_attributes(__1) =OS,
+        '-get_attributes$$$enu$1'(_1,__1,Flag,['get_attributes /1'|Error]) .
+otherwise .
+'+rfile_command'(User,OS,Flag,Error) :-true|
+        '+aa_command'(User,OS,Flag,Error) .
+'+rfile_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+rfile_command$wait'(getb(__1,_2),OS,_,Error) :-wait(__1)|
+        getb(__1,__2) =OS,
+        '-getb$$$enu$1'(_2,__2,Flag,['getb /2'|Error]) .
+'+rfile_command$wait'(ungetb(__1,_2),OS,_,Error) :-wait(__1)|
+        ungetb(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['ungetb /2'|Error]) .
+'+rfile_command$wait'(prompt(__1,_2),OS,_,Error) :-wait(__1)|
+        prompt(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['prompt /2'|Error]) .
+'+rfile_command$wait'(getb_noecho(__1,_2),OS,_,Error) :-wait(__1)|
+        getb_noecho(__1,__2) =OS,
+        '-getb_noecho$$$enu$1'(_2,__2,Flag,['getb_noecho /2'|Error]) .
+'-pathname$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-pathname'(_1,__1,Flag,Error) .
+'-pathname$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-pathname$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-pathname$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-listing$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$$$list$1'(_1,__1,Flag,Error) .
+'-listing$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-listing$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-listing$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-deleted$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$$$list$2'(_1,__1,Flag,Error) .
+'-deleted$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-deleted$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-deleted$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-end_of_file$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-eof'(_1,__1,Flag,Error) .
+'-end_of_file$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-end_of_file$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-end_of_file$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+ungetb$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+ungetb$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+prompt$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+prompt$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+wfile_command'(putb(_1,_2),OS,_,Error) :-true|
+        '+wfile_command$wait'(putb(__1,_2),OS,Flag,Error),
+        '+putb$string$1'(_1,__1,Flag,[put_data,'putb /2'|Error]) .
+'+wfile_command'(flush(_1),OS,_,Error) :-true|
+        flush(__1) =OS,
+        '-status'(_1,__1,Flag,['flush /1'|Error]) .
+'+wfile_command'(pathname(_1),OS,_,Error) :-true|
+        pathname(__1) =OS,
+        '-pathname$$$enu$3'(_1,__1,Flag,['pathname /1'|Error]) .
+'+wfile_command'(attributes(_1),OS,_,Error) :-true|
+        attributes(__1) =OS,
+        '-file_attributes'(_1,__1,Flag,['attributes /1'|Error]) .
+'+wfile_command'(reset(_1),OS,_,Error) :-true|
+        reset(__1) =OS,
+        '-reset$$$enu$2'(_1,__1,Flag,['reset /1'|Error]) .
+'+wfile_command'(next_attention(_1),OS,_,Error) :-true|
+        next_attention(__1) =OS,
+        '-next_attention$$$enu$2'(_1,__1,Flag,['next_attention /1'|Error]) .
+'+wfile_command'(resend(_1,_2),OS,_,Error) :-true|
+        '+wfile_command$wait'(resend(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'resend /2'|Error]) .
+'+wfile_command'(cancel(_1,_2),OS,_,Error) :-true|
+        '+wfile_command$wait'(cancel(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'cancel /2'|Error]) .
+otherwise .
+'+wfile_command'(User,OS,Flag,Error) :-true|
+        '+common_command'(User,OS,Flag,Error) .
+'+wfile_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+wfile_command$wait'(putb(__1,_2),OS,_,Error) :-wait(__1)|
+        putb(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['putb /2'|Error]) .
+'+wfile_command$wait'(resend(__1,_2),OS,_,Error) :-wait(__1)|
+        resend(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['resend /2'|Error]) .
+'+wfile_command$wait'(cancel(__1,_2),OS,_,Error) :-wait(__1)|
+        cancel(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['cancel /2'|Error]) .
+'+putb$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+putb$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+rfile_command_bin'(end_of_file(_1),OS,_,Error) :-true|
+        end_of_file(__1) =OS,
+        '-end_of_file$$$enu$2'(_1,__1,Flag,['end_of_file /1'|Error]) .
+'+rfile_command_bin'(flush(_1),OS,_,Error) :-true|
+        flush(__1) =OS,
+        '-status'(_1,__1,Flag,['flush /1'|Error]) .
+'+rfile_command_bin'(pathname(_1),OS,_,Error) :-true|
+        pathname(__1) =OS,
+        '-pathname$$$enu$4'(_1,__1,Flag,['pathname /1'|Error]) .
+'+rfile_command_bin'(attributes(_1),OS,_,Error) :-true|
+        attributes(__1) =OS,
+        '-file_attributes'(_1,__1,Flag,['attributes /1'|Error]) .
+'+rfile_command_bin'(getb(_1,_2),OS,_,Error) :-true|
+        '+rfile_command_bin$wait'(getb(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb /2'|Error]) .
+'+rfile_command_bin'(ungetb(_1,_2),OS,_,Error) :-true|
+        '+rfile_command_bin$wait'(ungetb(__1,_2),OS,Flag,Error),
+        '+ungetb$string$2'(_1,__1,Flag,[ungetb,'ungetb /2'|Error]) .
+'+rfile_command_bin'(prompt(_1,_2),OS,_,Error) :-true|
+        '+rfile_command_bin$wait'(prompt(__1,_2),OS,Flag,Error),
+        '+prompt$string$2'(_1,__1,Flag,[prompt,'prompt /2'|Error]) .
+'+rfile_command_bin'(getb_noecho(_1,_2),OS,_,Error) :-true|
+        '+rfile_command_bin$wait'(getb_noecho(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb_noecho /2'|Error]) .
+'+rfile_command_bin'(reset(_1),OS,_,Error) :-true|
+        reset(__1) =OS,
+        '-reset$$$enu$3'(_1,__1,Flag,['reset /1'|Error]) .
+'+rfile_command_bin'(next_attention(_1),OS,_,Error) :-true|
+        next_attention(__1) =OS,
+        '-next_attention$$$enu$3'(_1,__1,Flag,['next_attention /1'|Error]) .
+'+rfile_command_bin'(resend(_1,_2),OS,_,Error) :-true|
+        '+rfile_command_bin$wait'(resend(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'resend /2'|Error]) .
+'+rfile_command_bin'(cancel(_1,_2),OS,_,Error) :-true|
+        '+rfile_command_bin$wait'(cancel(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'cancel /2'|Error]) .
+'+rfile_command_bin'(get_attributes(_1),OS,_,Error) :-true|
+        get_attributes(__1) =OS,
+        '-get_attributes$$$enu$3'(_1,__1,Flag,['get_attributes /1'|Error]) .
+otherwise .
+'+rfile_command_bin'(User,OS,Flag,Error) :-true|
+        '+read'(User,OS,Flag,Error) .
+'+rfile_command_bin$wait'(User,OS,fail,Error) :-true|
+        true .
+'+rfile_command_bin$wait'(getb(__1,_2),OS,_,Error) :-wait(__1)|
+        getb(__1,__2) =OS,
+        '-getb$$$enu$2'(_2,__2,Flag,['getb /2'|Error]) .
+'+rfile_command_bin$wait'(ungetb(__1,_2),OS,_,Error) :-wait(__1)|
+        ungetb(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['ungetb /2'|Error]) .
+'+rfile_command_bin$wait'(prompt(__1,_2),OS,_,Error) :-wait(__1)|
+        prompt(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['prompt /2'|Error]) .
+'+rfile_command_bin$wait'(getb_noecho(__1,_2),OS,_,Error) :-wait(__1)|
+        getb_noecho(__1,__2) =OS,
+        '-getb_noecho$$$enu$2'(_2,__2,Flag,['getb_noecho /2'|Error]) .
+'+rfile_command_bin$wait'(resend(__1,_2),OS,_,Error) :-wait(__1)|
+        resend(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['resend /2'|Error]) .
+'+rfile_command_bin$wait'(cancel(__1,_2),OS,_,Error) :-wait(__1)|
+        cancel(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['cancel /2'|Error]) .
+'+wfile_command_bin'(putb(_1,_2),OS,_,Error) :-true|
+        '+wfile_command_bin$wait'(putb(__1,_2),OS,Flag,Error),
+        '+putb$string$2'(_1,__1,Flag,[put_data,'putb /2'|Error]) .
+'+wfile_command_bin'(flush(_1),OS,_,Error) :-true|
+        flush(__1) =OS,
+        '-status'(_1,__1,Flag,['flush /1'|Error]) .
+'+wfile_command_bin'(pathname(_1),OS,_,Error) :-true|
+        pathname(__1) =OS,
+        '-pathname$$$enu$5'(_1,__1,Flag,['pathname /1'|Error]) .
+'+wfile_command_bin'(attributes(_1),OS,_,Error) :-true|
+        attributes(__1) =OS,
+        '-file_attributes'(_1,__1,Flag,['attributes /1'|Error]) .
+'+wfile_command_bin'(reset(_1),OS,_,Error) :-true|
+        reset(__1) =OS,
+        '-reset$$$enu$4'(_1,__1,Flag,['reset /1'|Error]) .
+'+wfile_command_bin'(next_attention(_1),OS,_,Error) :-true|
+        next_attention(__1) =OS,
+        '-next_attention$$$enu$4'(_1,__1,Flag,['next_attention /1'|Error]) .
+'+wfile_command_bin'(resend(_1,_2),OS,_,Error) :-true|
+        '+wfile_command_bin$wait'(resend(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'resend /2'|Error]) .
+'+wfile_command_bin'(cancel(_1,_2),OS,_,Error) :-true|
+        '+wfile_command_bin$wait'(cancel(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'cancel /2'|Error]) .
+'+wfile_command_bin'(get_attributes(_1),OS,_,Error) :-true|
+        get_attributes(__1) =OS,
+        '-get_attributes$$$enu$4'(_1,__1,Flag,['get_attributes /1'|Error]) .
+otherwise .
+'+wfile_command_bin'(User,OS,Flag,Error) :-true|
+        '+write'(User,OS,Flag,Error) .
+'+wfile_command_bin$wait'(User,OS,fail,Error) :-true|
+        true .
+'+wfile_command_bin$wait'(putb(__1,_2),OS,_,Error) :-wait(__1)|
+        putb(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['putb /2'|Error]) .
+'+wfile_command_bin$wait'(resend(__1,_2),OS,_,Error) :-wait(__1)|
+        resend(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['resend /2'|Error]) .
+'+wfile_command_bin$wait'(cancel(__1,_2),OS,_,Error) :-wait(__1)|
+        cancel(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['cancel /2'|Error]) .
+'+putb$string$2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+putb$string$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+wildcard'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+wildcard'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-msgid'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-pathname$$$enu$2'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-pathname'(_1,__1,Flag,Error) .
+'-pathname$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-pathname$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-pathname$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-file_attributes'(User,normal(__1,__2,__3,__4,__5,__6,__7,__8,__9),_,Error) :-true|
+        User =normal(_1,_2,_3,_4,_5,_6,_7,_8,_9),
+        '-owner'(_1,__1,Flag,Error),
+        '-updateuser'(_2,__2,Flag,Error),
+        '-cdate'(_3,__3,Flag,Error),
+        '-ctime'(_4,__4,Flag,Error),
+        '-mdate'(_5,__5,Flag,Error),
+        '-mtime'(_6,__6,Flag,Error),
+        '-linkcnt'(_7,__7,Flag,Error),
+        '-fsize'(_8,__8,Flag,Error),
+        '-rsize'(_9,__9,Flag,Error) .
+'-file_attributes'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-file_attributes'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-file_attributes'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+blocksize'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+blocksize'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-getb$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$2'(_1,__1,Flag,Error) .
+'-getb$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb$$$enu$1'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$2'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-getb_noecho$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$3'(_1,__1,Flag,Error) .
+'-getb_noecho$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb_noecho$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb_noecho$$$enu$1'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb_noecho$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$3'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-get_attributes$$$enu$1'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-device_type'(_1,__1,Flag,[device_type|Error]),
+        '-normal$$$list$3'(_2,__2,Flag,Error) .
+'-get_attributes$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-get_attributes$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-get_attributes$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+common_command'(get_attributes(_1),OS,_,Error) :-true|
+        get_attributes(__1) =OS,
+        '-get_attributes$$$enu$2'(_1,__1,Flag,['get_attributes /1'|Error]) .
+otherwise .
+'+common_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-end_of_file$$$enu$2'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-eof'(_1,__1,Flag,Error) .
+'-end_of_file$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-end_of_file$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-end_of_file$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+ungetb$string$2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+ungetb$string$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+prompt$string$2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+prompt$string$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+read'(read(_1,_2),OS,_,Error) :-true|
+        '+read$wait'(read(__1,_2),OS,Flag,Error),
+        '+bytesize'(_1,__1,Flag,[bytesize,'read /2'|Error]) .
+otherwise .
+'+read'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+read$wait'(User,OS,fail,Error) :-true|
+        true .
+'+read$wait'(read(__1,_2),OS,_,Error) :-wait(__1)|
+        read(__1,__2) =OS,
+        '-read$$$enu$2'(_2,__2,Flag,['read /2'|Error]) .
+'+write'(write(_1,_2),OS,_,Error) :-true|
+        '+write$wait'(write(__1,_2),OS,Flag,Error),
+        '+write$string$1'(_1,__1,Flag,[write_data,'write /2'|Error]) .
+otherwise .
+'+write'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write$wait'(User,OS,fail,Error) :-true|
+        true .
+'+write$wait'(write(__1,_2),OS,_,Error) :-wait(__1)|
+        write(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['write /2'|Error]) .
+'+write$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+write$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-pathname'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-normal$$$list$1'(User,[OS|OS2],Flag,Error) :-true|
+        '-filename'(User1,OS,Flag,Error),
+        '-normal$$$list$1$wait'(User,OS2,User1,Flag,Error) .
+'-normal$$$list$1'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$1$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$1'(User2,OS2,Flag,Error) .
+'-normal$$$list$2'(User,[OS|OS2],Flag,Error) :-true|
+        '-filename'(User1,OS,Flag,Error),
+        '-normal$$$list$2$wait'(User,OS2,User1,Flag,Error) .
+'-normal$$$list$2'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$2$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$2'(User2,OS2,Flag,Error) .
+'-eof'(User,yes,_,Error) :-true|
+        User =yes .
+'-eof'(User,no,_,Error) :-true|
+        User =no .
+'-owner'(User,{__1,__2},_,Error) :-true|
+        User ={_1,_2},
+        '-owner$string$1'(_1,__1,Flag,Error),
+        '-owner$string$2'(_2,__2,Flag,Error) .
+'-owner'(User,OS,_,Error) :-string(OS,_,_)|
+        User =OS .
+'-updateuser'(User,[],_,Error) :-true|
+        User =[] .
+'-updateuser'(User,OS,_,Error) :-string(OS,_,_)|
+        User =OS .
+'-cdate'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-ctime'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-mdate'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-mtime'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-linkcnt'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-fsize'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-rsize'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-device_type'(User,OS,_,Error) :-atom(OS)|
+        OS =User .
+'-normal$$$list$3'(User,[OS|OS2],Flag,Error) :-true|
+        '-device_attribute'(User1,OS,Flag,[device_attribute|Error]),
+        '-normal$$$list$3$wait'(User,OS2,User1,Flag,[device_attribute|Error]) .
+'-normal$$$list$3'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$3$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$3'(User2,OS2,Flag,Error) .
+'-pathname$$$enu$3'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-pathname'(_1,__1,Flag,Error) .
+'-pathname$$$enu$3'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-pathname$$$enu$3'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-pathname$$$enu$3'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-reset$$$enu$2'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(__1,_2,_3),
+        '-attention'(_2,__2,Flag,[attention|Error]),
+        '-msgid'(_3,__3,Flag,[msgid|Error]) .
+'-reset$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-reset$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-reset$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-next_attention$$$enu$2'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-attention'(_1,__1,Flag,Error) .
+'-next_attention$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-next_attention$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-next_attention$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-get_attributes$$$enu$2'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-device_type'(_1,__1,Flag,[device_type|Error]),
+        '-normal$$$list$4'(_2,__2,Flag,Error) .
+'-get_attributes$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-get_attributes$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-get_attributes$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-pathname$$$enu$4'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-pathname'(_1,__1,Flag,Error) .
+'-pathname$$$enu$4'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-pathname$$$enu$4'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-pathname$$$enu$4'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-getb$$$enu$2'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$4'(_1,__1,Flag,Error) .
+'-getb$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb$$$enu$2'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$4'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-getb_noecho$$$enu$2'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$5'(_1,__1,Flag,Error) .
+'-getb_noecho$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb_noecho$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb_noecho$$$enu$2'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb_noecho$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$5'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-reset$$$enu$3'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(__1,_2,_3),
+        '-attention'(_2,__2,Flag,[attention|Error]),
+        '-msgid'(_3,__3,Flag,[msgid|Error]) .
+'-reset$$$enu$3'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-reset$$$enu$3'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-reset$$$enu$3'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-next_attention$$$enu$3'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-attention'(_1,__1,Flag,Error) .
+'-next_attention$$$enu$3'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-next_attention$$$enu$3'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-next_attention$$$enu$3'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-get_attributes$$$enu$3'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-device_type'(_1,__1,Flag,[device_type|Error]),
+        '-normal$$$list$5'(_2,__2,Flag,Error) .
+'-get_attributes$$$enu$3'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-get_attributes$$$enu$3'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-get_attributes$$$enu$3'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+bytesize'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+bytesize'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-read$$$enu$2'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$6'(_1,__1,Flag,Error) .
+'-read$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-read$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-read$$$enu$2'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-read$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$6'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-pathname$$$enu$5'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-pathname'(_1,__1,Flag,Error) .
+'-pathname$$$enu$5'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-pathname$$$enu$5'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-pathname$$$enu$5'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-reset$$$enu$4'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(__1,_2,_3),
+        '-attention'(_2,__2,Flag,[attention|Error]),
+        '-msgid'(_3,__3,Flag,[msgid|Error]) .
+'-reset$$$enu$4'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-reset$$$enu$4'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-reset$$$enu$4'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-next_attention$$$enu$4'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-attention'(_1,__1,Flag,Error) .
+'-next_attention$$$enu$4'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-next_attention$$$enu$4'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-next_attention$$$enu$4'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-get_attributes$$$enu$4'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-device_type'(_1,__1,Flag,[device_type|Error]),
+        '-normal$$$list$6'(_2,__2,Flag,Error) .
+'-get_attributes$$$enu$4'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-get_attributes$$$enu$4'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-get_attributes$$$enu$4'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-filename'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-owner$string$1'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-owner$string$2'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-device_attribute'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'-normal$$$list$4'(User,[OS|OS2],Flag,Error) :-true|
+        '-device_attribute'(User1,OS,Flag,[device_attribute|Error]),
+        '-normal$$$list$4$wait'(User,OS2,User1,Flag,[device_attribute|Error]) .
+'-normal$$$list$4'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$4$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$4'(User2,OS2,Flag,Error) .
+'-normal$$$list$5'(User,[OS|OS2],Flag,Error) :-true|
+        '-device_attribute'(User1,OS,Flag,[device_attribute|Error]),
+        '-normal$$$list$5$wait'(User,OS2,User1,Flag,[device_attribute|Error]) .
+'-normal$$$list$5'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$5$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$5'(User2,OS2,Flag,Error) .
+'-normal$$$list$6'(User,[OS|OS2],Flag,Error) :-true|
+        '-device_attribute'(User1,OS,Flag,[device_attribute|Error]),
+        '-normal$$$list$6$wait'(User,OS2,User1,Flag,[device_attribute|Error]) .
+'-normal$$$list$6'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$6$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$6'(User2,OS2,Flag,Error) .
+%%%%% system defined protocols %%%%%%%%%%
+'+ground'(X, Y) :- list(X) | '$$groundl'(X, Y).
+'+ground'(X, Y) :- vector(X,Size),Size \= 0 | 
+        '$$groundv'(X, 0, Size, X2),
+        '$$groundv2'(X2, Y).
+otherwise.
+'+ground'(X, Y) :- wait(X) | Y = X.
+'-ground'(X, Y) :- list(Y) | '$$groundl'(Y, X).
+'-ground'(X, Y) :- vector(Y,Size), Size \= 0 | 
+        '$$groundv'(Y, 0, Size, Y2),
+        '$$groundv2'(Y2, X).
+otherwise.
+'-ground'(X, Y) :- wait(Y) | Y = X.
+'$$groundl'([X1|X2], Y) :- true | '+ground'(X1,X11),
+        '$$groundl2'(X11, X2, Y).
+'$$groundl'([], Y) :- true | Y = [].
+'$$groundl2'(X11, X2, Y) :- wait(X11) |
+        '$$groundl31'(X2, [X11|Tail], Tail, Y).
+'$$groundl31'([X1|X2], Top, Tail, Y) :- true |
+        '+ground'(X1,X11),
+        '$$groundl32'(X11, X2, Top, Tail, Y).
+'$$groundl31'([], Top, Tail, Y) :- true |
+        Tail = [],
+        Top = Y.
+'$$groundl32'(X11, X2, Top, Tail, Y) :- wait(X11), X2 \= [] |
+        Tail = [X11|Tail2],
+        '$$groundl31'(X2, Top, Tail2, Y).
+'$$groundl32'(X11, [], Top, Tail, Y) :- wait(X11) |
+        Tail = [X11],
+        Y = Top.
+'$$groundv2'(X2, Y) :- wait(X2) | X2 = Y.
+'$$groundv'(X, Pos, Size, X2) :- Pos \= Size |
+        vector_element(X, Pos, Elm, NX),
+        '+ground'(Elm,Elm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Elm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Pos, Size, X2) :- wait(Elm), Pos \= Size |
+        vector_element(X, Pos, Nelm, NX),
+        '+ground'(Nelm, Nelm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Nelm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Size, Size, X2) :- wait(Elm) |
+        X = X2. 
+%%%%% to raise error %%%%%%%%%%
+raise_error(Info,Msg):- true |
+        atom_table:cache_table(Atom),
+        formatInfo(Info,[],Fstring,Atom),
+        shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_message_to_PIMOS,Fstring),Msg).
+formatInfo([Infoatom | Info], StringList,Fstring,Atom):- 
+        atom(Infoatom) |
+        Atom = [get_atom_name(Infoatom,normal(InfoString)) | Atail],
+        NSlist = [InfoString | StringList],
+        formatInfo(Info, NSlist, Fstring, Atail).
+formatInfo([], Slist, Fstring, Atom):- true |
+        Atom = [],
+        new_string(New,1,16),
+        set_string_element(New,0,key#lf,NL),
+        format(1,Slist,StringList,NL),
+        builtin#append_string([""|StringList], Fstring).
+format(1,[Info|Tail],StringList,NL):- true |
+        StringList = ["Device : ",Info |Stail2],
+        format(2,Tail,Stail2,NL).
+format(2,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,"Message : ",Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(3,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(_,[],StringList,_):- true |
+        StringList = [].

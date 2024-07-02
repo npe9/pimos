@@ -1,0 +1,466 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+
+:- with_macro pimos.
+
+:- switch(user_defined_macro).
+:- case(yes).
+:- module pimos_util_mac_exp_sorter.
+:- end_switch.
+
+:- public sort/8,key_sort/8,
+    sort_db/5,key_sort_db/5,
+    merge/8,key_merge/8,
+    merge_db/5,key_merge_db/5.
+
+:- local_implicit stream:oldnew,clause:oldnew,ppool:stream.
+
+sort(L,L1,NFg) --> true | sort(L,L1,NFg,data).
+key_sort(L,L1,NFg) --> true | sort(L,L1,NFg,key).
+
+sort_db --> true | sort_db(data).
+key_sort_db --> true | sort_db(key).
+
+sort(L,L1,NFg,Key) --> true |
+        sort0,
+        qsort(Key),
+        merge_each(Key),
+        define_part(L,L1,Key),
+        part_last,
+        wait_pt(NFg,Key).
+
+sort_db(Key) --> true |
+        sort0,
+        qsort(Key),
+        merge_each(Key),
+        define_db_part(Key),
+        part_last,
+        wait_pt(nil,Key).
+
+merge(L,L1,NFg) --> true |
+        merge0,
+        define_mg(L,L1),
+        wait_mg(NFg).
+
+key_merge(L,L1,NFg) --> true |
+        key_merge0,
+        define_kmg(L,L1),
+        wait_kmg(NFg).
+
+merge_db --> true |
+        merge0,
+        define_db_mg,
+        wait_mg(nil).
+
+key_merge_db --> true |
+        key_merge0,
+        define_db_kmg,
+        wait_kmg(nil).
+
+
+sort0 --> true |
+        &clause <<= [C,C1,C2,C3,C4,C5,C6,C7,C8],
+        C=wrap#({Sort,In,Out} :- true |
+                            merge(In,In1),
+                            {Cut_sort,In1,Ins,50},
+                            {Into_one,Ins,Out}),
+        C1=wrap#({Cut_sort,[X|In],Ins,N} :- true |
+                            Ins=[R1|Ins1],
+                            {Cut,In,Ins1,N,1,R},
+                            {Qsort,[X|R],R1,[]}),
+        C2=wrap#({Cut_sort,[],Ins,Void} :- true | Ins=[]),
+        C3=wrap#({Cut,In,Ins,N,I,R} :- N>I,In=[X|In1] |
+                            R=[X|R1],
+                            {Cut,In1,Ins,N,~(I+1),R1}),
+        C4=wrap#({Cut,In,Ins,N,I,R} :- N>I,In=[] | Ins=[],R=[]),
+        C5=wrap#({Cut,In,Ins,N,N,R} :- true |
+                            R=[],
+                            {Cut_sort,In,Ins,N}),
+        C6=wrap#({Into_one,Ins,Out} :- Ins=[In,In1|Void] |
+                            {Merge_each,Ins,Outs},
+                            {Into_one,Outs,Out}),
+        C7=wrap#({Into_one,[In],Out} :- true | Out=In),
+        C8=wrap#({Into_one,[],Out} :- true | Out=[]),
+        &ppool <<= [atom('',Sort),atom(cut_sort,Cut_sort),atom(into_one,Into_one),
+            atom(cut,Cut),atom(qsort,Qsort),atom(merge_each,Merge_each)],
+        &stream <<= [new_variable(In),new_variable(In1),
+            new_variable(Ins),new_variable(Ins1),
+            new_variable(Outs),
+            new_variable(Out),
+            new_variable(X),
+            new_variable(R),new_variable(R1),
+            new_variable(N),new_variable(I),
+            new_variable(Void)].
+
+merge_each(Key) --> true |
+        (Key=data -> Util=merge ;
+         Key=key -> Util=key_merge),
+        &clause <<= [C,C1,C2],
+        C=wrap#({Merge_each,[In,In1|Ins],Outs} :- true |
+                            Outs=[Out|Outs1],
+                            {Merge,In,In1,Out},
+                            {Merge_each,Ins,Outs1}),
+        C1=wrap#({Merge_each,[In],Outs} :- true | Outs=[In]),
+        C2=wrap#({Merge_each,[],Outs} :- true | Outs=[]),
+        &ppool <<= [atom(merge_each,Merge_each),atom_util_call(Util,Merge)],
+        &stream <<= [new_variable(In),new_variable(In1),new_variable(Ins),
+            new_variable(Out),new_variable(Outs),new_variable(Outs1)].
+
+qsort(Key) --> true |
+        &clause <<= [C,C1],
+        C=wrap#({Qsort,[Data|In],Out,Out2} :- true |
+%                            Out=[Data1|Out0],
+                            {Part,In,X,X1,S,L},
+%                            {Qsort,S,Out0,Out1},
+                            {Qsort,S,Out,[Data1|Out1]},
+                            {Qsort,L,Out1,Out2}),
+        C1=wrap#({Qsort,[],Out,Out1} :- true | Out=Out1),
+        &ppool <<= [atom(qsort,Qsort),atom(part,Part)],
+        &stream <<= [new_variable(In),
+            new_variable(X),new_variable(X1),new_variable(S),new_variable(L),
+            new_variable(Out),new_variable(Out0),new_variable(Out1),
+            new_variable(Out2)],
+        (Key=data ->
+            Data=X,Data1=X1 ;
+         Key=key ->
+            Data=wrap#({X,D}),Data1=wrap#({X1,D}),
+            &clause <<= [C2,C3],
+            C2=wrap#otherwise,
+            C3=wrap#({Qsort,[X|Void],Out,Out1} :- true |
+                            Out=Out1,
+                            error(Sort,"Illegal_data_protocol",X)),
+            &ppool <<= [atom('',Sort)],
+            &stream <<= [new_variable(D),new_variable(Void)]).
+
+define_part([Def|L],L1,Key) --> true |
+        L1=[Def|L2],
+        part(Def,Key),
+        define_part(L,L2,Key).
+define_part([],L,_) --> true | L=[].
+
+part({X,A,Sml,Lag,YorN,Guard,Body,NFg},Key) --> true |
+        (Key=data ->
+            Data=X,Key1=data ;
+         Key=key ->
+            Data=wrap#({X,D}),Key1=key(D),
+            &stream <<= [new_variable(D)]),
+        &clause <<= [C],
+        C=wrap#({Part,[Data|In],A,A1,S,L} :- Guard | Body1),
+        &ppool <<= [atom(part,Part)],
+        &stream <<= [new_variable(In),new_variable(A1),
+            new_variable(S),new_variable(L)],
+        Var={In,A1,S,L},
+        part_body(Body,Body1,Sml,Lag,YorN,NFg,Var,Key1).
+part(Clause,_) --> (Clause=wrap#(otherwise) ; Clause=wrap#(alternatively)) |
+        &clause <<= [Clause].
+
+part_body(wrap#({',',G,Next}),Body,Sml,Lag,YorN,NFg,Var,Key) --> true |
+        Body=wrap#({',',G,Next1}),
+        part_body(Next,Next1,Sml,Lag,YorN,NFg,Var,Key).
+otherwise.
+part_body(Goal,Body,Sml,Lag,_,no,Var,Key) -->
+    Var={In,A1,S,L} |
+        Body=wrap#({',',Goal,Next}),
+        Next=wrap#({',',G1,G2}),
+        G1=wrap#(S=[Data|S1]),
+        G2=wrap#({Part,In,Lag,A1,S1,L}),
+        &ppool <<= [atom(part,Part)],
+        &stream <<= [new_variable(S1)],
+        (Key=data ->
+            Data=Sml ;
+         Key=key(D) ->
+            Data=wrap#({Sml,D})).
+part_body(Goal,Body,Sml,Lag,_,yes,Var,Key) -->
+    Var={In,A1,S,L} |
+        Body=wrap#({',',Goal,Next}),
+        Next=wrap#({',',G1,G2}),
+        G1=wrap#(L=[Data|L1]),
+        G2=wrap#({Part,In,Sml,A1,S,L1}),
+        &ppool <<= [atom(part,Part)],
+        &stream <<= [new_variable(L1)],
+        (Key=data ->
+            Data=Lag ;
+         Key=key(D) ->
+            Data=wrap#({Lag,D})).
+part_body(Goal,Body,Sml,Lag,YorN,nil,Var,Key) -->
+    Var={In,A1,S,L} |
+        Body=wrap#({',',Goal,G1}),
+        G1=wrap#({Wait_pt,In,Lag,A1,S,L,Data,YorN}),
+        &ppool <<= [atom(wait_pt,Wait_pt)],
+        (Key=data ->
+            Data=Sml ;
+         Key=key(D) ->
+            Data=wrap#({Sml,D})).
+
+part_last --> true |
+        &clause <<= [C],
+        C=wrap#({Part,[],A,A1,S,L} :- true |
+                            A=A1,S=[],L=[]),
+        &ppool <<= [atom(part,Part)],
+        &stream <<= [new_variable(A),new_variable(A1),new_variable(S),new_variable(L)].
+
+wait_pt(no,_) --> true | true.
+wait_pt(nil,Key) --> true |
+        &clause <<= [C,C1,C2,C3],
+        C=wrap#({Wait_pt,In,A,A1,S,L,X,no} :- true |
+                        S=[X|S1],
+                        {Part,In,A,A1,S1,L}),
+        C1=wrap#({Wait_pt,In,XX,A1,S,L,AData,yes} :- true |
+                        L=[XData|L1],
+                        {Part,In,AA,A1,S,L1}),
+        C2=wrap#otherwise,
+        C3=wrap#({Wait_pt,Void,Void1,Void2,S,L,Void3,YorN} :- true |
+                        S=[],L=[],
+                        error(Sort,"Illegal_swapped_information",YorN)),
+        &ppool <<= [atom(wait_pt,Wait_pt),atom(part,Part),
+            atom('',Sort)],
+        &stream <<= [new_variable(In),new_variable(A),new_variable(A1),
+            new_variable(S),new_variable(L),
+            new_variable(X),new_variable(S1),new_variable(L1),
+            new_variable(YorN),
+            new_variable(Void),new_variable(Void1),new_variable(Void2),new_variable(Void3)],
+        (Key=data ->
+            XX=X,AData=A,XData=X,AA=A ;
+         Key=key ->
+            AData=wrap#({AA,D}),XData=wrap#({XX,D}),
+            &stream <<= [new_variable(D),new_variable(AA),new_variable(XX)]).
+
+define_db_part(Key) --> true |
+        &clause <<= [C],
+        C=wrap#({Part,[Data|In],A,A1,S,L} :- true |
+                        {Comparator,X,A,Sml,Lag,YorN},
+                        {Wait_pt,In,Lag,A1,S,L,Data1,YorN}),
+        &ppool <<= [atom(part,Part),atom(comparator,Comparator),
+            atom(wait_pt,Wait_pt)],
+        &stream <<= [new_variable(X),new_variable(In),new_variable(A),new_variable(A1),
+            new_variable(S),new_variable(L),
+            new_variable(Sml),new_variable(Lag),new_variable(YorN)],
+        (Key=data ->
+            Data=X,Data1=Sml ;
+         Key=key ->
+            Data=wrap#({X,D}),Data1=wrap#({Sml,D}),
+            &stream <<= [new_variable(D)]).
+
+
+merge0 --> true |
+        &clause <<= [C,C1,C2],
+        C=wrap#({Merge,[X|Xs],[Y|Ys],Out} :- true |
+                            {Merge,Xs,Ys,Out,X,Y}),
+        C1=wrap#({Merge,[],Ys,Out} :- true | Ys=Out),
+        C2=wrap#({Merge,Xs,[],Out} :- true | Xs=Out),
+        &ppool <<= [atom('',Merge)],
+        &stream <<= [new_variable(X),new_variable(Xs),new_variable(Y),new_variable(Ys),
+            new_variable(Out)].
+
+key_merge0 --> true |
+        &clause <<= [C,C1,C2,C3,C4,C5,C6,C7],
+        C=wrap#({Merge,[{K,D}|Xs],[{L,E}|Ys],Out} :- true |
+                            {Merge,Xs,Ys,Out,K,L,{Void,D},{Void1,E}}),
+        C1=wrap#({Merge,[],Ys,Out} :- true | Ys=Out),
+        C2=wrap#({Merge,Xs,[],Out} :- true | Xs=Out),
+        C3=wrap#otherwise,
+        C4=wrap#({Merge,[X|Xs],[Y|Ys],Out} :- true |
+                            Out=[],
+                            {If_error,X},
+                            {If_error,Y}),
+        C5=wrap#({If_error,{K,D}} :- true | true),
+        C6=wrap#otherwise,
+        C7=wrap#({If_error,X} :- true |
+                            error(Merge,"Illegal_data_protocol",X)),
+        &ppool <<= [atom('',Merge),atom(if_error,If_error)],
+        &stream <<= [new_variable(K),new_variable(D),
+            new_variable(L),new_variable(E),
+            new_variable(X),new_variable(Y),
+            new_variable(Xs),new_variable(Ys),
+            new_variable(Out),
+            new_variable(Void),new_variable(Void1)].
+
+define_mg([Def|L],L1) --> true |
+        L1=[Def|L2],
+        mg(Def),
+        define_mg(L,L2).
+define_mg([],L) --> true | L=[].
+
+mg({X0,Y0,Sml,Lag,_,Guard,Body,no}) --> true |
+        &clause <<= [C,C1],
+        C=wrap#({Merge,Xs,Ys,Out,X,Y} :- X=X0,Y=Y0,NGuard | NBody),
+        {{pimos_util_util:append_goal(Guard,NGuard,wrap#(Xs=[X1|Xs1]))}},
+        {{pimos_util_util:append_goal(Body,NBody,wrap#(Out=[Sml|Out1],
+                                       {Merge,Xs1,Ys,Out1,X1,Lag}))}},
+        C1=wrap#({Merge,Xs,Ys,Out,X,Y} :- X=X0,Y=Y0,NGuard1 | NBody1),
+        {{pimos_util_util:append_goal(Guard,NGuard1,wrap#(Xs=[]))}},
+        {{pimos_util_util:append_goal(Body,NBody1,wrap#(Out=[X,Y|Ys]))}},
+        &ppool <<= [atom('',Merge)],
+        &stream <<= [new_variable(Xs),new_variable(Xs1),new_variable(Ys),
+            new_variable(X),new_variable(X1),new_variable(Y),
+            new_variable(Out),new_variable(Out1)].
+
+mg({X0,Y0,Sml,Lag,_,Guard,Body,yes}) --> true |
+        &clause <<= [C,C1],
+        C=wrap#({Merge,Xs,Ys,Out,X,Y} :- X=X0,Y=Y0,NGuard | NBody),
+        {{pimos_util_util:append_goal(Guard,NGuard,wrap#(Ys=[Y1|Ys1]))}},
+        {{pimos_util_util:append_goal(Body,NBody,wrap#(Out=[Sml|Out1],
+                                       {Merge,Xs,Ys1,Out1,Lag,Y1}))}},
+        C1=wrap#({Merge,Xs,Ys,Out,X,Y} :- X=X0,Y=Y0,NGuard1 | NBody1),
+        {{pimos_util_util:append_goal(Guard,NGuard1,wrap#(Ys=[]))}},
+        {{pimos_util_util:append_goal(Body,NBody1,wrap#(Out=[Y,X|Xs]))}},
+        &ppool <<= [atom('',Merge)],
+        &stream <<= [new_variable(Xs),new_variable(Ys),new_variable(Ys1),
+            new_variable(X),new_variable(Y),new_variable(Y1),
+            new_variable(Out),new_variable(Out1)].
+
+mg({X0,Y0,Sml,Lag,YorN,Guard,Body,nil}) --> true |
+        &clause <<= [C],
+        C=wrap#({Merge,Xs,Ys,Out,X,Y} :- X=X0,Y=Y0,Guard | Body1),
+        &ppool <<= [atom('',Merge),atom(wait_mg,Wait_mg)],
+        &stream <<= [new_variable(Xs),new_variable(Ys),
+            new_variable(X),new_variable(Y),new_variable(Out)],
+        {{pimos_util_util:append_goal(Body,Body1,wrap#({Wait_mg,Xs,Ys,Out,Sml,Lag,YorN}))}}.
+
+mg(Clause) --> (Clause=wrap#(otherwise) ; Clause=wrap#(alternatively)) |
+        &clause <<= [Clause].
+
+define_kmg([Def|L],L1) --> true |
+        L1=[Def|L2],
+        kmg(Def),
+        define_kmg(L,L2).
+define_kmg([],L) --> true | L=[].
+
+kmg({K0,L0,Sml,Lag,_,Guard,Body,no}) --> true |
+        &clause <<= [C,C1],
+        C=wrap#({Merge,Xs,Ys,Out,K,L,X,Y} :- K=K0,L=L0,NGuard | NBody),
+        {{pimos_util_util:append_goal(Guard,NGuard,
+                            wrap#(Xs=[{K1,D1}|Xs1],X={Void,D}))}},
+        {{pimos_util_util:append_goal(Body,NBody,
+                            wrap#(Out=[{Sml,D}|Out1],
+                                       {Merge,Xs1,Ys,Out1,K1,Lag,{Void1,D1},Y}))}},
+        C1=wrap#({Merge,Xs,Ys,Out,K,L,X,Y} :- K=K0,L=L0,NGuard1 | NBody1),
+        {{pimos_util_util:append_goal(Guard,NGuard1,
+                            wrap#(Xs=[],X={Void,D},Y={Void1,E}))}},
+        {{pimos_util_util:append_goal(Body,NBody1,
+                            wrap#(Out=[{Sml,D},{Lag,E}|Ys]))}},
+        &ppool <<= [atom('',Merge)],
+        &stream <<= [new_variable(Xs),new_variable(Xs1),new_variable(Ys),
+            new_variable(X),new_variable(Y),
+            new_variable(K),new_variable(K1),new_variable(L),
+            new_variable(D),new_variable(D1),new_variable(E),
+            new_variable(Out),new_variable(Out1),
+            new_variable(Void),new_variable(Void1)].
+
+kmg({K0,L0,Sml,Lag,_,Guard,Body,yes}) --> true |
+        &clause <<= [C,C1],
+        C=wrap#({Merge,Xs,Ys,Out,K,L,X,Y} :- K=K0,L=L0,NGuard | NBody),
+        {{pimos_util_util:append_goal(Guard,NGuard,
+                            wrap#(Ys=[{L1,E1}|Ys1],Y={Void,E}))}},
+        {{pimos_util_util:append_goal(Body,NBody,
+                            wrap#(Out=[{Sml,E}|Out1],
+                                       {Merge,Xs,Ys1,Out1,Lag,L1,X,{Void1,E1}}))}},
+        C1=wrap#({Merge,Xs,Ys,Out,K,L,X,Y} :- K=K0,L=L0,NGuard1 | NBody1),
+        {{pimos_util_util:append_goal(Guard,NGuard1,
+                            wrap#(Ys=[],X={Void,D},Y={Void1,E}))}},
+        {{pimos_util_util:append_goal(Body,NBody1,
+                            wrap#(Out=[{Sml,E},{Lag,D}|Xs]))}},
+        &ppool <<= [atom('',Merge)],
+        &stream <<= [new_variable(Xs),new_variable(Ys),new_variable(Ys1),
+            new_variable(X),new_variable(Y),
+            new_variable(D),new_variable(E),new_variable(E1),
+            new_variable(K),new_variable(L),new_variable(L1),
+            new_variable(Out),new_variable(Out1),
+            new_variable(Void),new_variable(Void1)].
+
+kmg({K0,L0,Sml,Lag,YorN,Guard,Body,nil}) --> true |
+        &clause <<= [C],
+        C=wrap#({Merge,Xs,Ys,Out,K,L,X,Y} :- K=K0,L=L0,Guard | Body1),
+        {{pimos_util_util:append_goal(Body,Body1,
+                            wrap#({Wait_mg,Xs,Ys,Out,Sml,Lag,X,Y,YorN}))}},
+        &ppool <<= [atom('',Merge),atom(wait_mg,Wait_mg)],
+        &stream <<= [new_variable(Xs),new_variable(Ys),
+            new_variable(K),new_variable(L),
+            new_variable(X),new_variable(Y),new_variable(Out)].
+
+kmg(Clause) --> (Clause=wrap#(otherwise) ; Clause=wrap#(alternatively)) |
+        &clause <<= [Clause].
+
+wait_mg(no) --> true | true.
+wait_mg(nil) --> true |
+        &clause <<= [C,C1,C2,C3,C4],
+        C=wrap#({Wait_mg,Xs,Ys,Out,X,Y,no} :- Xs=[X1|Xs1] |
+                        Out=[X|Out1],
+                        {Merge,Xs1,Ys,Out1,X1,Y}),
+        C1=wrap#({Wait_mg,Xs,Ys,Out,X,Y,no} :- Xs=[] |
+                        Out=[X,Y|Ys]),
+        C2=wrap#({Wait_mg,Xs,Ys,Out,Y,X,yes} :- Ys=[Y1|Ys1] |
+                        Out=[Y|Out1],
+                        {Merge,Xs,Ys1,Out1,X,Y1}),
+        C3=wrap#({Wait_mg,Xs,Ys,Out,Y,X,yes} :- Ys=[] |
+                        Out=[Y,X|Xs]),
+        C4=wrap#({Wait_mg,Xs,Ys,Out,Y,X,YorN} :- YorN\=yes,YorN\=no |
+                        Out=[],
+                        error(Merge,"Illegal_swapped_information",YorN)),
+        &ppool <<= [atom(wait_mg,Wait_mg),atom('',Merge)],
+        &stream <<= [new_variable(Xs),new_variable(Ys),new_variable(Out),
+            new_variable(X),new_variable(Y),new_variable(X1),new_variable(Xs1),
+            new_variable(Out1),new_variable(Y1),new_variable(Ys1),
+            new_variable(YorN)].
+
+wait_kmg(no) --> true | true.
+wait_kmg(nil) --> true |
+        &clause <<= [C,C1,C2,C3,C4,C5,C6,C7],
+        C=wrap#({Wait_mg,Xs,Ys,Out,K,L,X,Y,no} :- Xs=[{K1,D1}|Xs1],X={Void,D} |
+                        Out=[{K,D}|Out1],
+                        {Merge,Xs1,Ys,Out1,K1,L,{Void1,D1},Y}),
+        C1=wrap#({Wait_mg,Xs,Ys,Out,K,L,X,Y,no} :- Xs=[],X={Void,D},Y={Void1,E} |
+                        Out=[{K,D},{L,E}|Ys]),
+        C2=wrap#({Wait_mg,Xs,Ys,Out,L,K,X,Y,yes} :- Ys=[{L1,E1}|Ys1],Y={Void,E} |
+                        Out=[{L,E}|Out1],
+                        {Merge,Xs,Ys1,Out1,K,L1,X,{Void1,E1}}),
+        C3=wrap#({Wait_mg,Xs,Ys,Out,L,K,X,Y,yes} :- Ys=[],X={Void,D},Y={Void1,E} |
+                        Out=[{L,E},{K,D}|Xs]),
+        C4=wrap#otherwise,
+        C5=wrap#({Wait_mg,Xs,Ys,Out,K,L,X,Y,no} :- Xs=[D|Xs1] |
+                        Out=[],
+                        error(Merge,"Illegal_data_protocol",D)),
+        C6=wrap#({Wait_mg,Xs,Ys,Out,L,K,X,Y,yes} :- Ys=[D|Ys1] |
+                        Out=[],
+                        error(Merge,"Illegal_data_protocol",D)),
+        C7=wrap#({Wait_mg,Xs,Ys,Out,L,K,X,Y,YorN} :- YorN\=yes,YorN\=no |
+                        Out=[],
+                        error(Merge,"Illegal_swapped_information",YorN)),
+        &ppool <<= [atom(wait_mg,Wait_mg),atom('',Merge)],
+        &stream <<= [new_variable(Xs),new_variable(Xs1),new_variable(Ys),new_variable(Ys1),
+            new_variable(Out),new_variable(Out1),
+            new_variable(K),new_variable(K1),
+            new_variable(L),new_variable(L1),
+            new_variable(X),new_variable(Y),
+            new_variable(D),new_variable(D1),new_variable(E),new_variable(E1),
+            new_variable(Void),new_variable(Void1),
+            new_variable(YorN)].
+
+define_db_mg --> true |
+        &clause <<= [C],
+        C=wrap#({Merge,Xs,Ys,Out,X,Y} :- true |
+                        {Comparator,X,Y,Sml,Lag,YorN},
+                        {Wait_mg,Xs,Ys,Out,Sml,Lag,YorN}),
+        &ppool <<= [atom('',Merge),atom(comparator,Comparator),
+            atom(wait_mg,Wait_mg)],
+        &stream <<= [new_variable(Xs),new_variable(Ys),new_variable(Out),
+            new_variable(X),new_variable(Y),
+            new_variable(Sml),new_variable(Lag),new_variable(YorN)].
+
+define_db_kmg --> true |
+        &clause <<= [C],
+        C=wrap#({Merge,Xs,Ys,Out,K,L,X,Y} :- true |
+                        {Comparator,K,L,Sml,Lag,YorN},
+                        {Wait_mg,Xs,Ys,Out,Sml,Lag,X,Y,YorN}),
+        &ppool <<= [atom('',Merge),atom(comparator,Comparator),
+            atom(wait_mg,Wait_mg)],
+        &stream <<= [new_variable(Xs),new_variable(Ys),new_variable(Out),
+            new_variable(X),new_variable(Y),
+            new_variable(K),new_variable(L),
+            new_variable(Sml),new_variable(Lag),new_variable(YorN)].

@@ -1,0 +1,124 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v295>Unloader>comment.kl1.3, 28-Nov-91 18:49:50, Edit by hori
+
+:- module kl1_unloaded_file.
+:- with_macro pimos.
+:- public comment/2.
+
+comment(FileName,Comment) :- true |
+    kl1_library_message:message(MESG0),
+    kl1_library_file_utility:open_files([FileName],["sav"],FSs,MESG0,MESG1,St),
+    comment(St,Comment,FSs,MESG1).
+
+comment(normal,Comment,[IN0],MESG0) :- true |
+    kl1_unloader_version:marker(module,MagicNum1),
+    kl1_unloader_version:marker(comment,MagicNum2),
+    IN0 = [pathname(normal(FullPath)),getb(3,normal(Header))|IN1],
+    output(FullPath,MESG0,MESG1,OUT0),
+    comment_0(Header,MagicNum1,MagicNum2,Comment,IN1,OUT0,MESG1).
+otherwise.
+comment(_,Comment,_,MESG0) :- true |
+    MESG0 = [].
+
+comment_0(Header0,MagicNum1,MagicNum2,Comment,IN0,OUT0,MESG0) :-
+    string_element(Header0,0,MagicNum1) |
+    set_string_element(Header0,0,MagicNum2,Header1),
+    OUT0 = [putb(Header1,normal)|OUT1],
+    comment_1(Comment,IN0,OUT1,MESG0).
+comment_0(Header0,MagicNum1,MagicNum2,Comment,IN0,OUT0,MESG0) :-
+    string_element(Header0,0,MagicNum2) |
+    IN0 = [getb(2,Status)|IN1],
+    uncomment(Status,IN1,IN2),
+    OUT0 = [putb(Header0,normal)|OUT1],
+    comment_1(Comment,IN2,OUT1,MESG0).
+
+uncomment(normal(LenStr),IN0,IN) :-
+    string_element(LenStr,0,L1),
+    string_element(LenStr,1,L2) |
+    Length := ( L1 << 16 ) \/ L2,
+    uncomment_0(Length,IN0,IN).
+
+uncomment_0(Length,IN0,IN) :-
+    0 =:= Length mod 2 |
+    IN0 = [getb(Length,Status)|IN].
+uncomment_0(Length,IN0,IN) :-
+    1 =:= Length mod 2 |
+    L1 := Length + 1,
+    IN0 = [getb(L1,Status)|IN].
+
+comment_1(Comment,IN0,OUT0,MESG0) :-
+    string(Comment,Length,Size),
+    0 =:= Length mod 2 |
+    MESG0 = [],
+    new_string(ComHeader,2,16),
+    L0 := Length >> 16,
+    L1 := ( Length << 16 ) >> 16,
+    set_string_element(ComHeader,0,L0,ComHeader1),
+    set_string_element(ComHeader,1,L1,ComHeader2),
+    OUT0 = [putb(ComHeader2,normal),putb(Comment,normal)|OUT1],
+    IN0 = [getb(1000,Status)|IN1],
+    copy_rest(Status,IN1,OUT1).
+comment_1(Comment,IN0,OUT0,MESG0) :-
+    string(Comment,Length,Size),
+    1 =:= Length mod 2 |
+    MESG0 = [],
+    new_string(ComHeader,2,16),
+    L0 := Length >> 16,
+    L1 := ( Length << 16 ) >> 16,
+    set_string_element(ComHeader,0,L0,ComHeader1),
+    set_string_element(ComHeader,1,L1,ComHeader2),
+    new_string(Null,1,16),
+    OUT0 = [putb(ComHeader2,normal),putb(Comment,normal),putb(Null,normal)|OUT1],
+    IN0 = [getb(1000,Status)|IN1],
+    copy_rest(Status,IN1,OUT1).
+
+copy_rest(normal(Buffer),IN0,OUT0) :- true |
+    OUT0 = [putb(Buffer,normal)|OUT1],
+    IN0 = [getb(1000,Status)|IN1],
+    copy_rest(Status,IN1,OUT1).
+copy_rest(end_of_file,IN0,OUT0) :- true |
+    IN0 = [],
+    OUT0 = [].
+
+output(FullPath,MESG0,MESG,OUT) :- true |
+    kl1_library_file_utility:decomp_filename(FullPath,Node,Path,FileName,Ext,Ver),
+    unload:create_file_device(MESG0,MESG,FR,_),
+    builtin#append_string([Path,">",FileName,".",Ext],OutFile),
+    FR = [open(OutFile,write(Status))],
+    output_0(Status,OUT).
+
+output_0(normal(FS0,_,_),OUT) :- true |
+    check_sum(OUT,0,FS0).
+
+check_sum([putb(String0,Status)|Rest],CS0,FS0) :-
+    list(Rest), string(String0,L,_) |
+    calc_check_sum(0,L,String0,String1,CS0,CS1),
+    FS0 = [putb(String1,Status)|Next],
+    check_sum(Rest,CS1,Next).
+check_sum([putb(String0,Status)],CS0,FS0) :- string(String0,L,_) |
+    set_check_sum(0,L,String0,String1,CS0),
+    FS0 = [putb(String1,Status)].
+
+calc_check_sum(I,L,String0,String,CS0,CS) :-
+    I < L, string_element(String0,I,Elm) |
+    CS1 := CS0 xor Elm,
+    J := I + 1,
+    calc_check_sum(J,L,String0,String,CS1,CS).
+calc_check_sum(I,L,String0,String,CS0,CS) :- I >= L |
+    String = String0,
+    CS = CS0.
+
+set_check_sum(I,L,String0,String,CS0) :-
+    I < L - 1,
+    string_element(String0,I,Elm) |
+    CS1 := CS0 xor Elm,
+    J := I + 1,
+    set_check_sum(J,L,String0,String,CS1).
+set_check_sum(I,L,String0,String,CS0) :-
+    L1 := L - 1, I = L1 |
+    set_string_element(String0,L1,CS0,String).

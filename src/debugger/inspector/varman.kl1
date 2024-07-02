@@ -1,0 +1,168 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_var_manager.
+:- with_macro pimos.
+:- public manager/2.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% manager(In,LisV)
+%%      In      :: Input stream from the inspectors
+%%      LisV    :: Output stream to the listener_var_manager
+
+manager(In,LisV) :- true |
+        merge(In,In0),
+        merge(LisV1,LisV),
+        buffer:character_pool(B),
+        inspector_local_manager(InsV),
+        manager(In0,B,InsV,LisV1).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% manager(In,B,InsV,LisV)
+%%      In      :: Input stream from the inspectors (merged)
+%%      B       :: Output stream to the character_pool
+%%      InsV    :: Output stream to the inspector_local_var_manager
+%%      LisV    :: Output stream to the listener_var_manager (merged)
+
+manager([get_value(Name,Var)|In],IO,LOut,VOut) :- true |
+        get_value(Name,Var,LOut,LOut1,VOut,VOut1),
+        manager(In,IO,LOut1,VOut1).
+manager([put_immediately(Name,Var,Status)|In],IO,LOut,VOut) :- true |
+        put_immediately(Name,Var,Status,IO,IO1,LOut,LOut1,VOut,VOut1),
+        manager(In,IO1,LOut1,VOut1).
+manager([put_forcibly(Name,Var)|In],IO,LOut,VOut) :- true |
+        LOut=[put_forcibly(Name,Var)|LOut1],
+        manager(In,IO,LOut1,VOut).
+manager([get_varlist(Param,VarList)|In],IO,LOut,VOut) :- true |
+        get_varlist(Param,VarList,LOut,LOut1,VOut,VOut1),
+        manager(In,IO,LOut1,VOut1).
+manager([get_listener_varlist(VarList)|In],IO,LOut,VOut) :- true |
+        VOut=[get_varlist(VarList)|VOut1],
+        manager(In,IO,LOut,VOut1).
+manager([clear|In],IO,LOut,VOut) :- true |
+        LOut=[clear|LOut1],
+        manager(In,IO,LOut1,VOut).
+manager([get_listener_var_manager(Stream)|In],IO,LOut,VOut) :- true |
+        VOut={Stream,VOut2},
+        manager(In,IO,LOut,VOut2).
+manager([do(List)|In],IO,LOut,VOut) :- true |
+        prepend(List,In,In1),
+        manager(In1,IO,LOut,VOut).
+manager([],IO,LOut,VOut) :- true | IO=[],LOut=[],VOut=[].
+
+prepend([Req|R],DS,DS1) :- true |
+        DS1=[Req|DS2],
+        prepend(R,DS,DS2).
+prepend([],DS,DS1) :- true | DS1=DS.
+
+get_value(Name,Var,LOut,LOut1,VOut,VOut1) :- string_element(Name,0,E),E \= #"_" |
+        LOut=[get_value(Name,Var)|LOut1],
+        VOut=VOut1.
+get_value(Name,Var,LOut,LOut1,VOut,VOut1) :- string_element(Name,0,#"_"),string(Name,L,_),L>1 |
+        builtin#substring(Name,1,~(L-1),Name1,_),
+        LOut=LOut1,
+        Var={Var0},
+        VOut=[get_value(Name1,Var0)|VOut1].
+otherwise.
+get_value(_,Var,LOut,LOut1,VOut,VOut1) :- true | Var={},LOut=LOut1,VOut=VOut1.
+
+put_immediately(Name,Var,Status,B,B1,InsV,InsV1,LisV,LisV1) :-
+    string_element(Name,0,E),E \= #"_" |
+        LisV=LisV1,
+        B=[putb(Name),putl(" . "),flush(_),getwt(WT)|B1],
+        if_put_immediately(Name,Var,Status,InsV,InsV1,WT).
+put_immediately(Name,Var,Status,B,B1,InsV,InsV1,LisV,LisV1) :-
+    string_element(Name,0,#"_"),string(Name,L,_),L>1 |
+        builtin#substring(Name,1,~(L-1),Name1,_),
+        InsV=InsV1,
+        B=[putb(Name1),putl(" . "),flush(_),getwt(WT)|B1],
+        if_put_immediately(Name1,Var,Status,LisV,LisV1,WT).
+otherwise.
+put_immediately(_,_,Status,IO,IO1,LOut,LOut1,VOut,VOut1) :- true |
+        Status=abnormal,IO=IO1,LOut=LOut1,VOut=VOut1.
+
+if_put_immediately(Name,Var,Status,V,V1,normal(variable(_))) :- true |
+        V=[put_immediately(Name,Var,Status)|V1].
+otherwise.
+if_put_immediately(_,_,Status,V,V1,_) :- true | Status=abnormal,V=V1.
+
+%if_put_immediately(Name,Var,Status,V,V1,normal(variable(_)),WS,WS1) :- true |
+%        WS=[get_value(Name,Var1)|WS0],
+%        if_if_put_immediately(Name,Var,Status,V,V1,Var1,WS0,WS1).
+%otherwise.
+%if_put_immediately(_,_,Status,V,V1,_,WS,WS1) :- true | Status=abnormal,V=V1,WS=WS1.
+%
+%if_if_put_immediately(Name,Var,Status,V,V1,{},WS,WS1) :- true |
+%        V=[put_immediately(Name,Var,Status)|V1],
+%        WS=[put_var(Name,Var)|WS1].
+%otherwise.
+%if_if_put_immediately(_,_,Status,V,V1,_,WS,WS1) :- true | Status=abnormal,V=V1,WS=WS1.
+
+get_varlist(local,VarList,LOut,LOut1,VOut,VOut1) :- true |
+        LOut=[get_varlist(VarList)|LOut1],
+        VOut=VOut1.
+get_varlist(listener,VarList,LOut,LOut1,VOut,VOut1) :- true |
+        LOut=LOut1,
+        VOut=[get_varlist(VL)|VOut1],
+        change_varname(VL,VarList).
+
+change_varname([{K,D}|VL],NVL) :- true |
+        builtin#append_string(string#"_",K,K1),
+        NVL=[{K1,D}|NVL1],
+        change_varname(VL,NVL1).
+change_varname([],NVL) :- true | NVL=[].
+
+append([A|X],Y,Z) :- true | Z=[A|Z1],append(X,Y,Z1).
+append([],Y,Z) :- true | Y=Z.
+
+
+inspector_local_manager(In) :- true |
+        pool:keyed_sorted_set(Table),
+        local_manager(In,Table).
+
+local_manager([get_value(Name,Var)|In],Table) :- true |
+        Table=[carbon_copy(Name,Var0)|Table1],
+        get_value(Var0,Var),
+        local_manager(In,Table1).
+
+local_manager([put_immediately(Name,Var,Status)|In],Table) :- true |
+        Table=[empty(Name,YorN)|Table0],
+        put_immediately(YorN,Name,Var,Status,Table0,Table1),
+        local_manager(In,Table1).
+
+local_manager([put_forcibly(Name,Var)|In],Table) :- 
+    string_element(Name,0,E),E \= 0 |           % normal Variable
+        Table=[put(Name,Var,_)|Table1],
+        local_manager(In,Table1).
+
+local_manager([get_varlist(VarList)|S],Table) :- true |
+        Table=[do([get_all(VarList)|Table0])|Table1],
+        return_varlist(VarList,Table0),
+        local_manager(S,Table1).
+
+local_manager([clear|In],Table) :- true |
+        Table=[get(string#"ROOT",ROOT),get_all(_),put(string#"ROOT",ROOT,_)|Table1],
+        local_manager(In,Table1).
+    
+local_manager([],Table) :- true | Table=[].
+
+%unify_var({},_) :- true | true.
+%unify_var({Old},VAR) :- true | VAR=Old.
+
+return_varlist([{K,D}|List],Table) :- true |
+        Table=[put(K,D,_)|Table1],
+        return_varlist(List,Table1).
+return_varlist([],Table) :- true | Table=[].
+
+get_value([Var0],Var) :- true | Var={Var0}.
+get_value([],Var) :- true | Var={}.
+
+put_immediately(yes,Name,Var,Status,Table,Table1) :- true |
+        Status=normal,
+        Table=[put(Name,Var,_)|Table1].
+put_immediately(no,_,_,Status,Table,Table1) :- true |
+        Status=abnormal,Table=Table1.
+

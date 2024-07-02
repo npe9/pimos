@@ -1,0 +1,59 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_check_module.
+:- public checkSelf/4.
+:- public checkSelfAndSuper/6.
+:- with_macro pimos.
+
+:- local_implicit err:oldnew.
+checkSelf(atom(Module), ModuleList) --> atom(Module) |
+    checkSelf(Module, ModuleList).
+checkSelf(Module, ModuleList) --> atom(Module) |
+  {{module_table:cache_table([get_module(Module, Stat)|Mod]),
+    pool:keyed_bag(Pool)}},
+    check(Mod, [], Pool, [], ModuleList, [], Stat, Module).
+
+:- local_implicit err:oldnew, modtbl:oldnew.
+checkSelfAndSuper(atom(Self), atom(Super)) --> atom(Self), atom(Super) |
+    checkSelfAndSuper(Self, Super).
+checkSelfAndSuper(atom(Self), Super) --> atom(Self), atom(Super) |
+    checkSelfAndSuper(Self, Super).
+checkSelfAndSuper(Self, atom(Super)) --> atom(Self), atom(Super) |
+    checkSelfAndSuper(Self, Super).
+checkSelfAndSuper(Self, Super) --> atom(Self), atom(Super) |
+%%  {{module_table:cache_table([get_module(Super, Stat)|Mod]),
+  {{ &modtbl <<= [get_module_table(Mod0)],
+    Mod0=[get_module(Super, Stat)|Mod],
+    pool:keyed_bag([put(Self, 0)|Pool]),
+    check(&err, Mod, [], Pool, [], _, _, Stat, Super)}}.
+
+
+:- local_implicit err:oldnew, modch:oldnew, pool:oldnew, modlist:oldnew.
+check(normal(Module), ModAtom) --> true |
+  {{predicate_to_code(Module, '$my_super_macro_module', 1, Code)}},
+    check_(Code, Module).
+otherwise.
+check(_, Module) --> true |
+    &err <<= [error("This module can't be accessed :~t", [Module])].
+
+check_(Code, Module) --> code(Code, _, _, _) |
+    &modlist <<= [Module],
+  {{apply(Code, {Super})}},
+    &pool <<= [put(Module, 0),empty(Super, YorN)],
+    checkSuper(YorN, Super).
+otherwise.
+check_(_, Module) --> true |
+  {{module:get_module_name(Module, (_::Name))}},
+    &err <<= [error("Invalid macro module :~t", [Name])].
+
+checkSuper(no, Super) --> module(Super, _) |
+    &err <<= [error("macro inheritance definition loops : ~t", [Super])].
+checkSuper(yes, Super) --> module(Super, _) |
+  {{predicate_to_code(Super, '$my_super_macro_module', 1, Code)}},
+    check_(Code, Super).
+checkSuper(_, 0) --> true | true.
+

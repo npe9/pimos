@@ -1,0 +1,480 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>KBN>kbn.kl1.76, 16-Sep-92 14:03:24, Edit by hori
+
+:- module kbn.
+:- with_macro pimos.
+:- public usage/1.
+:- public go/3, go/4.
+
+usage(Usage) :- true |
+    Usage =
+        [{string#"Usage : kbn(Package::Module:Pred/Arity, VersionInt, FileNameStrg)~n",[]},
+         {string#"        kbn(Module:Pred/Arity, VersionInt, FileNameStrg)~n~n",[]},
+         {string#"        kbn(Package::Module:Pred/Arity, LoadAdrs, VersionInt, FileNameStrg)~n",[]},
+         {string#"        kbn(Module:Pred/Arity, LoadAdrs, VersionInt, FileNameStrg)~n",[]}].
+
+go({(:),ModuleSpec,{(/),Predicate,Arity}},Version,FileName) :-
+    ModuleSpec = {(::),Package,Module},
+    atom(Package), atom(Module), atom(Predicate), integer(Arity), Arity >= 0,
+    integer(Version), string(FileName,_,16) |
+    shoen:raise(pimos_tag#task,general_request,
+        [setenv(compile:working_packages,('*'),Status)]),
+    go_0(Status,ModuleSpec,Predicate,Arity,16#"E0000000",Version,FileName).
+go({(:),Module,{(/),Predicate,Arity}},Version,FileName) :-
+    atom(Module), atom(Predicate), integer(Arity), Arity >= 0,
+    integer(Version), string(FileName,_,16) |
+    shoen:raise(pimos_tag#task,general_request,
+        [setenv(compile:working_packages,('*'),Status)]),
+    go_0(Status,Module,Predicate,Arity,16#"E0000000",Version,FileName).
+otherwise.
+go(_,_,_) :- true | usage:go(kbn).
+
+go({(:),ModuleSpec,{(/),Predicate,Arity}},LoadAddress,Version,FileName) :-
+    ModuleSpec = {(::),Package,Module},
+    atom(Package), atom(Module), atom(Predicate), integer(Arity), Arity >= 0,
+    integer(Version), integer(LoadAddress), string(FileName,_,16) |
+    shoen:raise(pimos_tag#task,general_request,
+        [setenv(compile:working_packages,('*'),Status)]),
+    go_0(Status,ModuleSpec,Predicate,Arity,LoadAddress,Version,FileName).
+go({(:),Module,{(/),Predicate,Arity}},LoadAddress,Version,FileName) :-
+    atom(Module), atom(Predicate), integer(Arity), Arity >= 0,
+    integer(Version), integer(LoadAddress), string(FileName,_,16) |
+    shoen:raise(pimos_tag#task,general_request,
+        [setenv(compile:working_packages,('*'),Status)]),
+    go_0(Status,Module,Predicate,Arity,LoadAddress,Version,FileName).
+otherwise.
+go(_,_,_,_) :- true | usage:go(kbn).
+
+go_0(normal,Module,Predicate,Arity,LoadAdrs,Version,FileName) :- true |
+    kl1_library_message:message(MESG0),
+    relink:search_program_modules([Module],MESG0,MESG1,Modules0,Status0),
+    reorder(Modules0,Module,Modules1),
+    analyze_modules(Status0,Modules1,Module,Predicate,Arity,LoadAdrs,Version,FileName,MESG1).
+otherwise.
+go_0(_,Module,Predicate,Arity,LoadAdrs,Version,FileName) :- true |
+    kl1_library_message:message(MESG0),
+    MESG0 = [error("Unable to 'setenv'",[])].
+
+reorder([Module|Modules0],ModuleName,Modules) :- true |
+    module:get_module_name(Module,Package,ModName),
+    reorder_0(Package,ModName,ModuleName,Module,Modules0,TargetModule,Modules1),
+    Modules = [TargetModule|Modules1].
+reorder([],ModuleName,Modules) :- true |
+    Modules = [].
+
+reorder_0(_,ModuleName,ModuleName,Module,Modules0,TargetModule,Modules) :-
+    atom(ModuleName) |
+    TargetModule = Module,
+    Modules = Modules0.
+reorder_0(Package,ModName,ModuleName,Module,Modules0,TargetModule,Modules) :-
+    ModuleName = {(::),Package,ModName} |
+    TargetModule = Module,
+    Modules = Modules0.
+otherwise.
+reorder_0(_,_,ModuleName,Module,[Mod|Modules0],TargetModule,Modules) :- true |
+    Modules = [Module|Modules1],
+    module:get_module_name(Mod,Package,ModName),
+    reorder_0(Package,ModName,ModuleName,Mod,Modules0,TargetModule,Modules1).
+
+check_status(normal,KBNname,SYMname,MESG) :- true |
+    MESG = [message("KBN    File : ~s",[KBNname]),
+            message("Symbol File : ~s",[SYMname]),
+            message("Encoding Succeeded",[])].
+otherwise.
+check_status(_,_,_,MESG) :- true |
+    MESG = [message("Encoding Failed",[])].
+
+analyze_modules(normal,Modules,Module,Predicate,Arity,LoadAdrs,Version,FileName,MESG0) :-
+    list(Modules) |
+    kbn_link:link_table(LT0,Module,Predicate,Arity,ModuleAdrs,StartAdrs),
+    kbn_atom:atom_table(AT0,SFS),
+    kbn_file:file(FileName,LoadAdrs,ModuleAdrs,StartAdrs,CodeSize,Version,SFS,KBN,KBNname,SYMname),
+    analyze_modules(normal,done,Modules,LoadAdrs,LastAdrs,MESG0,MESG1,LT0,AT0,KBN,Status),
+    check_status(Status,KBNname,SYMname,MESG1),
+    CodeSize := LastAdrs - LoadAdrs.
+analyze_modules(normal,[],Module,Predicate,Arity,LoadAdrs,Version,FileName,MESG0) :-
+    Address0 = Address,
+    MESG0 = [warning("Nothing to encode",[])|MESG],
+    LT0 = [],
+    AT0 = [],
+    KBN0 = [],
+    Status = abnormal.
+otherwise.
+analyze_modules(_,_,Module,Predicate,Arity,LoadAdrs,Version,FileName,MESG0) :- true |
+    MESG0 = [message("Encoding Failed",[])].
+
+analyze_modules(normal,Done0,[Module|Rest],Address0,Address,MESG0,MESG,LT0,AT0,KBN0,Status) :-
+    true |
+    module:get_module_name(Module,Package,ModName),
+    wait_done(Done0,MESG0,MESG1),
+    MESG1 = [message("  ~t::~t encoded",[Package,ModName])|MESG2],
+    encode_module(Module,Address0,Address1,MESG2,MESG3,LT0,LT1,AT0,AT1,KBN0,KBN1,Status0),
+    KBN1 = [flush(Done1)|KBN2],
+    analyze_modules(Status0,Done1,Rest,Address1,Address,MESG3,MESG,LT1,AT1,KBN2,Status).
+analyze_modules(normal,Done0,[],Address0,Address,MESG0,MESG,LT0,AT0,KBN0,Status) :-
+    true |
+    Address0 = Address,
+    wait_done(Done0,MESG0,MESG1),
+    MESG1 = MESG,
+    LT0 = [],
+    AT0 = [],
+    KBN0 = [],
+    Status = normal.
+otherwise.
+analyze_modules(_,_,_,Address0,Address,MESG0,MESG,LT0,AT0,KBN0,Status) :- true |
+    Address0 = Address,
+    MESG0 = MESG,
+    LT0 = [],
+    AT0 = [],
+    KBN0 = [],
+    Status = abnormal.
+
+wait_done(Done,MESG0,MESG) :- wait(Done) | MESG0 = [flush(_)|MESG].
+
+encode_module(Module,Address0,Address,MESG0,MESG,LT0,LT,AT0,AT,KBN0,KBN,Status) :-
+    module(Module,Length) |
+    module_element(Module,0,GCSize),
+    kbn_heap:heap_table(HT0,Address0,Address1,LT0,LT1,AT0,AT1,KBN0,KBN1),
+    kbn_heap:tag(module,ModuleTag),
+    kbn_heap:tag(cdesc,CDESCTag),
+    CDESC := ( 16#"06" << 24 ) \/ Length,
+    kbn_heap:tag(integer,IntTag),
+    Address2 := Address1 + 1,
+    KBN1 = [{ModuleTag,Address2},{CDESCTag,CDESC},{IntTag,GCSize}|KBN2],
+    LT1 = [module(Module,Address2)|LT2],
+    Address3 := Address2 + Length + 1,
+    P0 := GCSize + 1,
+    encode_gc_area(1,P0,Module,HT0,LT2,LT,AT1,AT2,KBN2,KBN3,normal,Status0),
+    encode_entry_area(P0,P1,Module,AT2,AT3,KBN3,KBN4,Status0,Status1),
+    encode_code_area(Module,P1,Length,AT3,AT,KBN4,KBN5,Status1,Status),
+%    kbn_heap:padding(Address2,Address3,Address,KBN5,KBN),
+    Address = Address3,
+    KBN5 = KBN, 
+    MESG0 = MESG.
+
+encode_gc_area(P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :- P < GCSize |
+    module_element(Module,P,Elm),
+    P1 := P + 1,
+    encode_gc_area_0(Elm,P1,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status).
+encode_gc_area(P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :- P >= GCSize |
+    HT0 = [],
+    LT0 = LT,
+    AT0 = AT,
+    KBN0 = KBN,
+    Status = Status0.
+
+encode_gc_area_0(Atom0,P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :-
+    atom(Atom0) |
+    kbn_heap:heap_atomic(Atom0,Atom,AT0,AT1),
+    KBN0 = [Atom|KBN1],
+    encode_gc_area(P,GCSize,Module,HT0,LT0,LT,AT1,AT,KBN1,KBN,Status0,Status).
+encode_gc_area_0(Vect0,P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :-
+    vector(Vect0,_) |
+    HT0 = [vector(Vect0,Vect)|HT1],
+    KBN0 = [Vect|KBN1],
+    encode_gc_area(P,GCSize,Module,HT1,LT0,LT,AT0,AT,KBN1,KBN,Status0,Status).
+encode_gc_area_0(List0,P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :-
+    List0 = [_|_] |
+    HT0 = [list(List0,List)|HT1],
+    KBN0 = [List|KBN1],
+    encode_gc_area(P,GCSize,Module,HT1,LT0,LT,AT0,AT,KBN1,KBN,Status0,Status).
+encode_gc_area_0(String0,P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :-
+    string(String0,_,_) |
+    HT0 = [string(String0,String)|HT1],
+    KBN0 = [String|KBN1],
+    encode_gc_area(P,GCSize,Module,HT1,LT0,LT,AT0,AT,KBN1,KBN,Status0,Status).
+encode_gc_area_0(ExMod,P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :-
+    module(ExMod,_) |
+    P1 := P + 1,
+    module_element(Module,P,PredHash),
+    module_element(Module,P1,ExModName),
+    encode_ext_call(ExMod,PredHash,ExModName,P,GCSize,Module,
+                                    HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status).
+encode_gc_area_0(Int0,P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :-
+    integer(Int0) |
+    kbn_heap:heap_atomic(Int0,Int,AT0,AT1),
+    KBN0 = [Int|KBN1],
+    encode_gc_area(P,GCSize,Module,HT0,LT0,LT,AT1,AT,KBN1,KBN,Status0,Status).
+otherwise.
+encode_gc_area_0(_,P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :- true |
+    HT0 = [],
+    LT0 = LT,
+    AT0 = AT,
+    KBN0 = KBN,
+    Status = abnormal.
+
+encode_ext_call(ExMod,PredHash,ExModName,P,GCSize,Module,
+                                    HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :-
+    atom(PredHash), atom(ExModName) |
+    kbn_heap:tag(module,ModTag),
+    kbn_heap:tag(atom,AtomTag),
+    LT0 = [ref(ExModName,RefAddr)|LT1],
+    AT0 = [pred_hash(PredHash,HashKey),atom(ExModName,ExModAtom)|AT1],
+    KBN0 = [{ModTag,RefAddr},{AtomTag,HashKey},{AtomTag,ExModAtom}|KBN1],
+    P1 := P + 2,
+    encode_gc_area(P1,GCSize,Module,HT0,LT1,LT,AT1,AT,KBN1,KBN,Status0,Status).
+otherwise.
+encode_ext_call(ExMod,_,_,P,GCSize,Module,HT0,LT0,LT,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |
+    module:get_module_name(ExMod,_,ExModName),
+    kbn_heap:tag(module,ModTag),
+    LT0 = [ref(ExModName,RefAddr)|LT1],
+    KBN0 = [{ModTag,RefAddr}|KBN1],
+    encode_gc_area(P,GCSize,Module,HT0,LT1,LT,AT0,AT,KBN1,KBN,Status0,Status).
+
+%%%% ENCODE_PRED_TABLE
+
+encode_entry_area(P0,P,Module,AT0,AT,KBN0,KBN,Status0,Status) :- true |
+    module_element(Module,P0,Mask),
+    HashSize := Mask + 1,
+    P1 := P0 + 1,
+    EntryTable = {Mask,Preds},
+    analyze_public(Module,P1,P,0,N,HashSize,Preds,AT0,AT),
+    encode_entry_area(EntryTable,P1,KBN0,KBN),
+    Status0 = Status.
+
+analyze_public(Module,P0,P,N0,N,HashSize0,Preds0,AT0,AT) :- HashSize0 > 0 |
+    module_element(Module,P0,HashIndex),
+    N1 := HashIndex >> 16,
+    Q := HashIndex /\ 16#"FFFF" + P0,
+    analyze_collisions(Module,Q,N1,Preds0,Preds1,AT0,AT1),
+    P1 := P0 + 1,
+    N2 := N0 + N1,
+    HashSize1 := HashSize0 - 1,
+    analyze_public(Module,P1,P,N2,N,HashSize1,Preds1,AT1,AT).
+analyze_public(_,P0,P,N0,N,0,Preds,AT0,AT) :- true |
+    N := N0 * 2,
+    P := P0 + N,
+    Preds = [],
+    AT0 = AT.
+
+analyze_collisions(Module,Q0,N,Preds0,Preds,AT0,AT) :- N > 0 |
+    module_element(Module,Q0,Key),
+    Q1 := Q0 + 1,
+    AT0 = [pred_hash(Key,KbnAtom)|AT1],
+    module_element(Module,Q1,Offset),
+    Loc := Offset + Q1,
+    Preds0 = [{KbnAtom,Loc}|Preds1],
+    Q2 := Q1 + 1,
+    N1 := N - 1,
+    analyze_collisions(Module,Q2,N1,Preds1,Preds,AT1,AT).
+analyze_collisions(_,_,0,Preds0,Preds,AT0,AT) :- true |
+    Preds0 = Preds,
+    AT0 = AT.
+
+encode_entry_area({Mask,Preds},P0,KBN0,KBN) :- true |
+    kbn_heap:tag(integer,IntTag),
+    KBN0 = [{IntTag,Mask}|KBN1],
+    SizeOfHashTable := Mask + 1,
+    new_vector(HashTable0,SizeOfHashTable),
+    reset_hash_table(0,SizeOfHashTable,HashTable0,HashTable1),
+    make_entry_table(Preds,HashTable1,Mask,HashTable2),
+    out_hash_table(HashTable2,0,SizeOfHashTable,entry_table,P0,P,KBN1,KBN).
+
+reset_hash_table(I0,Size,Vec0,Vec) :- I0 < Size |
+    set_vector_element(Vec0,I0,_,{0,[]},Vec1),
+    I1 := I0 + 1,
+    reset_hash_table(I1,Size,Vec1,Vec).
+reset_hash_table(Size,Size,Vec0,Vec) :- true | Vec = Vec0.
+
+make_entry_table([{Pred,Loc}|Rest],Table0,Mask,Table) :- true |
+    Index := Pred /\ Mask,
+    set_vector_element(Table0,Index,{Cols0,Old},New,Table1),
+    Cols1 := Cols0 + 1,
+    New = {Cols1,[{Pred,Loc}|Old]},
+    make_entry_table(Rest,Table1,Mask,Table).
+make_entry_table([],Table0,Mask,Table) :- true |
+    Table = Table0.
+
+out_hash_table(HashTable0,I,Size,Trim,P0,P,KBN0,KBN) :- I < Size |
+    vector_element(HashTable0,I,{N,Cols},HashTable1),
+    P1 := P0 + 1,
+    calc_offset(N,P0,P2,Trim,Offset),
+    KBN0 = [Offset|KBN1],
+    I1 := I + 1,
+    set_entry_part(Cols,Trim,P2,P,KBN2,KBN),
+    out_hash_table(HashTable1,I1,Size,Trim,P1,P2,KBN1,KBN2).
+out_hash_table(HashTable,Size,Size,Trim,P0,P,KBN0,KBN) :- true |
+    P0 = P,
+    KBN0 = KBN.
+
+calc_offset(0,P1,Q1,entry_table,Offset) :- true |
+    kbn_heap:tag(integer,IntTag),
+    Offset = {IntTag,0}.
+calc_offset(0,P1,Q1,hash_on_cnst,Offset) :- true |
+    kbn_heap:tag(atom,AtomTag),
+    Offset = {AtomTag,0}.
+calc_offset(ColSize,P1,Q1,_,Offset) :- ColSize > 0 |
+    kbn_heap:tag(integer,IntTag),
+    Offs := ( ColSize << 16 ) \/ ( Q1 - P1 ),
+    Offset = {IntTag,Offs}.
+
+set_entry_part([],Trim,P0,P,KBN0,KBN) :- true |
+    P0 = P,
+    KBN0 = KBN.
+set_entry_part([{HashKey,Loc}|Rest],entry_table,P0,P,KBN0,KBN) :-
+    P1 := P0 + 1,
+    Offset := Loc - P1,
+    16#"FFFF8000" =< Offset,
+    Offset =< 16#"7FFF" |
+    kbn_heap:tag(atom,AtomTag),
+    kbn_heap:tag(integer,IntTag),
+    KBN0 = [{AtomTag,HashKey},{IntTag,Offset}|KBN1],
+    P2 := P1 + 1,
+    set_entry_part(Rest,entry_table,P2,P,KBN1,KBN).
+set_entry_part([{HashKey,Loc}|Rest],hash_on_cnst,P0,P,KBN0,KBN) :-
+    P1 := P0 + 1,
+    Offset := Loc - P1 - 1,
+    16#"FFFF8000" =< Offset,
+    Offset =< 16#"7FFF" |
+    kbn_heap:tag(atom,AtomTag),
+    kbn_heap:tag(integer,IntTag),
+    KBN0 = [{AtomTag,HashKey},{IntTag,Offset}|KBN1],
+    P2 := P1 + 1,
+    set_entry_part(Rest,hash_on_cnst,P2,P,KBN1,KBN).
+otherwise.
+set_entry_part([Hash|Rest],Trim,P0,P,KBN0,KBN) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(kbn_error,string#"module offset overflow"),Hash).
+
+%%%% ENCODE_CODE_AREA
+
+encode_code_area(Module,P,Length,AT0,AT,KBN0,KBN,Status0,Status) :- P < Length |
+    module_element(Module,P,KLB),
+    tag_and_value(KLB,Tag,OP),
+    OP1 := OP >> 28,
+    OP2 := ( OP >> 24 ) /\ 16#"F",
+    OPR := OP /\ 16#"FFFFFF",
+    P1 := P + 1,
+    encode_code_1(Tag,OP1,OP2,OPR,KLB,Module,P1,Length,AT0,AT,KBN0,KBN,Status0,Status).
+encode_code_area(Module,P,Length,AT0,AT,KBN0,KBN,Status0,Status) :- P >= Length |
+    AT0 = AT,
+    KBN0 = KBN,
+    Status0 = Status.
+
+encode_code_1(16#"23",16#"0",Reg,OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % set_atom
+    kbn_heap:tag(atom,AtomTag),
+    new_instruction(Atom,AtomTag,OPR),
+    AT0 = [atom(Atom,AtomID)|AT1],
+    OpCode := ( Reg << 24 ) \/ ( 16#"FFFFFF" /\ AtomID ),
+    KBN0 = [{16#"23",OpCode}|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+encode_code_1(16#"23",16#"2",16#"3",OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % write_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [atom(Atom,AtomID)|AT1],
+    OpCode := 16#"23000000" \/ ( 16#"FFFFFF" /\ AtomID ),
+    KBN0 = [{16#"23",OpCode}|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+encode_code_1(16#"23",16#"4",Reg,OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % put_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [atom(Atom,AtomID)|AT1],
+    OpCode := ( ( 16#"40" \/ Reg ) << 24 ) \/ ( 16#"FFFFFF" /\ AtomID ),
+    KBN0 = [{16#"23",OpCode}|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+encode_code_1(16#"23",16#"5",Reg,OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % put_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [atom(Atom,AtomID)|AT1],
+    OpCode := ( ( 16#"50" \/ Reg ) << 24 ) \/ ( 16#"FFFFFF" /\ AtomID ),
+    KBN0 = [{16#"23",OpCode}|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+encode_code_1(16#"23",16#"8",Reg,OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % wait_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [atom(Atom,AtomID)|AT1],
+    OpCode := ( ( 16#"80" \/ Reg ) << 24 ) \/ ( 16#"FFFFFF" /\ AtomID ),
+    KBN0 = [{16#"23",OpCode}|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+encode_code_1(16#"23",16#"9",Reg,OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % wait_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [atom(Atom,AtomID)|AT1],
+    OpCode := ( ( 16#"90" \/ Reg ) << 24 ) \/ ( 16#"FFFFFF" /\ AtomID ),
+    KBN0 = [{16#"23",OpCode}|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+encode_code_1(16#"23",16#"B",16#"3",OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % read_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [atom(Atom,AtomID)|AT1],
+    OpCode := 16#"B3000000" \/ ( 16#"FFFFFF" /\ AtomID ),
+    KBN0 = [{16#"23",OpCode}|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+encode_code_1(16#"23",16#"C",Reg,OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % get_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [atom(Atom,AtomID)|AT1],
+    OpCode := ( ( 16#"C0" \/ Reg ) << 24 ) \/ ( 16#"FFFFFF" /\ AtomID ),
+    KBN0 = [{16#"23",OpCode}|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+encode_code_1(16#"23",16#"D",Reg,OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % get_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [atom(Atom,AtomID)|AT1],
+    OpCode := ( ( 16#"D0" \/ Reg ) << 24 ) \/ ( 16#"FFFFFF" /\ AtomID ),
+    KBN0 = [{16#"23",OpCode}|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+encode_code_1(16#"23",16#"2",16#"D",OPR,KLB,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :-
+    true |                              % hash_on_c
+    kbn_heap:heap_atomic(KLB,HashOnCnst,AT0,AT1),
+    module_element(Module,P,LELS0),      % ELSE label
+    kbn_heap:heap_atomic(LELS0,LELS,AT1,AT2),
+    KBN0 = [HashOnCnst,LELS|KBN1],
+    HashSize := OPR /\ 16#"FFFF" + 1,
+    P1 := P + 1,
+    analyze_hash_on_cnst(Module,P1,P2,0,HashSize,HashTable,AT2,AT3),
+    out_hash_table(HashTable,0,HashSize,hash_on_cnst,P2,P3,KBN1,KBN2),
+    encode_code_area(Module,P3,Len,AT3,AT,KBN2,KBN,Status0,Status).
+otherwise.
+encode_code_1(_,_,_,_,Atomic0,Module,P,Len,AT0,AT,KBN0,KBN,Status0,Status) :- true |
+    kbn_heap:heap_atomic(Atomic0,Atomic,AT0,AT1),
+    KBN0 = [Atomic|KBN1],
+    encode_code_area(Module,P,Len,AT1,AT,KBN1,KBN,Status0,Status).
+
+analyze_hash_on_cnst(Module,P0,P,N0,HashSize0,HashTable0,AT0,AT) :- HashSize0 > 0 |
+    module_element(Module,P0,Index),
+    hash_index(Index,Cols,Offset),
+    Q := Offset + P0,
+    hash_on_c_entry(Module,Q,Cols,HashTable0,HashTable1,AT0,AT1),
+    P1 := P0 + 1,
+    HashSize1 := HashSize0 - 1,
+    N1 := N0 + Cols,
+    analyze_hash_on_cnst(Module,P1,P,N1,HashSize1,HashTable1,AT1,AT).
+analyze_hash_on_cnst(_,P0,P,N0,0,HashTable0,AT0,AT) :- true |
+    P := P0 + N0 * 2,
+    HashTable0 = [],
+    AT0 = AT.
+
+hash_index(Atom,Cols,Offset) :- atom(Atom) |
+    Cols = 0, Offset = 0.
+hash_index(Index,Cols,Offset) :- integer(Index) |
+    Cols := Index >> 16,
+    Offset := Index /\ 16#"FFFF".
+
+hash_on_c_entry(Module,Q0,N,HT0,HT,AT0,AT) :- N > 0 |
+    module_element(Module,Q0,Const0),
+    kbn_heap:heap_atomic(Const0,Const,AT0,AT1),
+    Q1 := Q0 + 1,
+    module_element(Module,Q1,Offset),
+    Loc := Offset + Q1 + 2,
+    HT0 = [{Const,Loc}|HT1],
+    Q2 := Q1 + 1,
+    N1 := N - 1,
+    hash_on_c_entry(Module,Q2,N1,HT1,HT,AT1,AT).
+hash_on_c_entry(_,_,0,HT0,HT,AT0,AT) :- true |
+    HT0 = HT,
+    AT0 = AT.
+
+tag_and_value(Obj,Tag,Value) :- 
+    wait(Obj),
+    tag_and_value(Obj,Tag1,Value1) |
+    Tag = Tag1,
+    Value = Value1.

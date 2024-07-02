@@ -1,0 +1,211 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_goal_keeper.
+:- public list/9.
+:- with_macro pimos.
+
+% list/9
+list(Mode,GM,GM2,IN,IN1,RSC,RSC1,MM,NUM) :- true|
+    GM=[keeping_goals(Goals)|GM1],
+    % [] means print_depth and length are unchanged.
+    list(Mode,GM1,GM2,IN,IN1,RSC,RSC1,MM,NUM,[],[],Goals).
+% list/11
+list(Mode,GM,GM2,IN,IN1,RSC,RSC1,MM,NUM,D,L) :- true|
+    GM=[keeping_goals(Goals)|GM1],
+    list(Mode,GM1,GM2,IN,IN1,RSC,RSC1,MM,NUM,D,L,Goals).
+
+% list/12
+list(_,GM,GM1,IN,IN1,RSC,RSC1,MM,_NUM,_,_,[]) :- true|
+    IN=[putb(" No goals !!"), getl(_)|IN1], 
+    GM1=GM, RSC1=RSC, MM=[].
+list(Mode,GM,GM2,IN,IN6,RSC,RSC2,MM,NUM,D,L,Goals) :- list(Goals)|
+    RSC=[get(tracer,TrID)|RSC1],
+    listener_traced_goals:sieve(Mode,TrID,Goals,Goals1,2,Len,Total),
+    listener_traced_goals:count_msg(Len,Msg),
+    IN=[putf(" %%% KEPT GOALS (~t/~t~s",[Len,Total,Msg])|IN1],
+    listener_traced_goals:set_holo(D,L,DD,LL,IN1,IN2),
+    display(TrID,Goals1,IN2,IN3),
+    listener_traced_goals:set_holo(DD,LL,_,_,IN3,IN4),
+    listener_tracer_utility:read_command(kg,IN4,IN5,Com),
+    argument_check(Com,Com1,GM,GM1),
+    do_command(Com1,Mode,GM1,GM2,IN5,IN6,RSC1,RSC2,MM,NUM).
+
+
+display(TrID,[{ID,{_,_,Tr,_,_,Code,ArgV}}|List],IN,IN3) :-
+    code_to_predicate(Code,Mdl,Pred,_,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    display_mark(TrID,Tr,ID,IN,IN1),
+    IN1=[writeGoal((M:Goal),_)|IN2],
+    display(TrID,List,IN2,IN3).
+display(TrID,[{ID,{_,_,Tr,_,priority,Code,ArgV,{Pri,_,_}}}|List],IN,IN3) :-
+    code_to_predicate(Code,Mdl,Pred,_,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    display_mark(TrID,Tr,ID,IN,IN1),
+    IN1=[putb("@"), write(pri(Pri)), 
+         putb(" => "), writeGoal((M:Goal),_)|IN2],
+    display(TrID,List,IN2,IN3).
+display(TrID,[{ID,{_,_,Tr,_,Name,ArgV}}|List],IN,IN3) :-    %apply
+    listener_utility:make_up_goal(Name,ArgV,Goal),
+    display_mark(TrID,Tr,ID,IN,IN1),
+    IN1=[writeGoal(Goal,_)|IN2],
+    display(TrID,List,IN2,IN3).
+display(_,[],IN,IN1) :- IN1=IN.
+otherwise.
+display(TrID,[{ID,{_,_,Tr,_,Pgm,Code,ArgV,ArgOfPgm}}|List],IN,IN3) :-
+    code_to_predicate(Code,Mdl,Pred,_,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    display_mark(TrID,Tr,ID,IN,IN1),
+    IN1=[putf("@~t(",[Pgm]), write(ArgOfPgm), putb(") <= "),
+         writeGoal((M:Goal),_)|IN2],
+    display(TrID,List,IN2,IN3).
+
+
+display_mark(TrID,TrID,ID,IN,IN1) :- ID<10          | IN=[putf("~nk:~t   ",[ID])|IN1].
+display_mark(TrID,TrID,ID,IN,IN1) :- ID>=10, ID<100 | IN=[putf("~nk:~t  ", [ID])|IN1].
+display_mark(TrID,TrID,ID,IN,IN1) :- ID>=100        | IN=[putf("~nk:~t ",  [ID])|IN1].
+otherwise.
+display_mark(_,   TrID,ID,IN,IN1) :- ID<10          | IN=[putf("~n~t:~t   ",[TrID,ID])|IN1].
+display_mark(_,   TrID,ID,IN,IN1) :- ID>=10, ID<100 | IN=[putf("~n~t:~t  ", [TrID,ID])|IN1].
+display_mark(_,   TrID,ID,IN,IN1) :- ID>=100        | IN=[putf("~n~t:~t ",  [TrID,ID])|IN1].
+    
+
+argument_check(write((D,L)),         Com,GM,GM1) :- Com=write(D,L),GM1=GM.
+argument_check(monitor((V,N)),       Com,GM,GM1) :- Com=monitor(V,N),GM1=GM.
+argument_check(monitor_and_fork((V,N)),       Com,GM,GM1) :- Com=monitor_and_fork(V,N),GM1=GM.
+argument_check(remember((V,N)),       Com,GM,GM1) :- Com=remember(V,N),GM1=GM.
+argument_check(execute(V),       Com,GM,GM1) :- true |
+    listener_utility:to_list(V,L), arg_check(L,execute,Com,GM,GM1).
+argument_check(trace(V),         Com,GM,GM1) :- true |
+    listener_utility:to_list(V,L), arg_check(L,trace,Com,GM,GM1).
+argument_check(spy_reduction(V), Com,GM,GM1) :- true |
+    listener_utility:to_list(V,L), arg_check(L,spy_reduction,Com,GM,GM1).
+argument_check(spy_fork(V),      Com,GM,GM1) :- true |
+    listener_utility:to_list(V,L), arg_check(L,spy_fork,Com,GM,GM1).
+argument_check(inspect(V),       Com,GM,GM1) :- true |
+    listener_utility:to_list(V,L), arg_check(L,inspect,Com,GM,GM1).
+argument_check(fork(V),          Com,GM,GM1) :- true |
+    listener_utility:to_list(V,L), arg_check(L,fork,Com,GM,GM1).
+otherwise.
+argument_check(Command,          Com,GM,GM1) :- true | Com=Command, GM1=GM.
+
+arg_check([A|B],Name,Com,GM,GM2) :- true |
+    GM=[empty_keeping(A,YorN)|GM1], 
+    arg_check1(YorN,B,[A],Name,Com,GM1,GM2).
+
+arg_check1(no, [A|B],L,    Name,Com,GM,GM2) :- true |
+    GM=[empty_keeping(A,YorN)|GM1], 
+    arg_check1(YorN,B,[A|L],Name,Com,GM1,GM2).
+arg_check1(no, [],   L,    Name,Com,GM,GM1) :- true |
+    Com={Name,L}, GM1=GM.
+otherwise.
+arg_check1(_,  _,    [A|_],_,   Com,GM,GM1) :- true |
+    Com=illegal_id(A), GM1=GM.
+
+
+do_command(return,                 _Mode,GM,GM1,IN,IN1,RSC,RSC1,MM,_NUM) :-
+    GM1=GM, IN1=IN, RSC1=RSC, MM=[].
+do_command(execute(L),             _Mode,GM,GM1,IN,IN1,RSC,RSC1,MM,_NUM) :-
+    GM=[execute(notrace,L,{})|GM1], IN1=IN, RSC1=RSC, MM=[].
+do_command(trace(L),               _Mode,GM,GM1,IN,IN1,RSC,RSC1,MM,_NUM) :-
+    GM=[execute(trace,L,{})|GM1], IN1=IN, RSC1=RSC, MM=[].
+do_command(spy_reduction(L),       _Mode,GM,GM1,IN,IN1,RSC,RSC1,MM,_NUM) :-
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    GM=[execute(spyr,L,SpyCV)|GM1], IN1=IN, MM=[].
+do_command(spy_fork(L),            _Mode,GM,GM1,IN,IN1,RSC,RSC1,MM,_NUM) :-
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    GM=[execute(spyf,L,SpyCV)|GM1], IN1=IN, MM=[].
+do_command(inspect([ID]),          Mode,GM,GM2,IN,IN3,RSC,RSC2,MM,NUM) :-
+    GM=[get_and_put_keeping(ID,X,Z)|GM1],
+    get_goal(X,Z,Pred,ArgV),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[abort_line(Kill), variable(_TF,VAR), get(tracer,TrID)|RSC1],
+    IN=[next_attention(normal(At)),do(IN1)|IN2],
+    MM={MM1,MM2},
+    listener_inspector:inspect_goal(Kill,TrID,Goal,VAR,IN1,At,_,MM1),
+    list(Mode,GM1,GM2,IN2,IN3,RSC1,RSC2,MM2,NUM).
+do_command(list_kept_goals,_Mode,GM,GM1,IN,IN1,RSC,RSC1,MM,NUM) :-
+    list(local,GM,GM1,IN,IN1,RSC,RSC1,MM,NUM).
+do_command(list_kept_goals(TrIDs),_Mode,GM,GM1,IN,IN1,RSC,RSC1,MM,NUM) :-
+    listener_traced_goals:to_list(TrIDs,TrIDs1),
+    list(TrIDs1,GM,GM1,IN,IN1,RSC,RSC1,MM,NUM).
+do_command(list_traced_goals,_Mode,GM,GM1,IN,IN1,RSC,RSC1,MM,NUM) :-
+    listener_traced_goals:list(local,GM,GM1,IN,IN1,RSC,RSC1,MM,NUM).
+do_command(list_traced_goals(TrIDs),_Mode,GM,GM1,IN,IN1,RSC,RSC1,MM,NUM) :-
+    listener_traced_goals:to_list(TrIDs,TrIDs1),
+    listener_traced_goals:list(TrIDs1,GM,GM1,IN,IN1,RSC,RSC1,MM,NUM).
+do_command(write,Mode,GM,GM1,IN,IN2,RSC,RSC2,MM,NUM) :- 
+    RSC=[get(rewrite_depth,D),get(rewrite_length,L)|RSC1],
+    list(Mode,GM,GM1,IN,IN2,RSC1,RSC2,MM,NUM,D,L).
+do_command(write(D,L),Mode,GM,GM1,IN,IN2,RSC,RSC1,MM,NUM) :- D>=0, L>=0 |
+    list(Mode,GM,GM1,IN,IN2,RSC,RSC1,MM,NUM,D,L).
+
+do_command(help,             Mode,GM,GM1,IN,IN2,RSC,RSC1,MM,NUM) :-
+    IN=[nl,
+        putb("  N,...           : execute (notrace mode)"), nl,
+        putb("  tr N,...        : trace"), nl,
+        putb("  s  N,...        : apply reduction spy"), nl,
+        putb("  sr N,...        : apply reduction spy"), nl,
+        putb("  sf N,...        : apply fork spy"), nl,
+        putb("  spy   M,P,A     : set spy"), nl,
+        putb("  nospy M,P,A     : reset spy"), nl,
+        putb("  si <MODULE>     : list spying predicates"), nl,
+        putb("  f <N,...>       : set the tracer to trace"), nl,
+        putb("  tg <TRACERS|all>: list traced goals"), nl,
+        putb("  kg <TRACERS|all>: list kept goals"), nl,
+        putb("  ins N           : inspect goal"), nl,
+        putb("  m  VAR <,NAME>  : monitor variable"), nl,
+        putb("  mf VAR <,NAME>  : monitor variable and fork"), nl,
+        putb("  mm              : change monitor mode"), nl,
+        putb("  mt              : list monitored terms"), nl,
+        putb("  rem VAR <,NAME> : remember the binding"), nl,
+        putb("  l               : list variables"), nl,
+        putb("  v               : display variables"), nl,
+        putb("  w <DEPTH,LENGTH>: rewrite goals"), nl,
+        putb("  pd  <DEPTH>     : print depth"), nl,
+        putb("  pl  <LENGTH>    : print length"), nl,
+        putb("  psl <LENGTH>    : print string length"), nl,
+        putb("  pal <LENGTH>    : print atom length"), nl,
+        putb("  pv              : print variable mode"), nl,
+        putf("  <cr>, q         : quit~n:",[]), getl(_)|IN1],
+    list(Mode,GM,GM1,IN1,IN2,RSC,RSC1,MM,NUM).
+
+do_command(fork,Mode,GM,GM2,IN,IN3,RSC,RSC1,MM,NUM) :-
+    IN=[putb(" Tracer ID (ID>=0)? "),getlt(Trm)|IN1],
+    listener_utility:check_input(Trm,default,TrID,IN1,IN2),
+    set_tracer_id(GM,GM1,TrID),
+    list(Mode,GM1,GM2,IN2,IN3,RSC,RSC1,MM,NUM).
+do_command(fork(L),Mode,GM,GM2,IN,IN3,RSC,RSC1,MM,NUM) :-
+    IN=[putb(" Tracer ID (ID>=0)? "),getlt(Trm)|IN1],
+    listener_utility:check_input(Trm,default,TrID,IN1,IN2),
+    set_tracer_id(L,GM,GM1,TrID),
+    list(Mode,GM1,GM2,IN2,IN3,RSC,RSC1,MM,NUM).
+
+otherwise.
+do_command(Com,Mode,GM,GM1,IN,IN2,RSC,RSC2,MM,NUM) :- true|
+    listener_sub_command:do(Com,IN,IN1,RSC,RSC1,MM,MM1,NUM),
+    list(Mode,GM,GM1,IN1,IN2,RSC1,RSC2,MM1,NUM).
+
+
+get_goal(X,Z,Pred,ArgV) :- vector(X,6) |
+    Pred=apply, vector_element(X,5,ArgV,Z).
+otherwise.
+get_goal(X,Z,Pred,ArgV) :-
+    vector_element(X,5,Code,Y),
+    vector_element(Y,6,ArgV,Z),
+    code_to_predicate(Code,_,Pred,_,_).
+    
+set_tracer_id(GM,GM1,default) :- GM1=GM.
+otherwise.
+set_tracer_id(GM,GM1,TrID   ) :- GM=[fork(TrID)|GM1].
+
+set_tracer_id(_,GM,GM1,default) :- GM1=GM.
+otherwise.
+set_tracer_id(L,GM,GM1,TrID   ) :- GM=[fork(TrID,L)|GM1].

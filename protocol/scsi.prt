@@ -1,0 +1,136 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+scsi_request_filter = stream(scsi_request_command)##scsi_request.
+%direct_access_filter = -scsidev_stream(direct_access_command)##direct_access.
+%procesor_filter = -scsidev_stream(processor_command)##processor.
+%sequential_access_filter = -scsidev_stream(sequential_access_command)##sequential_access.
+
+scsi_request_command = {
+        direct_access(scsi_descriptor,scsi_id,lun,
+                        -scsidev_stream(scsi_direct_access_command)##scsi_direct_access);
+        processor(scsi_descriptor,scsi_id,lun,
+                        -scsidev_stream(scsi_processor_command)##scsi_processor);
+        sequential_access(scsi_descriptor,scsi_id,lun,
+                        -scsidev_stream(scsi_sequential_access_command)##scsi_sequential_access);
+        get_info(-scsi_information);
+        configuration(-scsi_configuration)
+}.
+
+scsi_descriptor=vector([node,pe,port]).
+scsi_common_command={
+        current_procesor(-current_processor_status#)#;
+        inquiry(-inquiry_status#)#;
+        test_unit_ready(-simple_status#)#
+}.
+
+scsi_sequential_access_command = scsi_common_command & {
+        rewind(rewind_timing,-simple_status)# ;
+        read_block_limits(-read_block_limits_status)#;
+        read(string,moded_size,-send_receive_status)#;
+        write(string,moded_size,-send_receive_status)#;
+        write_filemarks(integer,-simple_status)# ;
+        space(space_size,-simple_status)# ;
+        mode_select(integer,ground,string,-simple_status)#;
+        mode_sense(-mode_sense_status)#
+}.
+rewind_timing = {
+    on_at; on_after
+}.
+read_block_limits_status = {
+    normal(string);
+    abnormal(error_reason)
+}.
+moded_size = {
+    block(integer);
+    byte(integer)
+}.
+scsi_processor_command = scsi_common_command & {
+        send(string,integer,-send_receive_status)#;
+        receive(string,integer,-send_receive_status)#
+}.
+send_receive_status = {
+    normal(integer,string);
+    abnormal(error_reason,integer,string)
+}.
+space_size = {
+    block(integer);
+    filemark(integer);
+    filemarks(integer);
+    end_of_data
+}.
+scsi_direct_access_command = scsi_common_command & {
+        send_diagnostic(integer,integer,integer,string,-simple_status)#;
+        receive_diagnostic_results(-diagnostic_result)#;
+        format_unit(list(ground),integer,integer,integer,integer,-simple_status)#;
+        read(integer,integer,string,-read_write_status)#;
+        write(integer,integer,string,-read_write_status)#;
+        mode_select(integer,ground,string,-simple_status)#;
+        mode_sense(-mode_sense_status)#;
+        reassign_blocks(list(integer),-simple_status)#;
+        start_stop_unit(integer,integer,-simple_status)#;
+        prevent_allow_medium_removal(integer,-simple_status)#;
+        read_capacity(integer,integer,integer,-read_capacity_status)#;
+        write_and_verify(integer,integer,string,integer,-read_write_status)#
+}.
+
+current_processor_status=vector([node,pe]).
+inquiry_status={
+    normal(integer,integer,integer,string);
+    abnormal(error_reason)
+}.
+simple_status={
+    normal;
+    abnormal(error_reason)
+}.
+diagnostic_result={
+    normal(string);
+    abnormal(error_reason)
+}.
+%defect={
+%    integer;
+%    vector([cylinder,head,offset])
+%}.
+read_write_status={
+    normal(integer,string);
+%%%% AMANUMA
+    abnormal(error_reason,integer,string);
+%%%%
+    abnormal(error_reason)
+}.
+%block_descriptor={
+%    vector([density,blocksize,totalblocks]);
+%    vector([])
+%}.
+mode_sense_status={
+    normal(integer,integer,ground,string);
+    abnormal(error_reason)
+}.
+read_capacity_status={
+    normal(integer,integer);
+    abnormal(error_reason)
+}.
+scsidev_stream(p) = {
+        normal(-stream(p)) ;
+        abnormal(error_reason) 
+%        aborted ;
+%        disconnected
+}.
+
+node=integer.        
+pe=integer.
+port=integer.
+scsi_id=integer.
+lun=integer.
+error_reason=ground.
+scsi_information=ground.
+scsi_configuration=ground.
+cylinder=integer.
+head=integer.
+offset=integer.
+density=integer.
+blocksize=integer.
+totalblocks=integer.

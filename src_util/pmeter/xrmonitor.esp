@@ -1,0 +1,105 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class x_performance_meter has
+
+nature
+    pimfep##as_pimos_string_io_device ;
+%    as_program ;
+
+
+instance
+
+attribute
+    pe_pool,
+    interval,
+    info,
+    pex,
+    pey,
+    reset_p := 0 ,
+    monitor ,
+    color,
+    type := rmonitor,
+    socket,
+    server_name := fkpsi602,
+    port := 4000;
+
+:io(O, 3, ToFEP, FromFEP) :- !,
+    :get_my_node(#network_node_name,Node),
+    string(Node,L,_),
+    :create(#standard_io_buffer,Buf),
+    :reset(Buf),
+    :putb(Buf,Node,L),
+    :putc(Buf,#"."),
+    :gett(Buf,Term),
+    O!server_name := Term,
+    make_client_socket(Socket,O),
+    O!socket := Socket,
+    send_server(O, 3, ToFEP),
+    FromFEP = string#"";
+
+:io(O, Command, ToFEP, FromFEP) :-
+    send_server(O, Command, ToFEP),
+    FromFEP = string#"";
+
+:device_abort(O):-!,
+    end_server(O);
+
+:pimos_user_exit(O) :-!, 
+    end_server(O);
+
+local
+
+    send_server(O, Command, ToFEP):-
+        string(ToFEP,Length,16),
+        ( Length==0, !,
+          transmit_end(O!socket);
+          new_string(Code,Length+1,16),
+          set_string_element(Code,0,Command),
+          set_substring(Code,1,Length,ToFEP),
+          :send(O!socket,Code,Stat,_),
+          check(Stat,string#"send"));
+
+    end_server(O):-
+          new_string(Code,1,16),
+          set_string_element(Code,0,4),
+          :send(O!socket,Code,Stat,_),
+          check(Stat,string#"send"),
+          transmit_end(O!socket);
+
+make_client_socket(Socket, Obj):-
+        Port = Obj!port,
+        :get_atom_string(#symbolizer,Obj!server_name,ServerName),
+        :get_address(#tcpip_host_table,ServerName,_,Address),
+        set_string_element(Address, 2, Port/\16#"ff"),
+        set_string_element(Address, 3, ((Port>>8)/\16#"ff")),
+        :create(#tcpip_socket, Socket, Stat1, _),
+        check(Stat1,string#"socket"),
+        :connect(Socket, Address, Stat2, _),
+        check(Stat2,string#"connect"),
+        :set_receive_timeout(Socket,nil),
+        :set_send_timeout(Socket,nil);
+
+check(normal,_):- !;
+check(Atom,String):- 
+        :create(#standard_io_window,
+            [size(300,200),
+             position(300,300),
+             title(string#"ERROR_WINDOW")],Window),
+        :activate(Window),
+        :get_atom_string(#symbolizer,Atom,String1),
+        :append(#string,[String,string#" error"],String2),
+        :putl(Window,String1),
+        :putl(Window,String2),
+        :putl(Window,string#"Hit return!!"),
+        :getl(Window,_),
+        :self(#process, Self),
+        :die(Self);
+
+transmit_end(Socket):-
+        :close_socket(Socket,Stat,_),
+        check(Stat,string#"close");    % Modified By Kiyohara
+%        :self(#process, Self),
+%        :die(Self);
+
+
+end.

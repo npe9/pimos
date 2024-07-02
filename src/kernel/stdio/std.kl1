@@ -1,0 +1,424 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module task_stdio.
+:- with_macro pimos.
+:- public check/11.
+
+check(List,Status,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN):-
+    true|
+    check1(List,ST),
+    check2(ST,Status,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN).
+
+check2(normal({in(Data),O,IT}),Status,Info,Node,
+             Shut,Tools,ToolN,App,Dir,Env,EnvN):-
+    true|
+    stdio_check21(O,IT,[in(Data)],[],Status,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN).
+check2(normal({*,O,IT}),Status,Info,Node,
+             Shut,Tools,ToolN,App,Dir,Env,EnvN):-
+    true|
+    stdio_check21(O,IT,[],in,Status,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN).
+check2(abnormal,Status,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN):-
+    true|
+    Status = abnormal,
+    merge(STD,STDOut),
+    Env = EnvN,
+    App = [],
+    task_std_abnormal:handler(STDOut),
+    set_vector_element(Tools,5,[],STD,ToolN).
+
+stdio_check21(O,IT,New,Old,Status,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN):-
+    true|
+    out_check(O,New,Old,New1,Old1),
+    inter_check(IT,New1,Old1,NewN,OldN),
+    stdio_check3(NewN,OldN,Status,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN).
+
+out_check(out(Data),[],Old,New,Old1):-
+    true|
+    New = [out(Data)],
+    Old = Old1.
+out_check(out(Data),[in(Datain)],Old,New,Old1):-
+    true|
+    New = [in(Datain),out(Data)],
+    Old = Old1.
+out_check(in,[in(Data)],Old,New,Old1):-
+    true|
+    New = [in_out(Data)],
+    Old = Old1.
+out_check(*,New,[],New1,Old1):-
+    true|
+    New = New1,
+    Old1 = out.
+out_check(*,New,in,New1,Old1):-
+    true|
+    New = New1,
+    Old1 = in_out.
+
+inter_check(inter(Data),[],Old,New,Old1):-
+    true|
+    New = [inter(Data)],
+    Old = Old1.
+inter_check(inter(Data),[E1],Old,New,Old1):-
+    true|
+    New = [E1,inter(Data)],
+    Old = Old1.
+inter_check(inter(Data),[E1,E2],Old,New,Old1):-
+    true|
+    New = [E1,E2,inter(Data)],
+    Old = Old1.
+inter_check(in,[in(Data)|Cdr],Old,New,Old1):-
+    true|
+    New = [in_inter(Data)|Cdr],
+    Old = Old1.
+inter_check(in,[in_out(Data)|Cdr],Old,New,Old1):-
+    true|
+    New = [in_out_inter(Data)|Cdr],
+    Old = Old1.
+inter_check(out,[out(Data)],Old,New,Old1):-
+    true|
+    New = [out_inter(Data)],
+    Old = Old1.
+inter_check(out,[E1,out(Data)],Old,New,Old1):-
+    true|
+    New = [E1,out_inter(Data)],
+    Old = Old1.
+inter_check(*,New,[],New1,Old1):-
+    true|
+    New = New1,
+    Old1 = inter.
+inter_check(*,New,in,New1,Old1):-
+    true|
+    New = New1,
+    Old1 = in_inter.
+inter_check(*,New,out,New1,Old1):-
+    true|
+    New = New1,
+    Old1 = out_inter.
+inter_check(*,New,in_out,New1,Old1):-
+    true|
+    New = New1,
+    Old1 = in_out_inter.
+
+stdio_check3(New,Old,Status,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN):-
+    true|
+    get_resource_info(Info,InfoN,Node,Dir),
+    copy:copy(InfoN,InfoN1,InfoN2),
+    set_vector_element(Tools,5,StdDist,NewStdDistIn,Tool1),
+    merge(NewStdDistIn,NewStdDist),
+    set_vector_element(Tool1,4,Serv,Serv1,ToolN),
+    merge({Serv1,Serv2},Serv),
+    stdio_old_check(Old,Status,InfoN1,Node,Shut,
+                                           StdDist,App,App1,Dist),
+    stdio_new_check(New,InfoN2,Node,Shut,Serv2,App1,Dist,NewStdDist,Env,EnvN).
+
+stdio_old_check([],Status,_,_,_,Std,App,AppN,Dist):-
+    true|
+    Status = normal(-1,[]),
+    Std = [],
+    Dist = [],
+    App = AppN.
+otherwise.
+stdio_old_check(Type,Status,Info,Node,Shut,Std,App,AppN,Dist):-
+    true|
+    Std = [make_branch(Type,Shut,Node,Info,Result,SShut)],
+    stdio_old_check2(Result,Status,Node,Shut,App,AppN,Dist,SShut).
+
+stdio_old_check2(normal(E,Id),Status,Node,Shut,App,AppN,Dist,SShut):-
+    true|
+    Status = normal(Id,[{Type,Out}]),
+    E = {Type,Comm,Cont,FCode},
+    Dist = [{Type,ContN,FCode,SShut}],
+    stdio_old_check3(Type,Out,Comm,Cont,ContN,Node,Shut,App,AppN,SShut).
+stdio_old_check2(normal(E1,E2,Id),Status,Node,Shut,App,AppN,Dist,SShut):-
+    true|
+    Status = normal(Id,[{Type1,Out1},{Type2,Out2}]),
+    E1 = {Type1,Comm1,Cont1,FCode1},
+    E2 = {Type2,Comm2,Cont2,FCode2},
+    Dist = [{Type1,Cont1N,FCode1,SShut},{Type2,Cont2N,FCode2,SShut}],
+    stdio_old_check3(Type1,Out1,Comm1,Cont1,Cont1N,Node,Shut,App,App1,SShut),
+    stdio_old_check3(Type2,Out2,Comm2,Cont2,Cont2N,Node,Shut,App1,AppN,SShut).
+stdio_old_check2(normal(E1,E2,E3,Id),Status,Node,Shut,App,AppN,Dist,SShut):-
+    true|
+    Status = normal(Id,[{Type1,Out1},{Type2,Out2},{Type3,Out3}]),
+    E1 = {Type1,Comm1,Cont1,FCode1},
+    E2 = {Type2,Comm2,Cont2,FCode2},
+    E3 = {Type3,Comm3,Cont3,FCode3},
+    Dist = [{Type1,Cont1N,FCode1,SShut},
+            {Type2,Cont2N,FCode2,SShut},
+            {Type3,Cont3N,FCode3,SShut}],
+    stdio_old_check3(Type1,Out1,Comm1,Cont1,Cont1N,Node,Shut,App,App1,SShut),
+    stdio_old_check3(Type2,Out2,Comm2,Cont2,Cont2N,Node,Shut,App1,App2,SShut),
+    stdio_old_check3(Type3,Out3,Comm3,Cont3,Cont3N,Node,Shut,App2,AppN,SShut).
+
+stdio_old_check3(Type,Out,Comm,Cont,ContN,Node,Shut,App,AppN,SShut):-
+    true|
+    App = [add_monitor(std_switch,Comm,St)|App1],
+    stdio_old_check4(St,Type,Out,Comm,Cont,ContN,Node,Shut,App1,AppN,SShut).
+
+stdio_old_check4(normal(HI,HO),Type,Out,Comm,Cont,ContN,Node,Shut,App,AppN,SShut):-
+    true|
+    App = [add_monitor(Type,Comm,St)|AppN],
+    stdio_old_check5(St,HI,HO,{Type,Out},Cont,ContN,Node,Shut,SShut).
+otherwise.
+stdio_old_check4(_,Type,Out,Comm,Cont,ContN,Node,Shut,App,AppN,_):-
+    true|
+    Out = [],
+    Cont = ContN,
+    App = AppN.
+
+stdio_old_check5(normal(HI2,HO2),HI1,HO1,Type0,Cont,ContN,Node,Shut,SShut):-
+    true|
+    Cont = [open(Type0,switch(SW,SWA),io(IO,IOA))|ContN],
+    internal_handler:get_relative_node(Node,RNode),
+    general_request_handler:local_handler(Shut,SWA,SW,
+                                                HI1,HO1,normal,SShut)@node(RNode),
+    general_request_handler:local_handler(Shut,IOA,IO,
+                                                HI2,HO2,normal,SShut)@node(RNode).
+otherwise.
+stdio_old_check5(_,HI,HO,{Type,Out},Cont,ContN,Node,Shut,_):-
+    true|
+    abnormal_monitor_std(HI,HO),
+    Out = [],
+    Cont = ContN.
+
+
+%%%%%%%%%%%%%%%%
+stdio_new_check([],Info,Node,Shut,Serv,App,Dist,NSD,Env,EnvN):-
+    true|
+    Serv = [],
+    App = [],
+    Env = EnvN,
+    std_handler(Node,Dist,NSD).
+stdio_new_check([{Kind,{Type,In,Out}}|Next],Info,Node,Shut,Serv,App,Dist,NSD,Env,EnvN):-
+    true|
+    copy:copy(Info,Info1,InfoN),
+    new_info(Info1,Info2,Type,Env,Env1),
+    Serv = [request(Type,stdio,Info2,_,Shut,Result)|ServN],
+    App = [add_monitor(std_switch,"parent",St)|App1],
+    stdio_new_check2(St,Result,In,Out,Kind,Node,Shut,App1,AppN,Cont,FCode,SShut),
+    stdio_new_check(Next,InfoN,Node,Shut,ServN,AppN,[{Kind,Cont,FCode,SShut}|Dist],NSD,Env1,EnvN).
+
+stdio_new_check2(normal(HI,HO),Result,In,Out,Kind,Node,Shut,App,AppN,Cont,FCode,SShut):-
+    true|
+    App = [add_monitor(Kind,"parent",St)|AppN],
+    stdio_new_check21(St,Result,In,Out,HI,HO,Kind,Node,Shut,Cont,FCode,SShut).
+otherwise.
+stdio_new_check2(_,Result,In,Out,Kind,Node,Shut,App,AppN,Cont,FCode,SShut):-
+    true|
+    abnormal_result_std(Result,SShut),
+    abnormal_std(Cont,SShut,FCode),
+    Out = [], App = AppN.
+
+stdio_new_check21(normal(HI2,HO2),Result,In,Out,HI1,HO1,Kind,
+                                           Node,Shut,Cont,FCode,SShut):-
+    true|
+    internal_handler:get_relative_node(Node,RNode),
+    general_request_handler:local_handler(Shut,SWA,SW,
+                                                HI1,HO1,normal,SShut)@node(RNode),
+    general_request_handler:local_handler(Shut,IOA,IO,
+                                                HI2,HO2,normal,SShut)@node(RNode),
+    stdio_new_check3(Result,In,Out,SWA,SW,IOA,IO,Kind,Cont,FCode,SShut).
+otherwise.
+stdio_new_check21(_,Result,In,Out,HI1,HO1,Kind,Node,Shut,Cont,FCode,SShut):-
+    true|
+    Out = abnormal,
+    abnormal_result_std(Result,SShut),
+    abnormal_monitor_std(HI1,HO1),
+    abnormal_std(Cont,SShut,FCode).
+
+stdio_new_check3(normal(Code,Comm,SCont,SShut0),In,Out,SWA,SW,IOA,IO,Kind,Cont,FCode,SShut):-
+    true|
+    SCont = [open({Kind,In,Out},switch(SW,SWA),io(IO,IOA))|Cont],
+    SShut = SShut0,
+    Code = FCode.
+otherwise.
+stdio_new_check3(_,In,Out,SWA,SW,IOA,IO,Kind,Cont,FCode,SShut):-
+    true|
+    Out = abnormal,
+    SW = [], IO = [],
+    abnormal_std(Cont,SShut,FCode).
+
+std_handler(Node,Dist,NSD):-
+    true|
+    std_handler(Node,Dist,{*,*,*},NSD).
+
+std_handler(Node,[in(Cont,FCode,SShut)|Next],Vec,NSD):-
+    true|
+    set_vector_element(Vec,0,_,in(Cont,FCode,SShut),VecN),
+    std_handler(Node,Next,VecN,NSD).
+std_handler(Node,[out(Cont,FCode,SShut)|Next],Vec,NSD):-
+    true|
+    set_vector_element(Vec,1,_,out(Cont,FCode,SShut),VecN),
+    std_handler(Node,Next,VecN,NSD).
+std_handler(Node,[inter(Cont,FCode,SShut)|Next],Vec,NSD):-
+    true|
+    set_vector_element(Vec,2,_,inter(Cont,FCode,SShut),VecN),
+    std_handler(Node,Next,VecN,NSD).
+std_handler(Node,[in_out(Cont,FCode,SShut)|Next],Vec,NSD):-
+    true|
+    set_vector_element(Vec,0,_,in_out(Cont,FCode,SShut),VecN),
+    std_handler(Node,Next,VecN,NSD).
+std_handler(Node,[in_inter(Cont,FCode,SShut)|Next],Vec,NSD):-
+    true|
+    set_vector_element(Vec,0,_,in_inter(Cont,FCode,SShut),VecN),
+    std_handler(Node,Next,VecN,NSD).
+std_handler(Node,[in_out_inter(Cont,FCode,SShut)|Next],Vec,NSD):-
+    true|
+    set_vector_element(Vec,0,_,in_out_inter(Cont,FCode,SShut),VecN),
+    std_handler(Node,Next,VecN,NSD).
+std_handler(Node,[out_inter(Cont,FCode,SShut)|Next],Vec,NSD):-
+    true|
+    set_vector_element(Vec,1,_,out_inter(Cont,FCode,SShut),VecN),
+    std_handler(Node,Next,VecN,NSD).
+std_handler(Node,[],Vec,NSD):-
+    true|
+    internal_handler:get_relative_node(Node,RNode),
+    invoke_std_handler(Vec,Node,NSD)@node(RNode).
+
+invoke_std_handler({in_out_inter(Cont,FCode,SShut),_,_},Node,NSD):-
+    true|
+    task_std_handler:inOutInter(NSD,Cont,FCode,1,SShut).
+invoke_std_handler({in_out(Cont,FCode,SShut),_,inter(Cont1,FCode1,SShut1)},Node,NSD):-
+    true|
+    task_std_handler:inOut_inter(NSD,Cont,FCode,Cont1,FCode1,1,SShut,SShut1).
+invoke_std_handler({in_inter(Cont,FCode,SShut),out(Cont1,FCode1,SShut1),_},Node,NSD):-
+    true|
+    task_std_handler:inInter_out(NSD,Cont,FCode,Cont1,FCode1,1,SShut,SShut1).
+invoke_std_handler({in(Cont,FCode,SShut),out_inter(Cont1,FCode1,SShut1),_},Node,NSD):-
+    true|
+    task_std_handler:in_outInter(NSD,Cont,FCode,Cont1,FCode1,1,SShut,SShut1).
+invoke_std_handler({in(Cont,FCode,SShut),out(Cont1,FCode1,SShut1),inter(Cont2,FCode2,SShut2)},
+                                                                Node,NSD):-
+    true|
+    task_std_handler:in_out_inter(NSD,Cont,FCode,Cont1,FCode1,Cont2,FCode2,1,SShut,SShut1,SShut2).
+
+abnormal_result_std(normal(_,_,SCont,SShut0),SShut):-
+    true|
+    SShut = SShut0,
+    SCont = [].
+otherwise.
+abnormal_result_std(_,SShut):- true| SShut = abort.
+
+abnormal_monitor_std(HI,HO):-
+    true|
+    HO = [terminate|HON],
+    abnormal_monitor_std1(HI,HON).
+
+abnormal_monitor_std1([terminate|HI],HO):-
+    true|
+    HO = [],
+    abnormal_monitor_std1(HI,_).
+abnormal_monitor_std1([],_):-
+    true|
+    true.
+
+abnormal_std(Cont,SShut,FCode):-
+    true|
+    predicate_to_code(module#task_std_abnormal,filter,3,FCode),
+    task_std_abnormal:handler(Cont,SShut).
+
+get_resource_info(Info,InfoN,Node,Dir):-
+    true|
+    general_request_handler:get_request_info(Info,InfoN,_,Dir,Node).
+
+check1(List,Status):-
+    true|
+    check1(List,{*,*,*},Status).
+check1([Msg|Next],Old,Status):-
+    true|
+    set_vector_element(Msg,0,Kind,0,Msg1),
+    set_vector_element(Msg1,1,Data,0,_),
+    new_type_check(Kind,Data,Old,New),
+    wait_check0(New,Next,Status).
+check1([],Old,Status):-
+    true|
+    Status = normal(Old).
+
+wait_check0(abnormal(Data,Old),Next,Status):-
+    true|
+    wait_abnormal(Next,Data,Old,Status).
+otherwise.
+wait_check0(New,Next,Status):-
+    true|
+    check1(Next,New,Status).
+
+new_type_check(in,Data,{*,O,IT},New):-
+    true|
+    New = {in(Data),O,IT}.
+new_type_check(out,Data,{I,*,IT},New):-
+    true|
+    New = {I,out(Data),IT}.
+new_type_check(inter,Data,{I,O,*},New):-
+    true|
+    New = {I,O,inter(Data)}.
+new_type_check(in_out,Data,{*,*,IT},New):-
+    true|
+    New = {in(Data),in,IT}.
+new_type_check(in_inter,Data,{*,O,*},New):-
+    true|
+    New = {in(Data),O,in}.
+new_type_check(out_inter,Data,{I,*,*},New):-
+    true|
+    New = {I,out(Data),out}.
+new_type_check(in_out_inter,Data,{*,*,*},New):-
+    true|
+    New = {in(Data),in,in}.
+otherwise.
+new_type_check(_,Data,Old,New):-
+    true|
+    New = abnormal(Data,Old).
+
+wait_abnormal(Next,{_,_,Out},Old,Status):-
+    true|
+    Out = abnormal,
+    abnormal_close(Next),
+    abnormal_close2(0,Old),
+    Status = abnormal.  %%
+
+abnormal_close([]):-
+    true|
+    true.
+abnormal_close([{_,{_,_,Out}}|Next]):-
+    true|
+    Out = abnormal,
+    abnormal_close(Next).
+
+abnormal_close2(3,_):-
+    true|
+    true.
+otherwise.
+abnormal_close2(N,Old):-
+    vector_element(Old,N,E),
+    atom(E),
+    N1 := N + 1|
+    abnormal_close2(N1,Old).
+otherwise.
+abnormal_close2(N,Old):-
+    N1 := N + 1|
+    set_vector_element(Old,N,E0,0,OldN),
+    set_vector_element(E0,1,E1,0,_),
+    set_vector_element(E1,2,[],0,_),
+    abnormal_close2(N1,OldN).
+
+new_info(Info,InfoN,Name,Env,EnvN):-
+    true|
+    Env = [get_and_put_if_any((Name):io_node,Y,Y1,_)|EnvN],
+    new_info(Y,Y1,Info,InfoN).
+
+new_info(Y,Y1,Info,InfoN):-
+    vector(Y,0)|
+    Info = InfoN.
+new_info(Y,E1,Info,InfoN):-
+    vector_element(Y,0,E),
+    string(E,_,_)|
+    copy:copy(E,E1,E2),
+    set_vector_element(Info,2,Info11,Info12,InfoN),
+    set_vector_element(Info11,1,_,E2,Info12).
+new_info(Y,E1,Info,InfoN):-
+    vector_element(Y,0,E),
+    integer(E)|
+    E = E1,
+    set_vector_element(Info,3,_,E,InfoN).

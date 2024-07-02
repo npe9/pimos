@@ -1,0 +1,606 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+add_operator((::),xfx,90).
+class as_draw_predicate has
+
+instance
+ attribute
+    from := 1,
+    num,
+    total,
+    pred_start_x := 20,
+    pred_start_y := 30,
+    pred_width,
+    set_pred_list;
+
+
+  :draw_all_list(Obj,Width,List,Time):-!,
+     Obj!font_11 = F,
+     Obj!from := 1,
+     :get_size(Obj,W,Height),
+     StringNum = Width/11,
+     count(List,0,Total),
+     Obj!total := Total,
+     :create(#list,PL),
+     set_pred_list(List,PL),
+     Obj!set_pred_list := PL,
+     draw_list(Obj!pred_start_x,Obj!pred_start_y,0,List,DL,F,StringNum,Height,0,0,Obj,Time),
+     Obj!pred_width := Width,
+     :execute_graphics_command(Obj!window,DL);
+
+  :next_page_predicate(Obj):-
+     Obj!num=\=Obj!total,
+     From0 = Obj!from+Obj!num,
+     From0 =< Obj!total,!,
+     :get_size(Obj,_,Height),
+     :clear(Obj!window,Obj!pred_start_x,Obj!pred_start_y+30,Obj!pred_width,Height-188),
+     Obj!font_11 = F,
+     Obj!set_pred_list = PL,
+     :get_contents(PL,List),
+     StringNum = Obj!pred_width/11,
+     Obj!from := From0,
+     draw_part_list(Obj!pred_start_x,Obj!pred_start_y+30,From0,Height-160,List,DL,F,StringNum,Obj),
+     :execute_graphics_command(Obj!window,DL);
+  :next_page_predicate(Obj):-!;
+
+  :previous_page_predicate(Obj):-
+     Obj!num=\=Obj!total,
+     Obj!from =\= 1,!,
+     From0 = Obj!from-Obj!num,
+     ( From0 =< 0 ,!, From = 1 ;
+       From = From0 ), 
+     :get_size(Obj,_,Height),
+     :clear(Obj!window,Obj!pred_start_x,Obj!pred_start_y+30,Obj!pred_width,Height-188),
+     Obj!set_pred_list = PL,
+     :get_contents(PL,List),
+     Obj!font_11 = F,
+     StringNum = Obj!pred_width/11,
+     Obj!from := From,
+     draw_part_list(Obj!pred_start_x,Obj!pred_start_y+30,From,Height-160,List,DL,F,StringNum,Obj),
+     :execute_graphics_command(Obj!window,DL);
+   :previous_page_predicate(Obj):-!;
+
+  :next_predicate(Obj):-
+     Obj!num=\=Obj!total,
+     From0 = Obj!from+1,
+     From0 =< Obj!total,!,
+     :get_size(Obj,_,Height),
+     :clear(Obj!window,Obj!pred_start_x,Obj!pred_start_y+30,Obj!pred_width,Height-188),
+     Obj!font_11 = F,
+     Obj!set_pred_list = PL,
+     :get_contents(PL,List),
+     StringNum = Obj!pred_width/11,
+     Obj!from := From0,
+     draw_part_list(Obj!pred_start_x,Obj!pred_start_y+30,From0,Height-160,List,DL,F,StringNum,Obj),
+     :execute_graphics_command(Obj!window,DL);
+  :next_predicate(Obj):-!;
+
+  :previous_predicate(Obj):-
+     Obj!num=\=Obj!total,
+     Obj!from =\= 1,!,
+     :get_size(Obj,_,Height),
+     :clear(Obj!window,Obj!pred_start_x,Obj!pred_start_y+30,Obj!pred_width,Height-188),
+     Obj!set_pred_list = PL,
+     :get_contents(PL,List),
+     StringNum = Obj!pred_width/11,
+     From = Obj!from-1,
+     Obj!font_11 = F,
+     Obj!from := From,
+     draw_part_list(Obj!pred_start_x,Obj!pred_start_y+30,From,Height-160,List,DL,F,StringNum,Obj),
+     :execute_graphics_command(Obj!window,DL);
+  :previous_predicate(Obj):-!;
+
+  :top_predicate(Obj):-
+     Obj!num=\=Obj!total,
+     Obj!from =\= 1,!,
+     From = 1,
+     :get_size(Obj,_,Height),
+     :clear(Obj!window,Obj!pred_start_x,Obj!pred_start_y+30,Obj!pred_width,Height-188),
+     Obj!set_pred_list = PL,
+     :get_contents(PL,List),
+     Obj!font_11 = F,
+     StringNum = Obj!pred_width/11,
+     Obj!from := From,
+     draw_part_list(Obj!pred_start_x,Obj!pred_start_y+30,From,Height-160,List,DL,F,StringNum,Obj),
+     :execute_graphics_command(Obj!window,DL);
+   :top_predicate(Obj):-!;
+  
+   :bottom_predicate(Obj):-
+     Obj!num=\=Obj!total,
+     From0 = Obj!total-Obj!num+1,
+     Obj!from =\= From0 ,
+     From0 =< Obj!total ,!,
+     :get_size(Obj,_,Height),
+     :clear(Obj!window,Obj!pred_start_x,Obj!pred_start_y+30,Obj!pred_width,Height-188),
+     Obj!font_11 = F,
+     Obj!set_pred_list = PL,
+     :get_contents(PL,List),
+     StringNum = Obj!pred_width/11,
+     Obj!from := From0,
+     draw_part_list(Obj!pred_start_x,Obj!pred_start_y+30,From0,Height-160,List,DL,F,StringNum,Obj),
+     :execute_graphics_command(Obj!window,DL);
+  :bottom_predicate(Obj):-!;
+
+local
+
+   
+    draw_list(X,Y,0,Name,DL,F,SN,Height,Red,Sus,Obj,Time):-!,
+        ( Obj!view_mode = msg,!,
+           String = "No.      Message",
+           String1 = "  Received    Sent" ;
+           Obj!view_mode = pe,!,
+           String = "No.      Name",
+           String1 = "         %" ;
+           String = "No.      Predicate" ,
+           String1 = "  Reduction Suspention"),
+        ( 30 =< SN ,!,
+          DL = [{draw_string,{X,Y,String,F,set}},
+                {draw_string,{(SN-22)*11,Y,String1,F,set}}|R] ;
+          18 =< SN ,!,
+          DL = [{draw_string,{X,Y,String,F,set}}|R] ;
+          DL=R ),
+        draw_list(X,Y+30,1,0,Name,R,F,SN,Height,Red,Sus,Obj,Time);
+    draw_list(X,Y,C,Flag,[],DL,F,SN,Height,Red,Sus,Obj,Time):-!,
+        :get_number_string(#symbolizer,C-1,C1),
+        :get_number_string(#symbolizer,Red,R1),
+        :get_number_string(#symbolizer,Sus,S1),
+        ( Flag = 0,!,
+          Obj!num := C-1 ;
+          Obj!num := Flag ),
+        ( 30 =< SN ,!,
+           ( Obj!view_mode = pe,!,
+             :append(#string,[R1," %"],RString), 
+             string(R1,RStringL,_),         
+            (Time = nil,!,
+             DL = [ {draw_string,{X+30,Y+30,"------------",F,set}},
+                    {draw_string,{X+70+110-RStringL*11,Y+50,RString,F,set}}] ;
+             integer(Time),!,
+             :get_number_string(#symbolizer,Time,Time1),
+             :append(#string,[Time1," msec"],TimeString),
+             string(Time1,TStringL,_),         
+             DL = [ {draw_string,{X+30,Y+30,"------------",F,set}},
+                    {draw_string,{X+70+110-RStringL*11,Y+50,RString,F,set}},
+                    {draw_string,{X+70+110-TStringL*11,Y+65,TimeString,F,set}}] );
+           ( Obj!view_mode = msg,!,
+             :append(#string,[C1," messages"],PredString),          
+             :append(#string,[R1," received"],RString),          
+             :append(#string,[S1," sent"],SString) ; 
+             :append(#string,[C1," predicates"],PredString),          
+             :append(#string,[R1," reductions"],RString),          
+             :append(#string,[S1," suspensions"],SString)) ,
+             string(C1,PredStringL,_),         
+             string(R1,RStringL,_),         
+             string(S1,SStringL,_),         
+           ( Time = nil,!,
+             DL = [ {draw_string,{X+30,Y+30,"------------",F,set}},
+                    {draw_string,{X+40,Y+50,"Total",F,set}},
+                    {draw_string,{X+70+110-PredStringL*11,Y+50,PredString,F,set}},
+                    {draw_string,{X+70+110-RStringL*11,Y+65,RString,F,set}},
+                    {draw_string,{X+70+110-SStringL*11,Y+80,SString,F,set}}];
+             integer(Time),!,
+             :get_number_string(#symbolizer,Time,Time1),
+             :append(#string,[Time1," msec"],TimeString), 
+             string(Time1,TStringL,_),         
+             DL = [ {draw_string,{X+30,Y+30,"------------",F,set}},
+                    {draw_string,{X+40,Y+50,"Total",F,set}},
+                    {draw_string,{X+70+110-PredStringL*11,Y+50,PredString,F,set}},
+                    {draw_string,{X+70+110-RStringL*11,Y+65,RString,F,set}},
+                    {draw_string,{X+70+110-SStringL*11,Y+80,SString,F,set}},
+                    {draw_string,{X+70+110-TStringL*11,Y+95,TimeString,F,set}}] ) );
+          15 =< SN,!,
+          ( Obj!view_mode = pe,!,   
+              :append(#string,[R1," %"],RString),          
+              string(R1,RStringL,_),         
+              ( Time = nil,!, 
+               DL = [{draw_string,{X+30,Y+20,"-----",F,set}},
+                     {draw_string,{X+110-RStringL*11,Y+50,RString,F,set}}] ;
+               integer(Time),!,
+               :get_number_string(#symbolizer,Time,Time1),
+               :append(#string,[Time1," msec"],TimeString), 
+               string(Time1,TStringL,_),         
+               DL = [{draw_string,{X+30,Y+20,"-----",F,set}},
+                     {draw_string,{X+110-RStringL*11,Y+50,RString,F,set}},
+                     {draw_string,{X+110-TStringL*11,Y+65,TimeString,F,set}}] ) ;
+           ( Obj!view_mode = msg,!,
+              :append(#string,[C1," msg"],PredString),          
+              :append(#string,[R1," rec"],RString),          
+              :append(#string,[S1," sent"],SString) ;
+              :append(#string,[C1," pred"],PredString),          
+              :append(#string,[R1," red"],RString),          
+              :append(#string,[S1," susp"],SString) ), 
+               string(C1,PredStringL,_),         
+               string(R1,RStringL,_),         
+               string(S1,SStringL,_),         
+               ( Time = nil,!, 
+               DL = [{draw_string,{X+30,Y+20,"-----",F,set}},
+                     {draw_string,{X+110-PredStringL*11,Y+50,PredString,F,set}},
+                     {draw_string,{X+110-RStringL*11,Y+65,RString,F,set}},
+                     {draw_string,{X+110-SStringL*11,Y+80,SString,F,set}}] ;
+               integer(Time),!,
+               :get_number_string(#symbolizer,Time,Time1),
+               :append(#string,[Time1," msec"],TimeString), 
+               string(Time1,TStringL,_),         
+               DL = [{draw_string,{X+30,Y+20,"-----",F,set}},
+                     {draw_string,{X+110-PredStringL*11,Y+50,PredString,F,set}},
+                     {draw_string,{X+110-RStringL*11,Y+65,RString,F,set}},
+                     {draw_string,{X+110-SStringL*11,Y+80,SString,F,set}},
+                     {draw_string,{X+110-TStringL*11,Y+95,TimeString,F,set}}] ) );
+          DL = [] );
+    draw_list(X,Y,C,0,[Term|R],DL,F,SN,Height,Red,Sus,Obj,Time):-
+        Y >= Height-160 ,!,
+        melt(Term,Vect,RData,SData),
+        draw_list(X,Y,C+1,C-1,R,DL,F,SN,Height,Red+RData,Sus+SData,Obj,Time);
+    draw_list(X,Y,C,Flag,[Term|R],DL,F,SN,Height,Red,Sus,Obj,Time):-
+        Y >= Height-160 ,!,
+        melt(Term,Vect,RData,SData),
+        draw_list(X,Y,C+1,Flag,R,DL,F,SN,Height,Red+RData,Sus+SData,Obj,Time);
+    draw_list(X,Y,C,Flag,[Term|Name],DL,F,SN,Height,Red,Sus,Obj,Time):- 
+        melt(Term,Atom,RData,SData),
+        atom(Atom),!,
+        :get_number_string(#symbolizer,C,C1),
+        :get_atom_string(#symbolizer,Atom,P1),
+        :append(#string,[C1," ",P1],PredString),
+        :get_number_string(#symbolizer,RData,R1),
+        :get_number_string(#symbolizer,SData,S1),
+        string(PredString,PredL,_),         
+        string(R1,R1L,_),         
+        string(S1,S1L,_),         
+        ( C < 10,!,
+          X1 = X+11,Sub = 1 ;
+          X1 = X ,Sub = 0),
+        ( SN >= 30,
+          NUML = SN - 24,
+          check_string_l(NUML,PredL,PredString,NPredString),
+         ( Obj!view_mode = pe,!,
+            DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}}|R],!;
+            DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                  {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ),!;
+          check_string_l(SN-2,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}}|R] ),
+         draw_list(X,Y+18,C+1,Flag,Name,R,F,SN,Height,Red+RData,Sus+SData,Obj,Time);
+    draw_list(X,Y,C,Flag,[Term|Name],DL,F,SN,Height,Red,Sus,Obj,Time):- 
+        melt(Term,N,RData,SData),
+        integer(N),!,
+        :get_number_string(#symbolizer,C,C1),
+        :get_number_string(#symbolizer,N,P1),
+        :append(#string,[C1," ",P1],PredString),
+        :get_number_string(#symbolizer,RData,R1),
+        :get_number_string(#symbolizer,SData,S1),
+        string(PredString,PredL,_),         
+        string(R1,R1L,_),         
+        string(S1,S1L,_),         
+        ( C < 10,!,
+          X1 = X+11, Sub = 1 ;
+          X1 = X, Sub = 0 ),
+        ( SN >= 30,
+          NUML = SN - 24,
+          check_string_l(NUML,PredL,PredString,NPredString),
+         ( Obj!view_mode = pe,!,
+            DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}}|R],!;
+            DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                  {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ),!;
+          check_string_l(SN-2,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}}|R] ),
+        draw_list(X,Y+18,C+1,Flag,Name,R,F,SN,Height,Red+RData,Sus+SData,Obj,Time);
+    draw_list(X,Y,C,Flag,[Term|Name],DL,F,SN,Height,Red,Sus,Obj,Time):-
+        melt(Term,Vect,RData,SData),
+        Vect = {Package,Module,Pred,Arity},!, 
+        :get_number_string(#symbolizer,C,C1),
+        :get_atom_string(#symbolizer,Package,Pack1),
+        :get_atom_string(#symbolizer,Module,M1),
+        ( integer(Pred),!, :get_number_string(#symbolizer,Pred,P1);
+          atom(Pred),!, :get_atom_string(#symbolizer,Pred,P1) ),
+        :get_number_string(#symbolizer,Arity,A1),
+        :get_number_string(#symbolizer,RData,R1),
+        :get_number_string(#symbolizer,SData,S1),
+        :append(#string,[C1," ",Pack1,"::",M1,":",P1,"/",A1],PredString),
+        string(PredString,PredL,_), 
+        L = PredL,       
+        string(R1,R1L,_),         
+        string(S1,S1L,_),         
+        ( C < 10,!,
+          X1 = X+11, Sub=1 ;
+          X1 = X, Sub=0 ),
+        ( L =< 26, SN >= 30,!,
+           NUML = SN - 24,
+          check_string_l(NUML,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                  {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R],
+          Next = Y+18 ;
+          L =< 26, SN < 30,!,
+          check_string_l(SN-2,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}}|R],
+          Next = Y+18 ;
+          SN >= 30,!,
+          :append(#string,[C1," ",Pack1,"::",M1,":"],PredString0),
+          :append(#string,[P1,"/",A1],PredString1),
+          string(PredString0,PredSL0,_),
+          string(PredString1,PredSL1,_),
+          NUML = SN - 24,
+          check_string_l(NUML,PredSL0,PredString0,NPredString0),
+          check_string_l(NUML-4,PredSL1,PredString1,NPredString1),
+          DL = [{draw_string,{X1,Y,NPredString0,F,set}},
+                {draw_string,{X+44,Y+18,NPredString1,F,set}},
+                {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ,
+          Next = Y+36 ;
+          :append(#string,[C1," ",Pack1,"::",M1,":"],PredString0),
+          :append(#string,[P1,"/",A1],PredString1),
+          string(PredString0,PredSL0,_),
+          string(PredString1,PredSL1,_),
+          check_string_l(SN-2,PredSL0,PredString0,NPredString0),
+          check_string_l(SN-4,PredSL1,PredString1,NPredString1),
+          DL = [{draw_string,{X1,Y,NPredString0,F,set}},
+                {draw_string,{X+44,Y+18,NPredString1,F,set}}|R],
+          Next = Y+36 ),
+        draw_list(X,Next,C+1,Flag,Name,R,F,SN,Height,Red+RData,Sus+SData,Obj,Time);
+    draw_list(X,Y,C,Flag,[Term|Name],DL,F,SN,Height,Red,Sus,Obj,Time):- 
+        melt(Term,Vect,RData,SData),
+        Vect = {Package,Module,Pred},!, 
+        :get_number_string(#symbolizer,C,C1),
+        :get_atom_string(#symbolizer,Package,Pack1),
+        :get_atom_string(#symbolizer,Module,M1),
+        :get_number_string(#symbolizer,RData,R1),
+        :get_number_string(#symbolizer,SData,S1),
+        ( integer(Pred),!, :get_number_string(#symbolizer,Pred,P1);
+          atom(Pred),!, :get_atom_string(#symbolizer,Pred,P1) ),
+        :append(#string,[C1," ",Pack1,"::",M1,":",P1],PredString),
+        string(PredString,PredL,_), 
+        L = PredL,       
+        string(R1,R1L,_),         
+        string(S1,S1L,_),         
+        ( C < 10,!,
+          X1 = X+11, Sub=1 ;
+          X1 = X, Sub=0 ),
+        ( L =< 26, SN >= 30,!,
+          NUML = SN - 24,
+          check_string_l(NUML,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                  {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ,
+          Next = Y+18 ;
+          L =< 26, SN < 30,!,
+          check_string_l(SN-2,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}}|R],
+          Next = Y+18 ;
+          SN >= 30,!,
+          :append(#string,[C1," ",Pack1,"::",M1,":"],PredString0),
+          string(PredString0,PredSL0,_),
+          string(P1,PredSL1,_),
+          NUML = SN - 24,
+          check_string_l(NUML,PredSL0,PredString0,NPredString0),
+          check_string_l(NUML-4,PredSL1,P1,NPredString1),
+          DL = [{draw_string,{X1,Y,NPredString0,F,set}},
+                {draw_string,{X+44,Y+18,NPredString1,F,set}},
+                {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ,
+          Next = Y+36 ;
+          :append(#string,[C1," ",Pack1,"::",M1,":"],PredString0),
+          string(PredString0,PredSL0,_),
+          string(P1,PredSL1,_),
+          check_string_l(SN-2,PredSL0,PredString0,NPredString0),
+          check_string_l(SN-4,PredSL1,P1,NPredString1),
+          DL = [{draw_string,{X1,Y,NPredString0,F,set}},
+                {draw_string,{X+44,Y+18,NPredString1,F,set}}|R] ,
+           Next = Y+36 ),
+        draw_list(X,Next,C+1,Flag,Name,R,F,SN,Height,Red+RData,Sus+SData,Obj,Time);
+     draw_list(X,Y,C,Flag,[Term|Name],DL,F,SN,Height,Red,Sus,Obj,Time):-
+        melt(Term,Vect,RData,SData),
+        :get_number_string(#symbolizer,C,C1),
+        :get_number_string(#symbolizer,RData,R1),
+        :get_number_string(#symbolizer,SData,S1),
+        string(R1,R1L,_),         
+        string(S1,S1L,_),         
+        :append(#string,[C1," ?"],PredString),
+       ( SN >= 30,!,
+         DL = [{draw_string,{X,Y,PredString,F,set}},
+               {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+               {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ;
+         DL = [{draw_string,{X,Y,PredString,F,set}}|R] ),
+        draw_list(X,Y+18,C+1,Flag,Name,R,F,SN,Height,Red+RData,Sus+SData,Obj,Time);
+
+    draw_part_list(X,Y,From,Height,Name,DL,F,SN,Obj):-!,
+        skip(1,From,Name,List),
+        draw_part_list(X,Y,0,From,Height,List,DL,F,SN,Obj);
+
+    draw_part_list(X,Y,C,From,Height,[],DL,F,SN,Obj):-!,
+        DL = [];
+    draw_part_list(X,Y,C,From,Height,[_|R],DL,F,SN,Obj):-
+        Y >= Height ,!,
+        Obj!num := C,
+        DL = [];
+    draw_part_list(X,Y,C,From,Height,[Term|Name],DL,F,SN,Obj):- 
+        melt(Term,Atom,RData,SData),
+        ( atom(Atom),! ; integer(Atom),!),!,
+        :get_number_string(#symbolizer,From,C1),
+        ( atom(Atom),!, :get_atom_string(#symbolizer,Atom,P1);
+          integer(Atom),!, :get_number_string(#symbolizer,Atom,P1)),
+        :append(#string,[C1," ",P1],PredString),
+        :get_number_string(#symbolizer,RData,R1),
+        :get_number_string(#symbolizer,SData,S1),
+         string(PredString,PredL,_),         
+        string(R1,R1L,_),         
+        string(S1,S1L,_),         
+        ( From < 10,!,
+          X1 = X+11, Sub=1 ;
+          X1 = X, Sub=0 ),
+        ( SN >= 30,
+          NUML = SN - 24,
+          check_string_l(NUML,PredL,PredString,NPredString),
+        ( Obj!view_mode = pe,!,
+            DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}}|R],!;
+            DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                  {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ),!;
+          check_string_l(SN-2,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}}|R] ),
+          draw_part_list(X,Y+18,C+1,From+1,Height,Name,R,F,SN,Obj);
+    draw_part_list(X,Y,C,From,Height,[Term|Name],DL,F,SN,Obj):-
+        melt(Term,Vect,RData,SData),
+        Vect = {Package,Module,Pred,Arity},!, 
+        :get_number_string(#symbolizer,From,C1),
+        :get_atom_string(#symbolizer,Package,Pack1),
+        :get_atom_string(#symbolizer,Module,M1),
+        ( integer(Pred),!, :get_number_string(#symbolizer,Pred,P1);
+          atom(Pred),!, :get_atom_string(#symbolizer,Pred,P1) ),
+        :get_number_string(#symbolizer,Arity,A1),
+        :get_number_string(#symbolizer,RData,R1),
+        :get_number_string(#symbolizer,SData,S1),
+        :append(#string,[C1," ",Pack1,"::",M1,":",P1,"/",A1],PredString),
+         string(PredString,PredL,_), 
+        L = PredL,       
+        string(R1,R1L,_),         
+        string(S1,S1L,_),         
+        ( From < 10,!,
+          X1 = X+11, Sub=1 ;
+          X1 = X, Sub=0 ),
+        ( L =< 26, SN >= 30,!,
+          NUML = SN - 24,
+          check_string_l(NUML,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                  {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R],
+          Next = Y+18 ;
+          L =< 26, SN < 30,!,
+          check_string_l(SN-2,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}}|R],
+          Next = Y+18 ;
+          SN >= 30,!,
+          :append(#string,[C1," ",Pack1,"::",M1,":"],PredString0),
+          :append(#string,[P1,"/",A1],PredString1),
+          string(PredString0,PredSL0,_),
+          string(PredString1,PredSL1,_),
+          NUML = SN - 24,
+          check_string_l(NUML,PredSL0,PredString0,NPredString0),
+          check_string_l(NUML-4,PredSL1,PredString1,NPredString1),
+          DL = [{draw_string,{X1,Y,NPredString0,F,set}},
+                {draw_string,{X+44,Y+18,NPredString1,F,set}},
+                {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ,
+          Next = Y+36 ;
+          :append(#string,[C1," ",Pack1,"::",M1,":"],PredString0),
+          :append(#string,[P1,"/",A1],PredString1),
+          string(PredString0,PredSL0,_),
+          string(PredString1,PredSL1,_),
+          check_string_l(SN-2,PredSL0,PredString0,NPredString0),
+          check_string_l(SN-4,PredSL1,PredString1,NPredString1),
+          DL = [{draw_string,{X1,Y,NPredString0,F,set}},
+                {draw_string,{X+44,Y+18,NPredString1,F,set}}|R],
+         Next = Y+36 ),
+         draw_part_list(X,Next,C+1,From+1,Height,Name,R,F,SN,Obj);
+   draw_part_list(X,Y,C,From,Height,[Term|Name],DL,F,SN,Obj):-
+        melt(Term,Vect,RData,SData),
+        Vect = {Package,Module,Pred},!, 
+        :get_number_string(#symbolizer,From,C1),
+        :get_atom_string(#symbolizer,Package,Pack1),
+        :get_atom_string(#symbolizer,Module,M1),
+        :get_number_string(#symbolizer,RData,R1),
+        :get_number_string(#symbolizer,SData,S1),
+        ( integer(Pred),!, :get_number_string(#symbolizer,Pred,P1);
+          atom(Pred),!, :get_atom_string(#symbolizer,Pred,P1) ),
+        :append(#string,[C1," ",Pack1,"::",M1,":",P1],PredString),
+        string(PredString,L,_),
+          string(PredString,PredL,_), 
+        L = PredL,       
+        string(R1,R1L,_),         
+        string(S1,S1L,_),         
+        ( From < 10,!,
+          X1 = X+11, Sub=1 ;
+          X1 = X, Sub=0 ),
+        ( L =< 26, SN >= 30,!,
+          NUML = SN - 24,
+          check_string_l(NUML,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}},
+                  {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                  {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ,
+          Next = Y+18 ;
+          L =< 26, SN < 30,!,
+          check_string_l(SN-2,PredL,PredString,NPredString),
+          DL = [{draw_string,{X1,Y,NPredString,F,set}}|R],
+          Next = Y+18 ;
+          SN >= 30,!,
+          :append(#string,[C1," ",Pack1,"::",M1,":"],PredString0),
+          string(PredString0,PredSL0,_),
+          string(P1,PredSL1,_),
+          NUML = SN - 24,
+          check_string_l(NUML,PredSL0,PredString0,NPredString0),
+          check_string_l(NUML-4,PredSL1,P1,NPredString1),
+          DL = [{draw_string,{X1,Y,NPredString0,F,set}},
+                {draw_string,{X+44,Y+18,NPredString1,F,set}},
+                {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+                {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ,
+          Next = Y+36 ;
+          :append(#string,[C1," ",Pack1,"::",M1,":"],PredString0),
+          string(PredString0,PredSL0,_),
+          string(P1,PredSL1,_),
+          check_string_l(SN-2,PredSL0,PredString0,NPredString0),
+          check_string_l(SN-4,PredSL1,P1,NPredString1),
+          DL = [{draw_string,{X1,Y,NPredString0,F,set}},
+                {draw_string,{X+44,Y+18,NPredString1,F,set}}|R] ,
+           Next = Y+36 ),
+       draw_part_list(X,Next,C+1,From+1,Height,Name,R,F,SN,Obj);
+    draw_part_list(X,Y,C,From,Height,[Term|Name],DL,F,SN,Obj):-
+        melt(Term,_,RData,SData),
+        :get_number_string(#symbolizer,From,C1),
+        :get_number_string(#symbolizer,RData,R1),
+        :get_number_string(#symbolizer,SData,S1),
+        :append(#string,[C1," ?"],PredString),
+        string(R1,R1L,_),         
+        string(S1,S1L,_),         
+       ( SN >= 30,!,
+         DL = [{draw_string,{X,Y,PredString,F,set}},
+               {draw_string,{(SN-11-R1L)*11,Y,R1,F,set}},
+               {draw_string,{(SN-S1L)*11,Y,S1,F,set}}|R] ;
+         DL = [{draw_string,{X,Y,PredString,F,set}}|R] ),
+        draw_part_list(X,Y+18,C+1,From+1,Height,Name,R,F,SN,Obj);
+
+    set_pred_list([],PL):-!;
+    set_pred_list([Pred|R],PL):-!,
+        :add_last(PL,Pred),
+        set_pred_list(R,PL);
+     
+    melt(Vect,PredName,R,S):-
+        heap_vector(Vect,8),!,
+        vector_element(Vect,1,Pack),
+        vector_element(Vect,2,Mod),
+        vector_element(Vect,3,Pred),
+        vector_element(Vect,4,Ar),
+        vector_element(Vect,5,R),
+        vector_element(Vect,6,S),
+        PredName = {Pack,Mod,Pred,Ar};
+    melt(Vect,PredName,R,S):-
+        heap_vector(Vect,7),!,
+        vector_element(Vect,1,Pack),
+        vector_element(Vect,2,Mod),
+        vector_element(Vect,3,Pred),
+        vector_element(Vect,4,R),
+        vector_element(Vect,5,S),
+        PredName = {Pack,Mod,Pred};
+    melt(Vect,Pred,R,S):-
+        heap_vector(Vect,5),!,
+        vector_element(Vect,1,Pred),
+        vector_element(Vect,2,R),
+        vector_element(Vect,3,S);
+        
+    skip(From,From,R,R):-!;
+    skip(C,From,[P|R],List):-!,
+        skip(C+1,From,R,List);
+       
+    count([],Ans,Ans):- !;
+    count([H|T],C,Ans):- !,
+        count(T,C+1,Ans);
+
+    check_string_l(N,StringL,String,NewString):-
+            N >= StringL,!, 
+            NewString = String ;
+    check_string_l(N,StringL,String,NewString):-
+            substring(String,0,N,NewString);
+
+          
+end.

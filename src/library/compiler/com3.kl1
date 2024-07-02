@@ -1,0 +1,371 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%%   Top level predicates 
+%%
+%%          of
+%%
+%%   KL1/KL1 compiler
+%%
+%%
+
+%%
+%%The top level predicate of this module, `kl1compile' compile one module.
+%%
+%%    kl1compile(Module, ^Macro, ErrorIn, ErrorOut, ^CompiledModule, ^Status)
+%%
+
+%
+% added debbuging infomation for VISTA 90/5/25 D.Sekita
+%
+:- module     kl1cmp_top.
+:- public kl1compile/7, kl1compile/10,
+          kl1compile/6, kl1compile/9,
+          macro_processor/6.
+:- with_macro pimos.
+
+kl1compile(InputModule0, Macro, Error0, Error, CompiledModule, Opt, Status) :-
+     true |
+    Macro=[],
+    kl1cmp_macro_driver:driver(Error0, Error1, InputModule0, InputModule1),
+    kl1compile(InputModule1, Error1, Error, CompiledModule, Opt, Status).
+
+kl1compile(InputModule, Error0, Error, CompiledModule, Opt, Status) :-
+    kl1compile(InputModule, Error0, Error,
+               CompiledModule, Opt, user, no_debug, structure, Status).
+
+kl1compile(InputModule0, Macro, Error0, Error, CompiledModule,
+           Opt, Class, Debug, Struct, Status) :- true | 
+    Macro=[],
+    kl1cmp_macro_driver:driver(Error0, Error1, InputModule0, InputModule1),
+    kl1compile(InputModule1, Error1, Error, CompiledModule,
+           Opt, Class, Debug, Struct, Status).
+
+kl1compile(InputModule0, Error0, Error, CompiledModule,
+           Opt, Class, Debug, Struct, Status) :- true | 
+    kl1cmp_inputfilter:filter(Er0, Er1, InputModule0, InputModule),
+    message_handler(Error0, Error, normal, Status, Er0, Module),
+    kl1cmp_isbltin:predicate_table(Er1, Er2, IsBlt0),
+    compile_initial_directives(Er2, Er3, IsBlt0, IsBlt1,
+                               [], Module, Public0, Public,
+                               InputModule, Predicates, []),
+    kl1compile(Er3, Er4, Code0, [], IsBlt1, Ref0, Ref0, [],
+               Public, [],
+               Opt, Class, Debug, Struct, Predicates),
+%% for debbugging
+%%    macro_message_filter(Macro, [], Macro0),
+    kl1cmp_assign_register:assignRegisterPreds(Er4, [], Code0, Code),
+    CompiledModule=module(Module, Public0, Code).
+
+%%:- local_implicit macro:oldnew.
+%%macro_message_filter([One|Rest]) --> true |
+%%    &macro <<= [One],
+%%    macro_message_filter(Rest).
+%%
+%%macro_message_filter([]) --> true | true.
+
+:- local_implicit  err:oldnew, stat:oldnew.
+message_handler([error(Format, Args)|Cdr], Module) --> true |
+    {{kl1cmp_wrap:unwrap(Args, UArgs)}},
+    &err <<= [error(Format, UArgs)],
+    &stat <= abnormal,
+    message_handler(Cdr, Module).
+message_handler([error(Format, Args, [])|Cdr], Module) --> true |
+    {{kl1cmp_wrap:unwrap(Args, UArgs)}},
+    &err <<= [error(Format, UArgs)],
+    &stat <= abnormal,
+    message_handler(Cdr, Module).
+message_handler([warning(Format, Args)|Msg], Module) --> true |
+    {{kl1cmp_wrap:unwrap(Args, UArgs)}},
+    &err <<= [warning(Format, UArgs)],
+    message_handler(Msg, Module).
+message_handler([warning(Format, Args, [])|Msg], Module) --> true |
+    {{kl1cmp_wrap:unwrap(Args, UArgs)}},
+    &err <<= [warning(Format, UArgs)],
+    message_handler(Msg, Module).
+otherwise.
+message_handler([error(Format, Args, Info)|Cdr], Module) --> true |
+    {{kl1cmp_wrap:unwrap(Args, UArgs)}},
+    &err <<= [error(Format, UArgs, Info)],
+    &stat <= abnormal,
+    message_handler(Cdr, Module).
+message_handler([warning(Format, Args, Info)|Msg], Module) --> true |
+    {{kl1cmp_wrap:unwrap(Args, UArgs)}},
+    &err <<= [warning(Format, UArgs, Info)],
+    message_handler(Msg, Module).
+otherwise.
+message_handler([Msg|Msgs], Module) --> true |
+    &err <<= [Msg],
+    message_handler(Msgs, Module).
+message_handler([], _) --> true | true.
+
+:- local_implicit    err:oldnew,
+                     blt:oldnew,
+                     modul:oldnew,
+                     pub:oldnew.
+
+compile_initial_directives([Clause-Info0|Rest], Body, Info) --> true |
+    compile_initial_directives_([Clause-Info0|Rest], Body, Info).
+otherwise.
+compile_initial_directives([Clause|Rest], Body, Info) --> true |
+    compile_initial_directives_([Clause-[]|Rest], Body, Info).
+compile_initial_directives([], Body, Info) --> true |
+    Body=[],
+    &err <<= [error("no predicate defined.", [], Info)].
+
+compile_initial_directives_([vector({atom((:-)), vector({atom(module), atom(Mod)})})-Info|Rest],
+            Body, _) --> atom(Mod), &modul(old) = [] |
+    &modul <= Mod,
+    compile_initial_directives(Rest, Body, Info).
+compile_initial_directives_([vector({atom((:-)), vector({atom((public)), Publics})})-Info0|Rest],
+            Body, _) --> true |
+    {{kl1cmp_error_filter:addErrorInfo(&err, Err, Info0, Info1),
+      list_public(Err, [], &pub, &blt, Publics, Info1, Info)}},
+    compile_initial_directives(Rest, Body, Info).
+compile_initial_directives_([vector({atom((:-)), vector({atom((with_macro)), _})})-Info|Rest],
+            Body, _) --> true |
+    compile_initial_directives(Rest, Body, Info).
+compile_initial_directives_([vector({atom((:-)), vector({atom((module)), atom(Mod)})})-Info|Rest],
+            Body, _) -->
+        atom(Mod), &modul(old) \= [] |
+    &err <<= [warning(string#"module redeclaration : ~T", [(:- module(Mod))], Info)],
+    compile_initial_directives(Rest, Body, Info).
+otherwise.
+compile_initial_directives_([vector({atom((:-)), vector({atom((module)), Mod})})-Info|Rest],
+        Body, _) --> true |
+    &err <<= [warning(string#"invalid module declaration : ~T",
+                      [(:- module(Mod))], Info)],
+    compile_initial_directives(Rest, Body, Info).
+otherwise.
+compile_initial_directives_(Body0, Body, Info) --> true |
+    check_initial_directives(Body0, Body, Info).  
+
+:- local_implicit
+                 err:oldnew,
+                 pub:oldnew,
+                 blt:oldnew.
+
+list_public(vector({atom((',')),P,Rest}), Info0, Info) --> true |
+    list_public(P, Info0, Info1),
+    list_public(Rest, Info1, Info).
+otherwise.
+list_public(vector({atom('/'), atom(F), integer(A)}), Info0, Info) --> true |
+    &blt <<= [put_public_pred(F/A, Info0)],
+    Info0=Info,
+    &pub <<= [F/A].
+otherwise.
+list_public(P, Info0, Info) --> true |
+    &err <<= [warning(string#"invalid public declaration : ~T", [P], Info)],
+    Info0=Info.
+
+:- local_implicit    err:oldnew,
+                     blt:oldnew,
+                     modul:oldnew,
+                     pub:oldnew.
+
+check_initial_directives(Body0, Body, _) -->
+        &modul(old) \= [] |
+    Body0=Body.
+check_initial_directives(_, Body, Info) --> &modul(old) = [] |
+    &err<<=[error(string#"module declaration not found ", [], Info)],
+    {{Body=[]}}.
+
+:- local_implicit
+                 err:oldnew,
+                 out:oldnew,
+                 set:oldnew,    
+                 ref:oldnew,
+                 pub:oldnew,
+                 opt:shared,
+                 class:shared,
+                 debug:shared, 
+                 struct:shared.
+
+kl1compile(Preds0) --> true |
+    {{kl1cmp_pbank:predicate_bank(Preds0, In),
+      kl1cmp_reader:create_reader(In, [], &err, Reader),
+      macro_processor(Reader, [], &err, &struct,
+                      [read_predicate(Clause0, Pred)|Macro]),
+      getInfo(Clause0, Clause, Info),
+      ghccompile(Macro, [], &out, &err, &set, &ref, &pub, &opt, &class, &debug,
+                 0, Pred, Clause, Info)}}.
+
+:- local_implicit in:oldnew, err:oldnew, struct:shared.
+%macro_processor(StructProcess) --> true |
+%    {{kl1cmp_macro:generate_macro_expander(&in, &err, 
+%                                           &macro, MacroProcess),
+%      kl1cmp_struct:struct_processor(MacroProcess, [], StructProcess)}}.
+macro_processor(Pragma) --> true |
+    {{kl1cmp_macro:generate_macro_expander(&in, &err, MacroProcess),
+      kl1cmp_struct:struct_processor(&err, MacroProcess, [], &struct, StructProcess),
+      kl1cmp_pragma:pragma_expander(&err, StructProcess, [], Pragma)}}.
+
+
+:- local_implicit
+                 reader:oldnew,
+                 out:oldnew,
+                 err:oldnew,
+                 set:oldnew,
+                 ref:oldnew,
+                 pub:oldnew,
+                 opt:shared,
+                 class:shared,
+                 debug:shared,
+                 label:shared.
+
+ghccompile(Pred, Clause, Info) --> true |
+    {{send_put_pred_or_not(&set, Pred, Info, Ans),
+      read_and_compile_predicate(&reader, &out, &err, &set, &ref, &pub,
+                                 &label, _, Ans, &opt, &class, &debug, Clause, Pred, Info)}}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Compiling predicates  %%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- local_implicit
+                 reader:oldnew,
+                 code:oldnew,
+                 err:oldnew,
+                 set:oldnew,
+                 ref:oldnew,
+                 pub:oldnew,
+                 label:shared,
+                 start:shared.
+read_and_compile_predicate(ok, _, _, _, end_of_file, _, _) --> true |
+    {{&start=start}}.
+read_and_compile_predicate(ok, Opt, Class, Debug, _, '$error'/1, Info) --> true |
+    &err <<= [error(string#"syntax error found", [], Info)],
+    &reader<<=[read_predicate(NextClauses0, NextPred)],
+    {{getInfo(NextClauses0, NextClauses, NextInfo),
+      send_put_pred_or_not(&set, NextPred, NextInfo, Ans)}},
+    read_and_compile_predicate(Ans, Opt, Class, Debug, NextClauses, NextPred, NextInfo). 
+read_and_compile_predicate(ok, Opt, Class, Debug, _, '$ambiguous'/1, Info) --> true |
+    &err <<= [error(string#"syntax error found", [], Info)],
+    &reader<<=[read_predicate(NextClauses0, NextPred)],
+    {{getInfo(NextClauses0, NextClauses, NextInfo),
+      send_put_pred_or_not(&set, NextPred, NextInfo, Ans)}},
+    read_and_compile_predicate(Ans, Opt, Class, Debug, NextClauses, NextPred, NextInfo). 
+read_and_compile_predicate(ok, Opt, Class, Debug, Dir, directive, _) --> true |
+    compileDirective(Dir),
+%    {{list_public(&err, &pub, &set, Publics)}},
+    &reader<<=[read_predicate(NextClauses0, NextPred)],
+    {{getInfo(NextClauses0, NextClauses, NextInfo),
+      send_put_pred_or_not(&set, NextPred, NextInfo, Ans)}},
+    read_and_compile_predicate(Ans, Opt, Class, Debug, NextClauses, NextPred, NextInfo). 
+otherwise.
+read_and_compile_predicate(ok, Opt, Class, Debug, Clauses0, Pred/Ari, _) --> true |
+    %% {{kl1cmp_register:compile_predicate(Code, [], &err, &ref, Opt, Class, &label, 
+    %%        &start,    Clauses, Pred/Ari, 1)}},
+%%    {{kl1cmp_guard_case:guard_case(Clauses0, Clauses)}},
+    {{kl1cmp_index_sw:compile_predicate(Code, [], &err, &ref, Opt, Class, &label, 
+                                        &start,    Clauses0, Pred/Ari, 1)}},
+    {{convert_debugging_info(&err, Code1, [], Debug, Code)}},
+    &code <<= [procedure(Pred, Ari, Code1)],
+%%    &err<<=[message(string#"~T", [Pred/Ari])],
+    &reader<<=[read_predicate(NextClauses0, NextPred)],
+    %   &set<<=[put_pred(NextPred, Ans)],
+    {{getInfo(NextClauses0, NextClauses, NextInfo),
+      send_put_pred_or_not(&set, NextPred, NextInfo, Ans)}},
+    &label <= &label + 10000,
+    read_and_compile_predicate(Ans, Opt, Class, Debug, NextClauses, NextPred, NextInfo).
+read_and_compile_predicate(_, Opt, Class, Debug, Dir, directive, Info) --> true |
+    &err <<= [warning(string#"unknown compiler directive : ~T", [Dir], Info)],
+    &reader<<=[read_predicate(NextClauses0, NextPred)],
+    {{getInfo(NextClauses0, NextClauses, NextInfo),
+      send_put_pred_or_not(&set, NextPred, NextInfo, Ans)}},
+    read_and_compile_predicate(Ans, Opt, Class, Debug, NextClauses, NextPred, NextInfo).
+read_and_compile_predicate(_, Opt, Class, Debug, Dir, message, Info) --> true |
+    &err <<= [warning(string#"unknown compiler directive : ~T", [Dir], Info)],
+    &reader<<=[read_predicate(NextClauses0, NextPred)],
+    {{getInfo(NextClauses0, NextClauses, NextInfo),
+      send_put_pred_or_not(&set, NextPred, NextInfo, Ans)}},
+    read_and_compile_predicate(Ans, Opt, Class, Debug, NextClauses, NextPred, NextInfo).
+% Ans = ng
+read_and_compile_predicate(ng, Opt, Class, Debug, _, Pred, Info) --> true |
+    &err <<= [error(string#"multiple defined predicates found : ~T", [Pred], Info)],
+    &reader<<=[read_predicate(NextClauses0, NextPred)],
+    %   &set<<=[put_pred(NextPred, Ans)],
+    {{getInfo(NextClauses0, NextClauses, NextInfo),
+      send_put_pred_or_not(&set, NextPred, NextInfo, Ans)}},
+    read_and_compile_predicate(Ans, Opt, Class, Debug, NextClauses, NextPred, NextInfo).
+
+getInfo([Car-Info0|Cdr], Clauses, Info) :- true |
+    Clauses=[Car-Info|Cdr],
+    Info=Info0.
+otherwise.
+getInfo([Car0|Cdr], Clauses, Info) :- true |
+    getInfo(Car0, Car, Info),
+    Clauses=[Car|Cdr].
+otherwise.
+getInfo(Clauses0, Clauses, Info) :- true | Clauses0=Clauses, Info=[].
+
+compileDirective([wrap#(:- public Pubs)-Info0|Cdr]) --> true |
+    {{list_public(&err, &pub, &set, Pubs, Info0, Info)}},
+    compileDirective(Cdr).
+otherwise.
+compileDirective([WDir-Info|Cdr]) --> true |
+    {{kl1cmp_wrap:unwrap(WDir, Dir)}},
+    &err <<= [error("unknown compiler directive : ~t", [Dir], Info)],
+    compileDirective(Cdr).
+compileDirective([]) --> true | true.
+    
+:- local_implicit err:oldnew, code:oldnew.
+convert_debugging_info(debug, [execute(N, Pred),clause_info(CN)|Cdr]) --> true |
+    &code <<= [clause_info(CN), execute(N, Pred)],
+    convert_debugging_info(debug, Cdr).
+convert_debugging_info(debug, [execute_external(N, Pred), clause_info(CN)|Cdr]) --> true |
+    &code <<= [clause_info(CN), execute_external(N, Pred)],
+    convert_debugging_info(debug, Cdr).
+convert_debugging_info(debug, [proceed, clause_info(CN)|Cdr]) --> true |
+    &code <<= [clause_info(CN), proceed],
+    convert_debugging_info(debug, Cdr).
+convert_debugging_info(debug, [execute(N, Pred), label(L), clause_info(CN)|Cdr]) --> true |
+    &code <<= [clause_info(CN), execute(N, Pred), label(L)],
+    convert_debugging_info(debug, Cdr).
+convert_debugging_info(debug, [execute_external(N, Pred), label(L), clause_info(CN)|Cdr]) --> true |
+    &code <<= [clause_info(CN), execute_external(N, Pred), label(L)],
+    convert_debugging_info(debug, Cdr).
+convert_debugging_info(debug, [proceed, label(L), clause_info(CN)|Cdr]) --> true |
+    &code <<= [clause_info(CN), proceed, label(L)],
+    convert_debugging_info(debug, Cdr).
+otherwise.
+convert_debugging_info(DEBUG, [execute(N, Pred),clause_info(CN)|Cdr]) --> true |
+    &code <<= [execute(N, Pred)],
+    convert_debugging_info(DEBUG, Cdr).
+convert_debugging_info(DEBUG, [execute_external(N, Pred), clause_info(CN)|Cdr]) --> true |
+    &code <<= [execute_external(N, Pred)],
+    convert_debugging_info(DEBUG, Cdr).
+convert_debugging_info(DEBUG, [proceed, clause_info(CN)|Cdr]) --> true |
+    &code <<= [proceed],
+    convert_debugging_info(DEBUG, Cdr).
+convert_debugging_info(DEBUG, [execute(N, Pred),label(L),clause_info(CN)|Cdr]) --> true |
+    &code <<= [execute(N, Pred),label(L)],
+    convert_debugging_info(DEBUG, Cdr).
+convert_debugging_info(DEBUG, [execute_external(N, Pred),label(L),clause_info(CN)|Cdr]) --> true |
+    &code <<= [execute_external(N, Pred),label(L)],
+    convert_debugging_info(DEBUG, Cdr).
+convert_debugging_info(DEBUG, [proceed,label(L),clause_info(CN)|Cdr]) --> true |
+    &code <<= [proceed,label(L)],
+    convert_debugging_info(DEBUG, Cdr).
+convert_debugging_info(DEBUG, [clause_info(CN)|Cdr]) --> true |
+    &err <<= [error("compiler internal error : ~t", [clause_info(CN)])],
+    convert_debugging_info(DEBUG, Cdr).
+otherwise.
+convert_debugging_info(DEBUG, [Instr|Cdr]) --> true |
+    &code <<= [Instr],
+    convert_debugging_info(DEBUG, Cdr).
+convert_debugging_info(_, []) --> true | true.
+
+:- local_implicit set:oldnew.
+send_put_pred_or_not(end_of_file, _, Ans) --> true | Ans=ok.
+send_put_pred_or_not('$error'/1, _, Ans) --> true | Ans=ok.
+send_put_pred_or_not('$ambiguous'/1, _, Ans) --> true | Ans=ok.
+send_put_pred_or_not((:- public _), _, Ans) --> true | Ans=ok.
+send_put_pred_or_not(message, _, Ans) --> true | Ans=ok.
+send_put_pred_or_not(directive, _, Ans) --> true | Ans=ok.
+otherwise.
+send_put_pred_or_not(Pred, Info, Ans) --> true |
+    &set<<=[put_pred(Pred, Info, Ans)].
+

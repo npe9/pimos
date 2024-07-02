@@ -1,0 +1,372 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% stdio server %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- module stdio_server.
+:- public go/2.
+
+%%%%%  Usage  %%%%%
+% shoen:raise(pimos_tag#task, general_request, Gen),
+% stdio_server:go(Gen, NGen),
+% Use [NGen] as general_request_stream
+% NGen = [register/3 | NNGen], ...
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%  Regist Service to PIMOS  %%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+go(Gen, []) :- Gen = [].
+go(Gen, [register(ServerName, Protection, S_Result) | Srv]) :- true |
+    Gen = [register(ServerName, Protection, C_Result) | NGen],
+    check_entry(C_Result, S_Result, ServerName), go(NGen, Srv).
+otherwise.
+go(Gen, [Msg | Srv]) :- true | Gen = [Msg | NGen], go(NGen, Srv).
+
+check_entry(C_Result, S_Result, S_name) :- true |
+    ( C_Result = normal(C_Req, C_Abt, C_Att) ->
+          S_Result = normal(S_Req, S_Abt, S_Att),
+          predicate_to_code(module#stdio_filter, go, 3, Code), % uso
+          wait_get_request(C_Att,C_Abt,C_Req,S_Att,S_Abt,S_Req,Code,S_name,_);
+      C_Result = abnormal -> S_Result = abnormal ;
+      C_Result = aborted -> S_Result = aborted ;
+      C_Result = disconnected -> S_Result = disconnected ;
+     otherwise;
+      true -> C_Result = S_Result ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%  Send Service-Request  %%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Attention ([]) received from client
+wait_get_request(C_Att, C_Abt, C_Req, S_Att, S_Abt, S_Req, _, _, _) :-
+        C_Att = [] | S_Att = [], C_Abt = S_Abt, C_Req = S_Req.
+%%%%%  Attention (attention/1) received from client
+wait_get_request(C_Att,C_Abt,C_Req,S_Att,S_Abt,S_Req,Code,S_name,OrgCode) :-
+        C_Att = attention(NC_Att) | S_Att = attention(NS_Att),
+    wait_get_request(NC_Att,C_Abt,C_Req,NS_Att,S_Abt,S_Req,Code,S_name,OrgCode).
+%%%%%  Abort received from server (server-request stream)
+wait_get_request(C_Att, C_Abt, C_Req, S_Att, S_Abt, S_Req, _, _, _) :-
+        wait(S_Abt) | C_Abt = S_Abt, C_Att = S_Att, C_Req = S_Req.
+alternatively.
+%%%%%  'get_request/2' received from server
+wait_get_request(C_Att, C_Abt, C_Req, S_Att, S_Abt, [], _, _, _) :- true |
+        C_Att = S_Att, C_Abt = S_Abt, C_Req = [].
+wait_get_request(C_Att,C_Abt,C_Req,S_Att,S_Abt,[Msg|S_Req],Code,S_name,_) :-
+        true |
+    ( Msg = get_request(OrgCode, Comment, S_Result) ->
+          C_Req = [get_request(Code, Comment, C_Result) | NC_Req],
+          wait_request(C_Result,S_Result,
+                 C_Att,C_Abt,NC_Req,S_Att,S_Abt,S_Req,Code,S_name,OrgCode) ;
+     otherwise ;
+      true -> error_raise(Msg, string#"wait_get_request: ~wt~n")).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%      Receive Service-Request       %%%%%%%%%%
+%%%%%%%%%%  Make Device-Request Level Stream  %%%%%%%%%%
+%%%%%%%%%%  Make Device Level Stream (stdio)  %%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Attention([]) received from client
+wait_request(C_Result, S_Result,
+             C_Att, C_Abt, C_Req, S_Att, S_Abt, S_Req, _, _, _) :-
+        C_Att = [] |
+    S_Att = [], C_Result = S_Result, C_Abt = S_Abt, C_Req = S_Req.
+%%%%%  Attention(attention/1) received from client
+wait_request(C_Result,S_Result,
+             C_Att,C_Abt,C_Req,S_Att,S_Abt,S_Req,Code,S_name,OrgCode) :-
+        C_Att = attention(NC_Att) | S_Att = attention(NS_Att),
+    wait_request(C_Result,S_Result,
+                 NC_Att,C_Abt,C_Req,NS_Att,S_Abt,S_Req,Code,S_name,OrgCode).
+%%%%%  Abort received from server (server-request stream)
+wait_request(C_Result, S_Result,
+             C_Att, C_Abt, C_Req, S_Att, S_Abt, S_Req, _, _, _) :-
+        wait(S_Abt) |
+    C_Result = S_Result, C_Abt = C_Att, C_Att = S_Att, C_Req = S_Req.
+alternatively.
+%%%%% Message received from client
+wait_request(Msg,S_Result,
+         C_Att,C_Abt,C_Req,S_Att,S_Abt,S_Req,Code,S_name,OrgCode) :- wait(Msg) |
+    ( Msg = general_request(A,B,C,D,E,F) -> E = general(OrgCode, EE),
+          S_Result = general_request(A,B,C,D,EE,F),
+          wait_get_request(C_Att,C_Abt,C_Req,
+                                    S_Att,S_Abt,S_Req,Code,S_name,OrgCode) ;
+      Msg = standard_io([], _, _) ->
+          wait_get_request(C_Att,C_Abt,C_Req,
+                                    S_Att,S_Abt,S_Req,Code,S_name,OrgCode) ;
+      Msg = standard_io([Msg1 | STDCont], CShut, Info),
+              Msg1 = open(StdParam, switch(Cont1,Abt1), io(Cont2,Abt2)),
+            vector_element(Info,3,Node) ->
+          merge({Cont21, Cont22}, Cont2),
+%          Cont21 = [absolute_id(ABS)|NCont21],
+%          FInfo = general(OrgCode),
+          S_Result = general_request(Cont22, Abt, CShut, Info, _, Comm),
+          create_stdio_device(StdParam,CShut,
+                Comm,Result,S_name,OUT,S_HINT)@node(Node),
+          wait_stdio_device({S_HINT,Info},Result,CShut,STDCont,
+                switch(Cont1,Abt1),io(Cont21,Abt2),Abt,OUT)@node(Node),
+          wait_get_request(C_Att,C_Abt,C_Req,
+                                    S_Att,S_Abt,S_Req,Code,S_name,OrgCode) ;
+     otherwise ;
+      true -> error_raise(Msg, string#"wait_request: ~wt~n")).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%  Wait for create the Stdio-Device  %%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Abort received from server (device-request stream)
+wait_stdio_device(HINT, Status, _, STDCont, switch(Cont1,Abt1),
+                  io(Cont2,Abt2), S_Abt, OUT) :- wait(S_Abt) |
+    Cont1 = [], Cont2 = [], Abt1 = S_Abt, Abt2 = S_Abt, OUT = aborted,
+    wait_and_close_device(HINT,Status), wait_and_close_std_cont(HINT,STDCont).
+%%%%%  Abort received from client
+wait_stdio_device(HINT, Status, CShut, STDCont, switch(Cont1,Abt1),
+                  io(Cont2,Abt2), _, OUT) :- wait(CShut) |
+    Cont1 = [], Cont2 = [], Abt1 = abort, Abt2 = abort, OUT = aborted,
+    wait_and_close_device(HINT,Status), wait_and_close_std_cont(HINT,STDCont).
+alternatively.
+%%%%%  Device creation status received
+wait_stdio_device(HINT, Status, CShut, STDCont,
+                  switch(Cont1,Abt1), io(Cont2,Abt2), _, OUT) :- wait(Status) |
+    ( Status = normal(Dev), HINT = {H1,H2} ->
+%    ( Status = normal(Dev, D_Abt, D_Att) ->
+%% if ( device-creation completed ) then ( ignore request-stream abort)
+          Cont2 = [absolute_id(ABS)|NCont2],
+          NHINT = {ABS, H1, H2},
+%          conv_attrib(CShut,NDev,Dev),
+%          merge(NNDev, NDev),
+          merge(NNDev, Dev),
+          stdio_hndl:create(Cnt, Rpt, CShut, NNDev, Stream, OUT, NHINT),
+          wait_stdio_message(NHINT,CShut, STDCont, stdio(Stream,Cnt,Rpt),
+                             switch(Cont1,Abt1), io(NCont2,Abt2), pass) ;
+      Status = abnormal ->
+          Cont1 = [], Cont2 = [], Abt1 = abort, Abt2 = abort, OUT = abnormal,
+          wait_and_close_std_cont(HINT,STDCont) ;
+      Status = aborted ->
+          Cont1 = [], Cont2 = [], Abt1 = abort, Abt2 = abort, OUT = aborted,
+          wait_and_close_std_cont(HINT,STDCont) ;
+      Status = disconnected ->
+          Cont1 = [], Cont2 = [], Abt1 = abort, Abt2 = abort, OUT=disconnected,
+          wait_and_close_std_cont(HINT,STDCont) ;
+     otherwise ;
+      true -> error_raise({Status,HINT}, string#"wait_stdio_device: ~wt~n")).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%  Wait for Stdio-Message  %%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Abort received from client
+wait_stdio_message(HINT,CShut, STDCont, stdio(Stream,Cnt,_),
+                   switch(Cont1,Abt1), io(Cont2,Abt2), _) :- wait(CShut) |
+    Stream=[], Cont1=[], Cont2=[], Abt1=abort, Abt2=abort, Cnt=[],
+    wait_and_close_std_cont(HINT,STDCont).
+alternatively.
+%%%%%  Std_io control message received
+wait_stdio_message(HINT,_, [], stdio(Stream,Cnt,_),
+                   switch(Cont1,Abt1), io(Cont2,Abt2), _) :- true |
+    Stream=[], Cont1=[], Cont2=[], Abt1=abort, Abt2=abort, Cnt=[].
+wait_stdio_message(HINT, CShut, [Msg | STDCont], stdio(Stream,Cnt,Rpt),
+                   switch(Cont1,Abt1), io(Cont2,Abt2), PorB) :- true |
+    ( Msg = request(switch, Node, NComm, FInfo) -> FInfo=switch,
+          Cnt=[pass_to_block(Stat)|Cnt0],
+          wait_status(CShut, Stat, Cnt0, Cnt1),
+          Cnt1={Comm,NCnt}, %Cnt={Comm, NCnt},
+          valve({switch,HINT}, NComm, Comm, CShut)@node(Node),
+          wait_stdio_message(HINT, CShut, STDCont, stdio(Stream,NCnt,Rpt),
+                switch(Cont1,Abt1), io(Cont2,Abt2), block) ;
+      Msg = make_branch(STDSubCont, End, ID, CInfo),
+                vector_element(CInfo,3,Node) ->
+          Cnt = [create(ID, NStream, End, Stat, PorB) | NCnt],
+          wait_open_message(HINT,End,CInfo,NStream,STDSubCont,Stat)@node(Node),
+          wait_stdio_message(HINT, CShut, STDCont, stdio(Stream,NCnt,Rpt),
+                switch(Cont1,Abt1), io(Cont2,Abt2), PorB) ;
+     otherwise ;
+%% Mode = in | out | inter | io
+      Msg = request(Mode, Node, NComm, FInfo) ->
+          FInfo=Mode, Stream={Comm, NStream},
+          valve({Mode, HINT}, NComm, Comm, CShut)@node(Node),
+          wait_stdio_message(HINT, CShut, STDCont, stdio(NStream,Cnt,Rpt),
+                switch(Cont1,Abt1), io(Cont2,Abt2), PorB) ;
+     otherwise ;
+      true -> error_raise({Msg, HINT}, string#"wait_stdio_message: ~wt~n")).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%  Wait for 'open' Message  %%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+wait_open_message(HINT,CShut,_,Stream,STDCont,Stat) :- wait(CShut) |
+    Stream=[], wait_and_close_std_cont(HINT, STDCont).
+wait_open_message(HINT, _, _, Stream, [], Stat) :- true | Stream = [].
+wait_open_message(HINT,CShut,_,Stream,[Msg|STDCont],Stat) :- true |
+    ( Msg = open({Type, OutInfo}, switch(Cont1, Abt1), io(Cont2, Abt2)),
+        HINT = {_,S_HINT,Info} ->
+          wait_complete(Status, OutInfo, Stat),
+          Cont2 = [absolute_id(ABS)|NCont2], NHINT = {ABS,S_HINT,Info},
+          stdio_hndl:create(Cnt, Rpt, CShut, Stream, NStream, Status, NHINT),
+          wait_stdio_message(NHINT, CShut, STDCont, stdio(NStream,Cnt,Rpt),
+                             switch(Cont1,Abt1), io(NCont2,Abt2), pass) ;
+     otherwise ;
+      true -> error_raise({Msg, HINT}, string#"wait_open_message: ~wt~n")).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% create window & file & string_io & timer & e.t.c. ...  %%%%%
+%%%%% result = normal(Stream, Abt, Att) | abnormal | aborted %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+create_stdio_device({Mode,In,Out},CShut,Comm,NResult,S_name,NOut,HINT) :-
+        wait(CShut) | NResult=aborted, Out = abnormal.
+alternatively.
+create_stdio_device({Mode,In,Out},CShut,Comm,NResult,S_name,NOut,HINT) :-
+        wait(Comm) |
+%    NOut = Out,
+    ( Comm = normal(Strm) -> Strm = [reset(_)|NStrm], HINT = {Mode, In},
+        make_device(S_name, Mode, In, Result, CMP, NStrm, CShut),
+        wait_complete(CMP, Out, NOut),
+        NResult = Result ;
+%        check_result(Result, NResult, Out) ;
+      Comm=abnormal -> NResult=abnormal, Out = abnormal ;
+%        check_result(abnormal,NResult,Out)
+      Comm=aborted -> NResult=aborted, Out = aborted ;
+%        check_result(aborted,NResult,Out)
+      Comm=disconnected -> NResult=disconnected, Out = disconnected ;
+%        check_result(aborted,NResult,Out)
+     otherwise ;
+      true -> error_raise(Comm,
+                  string#"create_stdio_device: ~wt~n")).
+
+%%%  Make Device  %%%
+
+make_device(file_request, Mode, FileID, Result, CMP, FilDev, CShut) :- true |
+    (string(FileID, _, _), Mode = in ->
+        FilDev = [open(FileID,{read,FS})], check_dev(FS,Result,CMP,[],CShut) ;
+     string(FileID, _, _), Mode = out ->
+        FilDev = [open(FileID,{write,FS})], check_dev(FS,Result,CMP,[],CShut) ;
+     FileID = {('^'), File}, string(File, _, _), Mode = out ->
+        FilDev = [open(File,{append,FS})], check_dev(FS,Result,CMP,[],CShut) ;
+    otherwise ;
+      true -> Result = abnormal, CMP = abnormal, FilDev = [] ).
+%      true -> error_raise(FileID,
+%                  string#"make_device (illegal_file_param): ~wt~n")).
+make_device(window_request, _, WinReq, Result, CMP, WinDev, CShut) :- true |
+    (WinReq = Window, string(Window,_,_) ->
+        S = [reshape(mouse, mouse, _), set_title(Window,_),show(_)],
+        WinDev = [create(Win)], check_dev(Win, Result, CMP, S, CShut) ;
+     WinReq = {Window}, string(Window,_,_) ->
+        S = [reshape(mouse, mouse, _), set_title(Window,_),show(_)],
+        WinDev = [create(Win)], check_dev(Win, Result, CMP, S, CShut) ;
+     WinReq = {Window,X,Y,W,H}, string(Window, _, _),
+        integer(X),integer(Y),integer(W),integer(H), X>=0,Y>=0,W>0,H>0 ->
+        S = [reshape(at(X,Y),char(W,H),_), set_title(Window,_), show(_)],
+        WinDev = [create(Win)], check_dev(Win, Result, CMP, S, CShut) ;
+     WinReq = {Window, At, Char}, string(Window, _, _) ->
+        posCheck(At, Pos), sizeCheck(Char, Size),
+        S = [reshape(Pos,Size,_), set_title(Window,_), show(_)],
+        WinDev = [create(Win)], check_dev(Win, Result, CMP, S, CShut) ;
+     WinReq = {Window,X,Y,W,H,Font},string(Window,_,_),string(Font,_,_),
+        integer(X),integer(Y),integer(W),integer(H), X>=0,Y>=0,W>0,H>0 ->
+        S = [reshape(at(X, Y), char(W, H), _), set_title(Window, _),
+                    set_font(Font, _), show(_)],
+        WinDev = [create(Win)], check_dev(Win, Result, CMP, S, CShut) ;
+     WinReq = {Window,At,Char,Font},string(Window,_,_),string(Font,_,_)->
+        posCheck(At, Pos), sizeCheck(Char, Size),
+        S = [reshape(Pos, Size, _), set_title(Window, _),
+                    set_font(Font, _), show(_)],
+        WinDev = [create(Win)], check_dev(Win, Result, CMP, S, CShut) ;
+    otherwise ;
+     true -> Result = abnormal, CMP = abnormal, WinDev = [] ).
+%     true -> error_raise(WinReq,
+%        string#"make_device (illegal_window_param): ~wt~n")).
+otherwise.
+make_device(_, Mode, Device, Result, CMP, ReqDev, CShut) :- true |
+    ReqDev = [create({Mode,Device}, DevStr)],
+    check_dev(DevStr, Result, CMP, [], CShut).
+%make_device(S_name, Mode, Device, Result, _) :- true | Result = abnormal,
+%    error_raise({S_name,Mode,Device},
+%                        string#"make_device (illegal_device): ~wt~n").
+
+%%%%%
+check_dev(Check, Result, CMP, Msgs, CShut) :- wait(CShut) |
+    Result = aborted, CMP = aborted.
+alternatively.
+check_dev(Check, Result, CMP, Msgs, CShut) :- wait(Check) |
+    ( Check = normal(Win0) ->
+          stdio_converter:mesConv3(Win, Win0),
+          Win = [reset(_) | NWin],
+          Result=normal(NNWin), CMP = normal, append(Msgs,NNWin,NWin) ;
+      Check = abnormal -> Result = abnormal, CMP = abnormal ;
+      Check = aborted -> Result = aborted, CMP = aborted ;
+      Check = disconnected -> Result = disconnected, CMP = disconnected ;
+     otherwise ;
+      true -> Result = aborted, CMP = aborted,
+            error_raise(Check, string#"check_dev: ~wt~n") ).
+
+%check_result(Check, NResult, Out) :- true |
+%    ( Check = normal(X) -> NResult = normal(X), Out = normal ;
+%      Check = abnormal -> NResult = abnormal, Out = abnormal ;
+%      Check = aborted -> NResult = aborted, Out = aborted ;
+%     otherwise ;
+%      true -> error_raise(Check, string#"check_result: ~wt~n")).
+
+posCheck(at(X,Y), Pos) :- integer(X),integer(Y),X>=0,Y>=0 | Pos = at(X,Y).
+otherwise.
+posCheck(_, Pos) :- true | Pos = mouse.
+
+sizeCheck(char(X,Y),Size) :- integer(X),integer(Y),X>=0,Y>0 | Size=char(X,Y).
+otherwise.
+sizeCheck(_, Size) :- true | Size = mouse.
+
+append([],Z,W) :- true | W=Z.
+append([X|Y],Z,W) :- true | W=[X|NW], append(Y,Z,NW).
+
+error_raise(Data, FString) :- true |
+    Type = illegal_message_to_StdIO_server,
+    variable:wrap(Data, {_, WData}, 100, 100),
+    shoen:raise(pimos_tag#error, '$PIMOS$'(Type, FString), WData).
+
+%conv_attrib(CShut,In,Out) :- wait(CShut) | In=Out.
+%alternatively.
+%conv_attrib(_,[],Out) :- true | Out=[].
+%conv_attrib(CShut,[get_attributes(_,Status)|In],Out) :- true |
+%    Out = [get_attributes(Status)|NOut],
+%    conv_attrib(CShut,In,NOut).
+%otherwise.
+%conv_attrib(CShut,[Mes|In],Out) :- true |
+%    Out = [Mes|NOut],
+%    conv_attrib(CShut,In,NOut).
+
+valve(HINT, In, Out, Shut) :- wait(Shut), Shut = shut | Out = In.
+valve(HINT, In, Out, Shut) :- wait(Shut), Shut \= shut | Out = [].
+valve(HINT, [], Out, Shut) :- true | Out = [].
+%otherwise.
+%valve(HINT, [get_attributes(_, Attrib) | In], Out, Shut) :- true |
+%    Out = [get_attributes(Attrib) | NewOut], valve(HINT, In, NewOut, Shut).
+%otherwise.
+valve(HINT, [Mes | In], Out, Shut) :- true |
+    ( Mes = get_attributes(_, Attrib) -> NMes = get_attributes(Attrib) ;
+     otherwise;
+      true -> NMes = Mes ),
+    Out = [NMes | NewOut], valve(HINT, In, NewOut, Shut).
+
+wait_and_close_device(HINT,DEV) :- true |
+    ( DEV = normal(S) -> S = [] ;
+     otherwise ;
+      true -> true ).
+
+wait_and_close_std_cont(HINT,[]) :- true | true.
+wait_and_close_std_cont(HINT,[Mes|SC]) :- true |
+    ( Mes = open({_,_,OInfo}, switch(Cont1, Abt1), io(Cont2, Abt2)) ->
+        OInfo=aborted, Cont1=[], Cont2=[], Abt1=abort, Abt2=abort ;
+      Mes = open({_,OInfo}, switch(Cont1, Abt1), io(Cont2, Abt2)) ->
+        OInfo=aborted, Cont1=[], Cont2=[], Abt1=abort, Abt2=abort ;
+      Mes = open(Type, switch(Cont1, Abt1), io(Cont2, Abt2)), atom(Type) ->
+        Cont1=[], Cont2=[], Abt1=abort, Abt2=abort ;
+      Mes = make_branch(NSC,_,_,CInfo), vector_element(CInfo,3,Node) ->
+        wait_and_close_std_cont({dummy,HINT},NSC)@node(Node) ;
+      Mes = request(_,_,_,FInfo) -> FInfo = any ;
+     otherwise ;
+      true -> error_raise({Mes,HINT}, string#"wait_and_close_std_cont: ~w~n") ),
+    wait_and_close_std_cont(HINT,SC).
+
+wait_complete(Status, X, Y) :- wait(Status) | X = Y.
+
+wait_status(CShut, Status, X, Y) :- wait(CShut) | X = Y.
+wait_status(CShut, Status, X, Y) :- wait(Status) | X = Y.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  End  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

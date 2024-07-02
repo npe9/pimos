@@ -1,0 +1,159 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%% Buffer List for history window
+%%% 1990.12.5
+
+class list_index_buffer has
+:create(C,Obj):-
+    :new(C,Obj),
+    new_heap_vector(Nil,3),
+    Obj!root:=Nil,
+    Obj!tail:=Nil;
+instance
+attribute root,tail,count;
+:add_last(Obj,X,Key):-
+    Obj!count:=Obj!count+1,
+    new_heap_vector(Nil,3),
+    Hv=Obj!tail,
+    set_first(Hv,Key),
+    set_second(Hv,Nil),
+    set_vector_element(Hv,2,X),
+    Obj!tail:=Nil;
+:add_first(Obj,X,Key):-
+    Obj!count:=Obj!count+1,
+    new_heap_vector(New,3),
+    Hv=Obj!root,
+    Obj!root:=New,
+    set_first(New,Key),
+    set_second(New,Hv),
+    set_vector_element(New,2,X);
+:clear(Obj):-
+    Obj!count:=0,
+    new_heap_vector(Nil,3),
+    Obj!root:=Nil,
+    Obj!tail:=Nil;
+:search(Obj,X):-
+    search(Obj!root,Obj!tail,X);
+:search(Obj,Key,X):-
+    search(Obj!root,Obj!tail,Key,X);
+:search_num(Obj,Key,X,N):-
+    search(Obj!root,Obj!tail,Key,X,1,N);
+:remove(Obj,X):-
+    Root=Obj!root,
+    Tail=Obj!tail,
+    second(Root,Next),
+    (Root==Tail,!,fail;
+     first(Root,X),!,
+     Obj!count:=Obj!count-1,
+     Obj!root:=Next;
+     remove(Next,Tail,X,Root,Obj));
+
+:remove_num(Obj,X,Num):-
+    Root=Obj!root,
+    Tail=Obj!tail,
+    second(Root,Next),
+    (Root==Tail,!,fail;
+     first(Root,X),!,
+     Num=1,
+     Obj!count:=Obj!count-1,
+     Obj!root:=Next;
+     remove(Next,Tail,X,Root,Obj,2,Num));
+
+:get_contents(Obj,L):-
+    all(Obj!root,Obj!tail,L);
+
+:get_contents_with_key(Obj,L):-
+    all_k(Obj!root,Obj!tail,L);
+
+:get_partial_contents(Obj,P,N,L):-
+    (P<Obj!count,!,
+     skip(Obj!root,P,Hv),
+     all_p(Hv,N,L);
+     L=[]);
+
+:put_contents_with_key(Obj,L):-
+    :clear(Obj),
+    set_all(L,Obj!root,Tail),
+    count(L,N),
+    Obj!count:=N,
+    Obj!tail:=Tail;
+:count(Obj,Obj!count):-!;
+local
+
+search(T,T,_):-!,fail;    
+search(H,T,X):-first(H,X),!;
+search(H,T,X):-
+    second(H,Next),
+    search(Next,T,X);
+
+
+search(T,T,_,_,_):-!,fail;
+search(H,T,X,Y,N,N):-first(H,X),!,vector_element(H,2,Y);
+search(H,T,X,Y,C,N):-
+    second(H,Next),
+    search(Next,T,X,Y,C+1,N);
+
+search(T,T,_,_,_):-!,fail;
+search(H,T,X,Y):-first(H,X),!,vector_element(H,2,Y);
+search(H,T,X,Y):-
+    second(H,Next),
+    search(Next,T,X,Y);
+
+remove(T,T,_,_,_):-!,fail;    
+remove(H,T,X,Bef,Obj):-first(H,X),!,
+    Obj!count:=Obj!count-1,
+    second(H,Next),
+    set_second(Bef,Next);
+remove(H,T,X,Bef,Obj):-
+    second(H,Next),
+    remove(Next,T,X,H,Obj);
+
+remove(T,T,_,_,_,_,_):-!,fail;    
+remove(H,T,X,Bef,Obj,N,N):-first(H,X),!,
+    Obj!count:=Obj!count-1,
+    second(H,Next),
+    set_second(Bef,Next);
+remove(H,T,X,Bef,Obj,C,N):-
+    second(H,Next),
+    remove(Next,T,X,H,Obj,C+1,N);
+
+all(T,T,[]):-!;
+all(H,T,[F|L]):-
+    vector_element(H,2,F),
+    second(H,Next),
+    all(Next,T,L);
+
+all_k(T,T,[]):-!;
+all_k(H,T,[{X,Key}|L]):-
+    first(H,Key),
+    vector_element(H,2,X),
+    second(H,Next),
+    all_k(Next,T,L);
+
+skip(H,0,H):-!;
+skip(H,N,A):-
+    second(H,Next),
+    skip(Next,N-1,A);
+
+all_p(H,_,[]):-second(H,0),!; %% too small
+all_p(H,0,[]):-!;
+all_p(H,N,[{X,Key}|L]):-
+    first(H,Key),
+    vector_element(H,2,X),
+    second(H,Next),
+    all_p(Next,N-1,L);
+
+set_all([],H,H):-!;
+set_all([{X,Key}|L],H,T):-
+    new_heap_vector(Next,3),
+    set_vector_element(H,2,X),
+    set_first(H,Key),
+    set_second(H,Next),
+    set_all(L,Next,T);
+
+count([],0):-!;
+count([_|L],N):-
+    count(L,N1),
+    N=N1+1;
+
+end.

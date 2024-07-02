@@ -1,0 +1,220 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_inspector.
+:- public create/8, inspect_goal/8, inspector/8,
+          create_monitor_manager/6, monitor_manager/6.
+:- public monitor/8, monitor_and_fork/8.
+:- with_macro pimos.
+
+inspect_goal(Kill,TrID,Goal,VAR,IO,At,At1,MM) :- atom(Goal) |
+    create(Kill,TrID,Goal,VAR,IO,At,At1,MM).
+inspect_goal(Kill,TrID,Goal,VAR,IO,At,At1,MM) :-
+  vector_element(Goal,0,Pred), atom(Pred) |
+    create(Kill,TrID,Goal,VAR,IO,At,At1,MM).
+
+create(Kill,TrID,Term,VAR,IO,At,At1,MM) :- true|
+    predicate_to_code(module#listener_inspector,inspector,8,Inspector),
+    shoen:raise(pimos_tag#task,general_request,
+        [execute(Inspector,{Kill,TrID,Term,VAR1,IO1,At,At1,MM1},
+                    "inspector",4000,4096,16#"DFFFFFFF",{0,100000000},normal(Ctr,Rpt))]),
+    listener_utility:valve(TF,VAR1,VAR),
+    valve_with_attention(TF,IO1,IO,At1),
+    listener_utility:valve(TF,MM1,MM),
+    task_monitor(Rpt,Ctr,TF,[]," !INSPECTOR FAILURE!").
+
+inspector(Kill,TrID,Term,VAR,IO,At,At1,MM) :-
+    listener_var_manager:filter(VAR1,VAR),
+    listener_buffer:filter(IO1,IO),
+    module:get_module_name(module#listener_inspector,Pac,_Mod),
+    module_table:dynamic_link(Pac::inspector,inspector,{Kill,TrID,Term,VAR1,IO1,At,At1,MM}).
+
+create_monitor_manager(_Kill,_Tkill,[],VAR,_Req,_Num) :- true| VAR=[].
+create_monitor_manager(Kill,Tkill,MM,VAR,Req,Num) :- list(MM)|
+    predicate_to_code(module#listener_inspector,monitor_manager,6,Manager),
+    shoen:raise(pimos_tag#task,general_request,
+        [execute(Manager,{Kill,Tkill,MM1,VAR1,Req1,Num},
+                    "monitor_manager",4000,4096,16#"DFFFFFFF",{0,100000000},normal(Ctr,Rpt))]),
+    monitor_manager_valve(TF,MM,MM1),
+    listener_utility:valve(TF,VAR1,VAR),
+    listener_utility:valve(TF,Req1,Req2),
+    io_valve(TF,Req2,Req),
+    task_monitor(Rpt,Ctr,TF,[]," !MONITOR MANAGER FAILURE!").
+
+monitor_manager(Kill,Tkill,MM,VAR,Req,Num) :-
+    listener_var_manager:filter(VAR1,VAR),
+    filter_from_monitor_manager(Tkill,Req1,Req),
+    filter_from_listener(MM,MM1),
+    module:get_module_name(module#listener_inspector,Pac,_Mod),
+    module_table:dynamic_link(Pac::monitor_manager,manager,{Kill,Tkill,MM1,VAR1,Req1,Num}).
+
+filter_from_monitor_manager(Tkill,[monitor(TrID,Req)|US],OS) :- wait(TrID) |
+    OS=[monitor(TrID,Req1)|OS1],
+    monitor_request(Tkill,Req1,Req),
+    filter_from_monitor_manager(Tkill,US,OS1).
+filter_from_monitor_manager(_,[],OS) :- OS=[].
+
+monitor_request(Tkill,_,_) :- wait(Tkill) | true.
+alternatively.
+monitor_request(_,normal(IO,At,NAt),Req) :-
+    listener_buffer:filter(IO1,IO),
+    Req=normal(IO1,At,NAt).
+
+
+filter_from_listener([monitored_terms(IO)|US],OS) :-
+    listener_buffer:filter(IO1,IO),
+    OS=[monitored_terms(IO1)|OS1],
+    filter_from_listener(US,OS1).
+filter_from_listener([monitor_mode(Res)|US],OS) :-
+    OS=[monitor_mode(Res1)|OS1],
+    listener_utility:ground_unify(Res1,Res),
+    filter_from_listener(US,OS1).
+filter_from_listener([do(L)|US],OS) :-
+    merge(L,L1),
+    listener_utility:prepend(L1,US,US1),
+    filter_from_listener(US1,OS).
+filter_from_listener([],OS) :- OS=[].
+otherwise.
+filter_from_listener([Msg|US],OS) :-
+    OS=[Msg|OS1],
+    filter_from_listener(US,OS1).
+
+
+
+monitor_manager_valve(TF,LIS,MM) :- wait(TF) |
+    MM=[],
+    monitor_manager_dummy(LIS).
+alternatively.
+monitor_manager_valve(_,[],MM) :- MM=[].
+monitor_manager_valve(TF,[Msg|LIS],MM) :-
+    monitor_manager_valve1(TF,[Msg|LIS],MM).
+
+monitor_manager_valve1(TF,[monitored_terms(IO)|LIS],MM) :-
+    MM=[monitored_terms(IO1)|MM1],
+    listener_utility:valve(TF,IO1,IO),
+    monitor_manager_valve(TF,LIS,MM1).
+monitor_manager_valve1(TF,[monitor_mode(Mode)|LIS],MM) :-
+    MM=[monitor_mode(Mode1)|MM1],
+    wait_monitor_mode(TF,Mode1,Mode),
+    monitor_manager_valve(TF,LIS,MM1).
+monitor_manager_valve1(TF,[do(L)|LIS],MM) :-
+    merge(L,L1),
+    listener_utility:prepend(L1,LIS,LIS1),
+    monitor_manager_valve(TF,LIS1,MM).
+monitor_manager_valve1(_,[],MM) :- MM=[].
+otherwise.
+monitor_manager_valve1(TF,[Msg|LIS],MM) :-
+    MM=[Msg|MM1],
+    monitor_manager_valve(TF,LIS,MM1).
+
+wait_monitor_mode(TF,_,Mode) :- wait(TF) | 
+    Mode=normal(">Monitor manager failed !!~n",[]).
+wait_monitor_mode(_,normal(Fstr,TL),Mode) :- string(Fstr,_,_), wait(TL) |
+    Mode=normal(Fstr,TL).
+
+monitor_manager_dummy([monitored_terms(List)|LIS]) :- 
+    List=[],
+    monitor_manager_dummy(LIS).
+monitor_manager_dummy([monitor_mode(Res)|LIS]) :- 
+    Res=normal(">Monitor manager failed !!~n",[]),
+    monitor_manager_dummy(LIS).
+monitor_manager_dummy([do(L)|LIS]) :-
+    merge(L,L1),
+    listener_utility:prepend(L1,LIS,LIS1),
+    monitor_manager_dummy(LIS1).
+monitor_manager_dummy([]) :- true | true .
+otherwise.
+monitor_manager_dummy([_|LIS]) :- monitor_manager_dummy(LIS).
+
+
+io_valve(TF,[monitor(TrID,Req)|US],OS) :-
+    valve_with_attention(TF,Req1,Req),
+    OS=[monitor(TrID,Req1)|OS1],
+    io_valve(TF,US,OS1).
+io_valve(_,[],OS) :- OS=[].
+otherwise.
+io_valve(TF,[Msg|US],OS) :-
+    OS=[Msg|OS1],
+    io_valve(TF,US,OS1).
+
+valve_with_attention(TF,_,_) :- wait(TF) | true.
+alternatively.
+valve_with_attention(TF,normal(IO,At,NAt),Req) :-
+    Req=normal(IO1,At,NAt),
+    valve_with_attention(TF,IO1,IO,NAt).
+
+valve_with_attention(TF,_,IO1,At) :- wait(TF) | IO1=[next_attention(At)].
+alternatively.
+valve_with_attention(_,[],IO1,_) :- IO1=[].
+valve_with_attention(TF,[X|IO],IO1,At) :- 
+    IO1=[X|IO2],
+    valve_with_attention(TF,IO,IO2,At).
+
+
+task_monitor([terminated|_],Ctr,TF,[],_) :- Ctr=[], TF=terminated.
+task_monitor([resource_low|Rpt],Ctr,TF,Exc,Tit) :-
+    Ctr=[add_resource(0,1000000000)|Ctr1],
+    task_monitor(Rpt,Ctr1,TF,Exc,Tit).
+task_monitor([resource_added|Rpt],Ctr,TF,Exc,Tit) :- true|
+    Ctr=[allow_resource_report|Ctr1],
+    task_monitor(Rpt,Ctr1,TF,Exc,Tit).
+task_monitor([exception(Kind,Info,NewCde,NewArg)|Rpt],Ctr,TF,[],Tit) :-
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={dummy},
+    Ctr=[abort(_)|Ctr1],
+    TF=inspector_failure,
+    task_monitor(Rpt,Ctr1,_,[{Kind,Info}],Tit).
+otherwise.
+task_monitor([terminated|_],Ctr,_,Exc,Tit) :- 
+    Ctr=[], 
+    listener_utility:reverse(Exc,Exc1), 
+    shoen:raise(pimos_tag#task,general_request,[window(normal(WR,_,_))]),
+    WR=[create(normal(W,_,_))],
+    W=[ beep(_),beep(_),
+        set_font("font:test_11.font",_),
+        set_title(Tit,_),
+        activate(_),
+        reshape(at(0,0),char(70,7),_)|W1],
+    atom_table:cache_table(ATM),
+    merge(ATM1,ATM),
+    variable:pool2(VP),
+    listener_buffer:interaction_filter(ATM1,VP,IN,W1,pimos),
+    IN=[print_atom_length(100),
+        print_string_length(100)|IN1],
+    display_exception(Exc1,IN1).
+task_monitor([exception(Kind,Info,NewCde,NewArg)|Rpt],Ctr,_,Exc,Tit) :-
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={dummy},
+    task_monitor(Rpt,Ctr,_,[{Kind,Info}|Exc],Tit).
+otherwise.
+task_monitor([_|Rpt],Ctr,TF,Exc,Tit) :- task_monitor(Rpt,Ctr,TF,Exc,Tit).
+
+display_exception([{K,I}|Exc],IN) :-
+    listener_exception_handler:exception_msg(K,I,IN,IN1),
+    display_exception(Exc,IN1).
+display_exception([],IN) :- IN=[putb("OK?"), getl(_)].
+
+
+%%%%%%%%%%%
+% UTILTIY %
+%%%%%%%%%%%
+monitor({Val},_,Name,IN,IN1,RSC,RSC1,MM) :- 
+    IN1=IN,
+    RSC=[get(tracer,TrID)|RSC1],
+    MM=[monitor(TrID,Val,Name)].
+monitor({},Var,_,IN,IN1,RSC,RSC1,MM) :- 
+    IN=[putf(" m: ~s nonexistent.~n",[Var])|IN1],
+    RSC1=RSC, MM=[].
+
+monitor_and_fork({Val},_,Name,IN,IN1,RSC,RSC1,MM) :- 
+    IN1=IN,
+    RSC=[get(tracer,TrID)|RSC1], 
+    MM=[monitor_and_fork(TrID,Val,Name)].
+monitor_and_fork({},Var,_,IN,IN1,RSC,RSC1,MM) :- 
+    IN=[putf(" mf: ~s nonexistent.~n",[Var])|IN1],
+    RSC1=RSC, MM=[].
+

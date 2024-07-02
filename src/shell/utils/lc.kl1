@@ -1,0 +1,48 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is 'lc' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module lc.
+:- public usage/1, go/0.
+
+usage(Usage) :- true | Usage = [{string#"~s", [S1]}],
+    S1 = string#"Usage : lc".
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Create the 'lc'  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+go :- true |
+    shoen:raise(pimos_tag#shell, get_std_in, StdIn),
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    StdIn = [prompt(string#"LC>"), getl(Line) | NewStdIn],
+    loop(Line, NewStdIn, StdOut, 0).
+
+loop(Line, StdIn, StdOut, Cnt) :- string(Line, 0, _) |    %%% pseudo_eof %%%
+    StdOut = [putf(string#"$$$ Line = ~t $$$~n", [Cnt]), flush(Stat)],
+    StdIn = [], waitStat(Stat).
+loop(Line, StdIn, StdOut, Cnt) :- string(Line, L, _), L>0 |    %%% normal %%%
+    StdIn = [prompt(string#"LC>"), getl(NewLine) | NewStdIn],
+    NCnt := Cnt + 1, loop(NewLine, NewStdIn, StdOut, NCnt).
+loop(Line, StdIn, StdOut, Cnt) :- integer(Line), Line = -1 |%%% end_of_file %%%
+    StdOut = [putf(string#"$$$ Line = ~t $$$~n", [Cnt]), flush(Stat)],
+    StdIn = [], waitStat(Stat).
+otherwise.
+loop(_, StdIn, StdOut, _) :- true | StdIn = [], StdOut = [].  %%% abnormal %%%
+
+waitStat(Stat) :- wait(Stat) | true.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                       %%%%%
+%%%%%  End of 'lc' module.  %%%%%
+%%%%%                       %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,0 +1,42 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v29>Loader>outKLB.kl1.2, 08-Aug-91 20:43:44, Edit by hori
+
+:- module kl1cmp_output_klb.
+:- with_macro pimos.
+:- public output/3.
+
+output(module(Mod, Public, Preds), File0, File) :- true |
+    File0 = [putf("module : ~t~n", [Mod])|File1],
+    displayPublic(File1, File2, Public),
+    displayPreds(File2, File, Preds).
+
+:- local_implicit file:oldnew.
+displayPublic(Public) --> true |
+    &file <<= [putf("public predicates :~n", [])],
+    displayPublic_(Public).
+
+displayPublic_([Pub|Cdr]) --> true |
+    &file <<= [tab(8),putt(Pub), nl],
+    displayPublic_(Cdr).
+displayPublic_([]) --> true.
+
+displayPreds([procedure(Func, Ari, Code)|Cdr]) --> true |
+    &file <<= [putf("procedure : ~t/~t~n", [Func, Ari])],
+    displayCode(Code),
+    &file <<= [nl],
+    displayPreds(Cdr).
+displayPreds([]) --> true | true.
+
+displayCode([label(Lab)|Cdr]) --> true |
+    &file <<=[putf("~t:~n", [Lab])],
+    displayCode(Cdr).
+otherwise.
+displayCode([Instr|Cdr]) --> true |
+    &file <<= [tab(8), putt(Instr), nl],
+    displayCode(Cdr).
+displayCode([]) --> true | true.

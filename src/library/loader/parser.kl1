@@ -1,0 +1,456 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v30>Loader>parser.kl1.2, 20-Feb-92 11:25:37, Edit by hori
+
+:- module compile_command_parser.
+:- with_macro pimos.
+:- public parse/6.
+:- public coerce/2, coerce/5, coerce_all/5.
+
+parse(Line,VP0,VP,STDIN0,STDIN,FileNames) :- string_element(Line,0,#"%") |
+    VP0 = VP,
+    STDIN0 = STDIN,
+    FileNames = [].
+parse(Line,VP0,VP,STDIN0,STDIN,FileNames) :-
+    string(Line,Length,16),
+    L0 := Length - 1,
+    string_element(Line,L0,#"."),
+    L1 := L0 - 1,
+    string_element(Line,L1,Char),
+    Char \= #"." |
+    set_string_element(Line,L0,#" ",Line1),
+    parse_0(0,0,L0,Line1,VP0,VP,STDIN0,STDIN,FileNames0),
+    extract_null(FileNames0,FileNames).
+otherwise.
+parse(Line,VP0,VP,STDIN0,STDIN,FileNames) :-
+    string(Line,Length,16) |
+    parse_0(0,0,Length,Line,VP0,VP,STDIN0,STDIN,FileNames0),
+    extract_null(FileNames0,FileNames).
+
+parse_0(P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- P1 < Length |
+    string_element(Line0,P1,Char,Line1),
+    P2 := P1 + 1,
+    parse_1(Char,P0,P2,Length,Line1,VP0,VP,STDIN0,STDIN,FileNames).
+parse_0(P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- P1 > P0, P1 >= Length |
+    L := Length - P0,
+    new_string(FileName0,L,16),
+    builtin#copy_string_elements(FileName0,0,L,Line0,P0,FileName,_),
+    VP0 = VP,
+    STDIN0 = STDIN,
+    FileNames = [FileName].
+parse_0(P0,P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- P0 >= Length |
+    VP0 = VP,
+    STDIN0 = STDIN,
+    FileNames = [].
+
+parse_1(#",",P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames0) :- P1 >= Length |
+    L := P1 - 1 - P0,
+    new_string(FileName0,L,16),
+    builtin#copy_string_elements(FileName0,0,L,Line0,P0,FileName,_),
+    FileNames0 = [FileName|FileNames],
+    VP0 = [get_more_prompt(MorePrompt)|VP1],
+    STDIN0 = [prompt(MorePrompt),getl(Line1)|STDIN1],
+    string_length(Line1,Length1,Line2),
+    parse_cb(0,Length1,Line2,VP1,VP,STDIN1,STDIN,FileNames).
+parse_1(#",",P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames0) :- P1 < Length |
+    L := P1 - 1 - P0,
+    new_string(FileName0,L,16),
+    builtin#copy_string_elements(FileName0,0,L,Line0,P0,FileName,Line1),
+    FileNames0 = [FileName|FileNames],
+    parse_cb(P1,Length,Line1,VP0,VP,STDIN0,STDIN,FileNames).
+parse_1(#" ",P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames0) :- true |
+    L := P1 - 1 - P0,
+    new_string(FileName0,L,16),
+    builtin#copy_string_elements(FileName0,0,L,Line0,P0,FileName,Line1),
+    FileNames0 = [FileName|FileNames],
+    parse_b(P1,Length,Line1,VP0,VP,STDIN0,STDIN,FileNames).
+parse_1(#"!",P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames0) :- true |
+    parse_q(P0,P1,Length,Line0,P2,Length1,Line1,VP0,VP1,STDIN0,STDIN1,FileNames0,FileNames),
+    parse_b(P2,Length1,Line1,VP1,VP,STDIN1,STDIN,FileNames).
+%%parse_1(#"'",P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames0) :- true |
+%%    parse_q(P0,P1,Length,Line0,P2,Length1,Line1,VP0,VP1,STDIN0,STDIN1,FileNames0,FileNames),
+%%    parse_b(P2,Length1,Line1,VP1,VP,STDIN1,STDIN,FileNames).
+parse_1(#"""",P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames0) :- true |
+    parse_dq(P0,P1,Length,Line0,P2,Length1,Line1,VP0,VP1,STDIN0,STDIN1,FileNames0,FileNames),
+    parse_b(P2,Length1,Line1,VP1,VP,STDIN1,STDIN,FileNames).
+otherwise.
+parse_1(Char,P0,P1,Length,Line,VP0,VP,STDIN0,STDIN,FileNames) :- true |
+    parse_0(P0,P1,Length,Line,VP0,VP,STDIN0,STDIN,FileNames).
+
+parse_cb(P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- P0 < Length |
+    string_element(Line0,P0,Char,Line1),
+    parse_cb0(Char,P0,Length,Line1,VP0,VP,STDIN0,STDIN,FileNames).
+parse_cb(P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- P0 >= Length |
+    VP0 = VP,
+    STDIN0 = STDIN,
+    FileNames = [].
+
+parse_cb0(#" ",P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- true |
+    P1 := P0 + 1,
+    parse_cb(P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames).
+otherwise.
+parse_cb0(Char,P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- true |
+    P1 := P0 + 1,
+    parse_1(Char,P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames).
+
+parse_b(P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- P0 < Length |
+    string_element(Line0,P0,Char,Line1),
+    parse_b0(Char,P0,Length,Line1,VP0,VP,STDIN0,STDIN,FileNames).
+parse_b(P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- P0 >= Length |
+    VP0 = VP,
+    STDIN0 = STDIN,
+    FileNames = [].
+
+parse_b0(#" ",P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- true |
+    P1 := P0 + 1,
+    parse_b(P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames).
+parse_b0(#",",P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- P0 + 1 < Length |
+    P1 := P0 + 1,
+    parse_cb(P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames).
+parse_b0(#",",P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- P0 + 1 =:= Length |
+    VP0 = [get_more_prompt(MorePrompt)|VP1],
+    STDIN0 = [prompt(MorePrompt),getl(Line1)|STDIN1],
+    string_length(Line1,Length1,Line2),
+    parse_cb(0,Length1,Line2,VP1,VP,STDIN1,STDIN,FileNames).
+otherwise.
+parse_b0(Char,P0,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames) :- true |
+    P1 := P0 + 1,
+    parse_1(Char,P0,P1,Length,Line0,VP0,VP,STDIN0,STDIN,FileNames).
+
+parse_q(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,FN0,FN) :- P1 > P0 + 1 |
+    L := P1 - 1 - P0,
+    new_string(FileName0,L,16),
+    builtin#copy_string_elements(FileName0,0,L,Line0,P0,FileName,Line1),
+    FN0 = [FileName,q(TermStr)|FN],
+    parse_q0(P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+otherwise.
+parse_q(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,FN0,FN) :- true |
+    FN0 = [q(TermStr)|FN],
+    parse_q0(P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+
+parse_q0(P0,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P0 < Len0 |
+    parse_q1(P0,P0,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+parse_q0(P0,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P0 >= Len0 |
+    L := Len0 - P0,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr1,_),
+    VP0 = [get_more_prompt(MorePrompt)|VP1],
+    STDIN0 = [prompt(MorePrompt),getl(Line1)|STDIN1],
+    string_length(Line1,Len1,Line2),
+    new_string(SPACE0,1,16),
+    set_string_element(SPACE0,0,#" ",SPACE),
+    builtin#append_string([TermStr1,SPACE,TermStr2],TermStr),
+    parse_q1(0,0,Len1,Line2,P,Len,Line,VP1,VP,STDIN1,STDIN,TermStr2).
+
+parse_q1(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P1 < Len0 |
+    string_element(Line0,P1,Char,Line1),
+    P2 := P1 + 1,
+    parse_q1(Char,P0,P2,Len0,Line1,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+otherwise.
+parse_q1(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    L := Len0 - P0,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr1,_),
+    VP0 = [get_more_prompt(MorePrompt)|VP1],
+    STDIN0 = [prompt(MorePrompt),getl(Line1)|STDIN1],
+    string_length(Line1,Len2,Line2),
+    new_string(SPACE0,1,16),
+    set_string_element(SPACE0,0,#" ",SPACE),
+    builtin#append_string([TermStr1,SPACE,TermStr2],TermStr),
+    parse_q1(0,0,Len2,Line2,P,Len,Line,VP1,VP,STDIN1,STDIN,TermStr2).
+
+parse_q1(#"!",P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    parse_q2(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+parse_q1(#"""",P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    L := P1 - P0 - 1,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr1,Line1),
+    new_string(DQ0,1,16),
+    set_string_element(DQ0,0,#"""",DQ),
+    builtin#append_string([TermStr1,DQ,TermStr2,DQ,TermStr3],TermStr),
+    parse_dq0(P1,Len0,Line1,P2,Len2,Line2,VP0,VP1,STDIN0,STDIN1,TermStr2),
+    parse_q1(P2,P2,Len2,Line2,P,Len,Line,VP1,VP,STDIN1,STDIN,TermStr3).
+otherwise.
+parse_q1(Char,P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    parse_q1(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+
+parse_q2(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P1 < Len0 |
+    string_element(Line0,P1,Char,Line1),
+    P2 := P1 + 1,
+    parse_q2(Char,P0,P2,Len0,Line1,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+parse_q2(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P1 >= Len0 |
+    L := Len0 - P0 - 1,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr,Line),
+    P = Len0,
+    Len = Len0,
+    VP0 = VP,
+    STDIN0 = STDIN.
+
+parse_q2(#"!",P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    L := P1 - 1 - P0,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr1,Line1),
+    builtin#append_string(TermStr1,TermStr2,TermStr),
+    parse_q1(P1,P1,Len0,Line1,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr2).
+otherwise.
+parse_q2(Char,P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    L := P1 - 2 - P0,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr,Line),
+    P := P1 - 1,
+    Len = Len0,
+    VP0 = VP,
+    STDIN0 = STDIN.
+
+%parse_q3(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :-
+%    P1 < Len0, string_element(Line0,P1,Char), P2 := P1 + 1 |
+%    parse_q3(Char,P0,P2,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+%otherwise.
+%parse_q3(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+%    L := Len0 - P0,
+%    new_string(TermStr0,L,16),
+%    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr1,_),
+%    VP0 = [get_more_prompt(MorePrompt)|VP1],
+%    STDIN0 = [prompt(MorePrompt),getl(Line1)|STDIN1],
+%    string_length(Line1,Len2,Line2),
+%    builtin#append_string(TermStr1,TermStr2,TermStr),
+%    parse_q3(0,0,Len2,Line2,P,Len,Line,VP1,VP,STDIN1,STDIN,TermStr2).
+
+%parse_q3(#"""",P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+%    L := P1 - P0 - 1,
+%    new_string(TermStr0,L,16),
+%    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr,Line),
+%    P = P1,
+%    Len = Len0,
+%    VP0 = VP,
+%    STDIN0 = STDIN.
+%otherwise.
+%parse_q3(Char,P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+%    parse_q3(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+
+parse_dq(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,FN0,FN) :- P1 > P0 + 1 |
+    L := P1 - 1 - P0,
+    new_string(FileName0,L,16),
+    builtin#copy_string_elements(FileName0,0,L,Line0,P0,FileName,Line1),
+    FN0 = [FileName,dq(TermStr)|FN],
+    parse_dq0(P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+otherwise.
+parse_dq(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,FN0,FN) :- true |
+    FN0 = [dq(TermStr)|FN],
+    parse_dq0(P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+
+parse_dq0(P0,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P0 < Len0 |
+    parse_dq1(P0,P0,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+parse_dq0(P0,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P0 >= Len0 |
+    L := Len0 - P0,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr1,_),
+    VP0 = [get_more_prompt(MorePrompt)|VP1],
+    STDIN0 = [prompt(MorePrompt),getl(Line1)|STDIN1],
+    string_length(Line1,Len1,Line2),
+    builtin#append_string(TermStr1,TermStr2,TermStr),
+    parse_dq1(0,0,Len1,Line2,P,Len,Line,VP1,VP,STDIN1,STDIN,TermStr2).
+
+parse_dq1(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P1 < Len0 |
+    string_element(Line0,P1,Char,Line1),
+    P2 := P1 + 1,
+    parse_dq1(Char,P0,P2,Len0,Line1,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+otherwise.
+parse_dq1(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    L := Len0 - P0,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr1,_),
+    VP0 = [get_more_prompt(MorePrompt)|VP1],
+    STDIN0 = [prompt(MorePrompt),getl(Line1)|STDIN1],
+    string_length(Line1,Len2,Line2),
+    builtin#append_string(TermStr1,TermStr2,TermStr),
+    parse_dq1(0,0,Len2,Line2,P,Len,Line,VP1,VP,STDIN1,STDIN,TermStr2).
+
+parse_dq1(#"""",P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    parse_dq2(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+otherwise.
+parse_dq1(Char,P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    parse_dq1(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+
+parse_dq2(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P1 < Len0 |
+    string_element(Line0,P1,Char,Line1),
+    P2 := P1 + 1,
+    parse_dq2(Char,P0,P2,Len0,Line1,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr).
+parse_dq2(P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- P1 >= Len0 |
+    L := Len0 - P0 - 1,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr,Line),
+    P = Len0,
+    Len = Len0,
+    VP0 = VP,
+    STDIN0 = STDIN.
+
+parse_dq2(#"""",P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    L := P1 - 1 - P0,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr1,Line1),
+    builtin#append_string(TermStr1,TermStr2,TermStr),
+    parse_dq1(P1,P1,Len0,Line1,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr2).
+otherwise.
+parse_dq2(Char,P0,P1,Len0,Line0,P,Len,Line,VP0,VP,STDIN0,STDIN,TermStr) :- true |
+    L := P1 - 2 - P0,
+    new_string(TermStr0,L,16),
+    builtin#copy_string_elements(TermStr0,0,L,Line0,P0,TermStr,Line),
+    P := P1 - 1,
+    Len = Len0,
+    VP0 = VP,
+    STDIN0 = STDIN.
+
+string_length(Line0,Len,Line) :- string(Line0,Length,16) |
+    Len = Length, Line0 = Line.
+
+extract_null([Str|Rest0],List) :- string(Str,L,16), L > 0 |
+    List = [Str|List0],
+    extract_null(Rest0,List0).
+extract_null([Null|Rest0],List) :- string(Null,0,16) | extract_null(Rest0,List).
+extract_null([],List) :- true | List = [].
+otherwise.
+extract_null([Token|Rest0],List) :- true |
+    List = [Token|List0],
+    extract_null(Rest0,List0).
+
+%%%%%%%%%%
+% COERCE %
+%%%%%%%%%%
+
+coerce(String0,String) :- string(String0,_,16) |
+    String = String0.
+coerce(q(String0),String) :- true |
+    String = String0.
+coerce(dq(String0),String) :- true |
+    String = String0.
+coerce([String0|Rest],Strings) :- true |
+    coerce(String0,String),
+    Strings = [String|Strings0],
+    coerce(Rest,Strings0).
+coerce([],Strings) :- true |
+    Strings = [].
+
+coerce(String,Type,VP0,VP,Status) :- true |
+    VP0 = [get_buffer(Buf0)|VP],
+    parse_arg(String,Buf0,[],WrappedTerm,normal,St),
+    check(St,Type,WrappedTerm,Status).
+
+coerce_all(Strings,Type,VP0,VP,Status) :- list(Strings) |
+    VP0 = [get_buffer(Buf0)|VP],
+    coerce_all(normal,Strings,WTerms,Type,Buf0,St0),
+    check_all(St0,Type,WTerms,Terms,St1),
+    check_done(St1,Terms,Status).
+
+check_done(normal,Terms,Status) :- true | Status = normal(Terms).
+otherwise.
+check_done(_,_,Status) :- true | Status = abnormal.
+
+coerce_all(normal,[String|Strings],WTerms0,Type,Buf0,Status) :- true |
+    parse_arg(String,Buf0,Buf1,WTerm,normal,St0),
+    WTerms0 = [WTerm|WTerms],
+    coerce_all(St0,Strings,WTerms,Type,Buf1,Status).
+coerce_all(normal,[],WTerms0,Type,Buf0,Status) :- true |
+    WTerms0 = [], Buf0 = [], Status = normal.
+otherwise.
+coerce_all(_,_,WTerms0,Type,Buf0,Status) :- true |
+    WTerms0 = [], Buf0 = [], Status = abnormal.
+
+parse_arg(String,Buf0,Buf,Term,normal,St) :- string(String,_,16) |
+    Buf0 = [putb(String),putb(string#" . "),getwt(Term0),abandon_pool|Buf],
+    syntax_check(Term0,Term,St).
+parse_arg(q(String),Buf0,Buf,Term,normal,St) :- true |
+    Buf0 = [putb(String),putb(string#" . "),getwt(Term0),abandon_pool|Buf],
+    syntax_check(Term0,Term,St).
+parse_arg(dq(String),Buf0,Buf,Term,normal,St) :- true |
+    Buf0 = Buf, Term = string(String), St = normal.
+otherwise.
+parse_arg(_,Buf0,Buf,Term,_,St) :- true |
+    Buf0 = Buf, Term = [], St = abnromal.
+
+syntax_check(normal(empty),Term,St) :- true | Term = [], St = abnormal.
+otherwise.
+syntax_check(normal(Term0),Term,St) :- true | Term = Term0, St = normal.
+otherwise.
+syntax_check(_,Term,St) :- true | Term = [], St = abnormal.
+
+check(normal,gterm,Term0,Status) :- true |
+    check_ground(Term0,Term,normal,St),
+    check_0(St,Term,Status).
+check(normal,wterm,Term,Status) :- true |
+    Status = normal(Term).
+check(normal,module,Term0,Status) :- true |
+    check_module(Term0,Term,normal,St),
+    check_0(St,Term,Status).
+check(normal,atom,atom(Atom),Status) :- true |
+    Status = normal(Atom).
+otherwise.
+check(_,_,_,Status) :- true |
+    Status = abnormal.
+
+check_all(normal,gterm,[Term0|Rest],Terms0,Status) :- true |
+    check_ground(Term0,Term,normal,St),
+    Terms0 = [Term|Terms],
+    check_all(St,gterm,Rest,Terms,Status).
+check_all(normal,wterm,[Term0|Rest],Terms0,Status) :- true |
+    Terms0 = [Term0|Terms],
+    check_all(normal,wterm,Rest,Terms,Status).
+check_all(normal,module,[Term0|Rest],Terms0,Status) :- true |
+    check_module(Term0,Term,normal,St),
+    Terms0 = [Term|Terms],
+    check_all(St,module,Rest,Terms,Status).
+check_all(normal,atom,[atom(Atom)|Rest],Terms0,Status) :- true |
+    Terms0 = [Atom|Terms],
+    check_all(normal,atom,Rest,Terms,Status).
+otherwise.
+check_all(normal,_,[],Terms0,Status) :- true |
+    Terms0 = [],
+    Status = normal.
+otherwise.
+check_all(_,_,_,Terms0,Status) :- true |
+    Terms0 = [],
+    Status = abnormal.
+
+check_0(normal,Term,Status) :- true | Status = normal(Term).
+otherwise.
+check_0(_,_,Status) :- true | Status = abnoraml.
+
+check_ground(atom(Atom),Term,Status0,Status) :- true |
+    Term = Atom, Status = Status0.
+check_ground(integer(Int),Term,Status0,Status) :- true |
+    Term = Int, Status = Status0.
+check_ground(floating_point(Real),Term,Status0,Status) :- true |
+    Term = Real, Status = Status0.
+check_ground(string(Str),Term,Status0,Status) :- true |
+    Term = Str, Status = Status0.
+check_ground(list([Car0|Cdr0]),Term,Status0,Status) :- true |
+    check_ground(Car0,Car,Status0,Status1),
+    check_ground(Cdr0,Cdr,Status1,Status),
+    Term = [Car|Cdr].
+check_ground(vector(Vec0),Vec,Status0,Status) :- vector(Vec0,Len) |
+    check_gvec(0,Len,Vec0,Vec,Status0,Status).
+otherwise.
+check_ground(_,Term,_,Status) :- true |
+    Term = [], Status = abnormal.
+
+check_gvec(I,Len,Vec0,Vec,Status0,Status) :- I < Len |
+    set_vector_element(Vec0,I,Elm0,Elm,Vec1),
+    check_ground(Elm0,Elm,Status0,Status1),
+    J := I + 1,
+    check_gvec(J,Len,Vec1,Vec,Status1,Status).
+check_gvec(I,Len,Vec0,Vec,Status0,Status) :- I >= Len |
+    Vec = Vec0, Status = Status0.
+
+check_module(atom(ModuleName),Term,Status0,Status) :- true |
+    Term = ModuleName, Status = Status0.
+check_module(ModuleSpec,Term,Status0,Status) :-
+    ModuleSpec = vector({atom((::)),atom(Package),atom(ModuleName)}) |
+    Term = {(::),Package,ModuleName}, Status = Status0.
+otherwise.
+check_module(_,Term,_,Status) :- true |
+    Term = [], Status = abnormal.

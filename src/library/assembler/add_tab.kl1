@@ -1,0 +1,97 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v15>Package>address_table.kl1.2, 17-May-90 17:42:45, Edit by hori
+:- module kl1_asm_address_table.
+:- public create/6.
+:- with_macro pimos.
+
+create(Put, Get, E_in, E_out, St_in, St_out) :-
+    true |
+%%    pool:keyed_bag(S, 16),
+    kl1cmp_my_pool:keyed_bag(S),
+    merge(Put, Put_stream),
+    merge(Get, Get_stream),
+    put(Put_stream, Get_stream, S, {E_in, E_out, St_in, St_out}).
+otherwise.
+create(Put, Get, E_in, E_out, _, St_out) :-
+    true |
+    E_in = [message(string#"address table cannot create ~t", [])|E_out],
+    Put = [], Get = [], St_out = abnormal.
+
+put([{external, Module, Pred, Arity, Address}|Cont], Get_stream, S, Errors) :- true |
+    S = [empty({external, Module, Pred, Arity}, YorN)|S1],
+    put1(YorN, {external, Module, Pred, Arity}, Address, S1, S2),
+    put(Cont, Get_stream, S2, Errors).
+put([{pred_head, Pred, Arity, Address}|Cont], Get_stream, S, Errors) :- true |
+    S = [put({pred_head, Pred, Arity}, Address)|S1],
+    put(Cont, Get_stream, S1, Errors).
+put([{label, Label, Address}|Cont], Get_stream, S, Errors) :- true |
+    S = [put({label, Label}, Address)|S1],
+    put(Cont, Get_stream, S1, Errors).
+put([{scnst, Const, Address}|Cont], Get_stream, S, Errors) :- true |
+    S = [empty({scnst, Const}, YorN)|S1],
+    put1(YorN, {scnst, Const}, Address, S1, S2),
+    put(Cont, Get_stream, S2, Errors).
+put([{module, Const, Address}|Cont], Get_stream, S, Errors) :- true |
+    S = [empty({module, Const}, YorN)|S1],
+    put1(YorN, {module, Const}, Address, S1, S2),
+    put(Cont, Get_stream, S2, Errors).
+put([], Get_stream, S, Errors) :- true |
+    get(Get_stream, S, Errors).
+otherwise.
+put(Put, Get_stream, S2, {E_in, E_out, _, St_out}) :-
+    true |
+    E_in = [message(string#"data cannot be put to address_table ~t", [Put])|E_out],
+    Get_stream = [], S2 = [], St_out = abnormal.
+
+put1(yes, Key, Address, S1, S2) :- true |
+    S1 = [put(Key, Address)|S2].
+put1(no, Key, Address, S1, S2) :- true |
+    S1 = S2.
+
+get([{external,Module,Pred,Arity,Address}|Cont], S, {E_in, E_out, St_in, St_out}) :- 
+    true |
+    S = [empty({external, Module, Pred, Arity}, YORN)|S1],
+    get1(YORN, {external, Module, Pred, Arity}, Address, S1, S2, E_in, E_m, St_in, St_m),
+    get(Cont, S2, {E_m, E_out, St_m, St_out}).
+get([{pred_head, Pred, Arity, Address}|Cont], S, {E_in, E_out, St_in, St_out}) :- true |
+    S = [empty({pred_head, Pred, Arity}, YORN)|S1],
+    get1(YORN, {pred_head, Pred, Arity}, Address, S1, S2, E_in, E_m, St_in, St_m),
+    get(Cont, S2, {E_m, E_out, St_m, St_out}).
+get([{label, Label, Address}|Cont], S, {E_in, E_out, St_in, St_out}) :- true |
+    S = [empty({label, Label}, YORN)|S1],
+    get1(YORN, {label, Label}, Address, S1, S2, E_in, E_m, St_in, St_m),
+    get(Cont, S2, {E_m, E_out, St_m, St_out}).
+get([{scnst, Const, Address}|Cont], S, {E_in, E_out, St_in, St_out}) :- true |
+    S = [empty({scnst, Const}, YORN)|S1],
+    get1(YORN, {scnst, Const}, Address, S1, S2, E_in, E_m, St_in, St_m),
+    get(Cont, S2, {E_m, E_out, St_m, St_out}).
+get([{module, Const, Address}|Cont], S, {E_in, E_out, St_in, St_out}) :- true |
+    S = [empty({module, Const}, YORN)|S1],
+    get1(YORN, {module, Const}, Address, S1, S2, E_in, E_m, St_in, St_m),
+    get(Cont, S2, {E_m, E_out, St_m, St_out}).
+get([{get_all, List}|Cont], S, Errors) :- true |
+    S = [get_all(List)|S1],
+    get(Cont, S1, Errors).
+get([], S, {E_in, E_out, St_in, St_out}) :- true | 
+    S = [], E_in = E_out, St_in = St_out.
+otherwise.
+get(Get, S2, {E_in, E_out, _, St_out}) :-
+    true |
+    E_in = [message(string#"data cannot be get from address_table ~t", [Get]) |E_out],
+    St_out = abnormal,
+    S2 = [].
+
+get1(no, Key, Address, S, S1, E_in, E_out, St_in, St_out) :- true |
+    S = [get_and_put(Key, Address, Address)|S1],
+    E_in = E_out,
+    St_in = St_out.
+get1(yes, Key, Address, S, S1, E_in, E_out, _, St_out) :- true |
+    E_in = [error(string#"~t is Undefined", [Key])|E_out],
+    S1 = S,
+    St_out = abnormal,
+    Address = 0.

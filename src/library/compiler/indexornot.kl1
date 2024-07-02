@@ -1,0 +1,142 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% indexornot.kl1 sekita at Thu Oct 12 15:17:23 1989 
+%%
+%% Switch indexing/noindexing mode
+%%
+
+:- module kl1cmp_index_sw.
+:- public compile_predicate/13.
+:- with_macro pimos.
+
+:- local_implicit
+                 code:oldnew,
+                 error:oldnew,
+                 ref:oldnew,
+                 opt:shared,
+                 class:shared,
+                 label:shared,
+                 start:shared.
+
+compile_predicate(Blocks0, F/A, C0) --> wait(&start) |
+    {{kl1cmp_error_filter:addPred(&error, F/A, Err0),
+      kl1cmp_guard_case:guard_case(Blocks0, Blocks1),
+      convertGuardBlocks(Err0, Err1, Blocks1, Blocks),
+      compile_predicate_(&code, Err1, [], &ref, &opt, &class, &label,
+                        Blocks, F/A, C0),
+      generate_suspend(&opt, &code, F, A)}}.
+
+:- local_implicit error:oldnew.
+convertGuardBlocks([Block0|Rest], Blocks0) --> true |
+    convertGuardBlocks(Block0, Block1),
+    Blocks0=[Block1|Blocks],
+    convertGuardBlocks(Rest, Blocks).
+convertGuardBlocks([], Blocks) --> true | Blocks = [].
+convertGuardBlocks(wrap#(H0:-G0|B0)-N-Info, Clause) --> true |
+    kl1cmp_struct:convert_guard_unify(H0,H,G0,G,B0,B),
+    Clause=wrap#(H:-G|B)-N-Info.
+convertGuardBlocks(wrap#(H0:-G0|B0), Clause) --> true |
+    kl1cmp_struct:convert_guard_unify(H0,H,G0,G,B0,B),
+    Clause=wrap#(H:-G|B).
+otherwise.
+convertGuardBlocks(Clause0, Clause) --> true | Clause0=Clause.
+
+generate_suspend(Opt, Code0, Code, F, A) :- Opt < 4 |
+    Code0 = [suspend(A,F/A)|Code].
+generate_suspend(4, Code0, Code, _, _) :- true |
+    Code0=Code.
+
+:- local_implicit
+                 code:oldnew,
+                 error:oldnew,
+                 bltref:oldnew,
+                 opt:shared,
+                 class:shared,
+                 label:shared.
+
+compile_predicate_([], _, _) --> true | true.
+compile_predicate_([One_block], Pred, C0) --> true |
+    compile_one_block(One_block, Pred, C0, _, last).
+otherwise.
+compile_predicate_([One_block|Rest], Pred, C0) --> true |
+    compile_one_block( One_block, Pred, C0, C1, nonlast),
+    compile_predicate_(Rest, Pred, C1).
+
+compile_one_block([atom(otherwise)-_-Info], F/A, C0, C, Last) --> true |
+    &error <<= [error("No clause found after otherwise : ~t",
+        [vector({atom('/'),atom(F),integer(A)})], Info)],
+    C0=C.
+compile_one_block([atom(alternatively)-_-Info], F/A, C0, C, Last) --> true |
+    &error <<= [error("No clause found after alternatively : ~t",
+        [vector({atom('/'),atom(F),integer(A)}), Info])],
+    C0=C.
+otherwise.
+compile_one_block([atom(otherwise)-_-_|Rest], F/A, C0, C, Last) --> true |
+    &code <<= [otherwise(A,F/A)],
+    compile_one_block(Rest, F/A, C0, C, Last).
+compile_one_block([atom(alternatively)-_-_|Rest], Pred, C0, C, Last) --> true |
+    &code <<= [read_eagerly],
+    compile_one_block(Rest, Pred, C0, C, Last).
+otherwise.
+compile_one_block([One0-Num-Info0], F/A, C0, C, last) --> &opt<4 | % no index
+    {{kl1cmp_variable_name:string_to_integer(One0, One, VTbl0),
+      kl1cmp_error_filter:error_filter(&error, Err2, VTbl0, _),
+      kl1cmp_error_filter:addErrorInfo(Err2, [], Err1, Info0, Info),
+      kl1cmp_index:register_check(Err1, [], Err, _, _),
+      kl1cmp_register:compile_and_output_one_clause(&code, Err, [], &bltref, &opt, &class,
+            &label, 0, One, F/A, C0, C)}},
+    &code <<= [clause_info(Num)].
+%%    Label := &label + C0,
+%%    &code <<= [label(Label)],
+%%      &code <<= [suspend(A, F/A)].
+otherwise.
+compile_one_block([One0-Num-Info0|Rest], Pred, C0, C, last) --> &opt<4 | % no index
+    {{kl1cmp_variable_name:string_to_integer(One0, One, VTbl0),
+      kl1cmp_error_filter:error_filter(&error, Err2, VTbl0, _),
+      kl1cmp_error_filter:addErrorInfo(Err2, [], Err1, Info0, Info),
+      kl1cmp_index:register_check(Err1, [], Err, _, _),
+      kl1cmp_register:compile_and_output_one_clause(&code, Err, [], &bltref, &opt, &class,
+            &label, 0, One, Pred, C0, C1)}},
+    &code <<= [clause_info(Num)],
+%%    Label := &label + C0,
+%%    &code <<= [label(Label)],
+    compile_one_block(Rest, Pred, C1, C, last).
+compile_one_block([One0-Num-Info0|Rest], Pred, C0, C, nonlast) --> &opt<4 | % no index
+    {{kl1cmp_variable_name:string_to_integer(One0, One, VTbl0),
+      kl1cmp_error_filter:error_filter(&error, Err2, VTbl0, _),
+      kl1cmp_error_filter:addErrorInfo(Err2, [], Err1, Info0, Info),
+      kl1cmp_index:register_check(Err1, [], Err, _, _),
+      kl1cmp_register:compile_and_output_one_clause(&code, Err, [], &bltref, &opt, &class,
+            &label, 0, One, Pred, C0, C1)}},
+%%    Label := &label + C0,
+%%    &code <<= [label(Label)],
+    &code <<= [clause_info(Num)],
+    compile_one_block(Rest, Pred, C1, C, nonlast).
+compile_one_block([One-Num-Info0|Rest], Pred, C0, C, Last) --> &opt=4 | % index
+    {{kl1cmp_optimize:optimize(&code, Code),
+      kl1cmp_index:compile_one_block_with_index(Code0, [],
+                                                &error, &bltref, &opt,
+                                                &class, &label,
+                                                [One-Num-Info0|Rest],
+                                                Pred, C0, C1, Last, Stat)}},
+    try_again_if_failed(Stat, Code0, Code, [One-Num-Info0|Rest], Pred, C0, C1, C, Last, Info0).
+compile_one_block([], _, C0, C, _) --> true | {{C0 = C}}.
+
+try_again_if_failed(normal, Code0, Code, _, _, _, C0, C, _, _) --> true |
+    Code0=Code, C0=C.
+try_again_if_failed(abnormal, _, Code, Clauses, Pred, C0, _, C, Last, Info) --> true |
+    Code=[],
+    &opt <= 3,
+    &error <<= [warning("Register shortage. Trying to compile again :~t", [Pred], Info)],
+    compile_one_block(Clauses, Pred, C0, C, Last),
+    generate_suspend(Last, Pred).
+
+generate_suspend(last, F/A) --> true |
+    &code <<= [suspend(A, F/A)].
+otherwise.
+generate_suspend(_, _) --> true | true.
+

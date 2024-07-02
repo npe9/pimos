@@ -1,0 +1,644 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_assign_register.
+:- public assign_register/4.
+:- public assignRegisterPreds/4.
+:- public instr/7.
+:- with_macro pimos.
+
+:- local_implicit
+    io:oldnew.
+
+assign_register(IO0, IO, module(Mod, Pub, Preds0), ModStruct) :- true |
+  {{messageFilter(IO0, IO, [], 0, Msg),
+    assignRegisterPreds_(Msg, [], Preds0, Preds)}},
+    ModStruct=module(Mod, Pub, Preds).
+
+messageFilter(Pred, N, [register_shortage(Pred)|Cdr]) --> true |
+    N1 := N+1,
+    messageFilter(Pred, N1, Cdr).
+messageFilter([], N, [register_shortage(Pred)|Cdr]) --> true |
+    N1 := N+1,
+    messageFilter(Pred, N1, Cdr).
+messageFilter([], N, []) --> true | true.
+otherwise.
+messageFilter(Pred, N, [register_shortage(NextPred)|Cdr]) --> true |
+    &io <<= [warning("register shortage in the guard ~t time(s) : ~t", [N, Pred])],
+    messageFilter(NextPred, 1, Cdr).
+otherwise.
+messageFilter(Pred, N, [Msg|Cdr]) --> true |
+    &io <<= [Msg],
+    messageFilter(Pred, N, Cdr).
+messageFilter(Pred, N, []) --> true |
+    &io <<= [warning("register shortage in the guard ~t time(s) : ~t", [N, Pred])].
+
+assignRegisterPreds(Pred0, Pred) --> true |
+ {{ messageFilter(&io, [], 0, Msg),
+    assignRegisterPreds_(Msg, [], Pred0, Pred)}}.
+
+assignRegisterPreds_([procedure(Func, Ari, Code0)|Rest], Pred0) --> true |
+%% added D.Sekita 91/1/21
+  {{mergeLabels(Code0, Code1, Collected)}},
+%% added D.Sekita 91/1/21
+    assignRegister(Collected, [], Code, [], Func/Ari, Code1),
+    Pred0=[procedure(Func, Ari, Code)|Pred],
+    assignRegisterPreds_(Rest, Pred).
+assignRegisterPreds_([], Pred0) --> true | Pred0=[].
+
+:- local_implicit
+    io:oldnew,
+    collect:oldnew,
+    code:oldnew,
+    pred:shared.
+assignRegister(Code) --> true |
+  {{pool:keyed_bag(Env),
+    assignRegister(&io, &pred, Env, [], &collect, 0, [], 0, Code1, [], 0, Code),
+    optimize(&io, &code, Code1)}}.
+%%assignRegister([Instr|Code]) --> true |
+%%   &code <<= [Instr],
+%%   assignRegister(Code).
+%%assignRegister([]) --> true | true.
+
+:- local_implicit
+    io:oldnew,
+    pred:shared,
+    env:oldnew,
+    collect:oldnew,
+    acp:shared,
+    struct:shared,
+    sublabel:shared,
+    code:oldnew.
+assignRegister(Ent0, [try_me_else(Label)|Cdr]) --> true |
+    &acp <= Label,
+    &code <<= [try_me_else(Label)],
+    assignRegister(Ent0, Cdr).
+assignRegister(Ent0, [label(Label)|Cdr]) --> true |
+    &env <<= [get_all(Label, Code0)],
+    insertBranch(Code0, Code1, Label),
+    &code <<= [label(Label)],
+    insertList(Code1),
+    assignRegister(Ent0, Cdr).
+otherwise.
+assignRegister(Ent0, Instrs) --> true |
+    registerStructureAndConvertReadVariable(Ent0, Instrs).
+
+registerStructureAndConvertReadVariable(Ent0, [switch_on_non_list(R, Label)|Cdr]) --> true |
+    &struct <= R,
+    assignRegister_(Ent0, [switch_on_non_list(R, Label)|Cdr]).
+registerStructureAndConvertReadVariable(Ent0, [switch_on_non_vector(R, S, Label)|Cdr]) --> true |
+    &struct <= R,
+    assignRegister_(Ent0, [switch_on_non_vector(R, S, Label)|Cdr]).
+registerStructureAndConvertReadVariable(Ent0, [wait_list(R)|Cdr]) --> true |
+    &struct <= R,
+    assignRegister_(Ent0, [wait_list(R)|Cdr]).
+registerStructureAndConvertReadVariable(Ent0, [wait_vector(R, S)|Cdr]) --> true |
+    &struct <= R,
+    assignRegister_(Ent0, [wait_vector(R, S)|Cdr]).
+registerStructureAndConvertReadVariable(Ent0, [read_variable(R)|Cdr]) --> true |
+    convertIfNotCollected(R, Instr),
+    assignRegister_(Ent0, [Instr|Cdr]).
+otherwise.
+registerStructureAndConvertReadVariable(Ent0, Instrs) --> true |
+    assignRegister_(Ent0, Instrs).
+
+convertIfNotCollected(R, Instr) --> true |
+    &collect <<= [empty(collect(&struct), YorNStr)],
+    &collect <<= [empty(R, YorN)],
+    convertIfNotCollected(YorNStr, YorN, R, Instr).
+
+convertIfNotCollected(no, yes, R, Instr) --> true | Instr=read_variable_without_deref(R).
+otherwise.
+convertIfNotCollected(_, _, R, Instr) --> true | Instr=read_variable(R).
+
+assignRegister_(Ent0, [Instr0|Cdr]) --> true |
+  {{instr(Instr0, Instr, In, Out, Branch, WriteBack,_)}},
+    usingRegisters(In, URegs0, Regs1),
+    usingRegisters(Out, Regs1, []),
+  {{saveRegisters(&code, Swap0)}},
+%%  allocRegisters(in, Ent0, Ent1, URegs0, URegs1, Swap0, Swap1, WriteBack, WB0, [], In),
+  {{allocRegisters(&code, in, Ent0, Ent1, URegs0, URegs1, Swap0, Swap1, WriteBack, WB0, [], In)}},
+    putCodes(Branch, SubLabel, RestoreACP, After0),
+    &sublabel <= SubLabel,
+    &code <<= [Instr],
+  {{insert(After0, After1, WB0)}},
+%%  {{allocRegisters(&io, &pred, &env, &acp, &sublabel,
+%%        After1, After2, out, Ent1, Ent, URegs1, _, Swap1, [], WriteBack, _, _, Out),
+  {{allocRegisters(After1, After2, out, Ent1, Ent, URegs1, _, Swap1, [], WriteBack, _, _, Out),
+    restoreRegisters(After2, [], Swap0)}},
+  {{insert(&code, RestoreACP),
+    insert(&code, After0)}},
+    assignRegister(Ent, Cdr).
+assignRegister_(_, []) --> true | true.
+
+insertBranch([SubLabel-Code|Cdr], CodeList0, Label) --> true |
+    &code <<= [label(Label-SubLabel)],
+  {{insert(&code, Code)}},
+    &io <<= [register_shortage(&pred)],
+%%    &code <<= [try_me_else(Label), fail],
+    &code <<= [jump(Label)],
+%%    &code <<= [fail],
+    insertBranch(Cdr, CodeList0, Label).
+insertBranch([structure(R)|Cdr], CodeList0, Label) --> true |
+    &struct <= R,
+    insertBranch(Cdr, CodeList0, Label).
+otherwise.
+insertBranch([Code|Cdr], CodeList0, Label) --> true |
+    CodeList0=[Code|CodeList],
+    insertBranch(Cdr, CodeList, Label).
+insertBranch([], CodeList, _) --> true | CodeList=[].
+
+insertList([switch(Code)|Cdr]) --> true |
+  {{insert(&code, Code)}},
+    insertList(Cdr).
+insertList([]) --> true | true.
+
+insert(CD0, CD, [Instr|Cdr]) :- true |
+    CD0 = [Instr|CD1],
+    insert(CD1, CD, Cdr).
+insert(CD0, CD, []) :- true | CD0=CD.
+
+putCodes(no, SubLabel, RACP, _) --> true | SubLabel= &sublabel, RACP=[].
+putCodes(LabelList, SubLabel, RACP, []) --> list(LabelList) |
+    SubLabel= &sublabel,
+  {{unify(LabelList)}},
+    RACP=[].
+putCodes(_-LabelList, SubLabel, RACP, []) --> list(LabelList) |
+    SubLabel= &sublabel,
+  {{unify(LabelList)}},
+    RACP=[].
+otherwise.
+putCodes(_, SubLabel, RACP, []) --> true |
+    SubLabel= &sublabel,
+    RACP=[].
+otherwise.
+putCodes(yes, SubLabel, RACP, Codes) --> true |
+    &code <<= [try_me_else(&acp- &sublabel)],
+%%    &env <<= [put(&acp, &sublabel-[try_me_else(&acp)|Codes])],
+    &env <<= [put(&acp, &sublabel-Codes)],
+    RACP=[try_me_else(&acp)],
+  {{SubLabel := &sublabel + 1}}.
+putCodes([Label, NewLabel], SubLabel, RACP, Codes) --> integer(Label) | 
+    &code <<= [try_me_else(&acp- &sublabel)],
+%%    &env <<= [put(&acp, &sublabel-[try_me_else(&acp)|Codes])],
+    &env <<= [put(&acp, &sublabel-Codes)],
+    &sublabel <= &sublabel + 1,
+%%    &env <<= [put(Label, &sublabel-[try_me_else(&acp)|Codes])],
+    &env <<= [put(Label, &sublabel-Codes)],
+    NewLabel= Label- &sublabel,
+    RACP=[try_me_else(&acp)],
+  {{SubLabel := &sublabel + 1}}.
+putCodes(Jump-[Label0,NewLabel], SubLabel, RACP, Codes) --> true |
+    &code <<= [try_me_else(&acp- &sublabel)],
+%%    &env <<= [put(&acp, &sublabel-[try_me_else(&acp)|Codes])],
+    &env <<= [put(&acp, &sublabel-Codes)],
+    &sublabel <= &sublabel + 1,
+%%    &env <<= [put(Label0, &sublabel-[try_me_else(&acp)|Codes])],
+    &env <<= [put(Label0, &sublabel-Codes)],
+    NewLabel= Label0- &sublabel,
+    RACP=[try_me_else(&acp)],
+  {{SubLabel := &sublabel + 1}},
+    putJumpLabel(Jump, [try_me_else(&acp)|Codes]).
+
+putJumpLabel([_=Label|Cdr], Codes) --> true | &env <<= [put(Label, switch(Codes))],
+    putJumpLabel(Cdr, Codes).
+putJumpLabel([], _) --> true | true.
+
+
+usingRegisters([X,_|Cdr], Reg0, Reg) --> X<32 |
+    Reg0=[X|Reg1],
+    usingRegisters(Cdr, Reg1, Reg).
+usingRegisters([X,_|Cdr], Reg0, Reg) --> X>=32 |
+    usingRegisters(Cdr, Reg0, Reg).
+usingRegisters([], Reg0, Reg) --> true | Reg0=Reg.
+
+:- local_implicit code:oldnew.
+allocRegisters(IO, Ent0, Ent, Regs0, Regs, Swap0, Swap, WriteBack, WB0, WB, [X,Y|Cdr]) --> X<32 |
+    X=Y,
+    allocRegisters(IO, Ent0, Ent, Regs0, Regs, Swap0, Swap, WriteBack, WB0, WB, Cdr).
+allocRegisters(IO, Ent0, Ent, Regs0, Regs, Swap0, Swap, WriteBack, WB0, WB, [X,Y|Cdr]) --> X>=32 |
+    allocateRegisters(IO, X, Ent0, Ent1, Regs0, Regs1, Swap0, Swap1, WriteBack, WB0, WB1, Y),
+    allocRegisters(IO, Ent1, Ent, Regs1, Regs, Swap1, Swap, WriteBack, WB1, WB, Cdr).
+allocRegisters(_, Ent0, Ent, Regs0, Regs, Swap0, Swap, WriteBack, WB0, WB, []) --> true |
+    Regs0=Regs, Ent0=Ent, Swap0=Swap, WB0=WB.
+
+allocateRegisters(IO, X, Ent0, Ent, Regs0, Regs, Swap0, Swap, WriteBack, WB0, WB, Y) --> true |
+    findFreeRegister(Ent0, Ent, Regs0, Regs, Swap0, Swap, Y),
+    outputCode(IO, WriteBack, WB0, WB, X, Y).
+
+findFreeRegister(Ent0, Ent, Regs0, Regs, Swap0, Swap, Y) --> true |
+  {{member(Ent0, Regs0, Regs1, Ans, Swap0, Swap1)}},
+    findFreeRegister(Ans, Ent0, Ent, Regs1, Regs, Swap1, Swap, Y).
+
+member(X, [X|Regs0], Regs, Ans, Swap0, Swap) :- true |
+    Regs=[X|Regs0], Ans=yes, Swap0=Swap.
+otherwise.
+member(X, [Y|Regs0], Regs1, Ans, Swap0, Swap) :- true |
+    Regs1=[Y|Regs],
+    member(X, Regs0, Regs, Ans, Swap0, Swap).
+member(X, [], Regs, Ans, Swap0, Swap) :- true |
+    Regs=[X], Ans=no, Swap0=[X|Swap].
+
+findFreeRegister(yes, Ent0, Ent, Regs0, Regs, Swap0, Swap, Y) --> true |
+  {{incrementRegister(Ent0, Ent1)}},
+    findFreeRegister(Ent1, Ent, Regs0, Regs, Swap0, Swap, Y).
+findFreeRegister(no, Ent0, Ent, Regs0, Regs, Swap0, Swap, Y) --> true |
+    Y=Ent0, Regs0=Regs, Swap0=Swap,
+    Ent0=Ent.
+%%  {{incrementRegister(Ent0, Ent)}}.
+
+incrementRegister(Ent0, Ent) :- Ent0>=30 | Ent=0.
+otherwise.
+incrementRegister(Ent0, Ent) :- true | Ent := Ent0 + 1.
+    
+outputCode(in, yes, WB0, WB, X, Y) --> true |
+    W = X,
+    WB0=[save(Y,W)|WB],
+    &code <<= [restore(Y, W)].
+outputCode(in, no, WB0, WB, X, Y) --> true |
+    W = X,
+    WB0=[save(Y,W)|WB],
+    &code <<= [restore(Y, W)].
+outputCode(out, _, WB0, WB, X, Y) --> true |
+    W = X, WB0=WB,
+    &code <<= [save(Y, W)].
+
+saveRegisters([X|Cdr]) --> true |
+    &code <<= [save(X, X)],
+    saveRegisters(Cdr).
+saveRegisters([]) --> true | true.
+
+restoreRegisters(Code0, Code, [X|Cdr]) :- true |
+    Code0 = [restore(X, X)|Code1],
+    restoreRegisters(Code1, Code, Cdr).
+restoreRegisters(Code0, Code, []) :- true | Code0=Code.
+
+% put_XXX
+instr(put_variable(X1, X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1,X2,Y2], Instr=put_variable(Y1,Y2), Br=no, WB=no, Part=body.
+instr(put_marked_variable(X1, X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1,X2,Y2], Instr=put_marked_variable(Y1,Y2), Br=no, WB=no, Part=body.
+instr(put_value(X1,X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X2,Y2], Out=[X1,Y1], Instr=put_value(Y1,Y2), Br=no, WB=no, Part=guard.
+instr(put_marked_value(X1,X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X2,Y2], Out=[X1,Y1], Instr=put_marked_value(Y1,Y2), Br=no, WB=no, Part=body.
+instr(put_structured_constant(X1, C), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=put_structured_constant(Y1,C), Br=no, WB=no, Part=guard.
+instr(put_integer(X1, C), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=put_integer(Y1,C), Br=no, WB=no, Part=guard.
+instr(put_constant(X1, C), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=put_constant(Y1,C), Br=no, WB=no, Part=guard.
+instr(put_atom(X1,A), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=put_atom(Y1,A), Br=no, WB=no, Part=guard.
+instr(put_nil(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=put_nil(Y1), Br=no, WB=no, Part=guard.
+instr(put_list(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=put_list(Y1), Br=no, WB=no, Part=body.
+instr(put_vector(X1,S), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=put_vector(Y1,S), Br=no, WB=no, Part=body.
+instr(put_reused_structure(X1,X2,S), Instr, In, Out, Br, WB, Part) :- true |
+%%    In=[X1,Y1], Out=[X2,Y2], Instr=put_reused_structure(Y1,Y2,S), Br=no, WB=no, Part=body.
+    In=[X2,Y2], Out=[X1,Y1], Instr=put_reused_structure(Y1,Y2,S), Br=no, WB=no, Part=body.
+%% get_XXX
+instr(get_value(X1,X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1,X2,Y2], Out=[], Instr=get_value(Y1,Y2), Br=no, WB=yes, Part=body.
+instr(get_marked_value(X1,X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1,X2,Y2], Out=[], Instr=get_marked_value(Y1,Y2), Br=no, WB=yes, Part=body.
+instr(get_bound_value(X1,X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1,X2,Y2], Out=[], Instr=get_bound_value(Y1,Y2), Br=no, WB=yes, Part=body.
+%instr(get_constant(X1, C), Instr, In, Out, Br, WB) :- true |
+%    In=[], Out=[X1,Y1], Instr=get_constant(Y1, C), Br=no, WB=no.
+%instr(get_atom(X1, C), Instr, In, Out, Br, WB) :- true |
+%    In=[], Out=[X1,Y1], Instr=get_atom(Y1, C), Br=no, WB=no.
+%instr(get_nil(X1), Instr, In, Out, Br, WB) :- true |
+%    In=[], Out=[X1,Y1], Instr=get_nil(Y1), Br=no, WB=no.
+instr(get_constant(X1, C), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=get_constant(Y1, C), Br=no, WB=yes, Part=body.
+instr(get_atom(X1, C), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=get_atom(Y1, C), Br=no, WB=yes, Part=body.
+instr(get_nil(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=get_nil(Y1), Br=no, WB=yes, Part=body.
+
+%% set_XXX
+instr(set_value(S,X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=set_value(S,Y1), Br=no, WB=no, Part=body.
+instr(set_marked_value(S,X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=set_marked_value(S,Y1), Br=no, WB=yes, Part=body. 
+instr(set_variable(S,X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=set_variable(S,Y1), Br=no, WB=no, Part=body.
+instr(set_marked_variable(S,X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=set_marked_variable(S,Y1), Br=no, WB=no, Part=body.
+%%%%% set_constant, set_integer
+
+%% write_XXX
+instr(write_value(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=write_value(Y1), Br=no, WB=no, Part=body.
+instr(write_variable(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=write_variable(Y1), Br=no, WB=no, Part=body.
+instr(write_marked_value(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=write_marked_value(Y1), Br=no, WB=yes, Part=body.
+instr(write_marked_variable(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=write_marked_variable(Y1), Br=no, WB=no, Part=body.
+%%%%% write_constant, write_integer
+
+%% collect
+instr(collect_value(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=collect_value(Y1), Br=no, WB=no, Part=body.
+instr(collect_list(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=collect_list(Y1), Br=no, WB=no, Part=body.
+instr(collect_vector(X1,S), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=collect_vector(Y1,S), Br=no , WB=no, Part=body.
+% mark
+instr(mark_element(X1,X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1,X2,Y2], Out=[], Instr=mark_element(Y1,Y2), Br=no, WB=yes, Part=body.
+%% guard
+%% switch_XXX
+instr(switch_on_non_list(X1, Label), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=switch_on_non_list(Y1, Label0), Br=[Label,Label0], WB=yes, Part=guard.
+instr(switch_on_non_vector(X1, X2, Label), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[X2,Y2], Instr=switch_on_non_vector(Y1, Y2, Label0), Br=[Label,Label0], WB=yes, Part=guard.
+instr(switch_on_non_atom(X1, Label), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=switch_on_non_atom(Y1, Label0), Br=[Label,Label0], WB=yes, Part=guard.
+instr(switch_on_non_integer(X1, Label), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=switch_on_non_integer(Y1, Label0), Br=[Label,Label0], WB=yes, Part=guard.
+instr(switch_on_constant(X1, Jump, Label), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=switch_on_constant(Y1, Jump, Label0), Br=Jump-[Label,Label0], WB=yes, Part=guard.
+instr(hash_on_constant(X1, Jump, Label), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=hash_on_constant(Y1, Jump, Label0), Br=Jump-[Label,Label0], WB=yes, Part=guard.
+%% wait_XXX
+instr(wait_variable(X1,X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X2,Y2], Out=[X1,Y1], Instr=wait_variable(Y1,Y2), Br=no, WB=no, Part=guard.
+instr(wait_value(X1,X2), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1,X2,Y2], Out=[], Instr=wait_value(Y1,Y2), Br=yes, WB=yes, Part=guard.
+instr(wait_constant(X1, C), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=wait_constant(Y1, C), Br=yes, WB=yes, Part=guard.
+instr(wait_atom(X1, C), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=wait_atom(Y1, C), Br=yes, WB=yes, Part=guard.
+instr(wait_nil(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=wait_nil(Y1), Br=yes, WB=yes, Part=guard.
+instr(wait_integer(X1, C), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=wait_integer(Y1,C), Br=yes, WB=yes, Part=guard.
+instr(wait_atom(X1,C), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=wait_atom(Y1,C), Br=yes, WB=yes, Part=guard.
+instr(wait_list(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=wait_list(Y1), Br=yes, WB=yes, Part=guard.
+instr(wait_vector(X1, S), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=wait_vector(Y1, S), Br=yes, WB=yes, Part=guard.
+%% read_XXX
+instr(read_variable(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=read_variable(Y1), Br=no, WB=no, Part=guard.
+instr(read_variable_without_deref(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[], Out=[X1,Y1], Instr=read_variable_without_deref(Y1), Br=no, WB=no, Part=guard.
+instr(read_value(X1), Instr, In, Out, Br, WB, Part) :- true |
+    In=[X1,Y1], Out=[], Instr=read_value(Y1), Br=no, WB=no, Part=guard.
+instr(read_constant(C), Instr, In, Out, Br, WB, Part) :- true |
+    Instr=read_constant(C), In=[], Out=[], Br=yes, WB=no, Part=guard.
+instr(read_integer(C), Instr, In, Out, Br, WB, Part) :- true |
+    Instr=read_integer(C), In=[], Out=[], Br=yes, WB=no, Part=guard.
+instr(read_atom(C), Instr, In, Out, Br, WB, Part) :- true |
+    Instr=read_atom(C), In=[], Out=[], Br=yes, WB=no, Part=guard.
+%%%% read_constant, read_integer, read_atom
+
+instr(enqueue_with_priority(Pri1, Label, Ari), Instr, In, Out, Br, WB, Part) :- true |
+    In=[Pri1,Pri2], Out=[], Instr=enqueue_with_priority(Pri2, Label, Ari), Br=no, WB=no, Part=body.
+instr(enqueue_goal_to_processor(Proc1, Label, Ari), Instr, In, Out, Br, WB, Part) :- true |
+    In=[Proc1,Proc2], Out=[], Instr=enqueue_goal_to_processor(Proc2, Label, Ari), Br=no, WB=no, Part=body.
+instr(enqueue_with_priority_to_processor(Pri1, Proc1, Pred, N), Instr, In, Out, Br, WB, Part) :- true |
+    In=[Pri1,Pri2,Proc1,Proc2], Out=[], Instr=enqueue_with_priority_to_processor(Pri2, Proc2, Pred, N), Br=no, WB=no, Part=body.
+
+otherwise.
+instr(Instr0, Instr, In, Out, Br, WB, Part) :- true |
+    kl1cmp_blttbl:builtin(Instr0, Instr1, In1, Out1, _, _, _, Type, _),
+    checkGuardBuiltin(Type, Instr1, Instr, In1, In, Out1, Out, Br, WB, Part).
+
+checkGuardBuiltin(none, Instr0, Instr, _, In, _, Out, Br, WB, Part) :- true |
+    Br=no, Part=body,
+    bodyBuiltin(Instr0, Instr, In, Out, WB).
+otherwise.
+checkGuardBuiltin(_, Instr0, Instr, In0, In, Out0, Out, Br, WB, Part) :- true |
+    Br=yes, WB=yes, Part=guard,
+    Instr0=Instr, In0=In, Out0=Out.
+
+bodyBuiltin(b_add(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_add(Y1, Y2, Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(b_subtract(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_subtract(Y1, Y2, Y3), In=[X1, Y1, X2, Y2], Out=[X3, Y3], WB=yes.
+bodyBuiltin(b_multiply(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_multiply(Y1, Y2, Y3), In=[X1, Y1, X2, Y2], Out=[X3, Y3], WB=yes.
+bodyBuiltin(b_divide(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_divide(Y1, Y2, Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(b_modulo(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_modulo(Y1, Y2, Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(b_shift_left(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_shift_left(Y1, Y2, Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(b_shift_right(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_shift_right(Y1, Y2, Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(b_and(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_and(Y1, Y2, Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(b_or(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_or(Y1, Y2, Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(b_exclusive_or(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_exclusive_or(Y1, Y2, Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(b_vector(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_vector(Y1, Y2, Y3), In=[X1,Y1], Out=[X2,Y2,X3,Y3], WB=yes.
+bodyBuiltin(b_vector_element(X1, X2, X3, X4), Instr, In, Out, WB) :- true |
+    Instr=b_vector_element(Y1, Y2, Y3, Y4), WB=yes,
+    In=[X1,Y1,X2,Y2], Out=[X3,Y3,X4,Y4].
+bodyBuiltin(b_string(X1, X2, X3, X4), Instr, In, Out, WB) :- true |
+    Instr=b_string(Y1, Y2, Y3, Y4), WB=yes,
+    In=[X1,Y1], Out=[X2,Y2,X3,Y3,X4,Y4].
+bodyBuiltin(b_string_element(X1, X2, X3, X4), Instr, In, Out, WB) :- true |
+    Instr=b_string_element(Y1, Y2, Y3, Y4), WB=yes,
+    In=[X1,Y1,X2,Y2], Out=[X3,Y3,X4,Y4].
+bodyBuiltin(b_floating_point_to_integer(X1, X2), Instr, In, Out, WB) :- true |
+    Instr=b_floating_point_to_integer(Y1, Y2), WB=yes,
+    In=[X1,Y1], Out=[X2,Y2].
+bodyBuiltin(b_integer_to_floating_point(X1, X2), Instr, In, Out, WB) :- true |
+    Instr=b_integer_to_floating_point(Y1, Y2), WB=yes,
+    In=[X1,Y1], Out=[X2,Y2].
+bodyBuiltin(b_floating_point_add(X1,X2,X3), Instr, In, Out, WB) :- true |
+    Instr=b_floating_point_add(Y1,Y2,Y3), WB=yes,
+    In=[X1,Y1,X2,Y2], Out=[X3,Y3].
+bodyBuiltin(b_floating_point_subtract(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_floating_point_subtract(Y1, Y2, Y3), WB=yes,
+    In=[X1,Y1,X2,Y2], Out=[X3,Y3].
+bodyBuiltin(b_floating_point_multiply(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_floating_point_multiply(Y1, Y2, Y3), WB=yes,
+    In=[X1,Y1,X2,Y2], Out=[X3,Y3].
+bodyBuiltin(b_floating_point_divide(X1, X2, X3), Instr, In, Out, WB) :- true |
+    Instr=b_floating_point_divide(Y1, Y2, Y3), WB=yes,
+    In=[X1,Y1,X2,Y2], Out=[X3,Y3].
+bodyBuiltin(merge(X1,X2), Instr, In, Out, WB) :- true |
+    Instr=merge(Y1,Y2), In=[X1,Y1], Out=[X2,Y2], WB=yes.
+bodyBuiltin(new_vector(X1,X2), Instr, In, Out, WB) :- true |
+    Instr=new_vector(Y1,Y2), In=[X1,Y1], Out=[X2,Y2], WB=yes.
+bodyBuiltin(new_string(X1,X2,X3), Instr, In, Out, WB) :- true |
+    Instr=new_string(Y1,Y2,Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(new_instruction(X1,X2,X3), Instr, In, Out, WB) :- true |
+    Instr=new_instruction(Y1,Y2,Y3), In=[X1,Y1,X2,Y2], Out=[X3,Y3], WB=yes.
+bodyBuiltin(new_module(X1,X2), Instr, In, Out, WB) :- true |
+    Instr=new_module(Y1,Y2), In=[X1,Y1], Out=[X2,Y2], WB=yes.
+bodyBuiltin(set_vector_element(X1,X2,X3,X4,X5),Instr,In,Out, WB) :- true |
+    Instr=set_vector_element(Y1,Y2,Y3,Y4,Y5), In=[X1,Y1,X2,Y2,X3,Y3], Out=[X4,Y4,X5,Y5], WB=yes.
+otherwise.
+bodyBuiltin(Instr0, Instr, In, Out, WB) :- true |
+    kl1cmp_blttbl:active_builtin(Instr0, Instr1, In0, Out0, Type, _),
+    checkActiveBuiltin(Type, Instr0, Instr1, Instr, In0, In, Out0, Out, WB).
+
+checkActiveBuiltin(none, Instr0, _, Instr, _, In, _, Out, WB) :- true |
+    Instr0=Instr, In=[], Out=[], WB=no.
+otherwise.
+checkActiveBuiltin(_, _, Instr0, Instr, In0, In, Out0, Out, WB) :- true |
+    Instr0=Instr, In0=In, Out0=Out, WB=yes.
+
+:- local_implicit
+    io:oldnew,
+    code:oldnew.
+
+optimize([restore(X,W),save(X,W)|Cdr]) --> true |
+    optimize([restore(X,W)|Cdr]).
+optimize([save(X,W),restore(X,W)|Cdr]) --> true |
+    optimize([save(X,W)|Cdr]).
+optimize([restore(X,_), restore(X,W)|Cdr]) --> true |
+    optimize([restore(X,W)|Cdr]).
+%%optimize([restore(X,_), restore(X,W)|Cdr]) --> true |
+%%    optimize([restore(X,W)|Cdr]).
+optimize([save(_,W),save(X,W)|Cdr]) --> true |
+    optimize([save(X,W)|Cdr]).
+otherwise.
+optimize([restore(X,W),Instr|Cdr]) --> true |
+    checkDestroiedRegister(X, W, Instr),
+    optimize(Cdr).
+otherwise.
+optimize([Instr|Cdr]) --> true |
+    &code <<= [Instr],
+    optimize(Cdr).
+optimize([]) --> true | true.
+
+checkDestroiedRegister(X, W, Instr0) --> true |
+  {{instr(Instr0, Instr, In, Out, Branch, _,_),
+    unify(In),
+    unifyBranch(Branch)}},
+    checkOut(X, Out, Ans),
+    checkDestroied(Ans, X, W),
+    &code <<= [Instr].
+
+unify([X,Y|Cdr]) :- true | X=Y, unify(Cdr).
+unify([]) :- true | true.
+
+unifyBranch([X,Y|Rest]) :- true |
+   X=Y,
+   unifyBranch(Rest).
+unifyBranch(_-Labels) :- true |
+   unifyBranch(Labels).
+otherwise.
+unifyBranch(_) :- true | true.
+
+checkOut(X, [X,Y|Cdr], Ans) --> true |
+    X=Y, {{unify(Cdr)}},
+    Ans=exist.
+otherwise.
+checkOut(X1, [X2,Y|Cdr], Ans) --> true |
+    X2=Y,
+    checkOut(X1, Cdr, Ans).
+checkOut(_, [], Ans) --> true | Ans=not_exist.
+
+checkDestroied(exist, _, _) --> true | true.
+checkDestroied(not_exist, X, W) --> true | &code <<= [restore(X,W)].
+
+%
+% merge Label and collect Collected Registers
+%
+mergeLabels(Instr0, Instr, Regs) :- true |
+    pool:keyed_bag(Pool0),
+    pool:keyed_bag(Regs0),
+    mergeLabels(Pool0, [], Regs0, Regs, Instr, [], guard, Instr0).
+
+:- local_implicit pool:oldnew, reg:oldnew, code:oldnew, part:shared.
+mergeLabels([label(Label)|Cdr]) --> true |
+    &part <= guard,
+    &code <<= [label(Label)],
+    &pool <<= [get_all(Label, Vars)],
+  {{unifyLabel(Label, Vars)}},
+    mergeLabel(Label, Cdr, Cont),
+    mergeLabels(Cont).
+mergeLabels([try_me_else(Label0)|Cdr]) --> true |
+    &part <= guard,
+    &code <<= [try_me_else(Label)],
+    putLabel([Label0,Label]),
+    mergeLabels(Cdr).
+mergeLabels([collect_list(R)|Cdr]) --> true |
+    &part <= body,
+    &code <<= [collect_list(R)],
+    &reg <<= [put(collect(R), [])],
+    mergeLabels(Cdr).
+mergeLabels([collect_vector(R, S)|Cdr]) --> true |
+    &part <= body,
+    &code <<= [collect_vector(R, S)],
+    &reg <<= [put(collect(R), [])],
+    mergeLabels(Cdr).
+mergeLabels([put_reused_structure(Dest, Src, Size)|Cdr]) --> true |
+    &part <= body,
+    &code <<= [put_reused_structure(Dest, Src, Size)],
+    &reg <<= [put(collect(Src), [])],
+    mergeLabels(Cdr).
+mergeLabels([otherwise|Cdr]) --> true |
+    &part <= guard,
+    &code <<= [otherwise],
+    mergeLabels(Cdr).
+mergeLabels([alternatively|Cdr]) --> true |
+    &part <= guard,
+    &code <<= [alternatively],
+    mergeLabels(Cdr).
+% escape read_variable
+mergeLabels([read_variable(R)|Cdr]) --> true |
+    &part <= guard,
+    &code <<= [read_variable(R)],
+    mergeLabels(Cdr).
+otherwise.
+mergeLabels([Instr0|Cdr]) --> true |
+  {{instr(Instr0, Instr, In, Out, Br, _, Part),
+    newPart(&part, Part, NewPart),
+    &part <= NewPart,
+    &code <<= [Instr]}},
+  {{unifyAndRegister(&reg, &part, In),
+    unifyAndRegister(&reg, &part, Out)}},
+    putLabel(Br),
+    mergeLabels(Cdr).
+mergeLabels([]) --> true | true.
+
+newPart(guard, body, NewPart) :- true  | NewPart = body.
+newPart(body, guard, NewPart) :- true | NewPart = body.
+newPart(guard, guard, NewPart) :- true | NewPart = guard.
+newPart(body, body, NewPart) :- true | NewPart = body.
+
+unifyAndRegister(Reg0, Reg, body, Args) :- true | Reg0=Reg, unify(Args).
+unifyAndRegister(Reg0, Reg, guard, Args) :- true | unifyAndRegister(Reg0, Reg, Args).
+
+unifyAndRegister(Reg0, Reg, [X,Y|Cdr]) :- true |
+    Reg0=[put(X, [])|Reg1],
+    X=Y,
+    unifyAndRegister(Reg1, Reg, Cdr).
+unifyAndRegister(Reg0, Reg, []) :- true | Reg0=Reg.
+
+putLabel(yes) --> true | true.
+putLabel(no) --> true | true.
+putLabel([Label0,Label]) --> true |
+    &pool <<= [put(Label0,Label)].
+putLabel(_-[Label0,Label]) --> true |
+    &pool <<= [put(Label0,Label)].
+
+mergeLabel(Label, [label(Other)|Cdr], Cont) --> true |
+    &pool <<= [get_all(Other, LabelList)],
+  {{unifyLabel(Label, LabelList)}},
+    mergeLabel(Label, Cdr, Cont).
+otherwise.
+mergeLabel(_, Cdr, Cont) --> true | Cdr=Cont.
+
+unifyLabel(Label, [Other|Cdr]) :- true |
+    Label=Other,
+    unifyLabel(Label, Cdr).
+unifyLabel(Label, []) :- true | true.

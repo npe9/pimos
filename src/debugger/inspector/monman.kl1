@@ -1,0 +1,519 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module monitor_manager.
+:- with_macro pimos.
+:- public manager/6,manager1/6,manager1/7,stream_auto_mode/3,query_mode/3,
+    make_title/4.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% manager(LAb,UAb,In,LisV,Out,GNum)
+%%      LAb     :: Termination variable ( with the parent listener )
+%%      UAb     :: Termination variable ( with the parent user task )
+%%      In      :: Input stream from the listener
+%%      LisV    :: Output stream to the listener_var_manager
+%%      Out     :: Output stream to the listener
+%%      GNum    :: Listener goal number
+
+manager(LAb,UAb,In,LisV,Out,GNum) :- true |
+        getenvs(EnvVar),
+        monitor_manager_manager:manager(IDM),
+        merge(IDM0,IDM),
+        IDM0=[get_stream(W)|IDM1],
+        inspector_var_manager:manager(InsV,LisV),
+        get_print_string_mode(EnvVar,EnvVar1,PSM),
+        monitor_io_manager:manager(UAb,IO,Out,listener,PSM),
+        merge(IO1,IO),
+        merge(InC1,InC),
+        manager(LAb,UAb,In,InC,W,Mon,Mon,InsV,IO1,IDM1,InC1,EnvVar1).
+
+%Called when the inspector forks
+manager1(LAb,UAb,In,InsV,IDM,Out) :- true |
+        getenvs(EnvVar),
+        IDM=[get_stream(W)|IDM1],
+        get_print_string_mode(EnvVar,EnvVar1,PSM),
+        monitor_io_manager:manager(LAb,IO,Out,inspector,PSM),
+        merge(IO1,IO),
+        merge(InC1,InC),
+        manager(LAb,UAb,In,InC,W,Mon,Mon,InsV,IO1,IDM1,InC1,EnvVar1).
+
+manager1(LAb,UAb,In,InsV,IDM,Out,EnvVar) :- true |
+        IDM=[get_stream(W)|IDM1],
+        get_print_string_mode(EnvVar,EnvVar1,PSM),
+        monitor_io_manager:manager(LAb,IO,Out,inspector,PSM),
+        merge(IO1,IO),
+        merge(InC1,InC),
+        manager(LAb,UAb,In,InC,W,Mon,Mon,InsV,IO1,IDM1,InC1,EnvVar1).
+
+manager(LAb,_,_,_,_,Mon,Mon1,V,IO,IDM,InC,_) :- wait(LAb) |
+        Mon=[],V=[],IO=[],IDM=[],InC=[],
+        terminate(Mon1).
+%%manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- wait(UAb) |
+%%        Mon=[],IO=[],
+%%        terminate(Mon1),
+%%        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+manager(_,_,[],_,_,Mon,Mon1,V,IO,IDM,InC,_) :- true |
+        Mon=[],V=[],IO=[],IDM=[],InC=[],
+        terminate(Mon1).
+manager(LAb,UAb,[join(NInC,NMon,NMon1,NIO)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        NMon=Mon1,NMon1=Mon2,
+        IO={NIO,IO1},
+        InC1={NInC,InC2},
+        manager(LAb,UAb,In,InC,W,Mon,Mon2,V,IO1,IDM,InC2,EnvVar).
+manager(LAb,UAb,In,[join(NInC,NMon,NMon1,NIO)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        NMon=Mon1,NMon1=Mon2,
+        IO={NIO,IO1},
+        InC1={NInC,InC2},
+        manager(LAb,UAb,In,InC,W,Mon,Mon2,V,IO1,IDM,InC2,EnvVar).
+manager(LAb,UAb,[get_LAb(NLAb)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        NLAb=LAb,
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,In,[get_LAb(NLAb)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        NLAb=LAb,
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,[get_idmanager(NIDM)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        IDM={NIDM,IDM1},
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM1,InC1,EnvVar).
+manager(LAb,UAb,In,[get_idmanager(NIDM)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        IDM={NIDM,IDM1},
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM1,InC1,EnvVar).
+manager(LAb,UAb,[get_envvar(EnvVar1)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        EnvVar1=EnvVar,
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,In,[get_envvar(EnvVar1)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        EnvVar1=EnvVar,
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,[monitor_mode(Res)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        stream_auto_mode(EnvVar,EnvVar1,Res),
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar1).
+manager(LAb,UAb,[stream_auto_mode(Res)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        stream_auto_mode(EnvVar,EnvVar1,Res),
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar1).
+manager(LAb,UAb,[query_mode(Res)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        query_mode(EnvVar,EnvVar1,Res),
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar1).
+manager(LAb,UAb,[silent_mode(Param,Res)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        silent_mode(EnvVar,EnvVar1,Mon,Mon1,Mon2,Mon3,IDM,IDM1,Param,Res),
+        manager(LAb,UAb,In,InC,W,Mon2,Mon3,V,IO,IDM1,InC1,EnvVar1).
+manager(LAb,UAb,In,[silent_mode(Param,Res)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        silent_mode(EnvVar,EnvVar1,Mon,Mon1,Mon2,Mon3,IDM,IDM1,Param,Res),
+        manager(LAb,UAb,In,InC,W,Mon2,Mon3,V,IO,IDM1,InC1,EnvVar1).
+manager(LAb,UAb,In,InC,[silent_mode(Param)|W],Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        window_silent_mode(EnvVar,EnvVar1,Mon,Mon1,Mon2,Mon3,Param,Ac),
+        manager_wait_silent_mode(LAb,UAb,In,InC,W,Mon2,Mon3,V,IO,IDM,InC1,EnvVar1,Ac).
+
+manager(LAb,UAb,[setenv(monitor_mode,_,Res)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        stream_auto_mode(EnvVar,EnvVar1,Res),
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar1).
+manager(LAb,UAb,[setenv(stream_auto_mode,_,Res)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        stream_auto_mode(EnvVar,EnvVar1,Res),
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar1).
+manager(LAb,UAb,[setenv(query_mode,_,Res)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        query_mode(EnvVar,EnvVar1,Res),
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar1).
+manager(LAb,UAb,[setenv(silent_mode,Param,Res)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        silent_mode(EnvVar,EnvVar1,Mon,Mon1,Mon2,Mon3,IDM,IDM1,Param,Res),
+        manager(LAb,UAb,In,InC,W,Mon2,Mon3,V,IO,IDM1,InC1,EnvVar1).
+
+alternatively.
+%for listener
+manager(LAb,UAb,[monitor_and_fork(TID,X,Str)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        V=[get_listener_varlist(LisVL),get_listener_var_manager(LV)|V1],
+        IDM=[get_id(NID)|IDM0],
+        Pat=variable(string#"_"),
+        make_title(NID,Pat,Str,Title),
+        inspector_window_manager:manager_a(LAb,Win,NMM1,LisVL,EnvVar,Title,Status),
+        inspector_var_manager:manager(NV,LV),
+        merge(NV1,NV),
+        IDM0={NIDM,IDM1},
+        manager1(LAb,_,NMM,NV1,NIDM,Win,EnvVar),
+        NMM=[monitor1(-1,X,NID,Pat,Str)|NMM1],
+        wait_completed(LAb,UAb,In,InC,W,Mon,Mon1,V1,IO,IDM1,InC1,EnvVar,Status).
+
+manager(LAb,UAb,[monitor_and_fork_with_envs(X,Pat,Str,Envs)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        V=[get_listener_varlist(LisVL),get_listener_var_manager(LV)|V1],
+        IDM=[get_id(NID)|IDM0],
+        make_title(NID,Pat,Str,Title),
+        inspector_window_manager:manager_a(LAb,Win,NMM1,LisVL,Envs,EnvVar,Title,Status),
+        inspector_var_manager:manager(NV,LV),
+        merge(NV1,NV),
+        IDM0={NIDM,IDM1},
+        manager1(LAb,_,NMM,NV1,NIDM,Win,EnvVar),
+        NMM=[monitor1(-1,X,NID,Pat,Str)|NMM1],
+        wait_completed(LAb,UAb,In,InC,W,Mon,Mon1,V1,IO,IDM1,InC1,EnvVar,Status).
+
+manager(LAb,UAb,In,[monitor_and_fork_with_envs(X,Pat,Str,Envs)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        V=[get_listener_varlist(LisVL),get_listener_var_manager(LV)|V1],
+        IDM=[get_id(NID)|IDM0],
+        make_title(NID,Pat,Str,Title),
+        inspector_window_manager:manager_a(LAb,Win,NMM1,LisVL,Envs,EnvVar,Title,Status),
+        inspector_var_manager:manager(NV,LV),
+        merge(NV1,NV),
+        IDM0={NIDM,IDM1},
+        manager1(LAb,_,NMM,NV1,NIDM,Win,EnvVar),
+        NMM=[monitor1(-1,X,NID,Pat,Str)|NMM1],
+        wait_completed(LAb,UAb,In,InC,W,Mon,Mon1,V1,IO,IDM1,InC1,EnvVar,Status).
+
+manager(LAb,UAb,[monitor1(TID,X,NID,Pat,Str)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        set_vector_element(EnvVar,7,_,TID,EnvVar1),
+        V={V0,V1},
+        IO={IO0,IO1},
+        InC1={InC2,InC3},
+        inspector_monitor:monitor0(X,Pat,Str,InC2,Mon1,Mon2,V0,IO0,NID,EnvVar1),
+        manager(LAb,UAb,In,InC,W,Mon,Mon2,V1,IO1,IDM,InC3,EnvVar).
+manager(LAb,UAb,In,[monitor1(TID,X,NID,Pat,Str)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        set_vector_element(EnvVar,7,_,TID,EnvVar1),
+        V={V0,V1},
+        IO={IO0,IO1},
+        InC1={InC2,InC3},
+        inspector_monitor:monitor0(X,Pat,Str,InC2,Mon1,Mon2,V0,IO0,NID,EnvVar1),
+        manager(LAb,UAb,In,InC,W,Mon,Mon2,V1,IO1,IDM,InC3,EnvVar).
+
+%for listener
+manager(LAb,UAb,[monitor(TID,X,Str)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        set_vector_element(EnvVar,7,_,TID,EnvVar1),
+        V={V0,V1},
+        IO={IO0,IO1},
+        IDM=[get_id(NID)|IDM1],
+        InC1={InC2,InC3},
+        inspector_monitor:monitor0(X,variable(string#"_"),Str,InC2,Mon1,Mon2,V0,IO0,NID,EnvVar1),
+        manager(LAb,UAb,In,InC,W,Mon,Mon2,V1,IO1,IDM1,InC3,EnvVar).
+
+manager(LAb,UAb,[monitor(TID,X,Pat,Str,NID)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        set_vector_element(EnvVar,7,_,TID,EnvVar1),
+        V={V0,V1},
+        IO={IO0,IO1},
+        IDM=[get_id(NID)|IDM1],
+        InC1={InC2,InC3},
+        inspector_monitor:monitor(X,Pat,Str,InC2,Mon1,Mon2,V0,IO0,NID,EnvVar1),
+        manager(LAb,UAb,In,InC,W,Mon,Mon2,V1,IO1,IDM1,InC3,EnvVar).
+manager(LAb,UAb,In,[monitor(TID,X,Pat,Str,NID)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        set_vector_element(EnvVar,7,_,TID,EnvVar1),
+        V={V0,V1},
+        IO={IO0,IO1},
+        IDM=[get_id(NID)|IDM1],
+        InC1={InC2,InC3},
+        inspector_monitor:monitor(X,Pat,Str,InC2,Mon1,Mon2,V0,IO0,NID,EnvVar1),
+        manager(LAb,UAb,In,InC,W,Mon,Mon2,V1,IO1,IDM1,InC3,EnvVar).
+manager(LAb,UAb,[monitored_terms_list(A)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        get_monitored_terms_list(Mon,Mon0,Mon1,Mon2,A),
+        manager(LAb,UAb,In,InC,W,Mon0,Mon2,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,[monitored_terms(WS)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        get_monitored_terms_list(Mon,Mon0,Mon1,Mon2,A),
+        InC1={InC2,InC3},
+        inspector_io_manager:manager(NWS,_,_,WS,_,listener),
+        buffer:character_pool(B),
+        B=[add_op(95,fy,'>'),add_op(95,xfy,'>')|B1],
+        inspector_cmd_monitor:write_monitored_terms(LAb,InC2,[],_,_,NWS,[],B1,[],V,V1,_,A),
+        manager(LAb,UAb,In,InC,W,Mon0,Mon2,V1,IO,IDM,InC3,EnvVar).
+manager(LAb,UAb,[monitored_terms(WS,End)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        get_monitored_terms_list(Mon,Mon0,Mon1,Mon2,A),
+        InC1={InC2,InC3},
+        inspector_io_manager:manager(NWS,_,_,WS,_,listener),
+        buffer:character_pool(B),
+        B=[add_op(95,fy,'>'),add_op(95,xfy,'>')|B1],
+        inspector_cmd_monitor:write_monitored_terms(LAb,InC2,[],_,_,NWS,[],B1,[],V,V1,End,A),
+        manager(LAb,UAb,In,InC,W,Mon0,Mon2,V1,IO,IDM,InC3,EnvVar).
+manager(LAb,UAb,In,[monitored_terms_list(A)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        get_monitored_terms_list(Mon,Mon0,Mon1,Mon2,A),
+        manager(LAb,UAb,In,InC,W,Mon0,Mon2,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,[kill(ID)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        Mon=[kill(ID)|Mon0],
+        manager(LAb,UAb,In,InC,W,Mon0,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,In,[kill(ID)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        Mon=[kill(ID)|Mon0],
+        manager(LAb,UAb,In,InC,W,Mon0,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,[change_condition(ID,Pat)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        Mon=[change_condition(ID,Pat)|Mon0],
+        manager(LAb,UAb,In,InC,W,Mon0,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,In,[change_condition(ID,Pat)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        Mon=[change_condition(ID,Pat)|Mon0],
+        manager(LAb,UAb,In,InC,W,Mon0,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,[change_stream_auto_mode(ID)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        Mon=[change_stream_auto_mode(ID)|Mon0],
+        manager(LAb,UAb,In,InC,W,Mon0,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,In,[change_stream_auto_mode(ID)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        Mon=[change_stream_auto_mode(ID)|Mon0],
+        manager(LAb,UAb,In,InC,W,Mon0,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,[change_query_mode(ID)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        Mon=[change_query_mode(ID)|Mon0],
+        manager(LAb,UAb,In,InC,W,Mon0,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,In,[change_query_mode(ID)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        Mon=[change_query_mode(ID)|Mon0],
+        manager(LAb,UAb,In,InC,W,Mon0,Mon1,V,IO,IDM,InC1,EnvVar).
+manager(LAb,UAb,[get_id(ID)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        IDM=[get_id(ID)|IDM1],
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM1,InC1,EnvVar).
+manager(LAb,UAb,In,[get_id(ID)|InC],W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+        IDM=[get_id(ID)|IDM1],
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM1,InC1,EnvVar).
+
+%%manager(LAb,UAb,[high_priority(L)|In],InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar) :- true |
+
+wait_completed(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar,normal) :- true |
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar).
+
+make_title(ID,Pat,Str,Title) :- true |
+        buffer:character_pool(B),
+        B=[putf(string#"~s~t ~s ",[string#"INSPECTOR: ",ID,Str]),putwt(Pat,3,4),
+            getl(Title)].
+
+terminate([_|In]) :- true | terminate(In).
+terminate([]) :- true | true.
+
+manager_wait_silent_mode(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar,Ac) :- wait(Ac) |
+        manager(LAb,UAb,In,InC,W,Mon,Mon1,V,IO,IDM,InC1,EnvVar).
+
+manager_0(LAb,In,InC,W,V,IDM,InC1,_) :- wait(LAb) |
+        V=[],IDM=[],InC1=[],
+        terminate(In),
+        terminate(InC),
+        terminate(W).
+alternatively.
+manager_0(LAb,[Msg|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        manager_00(LAb,[Msg|In],InC,W,V,IDM,InC1,EnvVar).
+manager_0(LAb,In,[Msg|InC],W,V,IDM,InC1,EnvVar) :- true |
+        manager_00(LAb,In,[Msg|InC],W,V,IDM,InC1,EnvVar).
+manager_0(_,[],_,_,V,IDM,InC1,_) :- true | V=[],IDM=[],InC1=[].
+
+manager_00(LAb,[monitor_mode(Res)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        stream_auto_mode(EnvVar,EnvVar1,Res),
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar1).
+manager_00(LAb,[stream_auto_mode(Res)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        stream_auto_mode(EnvVar,EnvVar1,Res),
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar1).
+manager_00(LAb,[query_mode(Res)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        query_mode(EnvVar,EnvVar1,Res),
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar1).
+manager_00(LAb,[silent_mode(Param,Res)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        silent_mode_0(EnvVar,EnvVar1,IDM,IDM1,Param,Res),
+        manager_0(LAb,In,InC,W,V,IDM1,InC1,EnvVar1).
+
+manager_00(LAb,[setenv(monitor_mode,_,Res)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        stream_auto_mode(EnvVar,EnvVar1,Res),
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar1).
+manager_00(LAb,[setenv(stream_auto_mode,_,Res)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        stream_auto_mode(EnvVar,EnvVar1,Res),
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar1).
+manager_00(LAb,[setenv(query_mode,_,Res)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        query_mode(EnvVar,EnvVar1,Res),
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar1).
+manager_00(LAb,[setenv(silent_mode,Param,Res)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        silent_mode_0(EnvVar,EnvVar1,IDM,IDM1,Param,Res),
+        manager_0(LAb,In,InC,W,V,IDM1,InC1,EnvVar1).
+
+manager_00(LAb,In,[silent_mode(Param,Res)|InC],W,V,IDM,InC1,EnvVar) :- true |
+        silent_mode_0(EnvVar,EnvVar1,IDM,IDM1,Param,Res),
+        manager_0(LAb,In,InC,W,V,IDM1,InC1,EnvVar1).
+manager_00(LAb,In,InC,[silent_mode(Param)|W],V,IDM,InC1,EnvVar) :- true |
+        set_vector_element(EnvVar,5,_,Param,EnvVar1),
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar1).
+manager_00(LAb,[monitored_terms_list(A)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        A=[],
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+manager_00(LAb,[monitored_terms(WS)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        InC1={InC2,InC3},
+        inspector_io_manager:manager(NWS,_,_,WS,_,listener),
+        buffer:character_pool(B),
+        inspector_cmd_monitor:write_monitored_terms(LAb,InC2,[],_,_,NWS,[],B,[],V,V1,_,[]),
+        manager_0(LAb,In,InC,W,V1,IDM,InC3,EnvVar).
+manager_00(LAb,[monitored_terms(WS,End)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        InC1={InC2,InC3},
+        inspector_io_manager:manager(NWS,_,_,WS,_,listener),
+        buffer:character_pool(B),
+        inspector_cmd_monitor:write_monitored_terms(LAb,InC2,[],_,_,NWS,[],B,[],V,V1,End,[]),
+        manager_0(LAb,In,InC,W,V1,IDM,InC3,EnvVar).
+manager_00(LAb,In,[monitored_terms_list(A)|InC],W,V,IDM,InC1,EnvVar) :- true |
+        A=[],
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+manager_00(LAb,[get_id(ID)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        IDM=[get_id(ID)|IDM1],
+        manager_0(LAb,In,InC,W,V,IDM1,InC1,EnvVar).
+manager_00(LAb,In,[get_id(ID)|InC],W,V,IDM,InC1,EnvVar) :- true |
+        IDM=[get_id(ID)|IDM1],
+        manager_0(LAb,In,InC,W,V,IDM1,InC1,EnvVar).
+manager_00(LAb,[get_idmanager(NIDM)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        IDM={NIDM,IDM1},
+        manager_0(LAb,In,InC,W,V,IDM1,InC1,EnvVar).
+manager_00(LAb,In,[get_idmanager(NIDM)|InC],W,V,IDM,InC1,EnvVar) :- true |
+        IDM={NIDM,IDM1},
+        manager_0(LAb,In,InC,W,V,IDM1,InC1,EnvVar).
+manager_00(LAb,[get_envvar(EnvVar1)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        EnvVar1=EnvVar,
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+manager_00(LAb,In,[get_envvar(EnvVar1)|InC],W,V,IDM,InC1,EnvVar) :- true |
+        EnvVar1=EnvVar,
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+manager_00(LAb,In,[get_LAb(Ab)|InC],W,V,IDM,InC1,EnvVar) :- true |
+        Ab=LAb,
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+manager_00(LAb,[get_LAb(Ab)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        Ab=LAb,
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+
+%for listener
+manager_00(LAb,[monitor_and_fork(TID,X,Str)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        V=[get_listener_varlist(LisVL),get_listener_var_manager(LV)|V1],
+        IDM=[get_id(NID)|IDM0],
+        Pat=variable(string#"_"),
+        make_title(NID,Pat,Str,Title),
+        inspector_window_manager:manager_a(LAb,Win,NMM1,LisVL,EnvVar,Title,Status),
+        inspector_var_manager:manager(NV,LV),
+        merge(NV1,NV),
+        IDM0={NIDM,IDM1},
+        manager1(LAb,_,NMM,NV1,NIDM,Win,EnvVar),
+        NMM=[monitor1(-1,X,NID,Pat,Str)|NMM1],
+        wait_completed_0(LAb,In,InC,W,V1,IDM1,InC1,EnvVar,Status).
+manager_00(LAb,[monitor_and_fork_with_envs(X,Pat,Str,Envs)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        V=[get_listener_varlist(LisVL),get_listener_var_manager(LV)|V1],
+        IDM=[get_id(NID)|IDM0],
+        make_title(NID,Pat,Str,Title),
+        inspector_window_manager:manager_a(LAb,Win,NMM1,LisVL,Envs,EnvVar,Title,Status),
+        inspector_var_manager:manager(NV,LV),
+        merge(NV1,NV),
+        IDM0={NIDM,IDM1},
+        manager1(LAb,_,NMM,NV1,NIDM,Win,EnvVar),
+        NMM=[monitor1(-1,X,NID,Pat,Str)|NMM1],
+        wait_completed_0(LAb,In,InC,W,V1,IDM1,InC1,EnvVar,Status).
+manager_00(LAb,In,[monitor_and_fork_with_envs(X,Pat,Str,Envs)|InC],W,V,IDM,InC1,EnvVar) :- true |
+        V=[get_listener_varlist(LisVL),get_listener_var_manager(LV)|V1],
+        IDM=[get_id(NID)|IDM0],
+        make_title(NID,Pat,Str,Title),
+        inspector_window_manager:manager_a(LAb,Win,NMM1,LisVL,Envs,EnvVar,Title,Status),
+        inspector_var_manager:manager(NV,LV),
+        merge(NV1,NV),
+        IDM0={NIDM,IDM1},
+        manager1(LAb,_,NMM,NV1,NIDM,Win,EnvVar),
+        NMM=[monitor1(-1,X,NID,Pat,Str)|NMM1],
+        wait_completed_0(LAb,In,InC,W,V1,IDM1,InC1,EnvVar,Status).
+
+manager_00(LAb,[monitor(TID,X,Pat,Str,NID)|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        NID:=0,
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+manager_00(LAb,In,[monitor(TID,X,Pat,Str,NID)|InC],W,V,IDM,InC1,EnvVar) :- true |
+        NID:=0,
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+alternatively.
+manager_00(LAb,[_|In],InC,W,V,IDM,InC1,EnvVar) :- true |
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+manager_00(LAb,In,[_|InC],W,V,IDM,InC1,EnvVar) :- true |
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+
+wait_completed_0(LAb,In,InC,W,V,IDM,InC1,EnvVar,normal) :- true |
+        manager_0(LAb,In,InC,W,V,IDM,InC1,EnvVar).
+
+get_monitored_terms_list(Mon,Mon0,Mon1,Mon2,A) :- true |
+        Mon=[monitored_terms_list(A1)|Mon0],
+        wait_msg_returned(Mon1,Mon2),
+        sorter:key_sort(A1,A).
+
+wait_msg_returned([monitored_terms_list(A)|Mon],Mon1) :- true |
+        A=[],Mon=Mon1.
+
+
+getenvs(EnvVar) :- true |
+        shoen:raise(pimos_tag#task,general_request,GRS),
+        GRS=[getenv(monitor:stream_auto_mode,Res0),
+             getenv(monitor:query_mode,Res1),
+             getenv(inspector:initial_window_size,Res2),
+             getenv(inspector:window_size_increment,Res3),
+             getenv(inspector:window_size_increment_l,Res4),
+             getenv(monitor:silent_mode,Res5),
+            getenv(inspector:print_string_mode,Res6)],
+        EnvVar={SAM,QM,Init,Big,LBig,BEEP,PSM,0},
+        get_mode(Res0,SAM),
+        get_mode(Res1,QM),
+        get_initial_window_size(Res2,Init),
+        get_increment(Res3,Big),
+        get_increment_l(Res4,LBig),
+        get_silent_mode(Res5,BEEP),
+        get_psm(Res6,PSM).
+
+get_mode(normal(off),M) :- true | M=off.
+otherwise.
+get_mode(_,M) :- true | M=on.
+
+get_silent_mode(normal(on),M) :- true | M=on.
+otherwise.
+get_silent_mode(_,M) :- true | M=off.
+
+get_initial_window_size(normal(char(C,L)),Init) :- C>0,L>0 | Init=char(C,L).
+get_initial_window_size(normal(mouse),Init) :- true | Init=mouse.
+otherwise.
+get_initial_window_size(_,Init) :- true | Init=char(40,10).
+
+get_increment(normal(char(C,L)),Big) :- C>0,L>0 | Big=char(C,L).
+get_increment(normal(mouse),Big) :- true | Big=mouse.
+otherwise.
+get_increment(_,Big) :- true | Big=char(10,5).
+
+get_increment_l(normal(char(C,L)),Big) :- C>0,L>0 | Big=char(C,L).
+get_increment_l(normal(mouse),Big) :- true | Big=mouse.
+otherwise.
+get_increment_l(_,Big) :- true | Big=char(5,2).
+
+get_psm(normal(code),PSM) :- true | PSM=code.
+otherwise.
+get_psm(_,PSM) :- true | PSM=character.
+
+%%EnvVar={SAM,QM,Init,Big,LBig,BEEP,PSM}
+stream_auto_mode(EnvVar,EnvVar1,Res) :- true |
+        set_vector_element(EnvVar,0,SAM,SAM1,EnvVar1),
+        change_mode(SAM,SAM1),
+        Res=normal(string#" Monitor: stream_auto_mode = ~t~n",[SAM1]).
+
+query_mode(EnvVar,EnvVar1,Res) :- true |
+        set_vector_element(EnvVar,1,QM,QM1,EnvVar1),
+        change_mode(QM,QM1),
+        Res=normal(string#" Monitor: query_mode = ~t~n",[QM1]).
+
+change_mode(on,M) :- true | M=off.
+change_mode(off,M) :- true | M=on.
+
+silent_mode(EnvVar,EnvVar1,Mon,Mon1,NMon,NMon1,IDM,IDM1,all_on,Res) :- true |
+        IDM=[silent_mode(all_on,Res)|IDM1],
+        EnvVar=EnvVar1,
+        Mon=NMon,Mon1=NMon1.
+silent_mode(EnvVar,EnvVar1,Mon,Mon1,NMon,NMon1,IDM,IDM1,all_off,Res) :- true |
+        IDM=[silent_mode(all_off,Res)|IDM1],
+        EnvVar=EnvVar1,
+        Mon=NMon,Mon1=NMon1.
+silent_mode(EnvVar,EnvVar1,Mon,Mon1,NMon,NMon1,IDM,IDM1,window_on,Res) :- true |
+        IDM=IDM1,
+        window_silent_mode(EnvVar,EnvVar1,Mon,Mon1,NMon,NMon1,on,Res).
+silent_mode(EnvVar,EnvVar1,Mon,Mon1,NMon,NMon1,IDM,IDM1,window_off,Res) :- true |
+        IDM=IDM1,
+        window_silent_mode(EnvVar,EnvVar1,Mon,Mon1,NMon,NMon1,off,Res).
+
+window_silent_mode(EnvVar,EnvVar1,Mon,Mon1,NMon,NMon1,Param,Res) :- true |
+        set_vector_element(EnvVar,5,_,Param,EnvVar1),
+        Mon=[silent_mode(Param)|NMon],
+        wait_silent_mode(Mon1,NMon1,Res).
+
+wait_silent_mode([silent_mode(Param)|Mon],Mon1,Res) :- true |
+        Mon=Mon1,
+        Res=normal(string#"~s~t~s~n",
+            [string#" Monitor: silent_mode = ",Param,string#"(available on this window)"]).
+
+silent_mode_0(EnvVar,EnvVar1,IDM,IDM1,all_on,Res) :- true |
+        IDM=[silent_mode(all_on,Res)|IDM1],
+        EnvVar=EnvVar1.
+silent_mode_0(EnvVar,EnvVar1,IDM,IDM1,all_off,Res) :- true |
+        IDM=[silent_mode(all_off,Res)|IDM1],
+        EnvVar=EnvVar1.
+silent_mode_0(EnvVar,EnvVar1,IDM,IDM1,window_on,Res) :- true |
+        IDM=IDM1,
+        set_vector_element(EnvVar,5,_,on,EnvVar1),
+        Res=normal(string#"~s~n",
+            [string#" Monitor: silent_mode = on(available on this window)"]).
+silent_mode_0(EnvVar,EnvVar1,IDM,IDM1,window_off,Res) :- true |
+        IDM=IDM1,
+        set_vector_element(EnvVar,5,_,off,EnvVar1),
+        Res=normal(string#"~s~n",
+            [string#" Monitor: silent_mode = off(available on this window)"]).
+
+get_print_string_mode(EnvVar,EnvVar1,PSM) :- true |
+        set_vector_element(EnvVar,6,PSM,PSM,EnvVar1).

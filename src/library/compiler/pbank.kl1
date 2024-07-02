@@ -1,0 +1,50 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_pbank.
+:- public predicate_bank/2.
+:- with_macro pimos.
+
+predicate_bank([One0-Info|Rest], [getft(Cls)|Msg]) :- true |
+    avoid_void(0, _, One0, One),
+    Cls=One-Info,
+    predicate_bank(Rest, Msg).
+otherwise.
+predicate_bank([One0|Rest], [getft(Cls)|Msg]) :- true |
+    avoid_void(0, _, One0, One),
+    Cls=One-[],
+    predicate_bank(Rest, Msg).
+predicate_bank([], [getft(Cls)|Msg]) :- true |
+    Cls=end_of_file-[],
+    predicate_bank([], Msg).
+predicate_bank([], []) :- true | true.
+
+avoid_void(N0, N, variable("_"), Var) :- true |
+   Var=variable(N0),
+   N := N0+1.
+avoid_void(N0, N, vector(Vect0), WVect) :- vector(Vect0, Size) |
+   avoid_void(0, Size, N0, N, Vect0, Vect),
+   WVect=vector(Vect).
+avoid_void(N0, N, list([Car|Cdr]), WList) :- true |
+   avoid_void(N0, N1, Car, NewCar),
+   avoid_void(N1, N, Cdr, NewCdr),
+   WList=list([NewCar|NewCdr]).
+otherwise.
+avoid_void(N0, N, variable(Str), Var) :- true |
+   Var=variable(Str),
+   N0=N.
+otherwise.
+avoid_void(N0, N, Arg0, Arg) :- true |
+   N0=N, Arg0=Arg.
+
+avoid_void(A, Size, N0, N, Vect0, Vect) :- A < Size |
+   set_vector_element(Vect0, A, Ele0, Ele, Vect1),
+   avoid_void(N0, N1, Ele0, Ele),
+   A1 := A + 1,
+   avoid_void(A1, Size, N1, N, Vect1, Vect).
+avoid_void(Size, Size, N0, N, Vect0, Vect) :- true |
+   N0 = N, Vect0=Vect.
+

@@ -1,0 +1,209 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module character_pool.
+:- with_macro pimos.
+:- public init/5,usage/1.
+
+usage(L) :- true | ioutls_usage:character_pool(L).
+
+init(In,N,OpPool,AtomDvc,Ptry) :- wait(N) |
+        merge(In,In1),
+        OpPool={OpPool0,OpPool1},
+        AtomDvc={AtomDvc0,AtomDvc1},
+        inMonitor(Input,Output,[],In1),
+        input_filter:init(Input,InputOut,N,OpPool0,AtomDvc0),
+        output_filter:init(Output,OutputOut,N,OpPool1,AtomDvc1,Ptry),
+        outMonitor(InputOut,OutputOut).
+
+:- local_implicit in:stream, out:stream, do:shared.
+%
+% inMonitor(+In)
+%
+
+inMonitor([Msg|In]) -->
+    (Msg=getc(Ch)
+    ;Msg=getl(L)
+    ;Msg=getb(Size,B)
+    ;Msg=gett(Term,VT,NVT)
+    ;Msg=gett(Term,NVT)
+    ;Msg=gett(Term)
+    ;Msg=getft(Term,N)
+    ;Msg=getwt(WT)
+    ;Msg=skip(N)
+    ;Msg=ungetc(Ch)
+    ;Msg=prompt(Str)) |
+        &out <<= [flush],
+        &in <<= [Msg],
+        inMonitor(In).
+
+inMonitor([Msg|In]) -->
+    (Msg=putc(Ch)
+    ;Msg=putl(L)
+    ;Msg=putb(B,Cnt)
+    ;Msg=putb(B)
+    ;Msg=putt(Term)                 ;Msg=puttq(Term)
+    ;Msg=putt(Term,EnvL)            ;Msg=puttq(Term,EnvL)
+    ;Msg=putt(Term,D,L)             ;Msg=puttq(Term,D,L)
+    ;Msg=putt(Term,D,L,SL)          ;Msg=puttq(Term,D,L,SL)
+    ;Msg=putt(Term,D,L,SL,AL)       ;Msg=puttq(Term,D,L,SL,AL)
+    ;Msg=putft(Term)                ;Msg=putftq(Term)
+    ;Msg=putft(Term,D,L)            ;Msg=putftq(Term,D,L)
+    ;Msg=putft(Term,D,L,SL)         ;Msg=putftq(Term,D,L,SL)
+    ;Msg=putft(Term,D,L,SL,AL)      ;Msg=putftq(Term,D,L,SL,AL)
+    ;Msg=putwt(Term)                ;Msg=putwtq(Term)
+    ;Msg=putwt(Term,EnvL)           ;Msg=putwtq(Term,EnvL)
+    ;Msg=putwt(Term,D,L)            ;Msg=putwtq(Term,D,L)
+    ;Msg=putwt(Term,D,L,SL)         ;Msg=putwtq(Term,D,L,SL)
+    ;Msg=putwt(Term,D,L,SL,AL)      ;Msg=putwtq(Term,D,L,SL,AL)
+    ;Msg=putf(Format,Arg)
+    ;Msg=printt(Term)               ;Msg=printtq(Term)
+    ;Msg=printt(Term,EnvL)          ;Msg=printtq(Term,EnvL)
+    ;Msg=printt(Term,D,L)           ;Msg=printtq(Term,D,L)
+    ;Msg=printt(Term,D,L,SL,AL)     ;Msg=printtq(Term,D,L,SL,AL)
+    ;Msg=printwt(Term)              ;Msg=printwtq(Term)
+    ;Msg=printwt(Term,EnvL)         ;Msg=printwtq(Term,EnvL)
+    ;Msg=printwt(Term,D,L)          ;Msg=printwtq(Term,D,L)
+    ;Msg=printwt(Term,D,L,SL,AL)    ;Msg=printwtq(Term,D,L,SL,AL)
+    ;Msg=print_error(Info)
+    ;Msg=print_text(Info)
+    ;Msg=flush
+    ;Msg=flush(Status)
+    ;Msg=nl
+    ;Msg=tab(N)
+    ;Msg=print_length(L)            ;Msg=print_length(L,L1)
+    ;Msg=print_depth(D)             ;Msg=print_depth(D,D1)
+    ;Msg=print_string_length(SL)    ;Msg=print_string_length(SL,SL1)
+    ;Msg=print_atom_length(AL)      ;Msg=print_atom_length(AL,AL1)) |
+        &out <<= [Msg],
+        inMonitor(In).
+inMonitor([do(S)|In]) --> true |
+        {{merge(S,S1)}},
+        &do <= [In|&do],
+        inMonitor(S1).
+inMonitor([]) --> &do=[S|SS] |
+        &do <= SS,
+        inMonitor(S).
+inMonitor([]) --> &do=[] | true.
+otherwise.
+inMonitor([Msg|In]) --> true |
+        inMonitor_others([Msg|In]).
+
+inMonitor_others([Msg|In]) -->
+    (Msg=add_op(Prec,Type,OpName) ;
+     Msg=remove_op(Prec,Type,OpName)) |
+        &in <<= [replace_op_pool(Op,NOp)],
+        Op = [Msg|{NOp,NOp1}],
+        &out <<= [change_op_pool(NOp1)],
+        inMonitor(In).
+inMonitor_others([Msg|In]) -->
+    (Msg=operator(OpName,Def) ;
+     Msg=operator(All)) |
+        &in <<= [Msg],
+        inMonitor(In).
+inMonitor_others([{MsgName,Old,New}|In]) -->
+    (MsgName=replace_op_pool ; MsgName=replace_atom_table) |
+        New={New0,New1},
+        &in <<= [{MsgName,Old,New0}],
+        &out <<= [{MsgName,[],New1}],
+        inMonitor(In).
+inMonitor_others([{MsgName,New}|In]) -->
+    (MsgName=change_op_pool ; MsgName=change_atom_table) |
+        New={New0,New1},
+        &in <<= [{MsgName,New0}],
+        &out <<= [{MsgName,New1}],
+        inMonitor(In).
+inMonitor_others([Msg|In]) --> Msg=change_portray(New) |
+        &out <<= [Msg],
+        inMonitor(In).
+
+%inMonitor_others([changeBuffer(InBuf),changeBuffer(OutBuf)|In]) --> true |
+%    &in <<= [changeBuffer(InBuf)],
+%    &out <<= [changeBuffer(OutBuf)],
+%    inMonitor(In).
+inMonitor_others([replaceInBuffer(Old,New)|In]) --> true |
+        &in <<= [replaceBuffer(Old,New)],
+        inMonitor(In).
+inMonitor_others([replaceOutBuffer(Old,New)|In]) --> true |
+        &out <<= [replaceBuffer(Old,New)],
+        inMonitor(In).
+inMonitor_others([close_output|In]) --> true |
+        &out = [],
+        inMonitor(In).
+inMonitor_others([abandon_pool|In]) --> true |
+        &in <<= [abandon_pool],
+        &out <<= [abandon_pool],
+        inMonitor(In).
+otherwise.
+inMonitor_others([Msg|In]) --> true |
+        {{shoen:raise(pimos_tag#error,
+            '$PIMOS$'(buffer:character_pool,"illegal_message_protocol"),Msg)}},
+        inMonitor(In).
+
+%
+% outMonitor(+InFilterOut, +OutFilterOut)
+%
+outMonitor([],Out) :- true |
+        outMonitorOutSweep(Out).
+outMonitor(In,[]) :- true |
+        outMonitorInSweep(In).
+outMonitor(In,[flush(Stat)|Out]) :- true |
+        Stat=normal,
+        outMonitor(In,Out).
+outMonitor([getb(Size,Status)|In],[abandon_pool|Out]) :- true |
+        Status=end_of_file,
+        outMonitor(In,[abandon_pool|Out]).
+outMonitor([abandon_pool|In],[putb(Str,Stat)|Out]) :- true |
+        Stat=normal,
+        outMonitor([abandon_pool|In],Out).
+outMonitor([abandon_pool|In],[abandon_pool|Out]) :- true |
+        outMonitor(In,Out).
+outMonitor([getb(Size,Status)|In],[putb(Str,Stat)|Out]) :-
+    string(Str,N,_),Size<N |
+        builtin#substring(Str,0,Size,String,Str1),
+        builtin#substring(Str1,Size,~(N-Size),Str2,_),
+        Status=normal(String),
+        outMonitor(In,[putb(Str2,Stat)|Out]).
+outMonitor([getb(Size,Status)|In],[putb(Str,Stat)|Out]) :-
+    string(Str,N,_),Size=:=N |
+        Status=normal(Str),
+        Stat=normal,
+        outMonitor(In,Out).
+outMonitor([getb(Size,Status)|In],[putb(Str,Stat),putb(Str1,Stat1)|Out]) :-
+    string(Str,N,_),Size>N |
+        builtin#append_string(Str,Str1,StrStr1),
+        Stat=normal,
+        outMonitor([getb(Size,Status)|In],[putb(StrStr1,Stat1)|Out]).
+alternatively.
+outMonitor([getb(Size,Status)|In],[putb(Str,Stat)|Out]) :-
+    string(Str,N,_),Size>N |
+        Status=normal(Str),
+        Stat=normal,
+        outMonitor(In,Out).
+
+outMonitorOutSweep([]) :- true | true.
+outMonitorOutSweep([flush(Stat)|Out]) :- true |
+        Stat=normal,
+        outMonitorOutSweep(Out).
+outMonitorOutSweep([putb(_,Stat)|Out]) :- true |
+        Stat=normal,
+        outMonitorOutSweep(Out).
+
+outMonitorInSweep([]) :- true | true.
+outMonitorInSweep([getb(_,Stat)|In]) :- true |
+        Stat=end_of_file,
+        outMonitorInSweep(In).
+
+outMonitorAbandon([],NOut) :- true | NOut=[].
+outMonitorAbandon([abandon_pool|Out],NOut) :- true | NOut=Out.
+outMonitorAbandon([flush(Stat)|Out],NOut) :- true |
+        Stat=normal,
+        outMonitorAbandon(Out,NOut).
+outMonitorAbandon([putb(_,Stat)|Out],NOut) :- true |
+        Stat=normal,
+        outMonitorAbandon(Out,NOut).
+

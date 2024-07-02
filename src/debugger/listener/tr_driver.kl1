@@ -1,0 +1,688 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+
+:- module listener_trace_driver.
+:- public put_goals/5, apply_goals/1, calculate_priority/4,
+          tracing_with_priority/6, protection/16, execute/7,
+          general_request/7, general_request/0, apply_spying/5.
+:- with_macro pimos.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Argument format of apply_goals/2
+% {external,             Code,ArgV}
+% {internal,             Code,ArgV}
+% {priority,             Code,ArgV,{Pri,Min,Max}}
+% {node,                 Code,ArgV,Node}
+% {cluster,              Code,ArgV,Cls}     % VPIM
+% {resident_to_cluster,  Code,ArgV,Cls}     % VPIM
+% {emigrant_to_cluster,  Code,ArgV}         % VPIM
+% {processor,            Code,ArgV,Pe}      % VPIM
+% {resident_to_processor,Code,ArgV,Pe}      % VPIM
+% {emigrant_to_processor,Code,ArgV}         % VPIM
+% {Builtin,  ArgV}
+% 
+% {trace,ID,external,             Code,ArgV, Pri,Min,Max}
+% {trace,ID,internal,             Code,ArgV, Pri,Min,Max}
+% {trace,ID,priority,             Code,ArgV,{Pri,Min,Max}}
+% {trace,ID,node,                 Code,ArgV, Pri,Min,Max,Node}
+% {trace,ID,processor,            Code,ArgV, Pri,Min,Max,Pe}
+% {trace,ID,resident_to_processor,Code,ArgV, Pri,Min,Max,Pe}
+% {trace,ID,emigrant_to_processor,Code,ArgV, Pri,Min,Max}
+% {trace,ID,cluster,              Code,ArgV, Pri,Min,Max,Cls}
+% {trace,ID,resident_to_cluster,  Code,ArgV, Pri,Min,Max,Cls}
+% {trace,ID,emigrant_to_cluster,  Code,ArgV, Pri,Min,Max}
+% {trace,shoen,raise,  3,ID,ArgV,W,Lvl,SpyCV}
+% {trace,shoen,execute,7,ID,ArgV,Pri,Min,Max}
+% {trace,shoen,profile,7,ID,ArgV,Pri,Min,Max}
+%
+% {spy,ID,external,             Code,ArgV,              SpyCV}
+% {spy,ID,internal,             Code,ArgV,              SpyCV}
+% {spy,ID,priority,             Code,ArgV,{Pri,Min,Max},SpyCV}
+% {spy,ID,node,                 Code,ArgV, Node,        SpyCV}
+% {spy,ID,cluster,              Code,ArgV, Cls,         SpyCV}
+% {spy,ID,resident_to_cluster,  Code,ArgV, Cls,         SpyCV}
+% {spy,ID,emigrant_to_cluster,  Code,ArgV,              SpyCV}
+% {spy,ID,processor,            Code,ArgV, Pe,          SpyCV}
+% {spy,ID,resident_to_processor,Code,ArgV, Pe,          SpyCV}
+% {spy,ID,emigrant_to_processor,Code,ArgV,              SpyCV}
+% {spy,shoen,raise,  3,ID,ArgV,W,Lvl,SpyCV}
+% {spy,shoen,execute,7,ID,ArgV,      SpyCV}
+% {spy,shoen,profile,7,ID,ArgV,      SpyCV}
+%
+% {spy,create_shoen,          ID,ArgV}???
+% {spy,create_profiling_shoen,ID,ArgV}???
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- switch(machine).
+:- case(mpsi,pimm).
+
+apply_goals([{_,Code,ArgV}|T]) :-
+    apply(Code,ArgV),
+    apply_goals(T).
+apply_goals([{priority,Code,ArgV,{Pri,Min,Max}}|T]) :-
+    apply_with_pragma(Code,ArgV)@priority('*',Ratio),
+    calculate_priority(Pri,Min,Max,Ratio),
+    apply_goals(T).
+apply_goals([{node,Code,ArgV,Node}|T]) :-
+    apply_with_pragma(Code,ArgV)@node(Node),
+    apply_goals(T).
+apply_goals([{Name,ArgV}|T]) :-
+    listener_utility:make_up_goal(Name,ArgV,Builtin),
+    listener_cmd_builtin:do_command(Builtin),
+    apply_goals(T).
+
+apply_goals([{trace,ID,_,Code,ArgV,Pri,Min,Max}|T]) :- 
+    apply_tracing(Code,ArgV,ID),
+    current_priority(Pri,Min,Max),
+    apply_goals(T).
+apply_goals([{trace,ID,priority,Code,ArgV,{Pri,Min,Max}}|T]) :-
+    applytracing_with_pragma(Code,ArgV,ID)@priority('*',Ratio),
+    calculate_priority(Pri,Min,Max,Ratio),
+    apply_goals(T).
+apply_goals([{trace,ID,node,Code,ArgV,Pri,Min,Max,Pe}|T]) :-
+    tracing_with_priority(Code,ArgV,ID,Pri,Min,Max)@node(Pe),
+    apply_goals(T).
+
+apply_goals([{spy,{ID,Spy},priority,Code,ArgV,{Pri,Min,Max},SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@priority('*',Ratio),
+    calculate_priority(Pri,Min,Max,Ratio),
+    apply_goals(T).
+apply_goals([{spy,{ID,Spy},node,Code,ArgV,Pe,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@node(Pe),
+    apply_goals(T).
+apply_goals([{spy,{ID,Spy},_,Code,ArgV,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy}),
+    apply_goals(T).
+
+apply_goals([]) :- true | true.
+
+apply_goals([{Mode,shoen,raise,3,ID,
+  {pimos_tag#task,general_request,GR},W,Lvl,SpyCV}|T]) :- 
+    task_filter(GR,NGR,Mode,W,Lvl,ID,SpyCV),
+    shoen:raise(pimos_tag#task,general_request,NGR),
+    apply_goals(T).
+apply_goals([{Mode,shoen,raise,3,ID,
+  {pimos_tag#task,general_request(Node),GR},W,Lvl,SpyCV}|T]) :- 
+    task_filter(GR,NGR,Mode,W,Lvl,ID,SpyCV),
+    shoen:raise(pimos_tag#task,general_request(Node),NGR),
+    apply_goals(T).
+apply_goals([{Mode,shoen,raise,3,ID,
+  {pimos_tag#task,general_request(Node,User,Passwd),GR},W,Lvl,SpyCV}|T]) :- 
+    task_filter(GR,NGR,Mode,W,Lvl,ID,SpyCV),
+    shoen:raise(pimos_tag#task,general_request(Node,User,Passwd),NGR),
+    apply_goals(T).
+apply_goals([{Mode,shoen,raise,3,ID,
+  {pimos_tag#task,general_request(Fep,Node,User,Passwd),GR},W,Lvl,SpyCV}|T]) :- 
+    task_filter(GR,NGR,Mode,W,Lvl,ID,SpyCV),
+    shoen:raise(pimos_tag#task,general_request(Fep,Node,User,Passwd),NGR),
+    apply_goals(T).
+
+apply_goals([{trace,shoen,execute,7,ID,{Code,ArgV,Pmin,Pmax,Msk,Ctr,Rpt},Pri,Min,Max}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,tracing_with_priority,6,NewCode),
+    shoen:execute(NewCode,{Code,ArgV,ID,Pri,Min,Max},Pmin,Pmax,NewMsk,Ctr,Rpt),
+    apply_goals(T).
+apply_goals([{trace,shoen,profile,7,ID,{Code,ArgV,Pmin,Pmax,Msk,Ctr,Rpt},Pri,Min,Max}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,tracing_with_priority,6,NewCode),
+    shoen:profile(NewCode,{Code,ArgV,ID,Pri,Min,Max},Pmin,Pmax,NewMsk,Ctr,Rpt),
+    apply_goals(T).
+
+apply_goals([{spy,shoen,execute,7,{ID,Spy},{Code,ArgV,Pmin,Pmax,Msk,Ctr,Rpt},SpyCV}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,apply_spying,5,NewCode),
+    check_spy(Code,Spy,YorN),
+    shoen:execute(NewCode,{YorN,Code,ArgV,SpyCV,{ID,Spy}},Pmin,Pmax,NewMsk,Ctr,Rpt),
+    apply_goals(T).
+apply_goals([{spy,shoen,profile,7,{ID,Spy},{Code,ArgV,Pmin,Pmax,Msk,Ctr,Rpt},SpyCV}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,apply_spying,5,NewCode),
+    check_spy(Code,Spy,YorN),
+    shoen:profile(NewCode,{YorN,Code,ArgV,SpyCV,{ID,Spy}},Pmin,Pmax,NewMsk,Ctr,Rpt),
+    apply_goals(T).
+
+apply_goals([{spy,create_shoen,{ID,Spy},{Pmin,Pmax,Msk,Code,ArgV,Rpt,Sh},SpyCV}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,apply_spying,5,NewCode),
+    check_spy(Code,Spy,YorN),
+    create_shoen(Pmin,Pmax,NewMsk,NewCode,{YorN,Code,ArgV,SpyCV,{ID,Spy}},Rpt,Sh),
+    apply_goals(T).
+apply_goals([{spy,create_profiling_shoen,{ID,Spy},{Pmin,Pmax,Msk,Code,ArgV,Rpt,Sh},SpyCV}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,apply_spying,5,NewCode),
+    check_spy(Code,Spy,YorN),
+    create_profiling_shoen(Pmin,Pmax,NewMsk,NewCode,{YorN,Code,ArgV,SpyCV,{ID,Spy}},Rpt,Sh),
+    apply_goals(T).
+
+otherwise.
+apply_goals([{_,shoen,raise,3,_,{A,B,C},_,_,_}|T]) :-
+    shoen:raise(A,B,C),
+    apply_goals(T).
+otherwise.
+apply_goals([_|T]) :- apply_goals(T).       % ???
+
+
+:- default.
+
+apply_goals([{external,Code,ArgV}|T]) :-
+    apply(Code,ArgV),
+    apply_goals(T).
+apply_goals([{internal,Code,ArgV}|T]) :-
+    apply(Code,ArgV),
+    apply_goals(T).
+
+apply_goals([{emigrant_to_cluster,Code,ArgV}|T]) :-
+    apply_with_pragma(Code,ArgV)@emigrant_to_cluster,
+    apply_goals(T).
+apply_goals([{emigrant_to_processor,Code,ArgV}|T]) :-
+    apply_with_pragma(Code,ArgV)@emigrant_to_processor,
+    apply_goals(T).
+
+apply_goals([{node,Code,ArgV,Node}|T]) :-       % For toplever input.
+    apply_with_pragma(Code,ArgV)@node(Node),
+    apply_goals(T).
+apply_goals([{priority,Code,ArgV,{Pri,Min,Max}}|T]) :-
+    apply_with_pragma(Code,ArgV)@priority('*',Ratio),
+    calculate_priority(Pri,Min,Max,Ratio),
+    apply_goals(T).
+apply_goals([{Name,ArgV}|T]) :-
+    listener_utility:make_up_goal(Name,ArgV,Builtin),
+    listener_cmd_builtin:do_command(Builtin),
+    apply_goals(T).
+
+:- if_equal(apply_tracing,yes).
+apply_goals([{trace,ID,external,Code,ArgV,Pri,Min,Max}|T]) :- 
+    apply_tracing(Code,ArgV,ID),
+    current_priority(Pri,Min,Max),
+    apply_goals(T).
+apply_goals([{trace,ID,internal,Code,ArgV,Pri,Min,Max}|T]) :- 
+    apply_tracing(Code,ArgV,ID),
+    current_priority(Pri,Min,Max),
+    apply_goals(T).
+:- else.
+apply_goals([{trace,_,external,Code,ArgV,Pri,Min,Max}|T]) :- 
+    apply(Code,ArgV),
+    current_priority(Pri,Min,Max),
+    apply_goals(T).
+apply_goals([{trace,_,internal,Code,ArgV,Pri,Min,Max}|T]) :- 
+    apply(Code,ArgV),
+    current_priority(Pri,Min,Max),
+    apply_goals(T).
+:- end_if.
+
+apply_goals([{trace,ID,node,Code,ArgV,Pri,Min,Max,Node}|T]) :-  % For toplever input.
+    tracing_with_priority(Code,ArgV,ID,Pri,Min,Max)@node(Node),
+    apply_goals(T).
+apply_goals([{trace,ID,processor,Code,ArgV,Pri,Min,Max,Pe}|T]) :-
+    tracing_with_priority(Code,ArgV,ID,Pri,Min,Max)@processor(Pe),
+    apply_goals(T).
+apply_goals([{trace,ID,resident_to_processor,Code,ArgV,Pri,Min,Max,Pe}|T]) :-
+    tracing_with_priority(Code,ArgV,ID,Pri,Min,Max)@resident_to_processor(Pe),
+    apply_goals(T).
+apply_goals([{trace,ID,emigrant_to_processor,Code,ArgV,Pri,Min,Max}|T]) :-
+    tracing_with_priority(Code,ArgV,ID,Pri,Min,Max)@emigrant_to_processor,
+    apply_goals(T).
+apply_goals([{trace,ID,cluster,Code,ArgV,Pri,Min,Max,Cls}|T]) :-
+    tracing_with_priority(Code,ArgV,ID,Pri,Min,Max)@cluster(Cls),
+    apply_goals(T).
+apply_goals([{trace,ID,resident_to_cluster,Code,ArgV,Pri,Min,Max,Cls}|T]) :-
+    tracing_with_priority(Code,ArgV,ID,Pri,Min,Max)@resident_to_cluster(Cls),
+    apply_goals(T).
+apply_goals([{trace,ID,emigrant_to_cluster,Code,ArgV,Pri,Min,Max}|T]) :-
+    tracing_with_priority(Code,ArgV,ID,Pri,Min,Max)@emigrant_to_cluster,
+    apply_goals(T).
+
+apply_goals([{trace,ID,priority,Code,ArgV,{Pri,Min,Max}}|T]) :-
+    applytracing_with_pragma(Code,ArgV,ID)@priority('*',Ratio),
+    calculate_priority(Pri,Min,Max,Ratio),
+    apply_goals(T).
+
+apply_goals([{spy,{ID,Spy},priority,Code,ArgV,{Pri,Min,Max},SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@priority('*',Ratio),
+    calculate_priority(Pri,Min,Max,Ratio),
+    apply_goals(T).
+
+apply_goals([{spy,{ID,Spy},external,Code,ArgV,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy}),
+    apply_goals(T).
+apply_goals([{spy,{ID,Spy},internal,Code,ArgV,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy}),
+    apply_goals(T).
+
+apply_goals([{spy,{ID,Spy},node,Code,ArgV,Node,SpyCV}|T]) :- true | % For toplever input.
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@node(Node),
+    apply_goals(T).
+apply_goals([{spy,{ID,Spy},processor,Code,ArgV,Pe,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@processor(Pe),
+    apply_goals(T).
+apply_goals([{spy,{ID,Spy},resident_to_processor,Code,ArgV,Pe,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@resident_to_processor(Pe),
+    apply_goals(T).
+apply_goals([{spy,{ID,Spy},emigrant_to_processor,Code,ArgV,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@emigrant_to_processor,
+    apply_goals(T).
+apply_goals([{spy,{ID,Spy},cluster,Code,ArgV,Cls,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@cluster(Cls),
+    apply_goals(T).
+apply_goals([{spy,{ID,Spy},resident_to_cluster,Code,ArgV,Cls,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@resident_to_cluster(Cls),
+    apply_goals(T).
+apply_goals([{spy,{ID,Spy},emigrant_to_cluster,Code,ArgV,SpyCV}|T]) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy})@emigrant_to_cluster,
+    apply_goals(T).
+
+apply_goals([]) :- true | true.
+
+apply_goals([{Mode,shoen,raise,3,ID,
+  {pimos_tag#task,general_request,GR},W,Lvl,SpyCV}|T]) :- 
+    task_filter(GR,NGR,Mode,W,Lvl,ID,SpyCV),
+    shoen:raise(pimos_tag#task,general_request,NGR),
+    apply_goals(T).
+apply_goals([{Mode,shoen,raise,3,ID,
+  {pimos_tag#task,general_request(Node),GR},W,Lvl,SpyCV}|T]) :- 
+    task_filter(GR,NGR,Mode,W,Lvl,ID,SpyCV),
+    shoen:raise(pimos_tag#task,general_request(Node),NGR),
+    apply_goals(T).
+apply_goals([{Mode,shoen,raise,3,ID,
+  {pimos_tag#task,general_request(Node,User,Passwd),GR},W,Lvl,SpyCV}|T]) :- 
+    task_filter(GR,NGR,Mode,W,Lvl,ID,SpyCV),
+    shoen:raise(pimos_tag#task,general_request(Node,User,Passwd),NGR),
+    apply_goals(T).
+apply_goals([{Mode,shoen,raise,3,ID,
+  {pimos_tag#task,general_request(Fep,Node,User,Passwd),GR},W,Lvl,SpyCV}|T]) :- 
+    task_filter(GR,NGR,Mode,W,Lvl,ID,SpyCV),
+    shoen:raise(pimos_tag#task,general_request(Fep,Node,User,Passwd),NGR),
+    apply_goals(T).
+
+apply_goals([{trace,shoen,execute,7,ID,{Code,ArgV,Pmin,Pmax,Msk,Ctr,Rpt},Pri,Min,Max}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,tracing_with_priority,6,NewCode),
+    shoen:execute(NewCode,{Code,ArgV,ID,Pri,Min,Max},Pmin,Pmax,NewMsk,Ctr,Rpt),
+    apply_goals(T).
+apply_goals([{trace,shoen,profile,7,ID,{Code,ArgV,Pmin,Pmax,Msk,Ctr,Rpt},Pri,Min,Max}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,tracing_with_priority,6,NewCode),
+    shoen:profile(NewCode,{Code,ArgV,ID,Pri,Min,Max},Pmin,Pmax,NewMsk,Ctr,Rpt),
+    apply_goals(T).
+
+apply_goals([{spy,shoen,execute,7,{ID,Spy},{Code,ArgV,Pmin,Pmax,Msk,Ctr,Rpt},SpyCV}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,apply_spying,5,NewCode),
+    check_spy(Code,Spy,YorN),
+    shoen:execute(NewCode,{YorN,Code,ArgV,SpyCV,{ID,Spy}},Pmin,Pmax,NewMsk,Ctr,Rpt),
+    apply_goals(T).
+apply_goals([{spy,shoen,profile,7,{ID,Spy},{Code,ArgV,Pmin,Pmax,Msk,Ctr,Rpt},SpyCV}|T]) :- 
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,apply_spying,5,NewCode),
+    check_spy(Code,Spy,YorN),
+    shoen:profile(NewCode,{YorN,Code,ArgV,SpyCV,{ID,Spy}},Pmin,Pmax,NewMsk,Ctr,Rpt),
+    apply_goals(T).
+otherwise.
+apply_goals([{_,shoen,raise,3,_,{A,B,C},_,_,_}|T]) :-
+    shoen:raise(A,B,C),
+    apply_goals(T).
+otherwise.
+apply_goals([_|T]) :- apply_goals(T).       % ???
+
+:- end_switch.
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Format of Traced-goals & Ancestor
+%  Traced
+% {W,Lvl,apply,{Code,ArgV},Pri,Min,Max}
+% {W,Lvl,Code,       ArgV, Pri,Min,Max}
+%  Ancestor
+% {spyf,W,Lvl,Code,ArgV}
+% {spyr,W,Lvl,Code,ArgV}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% apply 5/25
+put_goals([{notrace,_,_,_,apply,ArgV}|T],GM,GM1,GOAL,SpyCV) :-
+    GOAL=[{apply,ArgV}|GOAL1],
+    put_goals(T,GM,GM1,GOAL1,SpyCV).
+% external/internal/emigrant_to_cluster/emigrant_to_processor
+put_goals([{notrace,_,_,_,Type,Code,ArgV}|T],GM,GM1,GOAL,SpyCV) :- % external/internal
+    GOAL=[{Type,Code,ArgV}|GOAL1],
+    put_goals(T,GM,GM1,GOAL1,SpyCV).
+% priority/node/
+% prosessor/cluster/
+% resident_to_cluster/emigrant_to_cluster/
+% resident_to_processor/emigrant_to_processor
+put_goals([{notrace,_,_,_,Type,Code,ArgV,Pragma}|T],GM,GM1,GOAL,SpyCV) :- % with pragma
+    GOAL=[{Type,Code,ArgV,Pragma}|GOAL1],
+    put_goals(T,GM,GM1,GOAL1,SpyCV).
+
+% apply 6/16
+put_goals([{trace,ID,W,Lvl,apply,{Code,ArgV}}|T],GM,GM2,GOAL,SpyCV) :- 
+    GM=[put_goal(ID,{W,Lvl,apply,{Code,ArgV},Pri,Min,Max},St)|GM1],
+    put_goals(T,GM1,GM2,GOAL,St,{trace,ID,apply,Code,ArgV,Pri,Min,Max},SpyCV).
+put_goals([{trace,ID,W,Lvl,priority,Code,ArgV,{Pri,Min,Max}}|T],GM,GM2,GOAL,SpyCV) :- 
+    GM=[put_goal(ID,{W,Lvl,Code,ArgV,Pri,Min,Max},St)|GM1],
+    put_goals(T,GM1,GM2,GOAL,St,{trace,ID,priority,Code,ArgV,{Pri,Min,Max}},SpyCV).
+
+% apply 5/15
+put_goals([{spyf,ID,W,Lvl,apply,{Code,ArgV}}|T],GM,GM2,GOAL,{Spy,CV}) :-
+    GM=[put_ancestor(ID,spyf,W,Lvl,Code,ArgV,St)|GM1],
+    put_goals(T,GM1,GM2,GOAL,St,{spy,{ID,Spy},apply,Code,ArgV,CV},{Spy,CV}).
+put_goals([{spyf,ID,W,Lvl,priority,Code,ArgV,{Pri,Min,Max}}|T],GM,GM2,GOAL,{Spy,CV}) :- 
+    GM=[put_ancestor(ID,spyf,W,Lvl,Code,ArgV,St)|GM1],
+    put_goals(T,GM1,GM2,GOAL,St,{spy,{ID,Spy},priority,Code,ArgV,{Pri,Min,Max},CV},{Spy,CV}).
+
+% apply 5/15
+put_goals([{spyr,ID,W,Lvl,apply,{Code,ArgV}}|T],GM,GM2,GOAL,{Spy,CV}) :- % external/internal
+    GM=[put_ancestor(ID,spyr,W,Lvl,Code,ArgV,St)|GM1],
+    put_goals(T,GM1,GM2,GOAL,St,{spy,{ID,Spy},apply,Code,ArgV,CV},{Spy,CV}).
+put_goals([{spyr,ID,W,Lvl,priority,Code,ArgV,{Pri,Min,Max}}|T],GM,GM2,GOAL,{Spy,CV}) :- 
+    GM=[put_ancestor(ID,spyr,W,Lvl,Code,ArgV,St)|GM1],
+    put_goals(T,GM1,GM2,GOAL,St,{spy,{ID,Spy},priority,Code,ArgV,{Pri,Min,Max},CV},{Spy,CV}).
+
+otherwise.
+put_goals([{trace,ID,W,Lvl,Type,Code,ArgV,Pe}|T],GM,GM2,GOAL,SpyCV) :- 
+    GM=[put_goal(ID,{W,Lvl,Code,ArgV,Pri,Min,Max},St)|GM1],
+    put_goals(T,GM1,GM2,GOAL,St,{trace,ID,Type,Code,ArgV,Pri,Min,Max,Pe},SpyCV).
+put_goals([{spyf,ID,W,Lvl,Type,Code,ArgV,Pe}|T],GM,GM2,GOAL,{Spy,CV}) :- 
+    GM=[put_ancestor(ID,spyf,W,Lvl,Code,ArgV,St)|GM1],
+    put_goals(T,GM1,GM2,GOAL,St,{spy,{ID,Spy},Type,Code,ArgV,Pe,CV},{Spy,CV}).
+put_goals([{spyr,ID,W,Lvl,Type,Code,ArgV,Pe}|T],GM,GM2,GOAL,{Spy,CV}) :- 
+    GM=[put_ancestor(ID,spyr,W,Lvl,Code,ArgV,St)|GM1],
+    put_goals(T,GM1,GM2,GOAL,St,{spy,{ID,Spy},Type,Code,ArgV,Pe,CV},{Spy,CV}).
+
+otherwise.
+% For TASK TRACE 5/23
+put_goals([{Mode,ID,W,Lvl,Type,Code,ArgV}|T],GM,GM2,GOAL,SpyCV) :- % external/internal
+    code_to_predicate(Code,Mdl,P,A,_),
+    module:get_module_name(Mdl,Pac,M),
+    protection(Pac,M,P,A,Mode,ID,W,Lvl,Type,Code,ArgV,GM,GM1,GOAL,GOAL1,SpyCV),
+    put_goals(T,GM1,GM2,GOAL1,SpyCV).
+
+otherwise.
+put_goals([Builtin|T],GM,GM1,GOAL,SpyCV) :-    % builtin
+    GOAL=[Builtin|GOAL1],
+    put_goals(T,GM,GM1,GOAL1,SpyCV).
+put_goals([],GM,GM1,GOAL,_) :- GM1=GM, GOAL=[].
+
+
+put_goals(T,GM,GM1,GOAL,St,G,SpyCV) :- wait(St) |
+    GOAL=[G|GOAL1],
+    put_goals(T,GM,GM1,GOAL1,SpyCV).
+
+
+:- if_equal(apply_tracing,yes).
+tracing_with_priority(Code,ArgV,ID,Pri,Min,Max) :-
+    apply_tracing(Code,ArgV,ID),
+    current_priority(Pri,Min,Max).
+:- else.
+tracing_with_priority(Code,ArgV,_,_,_,_) :- true| apply(Code,ArgV).
+:- end_if.
+
+
+apply_with_pragma(Code,ArgV) :- apply(Code,ArgV).
+
+:- if_equal(apply_tracing,yes).
+applytracing_with_pragma(Code,ArgV,ID) :- true| apply_tracing(Code,ArgV,ID).
+:- else.
+applytracing_with_pragma(Code,ArgV,_) :- true| apply(Code,ArgV).
+:- end_if.
+
+:- if_equal(apply_tracing,yes).
+apply_spying(yes,Code,ArgV,_,{ID,_}) :- true |
+    apply_tracing(Code,ArgV,{ID,Code,ArgV,Pri,Min,Max}),
+    current_priority(Pri,Min,Max).
+:- else.
+apply_spying(yes,Code,ArgV,_,_) :- true| apply(Code,ArgV).
+:- end_if.
+
+:- if_equal(apply_spying,yes).
+apply_spying(no,Code,ArgV,SpyCV,ID) :- true | apply_spying(Code,ArgV,SpyCV,ID).
+:- else.
+apply_spying(no,Code,ArgV,_,_) :- true| apply(Code,ArgV).
+:- end_if.
+
+calculate_priority(Max,_  ,Max,P) :- true   | P := 4096.
+otherwise.
+calculate_priority(Pri,Min,Max,P) :- Max<0  |
+    Pri1 := Pri >> 1,
+    Min1 := Min >> 1,
+    Max1 := Max >> 1,
+    U := (Max1-Min1) >> 12,
+    P := (Pri1-Min1)/U.
+calculate_priority(Pri,Min,Max,P) :- Max>=0 |
+    U := (Max-Min) >> 12,
+    P := (Pri-Min)/U.
+
+
+protection(pimos,shoen,raise,3,trace,ID,W,Lvl,_,_,ArgV,GM,GM1,GOAL,GOAL1,_) :-
+    GM1=GM, GOAL=[{trace,shoen,raise,3,ID,ArgV,W,Lvl,{}}|GOAL1].
+protection(pimos,shoen,execute,7,trace,ID,W,Lvl,_,Code,ArgV,GM,GM1,GOAL,GOAL1,_) :-
+    listener_utility:prepend(Lvl,[ID],Lvl1),
+    GM=[put_goal(ID,{W,Lvl1,Code,ArgV,Pri,Min,Max},St)|GM1],
+    send(St,{trace,shoen,execute,7,ID,ArgV,Pri,Min,Max},GOAL,GOAL1).
+protection(pimos,shoen,profile,7,trace,ID,W,Lvl,_,Code,ArgV,GM,GM1,GOAL,GOAL1,_) :-
+    listener_utility:prepend(Lvl,[ID],Lvl1),
+    GM=[put_goal(ID,{W,Lvl1,Code,ArgV,Pri,Min,Max},St)|GM1],
+    send(St,{trace,shoen,profile,7,ID,ArgV,Pri,Min,Max},GOAL,GOAL1).
+
+protection(pimos,shoen,raise,3,spyf,ID,W,Lvl,_,Code,ArgV,GM,GM1,GOAL,GOAL1,{Spy,CV}) :-
+    listener_utility:prepend(Lvl,[ID],Lvl1),
+    GM=[put_ancestor(ID,spyf,W,Lvl1,Code,ArgV,St)|GM1],
+    send(St,{spy,shoen,raise,3,{ID,Spy},ArgV,_,_,CV},GOAL,GOAL1).
+protection(pimos,shoen,execute,7,spyf,ID,W,Lvl,_,Code,ArgV,GM,GM1,GOAL,GOAL1,{Spy,CV}) :-
+    listener_utility:prepend(Lvl,[ID],Lvl1),
+    GM=[put_ancestor(ID,spyf,W,Lvl1,Code,ArgV,St)|GM1],
+    send(St,{spy,shoen,execute,7,{ID,Spy},ArgV,CV},GOAL,GOAL1).
+protection(pimos,shoen,profile,7,spyf,ID,W,Lvl,_,Code,ArgV,GM,GM1,GOAL,GOAL1,{Spy,CV}) :-
+    listener_utility:prepend(Lvl,[ID],Lvl1),
+    GM=[put_ancestor(ID,spyf,W,Lvl1,Code,ArgV,St)|GM1],
+    send(St,{spy,shoen,profile,7,{ID,Spy},ArgV,CV},GOAL,GOAL1).
+
+protection(pimos,shoen,raise,3,spyr,ID,W,Lvl,_,Code,ArgV,GM,GM1,GOAL,GOAL1,{Spy,CV}) :-
+    listener_utility:prepend(Lvl,[ID],Lvl1),
+    GM=[put_ancestor(ID,spyr,W,Lvl1,Code,ArgV,St)|GM1],
+    send(St,{spy,shoen,raise,3,{ID,Spy},ArgV,_,_,CV},GOAL,GOAL1).
+protection(pimos,shoen,execute,7,spyr,ID,W,Lvl,_,Code,ArgV,GM,GM1,GOAL,GOAL1,{Spy,CV}) :-
+    listener_utility:prepend(Lvl,[ID],Lvl1),
+    GM=[put_ancestor(ID,spyr,W,Lvl1,Code,ArgV,St)|GM1],
+    send(St,{spy,shoen,execute,7,{ID,Spy},ArgV,CV},GOAL,GOAL1).
+protection(pimos,shoen,profile,7,spyr,ID,W,Lvl,_,Code,ArgV,GM,GM1,GOAL,GOAL1,{Spy,CV}) :-
+    listener_utility:prepend(Lvl,[ID],Lvl1),
+    GM=[put_ancestor(ID,spyr,W,Lvl1,Code,ArgV,St)|GM1],
+    send(St,{spy,shoen,profile,7,{ID,Spy},ArgV,CV},GOAL,GOAL1).
+
+otherwise.
+protection(_,_,_,_,trace,ID,W,Lvl,Type,Code,ArgV,GM,GM1,GOAL,GOAL1,_) :-
+    GM=[put_goal(ID,{W,Lvl,Code,ArgV,Pri,Min,Max},St)|GM1],
+    send(St,{trace,ID,Type,Code,ArgV,Pri,Min,Max},GOAL,GOAL1).
+protection(_,_,_,_,spyf,ID,W,Lvl,Type,Code,ArgV,GM,GM1,GOAL,GOAL1,{Spy,CV}) :-
+    GM=[put_ancestor(ID,spyf,W,Lvl,Code,ArgV,St)|GM1],
+    send(St,{spy,{ID,Spy},Type,Code,ArgV,CV},GOAL,GOAL1).
+protection(_,_,_,_,spyr,ID,W,Lvl,Type,Code,ArgV,GM,GM1,GOAL,GOAL1,{Spy,CV}) :-
+    GM=[put_ancestor(ID,spyr,W,Lvl,Code,ArgV,St)|GM1],
+    send(St,{spy,{ID,Spy},Type,Code,ArgV,CV},GOAL,GOAL1).
+
+send(St,G,GOAL,GOAL1) :- wait(St) | GOAL=[G|GOAL1].
+
+
+task_filter([execute(Code,ArgV,Name,Pmin,Pmax,Msk,Status)|GR],NGR,Mode,W,Lvl,ID,SpyCV) :- 
+  code(Code,Arity,_,_),
+  vector(ArgV,Arity),
+  string(Name,_,_),
+  integer(Pmin), 
+  integer(Pmax),
+  integer(Msk) |
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,execute,7,NewCode),
+    NGR=[execute(NewCode,{Mode,Code,ArgV,W,Lvl,ID,SpyCV},Name,Pmin,Pmax,NewMsk,Status)|NGR1],
+    task_filter(GR,NGR1,Mode,W,Lvl,ID,SpyCV).
+task_filter([execute(Code,ArgV,Name,Pmin,Pmax,Msk,Rsc,Status)|GR],NGR,Mode,W,Lvl,ID,SpyCV) :-
+  code(Code,Arity,_,_),
+  vector(ArgV,Arity),
+  string(Name,_,_),
+  integer(Pmin), 
+  integer(Pmax),
+  integer(Msk) |
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,execute,7,NewCode),
+    NGR=[execute(NewCode,{Mode,Code,ArgV,W,Lvl,ID,SpyCV},Name,Pmin,Pmax,NewMsk,Rsc,Status)|NGR1],
+    task_filter(GR,NGR1,Mode,W,Lvl,ID,SpyCV).
+task_filter([profile(Code,ArgV,Name,Pmin,Pmax,Msk,Status)|GR],NGR,Mode,W,Lvl,ID,SpyCV) :- 
+  code(Code,Arity,_,_),
+  vector(ArgV,Arity),
+  string(Name,_,_),
+  integer(Pmin), 
+  integer(Pmax),
+  integer(Msk) |
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,execute,7,NewCode),
+    NGR=[profile(NewCode,{Mode,Code,ArgV,W,Lvl,ID,SpyCV},Name,Pmin,Pmax,NewMsk,Status)|NGR1],
+    task_filter(GR,NGR1,Mode,W,Lvl,ID,SpyCV).
+task_filter([profile(Code,ArgV,Name,Pmin,Pmax,Msk,Rsc,Status)|GR],NGR,Mode,W,Lvl,ID,SpyCV) :-
+  code(Code,Arity,_,_),
+  vector(ArgV,Arity),
+  string(Name,_,_),
+  integer(Pmin), 
+  integer(Pmax),
+  integer(Msk) |
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    predicate_to_code(module#listener_trace_driver,execute,7,NewCode),
+    NGR=[profile(NewCode,{Mode,Code,ArgV,W,Lvl,ID,SpyCV},Name,Pmin,Pmax,NewMsk,Rsc,Status)|NGR1],
+    task_filter(GR,NGR1,Mode,W,Lvl,ID,SpyCV).
+
+task_filter([execute(Code,ArgV,Param,Status)|GR],NGR,Mode,W,Lvl,ID,SpyCV) :- 
+  code(Code,Arity,_,_),
+  vector(ArgV,Arity) |
+    convert_mask(Param,nonexistent,NewParam),
+    predicate_to_code(module#listener_trace_driver,execute,7,NewCode),
+    NGR=[execute(NewCode,{Mode,Code,ArgV,W,Lvl,ID,SpyCV},NewParam,Status)|NGR1],
+    task_filter(GR,NGR1,Mode,W,Lvl,ID,SpyCV).
+task_filter([profile(Code,ArgV,Param,Status)|GR],NGR,Mode,W,Lvl,ID,SpyCV) :- 
+  code(Code,Arity,_,_),
+  vector(ArgV,Arity) |
+    convert_mask(Param,nonexistent,NewParam),
+    predicate_to_code(module#listener_trace_driver,execute,7,NewCode),
+    NGR=[profile(NewCode,{Mode,Code,ArgV,W,Lvl,ID,SpyCV},NewParam,Status)|NGR1],
+    task_filter(GR,NGR1,Mode,W,Lvl,ID,SpyCV).
+
+task_filter([],NGR,_,_,_,_,_) :- NGR=[].
+otherwise.
+task_filter([Msg|GR],NGR,Mode,W,Lvl,ID,SpyCV) :- 
+    NGR=[Msg|NGR1], task_filter(GR,NGR1,Mode,W,Lvl,ID,SpyCV).
+
+
+convert_mask([tag(Msk)|Prm],_,NewPrm) :- integer(Msk) |
+    NewMsk := Msk /\ ((-1) xor exception_tag#trace),
+    NewPrm=[tag(NewMsk)|NewPrm1],
+    convert_mask(Prm,existent,NewPrm1).
+convert_mask([],nonexistent,NewPrm) :- 
+    NewPrm=[tag(~((-1) xor exception_tag#trace))].
+convert_mask([],   existent,NewPrm) :- NewPrm=[].
+otherwise.
+convert_mask([Msg|Prm],Flag,NewPrm) :-
+    NewPrm=[Msg|NewPrm1],
+    convert_mask(Prm,Flag,NewPrm1).
+
+
+:- if_equal(apply_tracing,yes).
+execute(trace,Code,ArgV,W,Lvl,ID,_) :- true|
+    listener_utility:prepend(Lvl,[ID],Lvl1),
+    apply_tracing(Code,ArgV,{ID,{task_trace,W,Lvl1,Code,ArgV,Pri,Min,Max}}),
+    current_priority(Pri,Min,Max).
+:- else.
+execute(trace,Code,ArgV,_,_,_,_) :- true| apply(Code,ArgV).
+:- end_if.
+
+execute(spy,Code,ArgV,_,_,{ID,Spy},SpyCV) :- true |
+    check_spy(Code,Spy,YorN),
+    apply_spying(YorN,Code,ArgV,SpyCV,{ID,Spy}).
+
+
+% RAISE. waiting for instanciation 
+%(shoen:raise(Tag,Info,Data)  Tag <- pimos_tag#task & Info <- general_request)
+% To realize the tracing in the task, 
+% we should check whether it is "raise(pimos_tag#task,general_request,GR)" or not 
+% when pimos::shoen:raise/3 is detected by spy.
+general_request({pimos_tag#task,general_request,GR},ID,W,Lvl,M,P,A) :- true |
+    genreq_check(GR,NGR,Status),
+    general_request1(Status,general_request,NGR,ID,W,Lvl,M,P,A).
+general_request({pimos_tag#task,general_request(Node),GR},ID,W,Lvl,M,P,A) :- true |
+    genreq_check(GR,NGR,Status),
+    general_request1(Status,general_request(Node),NGR,ID,W,Lvl,M,P,A).
+general_request({pimos_tag#task,general_request(Node,User,Psswd),GR},ID,W,Lvl,M,P,A) :- true |
+    genreq_check(GR,NGR,Status),
+    general_request1(Status,general_request(Node,User,Psswd),NGR,ID,W,Lvl,M,P,A).
+general_request({pimos_tag#task,general_request(Fep,Node,User,Psswd),GR},ID,W,Lvl,M,P,A) :- true |
+    genreq_check(GR,NGR,Status),
+    general_request1(Status,general_request(Fep,Node,User,Psswd),NGR,ID,W,Lvl,M,P,A).
+otherwise.
+general_request({A,B,C},_,_,_,_,_,_) :- true | shoen:raise(A,B,C).
+
+
+:- if_equal(apply_tracing,yes).
+general_request1(task,  GrType,GR,ID,W,Lvl,M,P,A) :- true |
+    predicate_to_code(module#listener_trace_driver,general_request,0,Code),
+    apply_tracing(Code,{},{ID,{GR,W,Lvl,M,P,A,Pri,Min,Max,GrType}}),
+    current_priority(Pri,Min,Max).
+:- else.
+general_request1(task,GrType,GR,_,_,_,_,_,_) :- true |
+    shoen:raise(pimos_tag#task,GrType,GR).
+:- end_if.
+
+general_request1(device,GrType,GR,_ID,_W,_Lvl,_M,_P,_A) :- true |
+    shoen:raise(pimos_tag#task,GrType,GR).
+
+genreq_check([Msg|GR],NGR,Status) :- 
+  vector(Msg,Size),
+  Size=\=5, Size=\=8, Size=\=9 |
+    NGR=[Msg|NGR1],
+    genreq_check(GR,NGR1,Status).
+genreq_check([Msg|GR],NGR,Status) :-
+  vector(Msg,Size),
+  ( Size=:=5; Size=:=8; Size=:=9 ),
+  vector_element(Msg,0,F),
+  F\=execute, F\=profile |
+    NGR=[Msg|NGR1],
+    genreq_check(GR,NGR1,Status).
+%genreq_check([Msg|GR],NGR,Status) :- vector(Msg,5), vector_element(Msg,0,F), F\=execute, F\=profile |
+%    NGR=[Msg|NGR1],
+%    genreq_check(GR,NGR1,Status).
+%genreq_check([Msg|GR],NGR,Status) :- vector(Msg,8), vector_element(Msg,0,F), F\=execute, F\=profile |
+%    NGR=[Msg|NGR1],
+%    genreq_check(GR,NGR1,Status).
+%genreq_check([Msg|GR],NGR,Status) :- vector(Msg,9), vector_element(Msg,0,F), F\=execute, F\=profile |
+%    NGR=[Msg|NGR1],
+%    genreq_check(GR,NGR1,Status).
+genreq_check([],NGR,Status) :- true | NGR=[], Status=device.
+
+alternatively.
+genreq_check(GR,NGR,Status) :- true | NGR=GR, Status=task.
+
+
+% This predicate is used to report the goal-informations in the task.
+% The informations are reported by TRACE-ID.
+general_request :- true | true.
+
+
+check_spy(Code,Spy,YorN) :- true |
+    code_to_predicate(Code,Module,Pname,Arity,_),
+    module:get_module_name(Module,Pac,Mname),
+    listener_spy_manager:spied_check(Spy,Pac,Mname,Pname,Arity,YorN).

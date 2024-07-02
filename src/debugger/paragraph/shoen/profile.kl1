@@ -1,0 +1,301 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module profile.
+:- public count/7, count_msg/7,  output/1, count_node/7.
+
+ %% count %%
+ count(GoalList,At,Hid,Int,Par,Dp,Lis):- wait(GoalList) |
+        profile_goal:count(GoalList,At,Hid,Int,Par,Dp,Lis).
+
+ %% count_msg %%
+ count_msg(GoalList,At,Hid,Int,Par,Dp,Lis):- wait(GoalList) |
+        profile_msg:count(GoalList,At,Hid,Int,Par,Dp,Lis).
+
+ %% count_node %%
+ count_node(GoalList,At,Hid,Int,Par,Dp,Lis):- wait(GoalList) |
+        profile_pe:count(GoalList,At,Hid,Int,Par,Dp,Lis).
+
+ %% output %%
+ output(Dp):- true |
+        Dp=[do([get_max_if_any(Info)|Rest])|Dp1],
+        out0(Info,Rest,Dp1).
+
+ out0({Hid,Goal},Rest,Dp):- wait(Hid) |
+        out(Hid,Goal,Rest,Dp).
+ out0({},Rest,Dp):- true |
+        profiler_device:go(Dev),
+        shoen:raise(pimos_tag#task,general_request,[getenv(task:home,normal(Dir)),getenv(paragraph:display,ColorFlag)]),
+        profiler_data_mgr:go(Prof,Dev),
+        color_flag(ColorFlag,Color),
+        Prof=[color(Color),
+              home(Dir),
+              add_history_items([]),
+              set_what_items([],goal,0,0,nil),
+              goal(Int,_,[],Flag,_,_)|Prof1],
+        Rest=[],
+        wait_flag(Flag,nil,_,Dp,Prof1).
+   
+ out(Hid,{What,PeNum,Base,{ViewMode,Int,Max,Ph}},Rest,Dp):- true |
+        profiler_device:go(Dev),
+        shoen:raise(pimos_tag#task,general_request,[getenv(task:home,normal(Dir)),getenv(paragraph:display,ColorFlag)]),
+        profiler_data_mgr:go(Prof,Dev),
+        color_flag(ColorFlag,Color),
+        Prof=[color(Color),
+              home(Dir),
+              add_history_items(Index),
+              set_history_item(Hid),
+              set_what_items(What,ViewMode,PeNum,Max,nil),
+              {ViewMode,Int,Max,Ph,Flag,PeNum,Base}|Prof1],
+        make_index({Hid,{What,PeNum,Base,{ViewMode,Int,Max,nil,Ph}}},Rest,Add,Add,Index),
+        wait_flag(Flag,Hid,ViewMode,Dp,Prof1).
+ out(Hid,{What,PeNum,Base,{ViewMode,Int,Max,ExecTime,Ph}},Rest,Dp):- true |
+        profiler_device:go(Dev),
+        shoen:raise(pimos_tag#task,general_request,[getenv(task:home,normal(Dir)),getenv(paragraph:display,ColorFlag)]),
+        profiler_data_mgr:go(Prof,Dev),
+        color_flag(ColorFlag,Color),
+        Prof=[color(Color),
+              home(Dir),
+              add_history_items(Index),
+              set_history_item(Hid),
+              set_what_items(What,ViewMode,PeNum,Max,ExecTime),
+              {ViewMode,Int,Max,Ph,Flag,PeNum,Base}|Prof1],
+        make_index({Hid,{What,PeNum,Base,{ViewMode,Int,Max,ExecTime,Ph}}},Rest,Add,Add,Index),
+        wait_flag(Flag,Hid,ViewMode,Dp,Prof1).
+
+ wait_flag(Flag,Hid,ViewMode,Dp,Prof):- wait(Flag) |
+        Prof=[read_code(Code)|Prof1],
+        panel(Code,Hid,ViewMode,Dp,Prof1).
+
+ color_flag(normal(C),Color):- true |
+        Color = C.
+ color_flag(abnormal,Color):- true |
+        Color = color.
+
+        
+ panel(code(exit,_),Hid,_,Dp,Prof):- true | Dp=[],Prof=[].
+
+ panel(code(do_it,what(predicate,all)),Hid,ViewMode,Dp,Prof):- integer(Hid)|
+        Prof=[{ViewMode,all,Flag}|Prof1],        
+        wait_flag(Flag,Hid,ViewMode,Dp,Prof1).
+
+ panel(code(do_it,what(predicate,GList)),Hid,_,Dp,Prof):- 
+        integer(Hid),list(GList)|
+        Dp=[do([empty(Hid,Ans)|Rest])|Dp1],
+        get_and_put(Ans,Hid,GList,ViewMode,Rest,Prof,Prof1,Flag),
+        wait_flag(Flag,Hid,ViewMode,Dp1,Prof1).
+
+
+ panel(code(do_it,what(predicate,nil)),Hid,ViewMode,Dp,Prof):- integer(Hid)|
+        Prof=[{ViewMode,[],Flag}|Prof1],
+        wait_flag(Flag,Hid,ViewMode,Dp,Prof1).
+
+
+ panel(code(do_it,history(Hid)),Hid0,_,Dp,Prof):- Hid0<Hid|
+        Dp=[do([empty(Hid,Ans)|Rest])|Dp1],
+        get_and_put(Ans,Hid,all,ViewMode,Rest,Prof,Prof1,Flag),
+        wait_flag(Flag,Hid,ViewMode,Dp1,Prof1).
+ panel(code(do_it,history(Hid)),Hid0,_,Dp,Prof):- Hid0>Hid|
+        Dp=[do([empty(Hid,Ans)|Rest])|Dp1],
+        get_and_put(Ans,Hid,all,ViewMode,Rest,Prof,Prof1,Flag),
+        wait_flag(Flag,Hid,ViewMode,Dp1,Prof1).
+ panel(code(do_it,history(Hid)),nil,_,Dp,Prof):- integer(Hid)|
+        Dp=[do([empty(Hid,Ans)|Rest])|Dp1],
+        get_and_put(Ans,Hid,all,ViewMode,Rest,Prof,Prof1,Flag),
+        wait_flag(Flag,Hid,ViewMode,Dp1,Prof1).
+ panel(code(do_it,history(Hid)),Hid,ViewMode,Dp,Prof):- integer(Hid)|
+        wait_flag("normal",Hid, ViewMode,Dp,Prof).
+ panel(code(do_it,history(nil)),Hid,ViewMode,Dp,Prof):- integer(Hid) |
+        Prof=[{ViewMode,_,_,[],Flag,_,_}|Prof1],
+        wait_flag(Flag,nil,ViewMode,Dp,Prof1).
+
+ panel(code(do_it,save(Hid,FileName)),Hid0,_,Dp,Prof):- integer(Hid),string(FileName,_,_) |
+        shoen:raise(pimos_tag#task,general_request,[file(normal(File,_,_))]),
+        File=[open(FileName,write(Result))],
+        write(Result,Hid,Dp,Dp1,Flag,Prof,Prof1),
+        wait_flag(Flag,Hid0,_,Dp1,Prof1).
+
+ panel(code(do_it,load(FileName)),Hid,_,Dp,Prof):- string(FileName,_,_) |
+        shoen:raise(pimos_tag#task,general_request,[file(normal(File,_,_))]),
+        File=[open(FileName,read(Result))],
+        read(Result,Dp,Dp1,Flag,Prof,Prof1),
+        wait_read(Flag,Hid,Dp1,Prof1).
+
+ panel(code(do_it,remove(Hid)),Hid0,_,Dp,Prof):- Hid>Hid0|
+        Dp=[do([empty(Hid,Ans)|Rest])|Dp1],
+        remove(Ans,Hid,Rest),
+        Prof=[read_code(Code)|Prof1],
+        panel(Code,Hid0,_,Dp1,Prof1).
+
+ panel(code(do_it,remove(Hid)),Hid0,_,Dp,Prof):- Hid<Hid0|
+        Dp=[do([empty(Hid,Ans)|Rest])|Dp1],
+        remove(Ans,Hid,Rest),
+        Prof=[read_code(Code)|Prof1],
+        panel(Code,Hid0,_,Dp1,Prof1).
+ panel(code(do_it,remove(Hid)),Hid0,_,Dp,Prof):- Hid=Hid0|
+        Dp=[do([empty(Hid,Ans)|Rest])|Dp1],
+        remove(Ans,Hid,Rest),
+        Prof=[read_code(Code)|Prof1],
+        panel(Code,nil,_,Dp1,Prof1).
+ panel(code(do_it,remove(Hid)),nil,_,Dp,Prof):- integer(Hid)|
+        Dp=[do([empty(Hid,Ans)|Rest])|Dp1],
+        remove(Ans,Hid,Rest),
+        Prof=[read_code(Code)|Prof1],
+        panel(Code,nil,_,Dp1,Prof1).
+
+ panel(code(do_it,renew),Hid,_,Dp,Prof):- true |
+        Dp=[do([get_max_if_any(Info)|Rest])|Dp1],
+        make_index(Info,Rest,Add,Add,Index),
+        Prof=[add_history_items(Index)|Prof1],
+        Prof1=[read_code(Code)|Prof2],
+        check_id(Hid,Index,NewHid),
+        panel(Code,NewHid,_,Dp1,Prof2).
+
+ panel(code(window,Command),Hid,ViewMode,Dp,Prof):- integer(Hid) |
+        %%    commnd(Command,Flag)
+        Prof=[command(Command,A,B)|Prof1],
+        Prof1=[read_code(Code)|Prof2],
+        panel(Code,Hid,ViewMode,Dp,Prof2).
+otherwise.
+ panel(code(do_it,Command),Hid,ViewMode,Dp,Prof):- integer(Hid) |
+        %%    commnd(Command,Flag)
+        Prof=[command(Command,A,B)|Prof1],
+        Prof1=[read_code(Code)|Prof2],
+        panel(Code,Hid,ViewMode,Dp,Prof2).
+ %% if history=nil %%
+ panel(code(do_it,Command),nil,_,Dp,Prof):- true |
+        Prof=[read_code(Code)|Prof1],
+        panel(Code,nil,_,Dp,Prof1).
+
+ %% For Data Pool and Prof 
+ get_and_put(yes,_,_,_,Rest,Prof,Prof1,Flag):- true | Rest=[],Prof1=Prof,Flag=end.
+ get_and_put(no,Hid,all,ViewMode,Rest,Prof,Prof1,Flag):- true |
+        Rest=[get(Hid,{What,PeNum,Base,Goal}),
+               put(Hid,{What,PeNum,Base,Goal})],
+        put_prof(Goal,What,PeNum,Base,Prof,Prof1,Flag,ViewMode).
+ get_and_put(no,Hid,GList,ViewMode,Rest,Prof,Prof1,Flag):- list(GList)|
+        Rest=[get(Hid,{What,PeNum,Base,Goal}),
+                put(Hid,{What,PeNum,Base,Goal})],
+        put_prof2(Goal,GList,Prof,Prof1,Flag,ViewMode).
+
+ put_prof({ViewMode,Int,Max,Info},What,PeNum,Base,Prof,Prof1,Flag,V):- true |
+        Prof=[set_what_items(What,ViewMode,PeNum,Max,nil),
+              {ViewMode,Int,Max,Info,Flag,PeNum,Base}|Prof1],
+        V = ViewMode .
+ put_prof({ViewMode,Int,Max,ExecTime,Info},What,PeNum,Base,Prof,Prof1,Flag,V):- true |
+        Prof=[set_what_items(What,ViewMode,PeNum,Max,ExecTime),
+              {ViewMode,Int,Max,Info,Flag,PeNum,Base}|Prof1],
+        V = ViewMode .
+ 
+ put_prof2({ViewMode,Int,Max,Info},GList,Prof,Prof1,Flag,V):- true |
+        Prof=[{ViewMode,GList,Flag}|Prof1],
+        V = ViewMode .
+ put_prof2({ViewMode,Int,Max,ExecTime,Info},GList,Prof,Prof1,Flag,V):- true |
+        Prof=[{ViewMode,GList,Flag}|Prof1],
+        V = ViewMode .
+ 
+ %% For Data Pool
+ remove(yes,Hid,Rest):- true | Rest=[].
+ remove(no,Hid,Rest):- true | Rest=[get(Hid,_)].
+
+   make_index({},Rest,Ah,At,Index):- true | Rest=Ah,At=[],Index=[].
+   make_index({Key,{What,PeNum,Base,Goal}},Rest,Ah,At,Index):- true |
+        make_index1(Goal,Key,What,PeNum,Base,Rest,Ah,At,Index).
+
+   make_index1({ViewMode,Int,Max,Goal},Key,What,PeNum,Base,Rest,Ah,At,Index):- true |
+        Rest=[get_max_if_any(Info)|Rest1],
+        At=[put(Key,{What,PeNum,Base,{ViewMode,Int,Max,nil,Goal}})|At1],
+        Index=[{Key,Int,ViewMode,nil,PeNum}|Index1],
+        make_index(Info,Rest1,Ah,At1,Index1).
+   make_index1({ViewMode,Int,Max,ExecTime,Goal},Key,What,PeNum,Base,Rest,Ah,At,Index):- true |
+        Rest=[get_max_if_any(Info)|Rest1],
+        At=[put(Key,{What,PeNum,Base,{ViewMode,Int,Max,ExecTime,Goal}})|At1],       
+        Index=[{Key,Int,ViewMode,ExecTime,PeNum}|Index1],
+        make_index(Info,Rest1,Ah,At1,Index1).
+
+%% if another ParaGraph removed default Hid then let change to nil
+   check_id(nil,_,NewHid):- true | NewHid=nil.
+   check_id(Hid,[{Hid,_}|_],NewHid):- integer(Hid)| NewHid=Hid.
+   check_id(Hid,[{Hid0,_}|Index],NewHid):- Hid>Hid0|
+        check_id(Hid,Index,NewHid).
+   check_id(Hid,[{Hid0,_}|Index],NewHid):- Hid<Hid0|
+        check_id(Hid,Index,NewHid).
+   check_id(Hid,[{Hid,_,_,_,_}|_],NewHid):- integer(Hid)| NewHid=Hid.
+   check_id(Hid,[{Hid0,_,_,_,_}|Index],NewHid):- Hid>Hid0|
+        check_id(Hid,Index,NewHid).
+   check_id(Hid,[{Hid0,_,_,_,_}|Index],NewHid):- Hid<Hid0|
+        check_id(Hid,Index,NewHid).
+   check_id(Hid,[],NewHid):- integer(Hid) | NewHid=nil.
+
+   write(abnormal,KeyId,S,S1,Flag,Prof,Prof1):- true |
+        S1=S,Flag=abnormal,  
+        Prof = [saved(abnormal)|Prof1].
+   write(normal(File,_,_),KeyId,S,S1,Flag,Prof,Prof1):- true |
+        buffer:output_filter(OutFile,File),
+        S=[do([empty(KeyId,Ans)|Rest])|S1],
+        OutFile=[print_depth(1000000),print_length(100000000),
+                 print_string_length(1000000),
+                 print_atom_length(1000)|OutFile1],
+        get_and_put_file(Ans,KeyId,Rest,OutFile1,Flag),
+        save_check(Flag,Prof,Prof1).
+
+   save_check(F,Prof,Prof1):- wait(F) |
+         Prof = [saved(normal)|Prof1].
+   
+   get_and_put_file(yes,KeyId,Rest,OutFile,Flag):- true | 
+        Rest=[],OutFile=[],Flag=empty.
+   get_and_put_file(no,KeyId,Rest,OutFile,Flag):- true |
+        Rest=[get_and_put(KeyId,Goal,Goal1)],
+        copy(Goal,Goal1),
+        OutFile=[puttq(Goal),putb(string#"."),flush(Flag)].
+
+   copy(Goal,Goal1):- wait(Goal)| Goal1=Goal.
+
+
+
+   read(abnormal,Dp,Dp1,Flag,Prof,Prof1):- true | 
+        Dp1=Dp,Flag=string#"abnormal",
+        Prof = [loaded(abnormal)|Prof1].
+   read(normal(File,_,_),Dp,Dp1,Flag,Prof,Prof1):- true |
+        buffer:input_filter(InFile,File),
+        read_all(normal(no),InFile,GList),
+        put_data(GList,Dp,Dp1,F),
+        read_check(F,Flag,Prof,Prof1).
+
+   read_check(F,Flag,Prof,Prof1):- wait(F)|
+        read_check1(F,Flag,Prof,Prof1).
+
+   read_check1(string#"normal",Flag,Prof,Prof1):- true |
+        Prof = [loaded(normal)|Prof1],
+        Flag = normal.
+otherwise.
+   read_check1(F,Flag,Prof,Prof1):- true |
+        Prof = [loaded(abnormal)|Prof1],
+        Flag = abnormal.
+
+   
+   wait_read(Flag,Hid,Dp,Prof):- wait(Flag) |
+        panel(code(do_it,renew),Hid,_,Dp,Prof).
+
+   put_data([{What,PeNum,Base,Goal}|GList],Dp,Dp2,Flag):- 
+        integer(PeNum)|
+        Dp=[new_id(Hid),put(Hid,{What,PeNum,Base,Goal})|Dp1],
+        put_data(GList,Dp1,Dp2,Flag).
+   put_data([],Dp,Dp1,Flag):- true | Dp1=Dp,Flag=string#"normal".
+ otherwise.
+   put_data([_|GList],Dp,Dp1,Flag):- true |
+        put_data(GList,Dp,Dp1,Flag).
+
+   read_all(normal(yes),File,GList):- true |
+        File=[],GList=[].
+   read_all(normal(no),File,GList):- true |
+        File=[gett(Goal),end_of_file(Res)|File1],
+        GList=[Goal|GList1],
+        read_all(Res,File1,GList1).
+        
+

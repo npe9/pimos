@@ -1,0 +1,154 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module variable_old.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public melt/2, melt/3, melt/4, freeze/2, freeze/4, freeze/7.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% pool(+In)
+
+pool(In) :- true |
+        merge(In,In1),
+        pool(In1, Out),
+        pool:keyed_sorted_set(Out).
+
+pool([],VP) :- true | VP = [].
+pool([reset|In],VP) :- true |
+        VP = [get_all(NameVars)|NVP], 
+        reset(NameVars),
+        pool(In,NVP).
+pool([shape|In],VP) :- true |
+        VP = [get_all(NameVars)|VP1],
+        shape(NameVars,VP1,NVP),
+        pool(In,NVP).
+otherwise.
+pool([M|In],VP) :- true |
+        VP = [M|NVP],
+        pool(In, NVP).
+
+reset([{Name,Vars}|NameVars]) :- true |
+        unify_all(Vars),
+        reset(NameVars).
+reset([]) :- true | true.
+
+unify_all([V]) :- true | true.
+unify_all([V0,V1]) :- true | V0 = V1.
+unify_all([V0,V1,V2|Vars]) :- true | V0 = V1, unify_all([V1,V2|Vars]).
+
+shape([{Name,Vars}|NameVars], VP,NVP) :- true |
+        unify_all(Vars,NVars),
+        VP = [put(Name,NVars, _)|VP1],
+        shape(NameVars, VP1,NVP).
+shape([], VP,NVP) :- true | VP = NVP.
+
+unify_all([V],NVars) :- true | NVars = [V].
+unify_all([V0,V1],NVars) :- true | V0 = V1, NVars = [V1].
+unify_all([V0,V1,V2|Vars],NVars) :- true | 
+    V0 = V1, unify_all([V1,V2|Vars],NVars).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% melt(+FrozenTerm,-MeltTerm)
+
+melt(FT, MT) :- true |
+        pool(VP),
+        melt(FT,MT, VP,[reset]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% melt(+FrozenTerm,-MeltTerm, NVP)
+
+melt(FT, MT, NVP) :- true |
+        pool(VP),
+        melt(FT,MT, VP,[shape|NVP]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% melt(+FrozenTerm,-MeltTerm, VariablePool,NewVariablePool)
+
+melt(Atom,MT, VP,NVP) :- atom(Atom) | MT = Atom, NVP = VP.
+melt(Integer,MT, VP,NVP) :- integer(Integer) | MT = Integer, NVP = VP.
+:- switch(floating_point).
+:- case(yes).
+melt(Float,MT, VP,NVP) :- floating_point(Float) | MT = Float, NVP = VP.
+:- end_switch.
+melt(String,MT, VP,NVP) :- string(String, _, _) | MT = String, NVP = VP.
+melt(Module,MT, VP,NVP) :- module(Module, _) | MT = Module, NVP = VP.
+melt(Code,MT, VP,NVP) :- code(Code, _, _, _) | MT = Code, NVP = VP.
+melt('$VAR'(N,Name),MT, VP,NVP) :- integer(N), string(Name, _, _) | 
+        meltVar(Name, MT, VP,NVP).
+melt([H|T],ML, VP,NVP) :- true |
+        ML = [MH|MT],
+        melt(H,MH, VP,VP1),
+        melt(T,MT, VP1,NVP).
+otherwise.
+melt(Vector,MT, VP,NVP) :- vector(Vector, Size) |
+        meltVectorArgs(0,Size, Vector,MT, VP,NVP).
+otherwise.
+melt(Unknown,MT, VP,NVP) :- true | MT = Unknown, NVP = VP.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% meltVar(+Name, -MeltTerm, VariablePool,NewVariablePool)
+
+meltVar(Name, MT, VP,NVP) :- true | 
+        VP = [put(Name, NVars, Vars)|NVP],
+        meltVarDecide(Vars,NVars, MT).
+
+meltVarDecide({}, NVars, MT) :- true | NVars = [MT].
+meltVarDecide({Vars}, NVars, MT) :- true | NVars = [MT|Vars].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% meltVectorArgs(From,To, +Vector,-FrozenVector, 
+%            VariablePool,VariablePool)
+
+meltVectorArgs(M,M, V,FV, VP,NVP) :- true | FV = V, NVP = VP.
+meltVectorArgs(M,N, V,FV, VP,NVP) :- M < N |
+        set_vector_element(V, M, Vi,FVi, V1),
+        melt(Vi,FVi, VP,VP1),
+        M1 := M + 1,
+        meltVectorArgs(M1,N, V1,FV, VP1,NVP).
+
+
+freeze(T, FT) :- true |
+        variable:wrap_address(T, NTFWT, 40,100),
+        freezeDecide(NTFWT, undef, FT).
+
+freezeDecide({T, FWT}, FM, FT) :- true |
+        variable:meltUnwrap(FWT, NFWTT, FM, VP),
+        variable:pool3(VP),
+        (NFWTT = {NFWT,NNT}  -> NNT = FT).
+
+freeze(T,FT, M,N) :- M >= 0 |
+        freezeInit(M, VP),
+        variable:wrap(T, NTFWT, 40,100, VP,NVP),
+        freezeLast(M,N, NVP),
+        freezeDecide(NTFWT, freeze, FT).
+
+freeze(T, NT,FT, D,L, VP,NVP) :- true |
+        variable:wrap(T, NTFWT, D,L, VP,NVP),
+        freeze_(NTFWT, NT,FT).
+
+freeze_({T,FWT}, NT,FT) :- true |
+        variable:meltUnwrap(FWT, NFWTT, freeze, VP),
+        variable:pool3(VP),
+        (NFWTT = {NFWT,NNT}  -> T = NT, NNT = FT).
+
+freezeInit(M, VP) :- true |
+        variable:pool2([do(VP0)|VP]),
+        freezeInit1(M, VP0).
+
+freezeInit1(0, VP) :- true | VP = [].
+otherwise.
+freezeInit1(M, VP) :- true |
+        unbound(X, UnboundX),
+        (UnboundX = {PE,ADR, XX}   ->
+            VP = [get_name({PE,ADR}, _)|VP1],
+            M1 := M - 1,
+            freezeInit1(M1, VP1)).
+
+freezeLast(M,N, VP) :- true | 
+        VP = [count(N1)],
+        N := M + N1.

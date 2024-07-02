@@ -1,0 +1,146 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_calc.
+:- public calcurate_right_hand/3.
+:- with_macro pimos.
+%%
+%% calculate right hand
+%% 
+calcurate_right_hand(integer, vector({atom((/)), integer(X), integer(0)}), WAns) :- true |
+   WAns = vector({atom((/)), integer(X), integer(0)}).
+%calcurate_right_hand(floating, vector({atom((/)), floating_point(X), floating_point(0.0)}), WAns) :- true |
+%   WAns = vector({atom((/)), floating_point(X), floating_point(0.0)}).   %Deleted By Kiyohara 1993/1/11
+otherwise.
+calcurate_right_hand(integer, vector({atom((+)), integer(X), integer(Y)}), WAns) :- Ans := X+Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((-)), integer(X), integer(Y)}), WAns) :- Ans := X-Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((*)), integer(X), integer(Y)}), WAns) :- Ans := X*Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((/)), integer(X), integer(Y)}), WAns) :- Ans := X/Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((mod)), integer(X), integer(Y)}), WAns) :- Ans := X mod Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((<<)), integer(X), integer(Y)}), WAns) :-  Ans := X << Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((>>)), integer(X), integer(Y)}), WAns) :- Ans := X >> Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((/\)), integer(X), integer(Y)}), WAns) :- Ans := X /\ Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((\/)), integer(X), integer(Y)}), WAns) :- Ans := X \/ Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((xor)), integer(X), integer(Y)}), WAns) :- Ans := X xor Y |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((-)), integer(X)}), WAns) :- Ans := - X |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom((\)), integer(X)}), WAns) :- Ans := -1 xor X |
+   WAns=integer(Ans).
+calcurate_right_hand(integer, vector({atom(int), floating_point(X)}), WAns) :- Ans := int(X) |
+   WAns=integer(Ans).
+%%calcurate_right_hand(integer, vector({atom((+)), integer(X)}), WAns) :- true |
+%%    Ans = X, WAns=integer(X).
+calcurate_right_hand(floating, vector({atom((+)), floating_point(X), floating_point(Y)}), WAns) :- 
+            Ans $:= X+Y |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom((-)), floating_point(X), floating_point(Y)}), WAns) :-
+        Ans $:= X-Y |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom((*)), floating_point(X), floating_point(Y)}), WAns) :-
+        Ans $:= X*Y |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom((/)), floating_point(X), floating_point(Y)}), WAns) :-
+        Ans $:= X/Y |
+    WAns=floating_point(Ans).
+otherwise.           % Added by Kiyohara  1993/1/11
+calcurate_right_hand(floating, vector({atom((/)), floating_point(X), floating_point(Y)}), WAns) :- true |
+   WAns = vector({atom((/)), floating_point(X), floating_point(Y)}).  % Added by Kiyohara 1993/1/11
+calcurate_right_hand(floating, vector({atom((-)), floating_point(X)}), WAns) :- Ans $:= - X |
+    WAns=floating_point(Ans).
+calcurate_right_hand(floating, vector({atom(float), integer(X)}), WAns) :- Ans $:= float(X) |
+    WAns=floating_point(Ans).
+%%calcurate_right_hand(floating, vector({atom((+)), floating_point(X)}), WAns) :- true |
+%%    Ans = X, WAns=floating_point(Ans).
+otherwise.
+calcurate_right_hand(integer, integer(X), Ans) :- true |
+    Ans=integer(X).
+calcurate_right_hand(floating, floating_point(X), Ans) :- true |
+    Ans=floating_point(X).
+calcurate_right_hand(Type, vector({atom(Op), X, Y}), Ans) :- true |
+   calcurate_right_hand(Type, X, NewX),
+   calcurate_right_hand(Type, Y, NewY),
+   check_constant_or_not(Type, Op, NewX, NewY, Ans).
+calcurate_right_hand(floating, vector({atom(float), X}), Ans) :- true |
+    calcurate_right_hand(integer, X, Ans0),
+    check_constant_or_not_float(Ans0, Ans).
+calcurate_right_hand(integer, vector({atom(int), X}), Ans) :- true |
+    calcurate_right_hand(floating_point, X, Ans0),
+    check_constant_or_not_int(Ans0, Ans).
+otherwise.
+calcurate_right_hand(Type, vector({atom(Op), X}), Ans) :- true |
+    calcurate_right_hand(Type, X, NewX),
+    check_constant_or_not(Type, Op, NewX, Ans).
+otherwise.
+calcurate_right_hand(Type, X, Ans) :- true | Ans=X.
+
+check_constant_or_not_float(integer(X), WAns) :- true |
+    Ans $:= float(X), WAns=floating_point(Ans).
+otherwise.
+check_constant_or_not_float(X, WAns) :- true |
+    WAns=vector({atom(float), X}).
+
+check_constant_or_not_int(floating_point(X), WAns) :- true |
+    Ans := int(X), WAns=integer(Ans).
+otherwise.
+check_constant_or_not_int(X, WAns) :- true |
+    WAns=vector({atom(int), X}).
+
+%%check_constant_or_not(integer, (+), integer(X), Ans) :- true |
+%%    Ans = integer(X).
+check_constant_or_not(integer, (-), integer(X), Ans) :- Ans0 := -X |
+    Ans = integer(Ans0).
+%%check_constant_or_not(floating, (+), floating_point(X), Ans) :- true |
+%%    Ans = floating_point(X).
+check_constant_or_not(floating, (-), floating_point(X), Ans) :- Ans0 $:= -X |
+    Ans = floating_point(Ans0).
+check_constant_or_not(integer, int, floating_point(X), Ans) :- Ans0 := int(X) |
+    Ans = integer(Ans0).
+check_constant_or_not(floating, float, integer(X), Ans) :- true |
+    Ans $:= float(X).
+otherwise.
+check_constant_or_not(_, Op, Arg, Ans) :- true |
+    Ans=vector({atom(Op), Arg}).
+
+check_constant_or_not(integer, (+), integer(X), integer(Y), Ans) :- Ans0:=X+Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (-), integer(X), integer(Y), Ans) :- Ans0:=X-Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (*), integer(X), integer(Y), Ans) :- Ans0:=X*Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (/), integer(X), integer(Y), Ans) :- Ans0:=X/Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (mod), integer(X), integer(Y), Ans) :- Ans0:=X mod Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (<<), integer(X), integer(Y), Ans) :- Ans0:=X << Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (>>), integer(X), integer(Y), Ans) :- Ans0:=X >> Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (/\), integer(X), integer(Y), Ans) :- Ans0:=X /\ Y |
+    Ans=integer(Ans0).
+check_constant_or_not(integer, (\/), integer(X), integer(Y), Ans) :- Ans0:=X \/ Y |
+    Ans=integer(Ans0).
+check_constant_or_not(floating, (+), floating_point(X), floating_point(Y), Ans) :- Ans0$:=X+Y |
+    Ans=floating_point(Ans0).
+check_constant_or_not(floating, (-), floating_point(X), floating_point(Y), Ans) :- Ans0$:=X-Y |
+    Ans=floating_point(Ans0).
+check_constant_or_not(floating, (*), floating_point(X), floating_point(Y), Ans) :- Ans0$:=X*Y |
+    Ans=floating_point(Ans0).
+check_constant_or_not(floating, (/), floating_point(X), floating_point(Y), Ans) :- Ans0$:=X/Y |
+    Ans=floating_point(Ans0).
+otherwise.
+check_constant_or_not(_, Op, X, Y, Ans) :- true |
+    Ans=vector({atom(Op), X, Y}).
+    

@@ -1,0 +1,47 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module macro.
+:- public go/1.
+:- with_macro pimos.
+
+% Display macro inheritance 
+% 
+%   Edited by D.Sekitay 
+
+go(Atom) :- atom(Atom) |
+    shoen:raise(pimos_tag#shell, get_std_out, Out0),
+    error(Out0, Out, Err0),
+    kl1cmp_check_module:checkSelf(Err0, [], Atom, ModList),
+    displayModuleList(Out, [], ModList).
+otherwise.
+go(_) :- true |
+    shoen:raise(pimos_tag#shell, get_std_out, [putf("Usage: macro:go(`Macro module atom')~n", [])]).
+
+:- local_implicit err:oldnew.
+displayModuleList([Module]) --> true |
+  {{convertToAtom(Module, Name)}},
+    &err <<= [putt(Name),nl].
+otherwise.
+displayModuleList([Module|Cdr]) --> true |
+  {{convertToAtom(Module, Name)}},
+    &err <<= [putf("~t --> ", [Name])],
+    displayModuleList(Cdr).
+displayModuleList([]) --> true | true.
+
+convertToAtom(Module, Name) :- module(Module, _)|
+    module:get_module_name(Module, (_::Name)).
+convertToAtom(Module, Name) :- atom(Module) |
+    Module=Name.
+
+error([error(Str, Arg)|Cdr]) --> true |
+    &err <<= [putf("!ERROR! ", []),putf(Str, Arg), nl],
+    error(Cdr).
+error([warning(Str, Arg)|Cdr]) --> true |
+    &err <<= [putf("!WARNING! ", []), putf(Str, Arg), nl],
+    error(Cdr).
+error([]) --> true | true.
+    

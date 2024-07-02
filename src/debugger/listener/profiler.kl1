@@ -1,0 +1,58 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- module listener_profiler.
+:- public go/3.
+
+%%%%%%%%%%%
+% TOP LEVEL
+go(NG,PG,Att) :-
+    shoen:raise(pimos_tag#listener,resource,[profile_data_pool(DP)]),
+    merge(DP1,DP),
+    shoen:raise(pimos_tag#task,general_request,[getenv(profile:interval,Time)]),
+    interval(Time,NTime),
+    fork(PG,Att,NTime,DP1),
+    execute(NG,Att).
+
+fork([profile(N,WT,PG)|NPG],Att,Time,DP):- 
+    DP={DP1,DP2},
+    module:get_module_name(module#listener_profiler,Pac,_Mod),
+    module_table:dynamic_link(Pac::profile,count,{PG,Att,N,WT,Time,DP1,Info}),
+    raise_info(Info,N,WT),
+    fork(NPG,Att,Time,DP2).
+fork([profile_msg(N,WT,PG)|NPG],Att,Time,DP):- 
+    DP={DP1,DP2},
+    module:get_module_name(module#listener_profiler,Pac,_Mod),
+    module_table:dynamic_link(Pac::profile,count_msg,{PG,Att,N,WT,Time,DP1,Info}),
+    raise_info(Info,N,WT),
+    fork(NPG,Att,Time,DP2).
+fork([profile_node(N,WT,PG)|NPG],Att,Time,DP):- 
+    DP={DP1,DP2},
+    module:get_module_name(module#listener_profiler,Pac,_Mod),
+    module_table:dynamic_link(Pac::profile,count_node,{PG,Att,N,WT,Time,DP1,Info}),
+    raise_info(Info,N,WT),
+    fork(NPG,Att,Time,DP2).
+fork([],_,_,DP) :- DP=[].
+
+interval(normal(T),NT) :- T>0 | NT=T.
+interval(normal(infinite),NT) :- NT=infinite.
+otherwise.
+interval(_,NT) :- NT=2000.
+
+raise_info({U,L,Time},N,WT) :-
+    shoen:raise(pimos_tag#listener,'$PROFILE_INFO$'(N,WT,U,L,Time),[]).
+
+
+%%%%%%
+% MAIN
+execute(Goals,Att) :-
+    predicate_to_code(module#listener_trace_driver,apply_goals,1,Code),
+    Tag=0,
+    shoen:raise(pimos_tag#task,general_request,
+        [execute(Code,{Goals},"executor",0,4000,Tag,{0,100000000},normal(Ctr,Rpt))]),
+    listener_monitor:monitor(Rpt,Ctr,_IO,Att,_Go,profiler).
+

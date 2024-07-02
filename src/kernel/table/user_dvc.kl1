@@ -1,0 +1,387 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module user_table_device.
+:- public driver/4.
+:- public protection_filter/3.
+:- public user_table/2.
+:- with_macro pimos.
+
+%% DRIVER
+user_table(Uid_table,Name_table):-
+    true|
+    merge(Uid_table,UID_TABLE),
+    merge(Name_table,NAME_TABLE),
+    pool:keyed_set(UID_TABLE,100),
+    pool:keyed_set(NAME_TABLE,100).
+
+driver(Status,Uid_table,Name_table,Users):-
+    vector_element(Users,2,UID)|
+    Status = normal(In0,_,[]),
+    protection_filter(UID,In0,In),
+    user_table(In,Uid_table,Name_table,1).
+
+%% USER_TABLE
+user_table([reset(Status)|In],UIDT,NT,MsgID):- true |
+    Status = normal(Abort,[],MsgID),
+    MsgID1 := MsgID + 1,
+    user_table(In,UIDT,NT,MsgID1).
+user_table([next_attention(Status)|In],UIDT,NT,MsgID):- true |
+    Status = normal([]),
+    user_table(In,UIDT,NT,MsgID).
+user_table([resend(MsgID0,Status)|In],UIDT,NT,MsgID):- true |
+    Status = normal,
+    user_table(In,UIDT,NT,MsgID).
+user_table([cancel(MsgID0,Status)|In],UIDT,NT,MsgID):- true |
+    Status = normal,
+    user_table(In,UIDT,NT,MsgID).
+
+user_table([set_up(Info,Status)|In],UIDT,NT,MsgID) :-
+    list(Info) |
+        UIDT = [get_all(_)|UIDT0],
+        NT   = [get_all(_)|NT0],
+        put_all_users(Info,UIDT0,UIDT1,NT0,NT1,Status),
+        user_table(In,UIDT1,NT1,MsgID). 
+user_table([authenticate(UserName,Password,Status)|In],UIDT,NT,MsgID):-
+    string(UserName,_,_),
+    string(Password,Len,16)|
+        password:encrypt(Password,PasswordX),
+        NT  =[get_and_put_if_any(UserName,Info0,Info00,_)|NT1],
+        wait_authenticate(Info0,Info00,PasswordX,Status,UIDT,UIDT1),
+        user_table(In,UIDT1,NT1,MsgID). 
+user_table([get_uid(UserName,Status)|In],UIDT,NT,MsgID):-
+    string(UserName,_,_)|
+        NT=[get_and_put_if_any(UserName,UID,UID1,_)|NT1],
+        wait_user_table(UID,UID1,Status),
+        user_table(In,UIDT,NT1,MsgID).
+user_table([get_all_info(Status)|In],UIDT,NT,MsgID):- true |
+    UIDT = [get_all(Out1)|UIDT1],
+    transform(Out1,Out,UIDT1,UIDT2),
+    Status = normal(Out),
+    user_table(In,UIDT2,NT,MsgID).
+user_table([get_info(UID,Status)|In],UIDT,NT,MsgID):- true |
+    UIDT = [get_and_put_if_any(UID,Info1,Info,_)|UIDT1],
+    transform_info(Info1,Info,Status),
+    user_table(In,UIDT1,NT,MsgID).
+user_table([status(UID,Status)|In],UIDT,NT,MsgID):- true |
+    UIDT = [get_and_put_if_any(UID,Info1,Info,_)|UIDT1],
+    status_info(Info1,Info,Status),
+    user_table(In,UIDT1,NT,MsgID).
+user_table([change_password(UID,OldPassword,NewPassword,Status)|In],UIDT,NT,MsgID):- true |
+    password:encrypt(OldPassword,OldPasswordX),
+    password:encrypt(NewPassword,NewPasswordX),
+    UIDT=[get_and_put_if_any(UID,Info,Info1,_)|UIDT1],
+    check_password(Info,OldPasswordX,NewPasswordX,Info1,Status),
+    user_table(In,UIDT1,NT,MsgID).
+user_table([],UIDT,NT,MsgID):- true |
+    UIDT = [],
+    NT = [].
+    
+
+put_all_users([User|Rest],UIDT0,UIDT,NT0,NT,Status) :-
+    true|
+        put_user(User,UIDT0,UIDT,NT0,NT,Rest,Status).
+otherwise.
+put_all_users([],UIDT0,UIDT,NT0,NT,Status) :-
+    true |
+        UIDT0=UIDT,NT0=NT,Status = normal.
+
+put_user({UserName,Password,UID,Priority,Directory,PE,EntryPoint,CommentList},UIDT0,UIDT,NT0,NT,Rest,Status) :-
+    string(UserName,_,_),
+    string(Password,_,_),
+    integer(UID),
+    integer(Priority),
+    string(Directory,_,_),
+    integer(PE),
+    list(CommentList)|
+        UIDT0=[empty(UID,YorN)|UIDT1],
+        NT0=[empty(UserName,YorN1)|NT1],
+        check_uid_and_username(YorN,YorN1,UID,UserName,
+            {UserName,Password,Priority,Directory,PE,EntryPoint,CommentList,0}, % 0 = ref
+            UIDT1,UIDT,NT1,NT,Rest,Status).
+put_user({UserName,Password,UID,Priority,Directory,PE,EntryPoint,CommentList},UIDT0,UIDT,NT0,NT,Rest,Status) :-
+    string(UserName,_,_),
+    string(Password,_,_),
+    integer(UID),
+    integer(Priority),
+    string(Directory,_,_),
+    integer(PE),
+    CommentList = []|
+        UIDT0=[empty(UID,YorN)|UIDT1],
+        NT0=[empty(UserName,YorN1)|NT1],
+        check_uid_and_username(YorN,YorN1,UID,UserName,
+            {UserName,Password,Priority,Directory,PE,EntryPoint,CommentList,0}, % 0 = ref
+            UIDT1,UIDT,NT1,NT,Rest,Status).
+put_user({UserName,Password,UID,Priority,Directory,PE,EntryPoint,CommentList},UIDT0,UIDT,NT0,NT,Rest,Status) :-
+    string(UserName,_,_),
+    string(Password,_,_),
+    integer(UID),
+    integer(Priority),
+    string(Directory,_,_),
+    PE = *,
+    list(CommentList)|
+        UIDT0=[empty(UID,YorN)|UIDT1],
+        NT0=[empty(UserName,YorN1)|NT1],
+        check_uid_and_username(YorN,YorN1,UID,UserName,
+            {UserName,Password,Priority,Directory,PE,EntryPoint,CommentList,0}, % 0 = ref
+            UIDT1,UIDT,NT1,NT,Rest,Status).
+put_user({UserName,Password,UID,Priority,Directory,PE,EntryPoint,CommentList},UIDT0,UIDT,NT0,NT,Rest,Status) :-
+    string(UserName,_,_),
+    string(Password,_,_),
+    integer(UID),
+    integer(Priority),
+    string(Directory,_,_),
+    PE = *,
+    CommentList = []|
+        UIDT0=[empty(UID,YorN)|UIDT1],
+        NT0=[empty(UserName,YorN1)|NT1],
+        check_uid_and_username(YorN,YorN1,UID,UserName,
+            {UserName,Password,Priority,Directory,PE,EntryPoint,CommentList,0}, % 0 = ref
+            UIDT1,UIDT,NT1,NT,Rest,Status).
+put_user({UserName,Password,UID,Priority,Directory,PE,EntryPoint,CommentList},UIDT0,UIDT,NT0,NT,Rest,Status) :-
+    string(UserName,_,_),
+    string(Password,_,_),
+    integer(UID),
+    integer(Priority),
+    Directory = *,
+    integer(PE),
+    list(CommentList)|
+        UIDT0=[empty(UID,YorN)|UIDT1],
+        NT0=[empty(UserName,YorN1)|NT1],
+        check_uid_and_username(YorN,YorN1,UID,UserName,
+            {UserName,Password,Priority,Directory,PE,EntryPoint,CommentList,0}, % 0 = ref
+            UIDT1,UIDT,NT1,NT,Rest,Status).
+put_user({UserName,Password,UID,Priority,Directory,PE,EntryPoint,CommentList},UIDT0,UIDT,NT0,NT,Rest,Status) :-
+    string(UserName,_,_),
+    string(Password,_,_),
+    integer(UID),
+    integer(Priority),
+    Directory = *,
+    integer(PE),
+    CommentList = []|
+        UIDT0=[empty(UID,YorN)|UIDT1],
+        NT0=[empty(UserName,YorN1)|NT1],
+        check_uid_and_username(YorN,YorN1,UID,UserName,
+            {UserName,Password,Priority,Directory,PE,EntryPoint,CommentList,0}, % 0 = ref
+            UIDT1,UIDT,NT1,NT,Rest,Status).
+put_user({UserName,Password,UID,Priority,Directory,PE,EntryPoint,CommentList},UIDT0,UIDT,NT0,NT,Rest,Status) :-
+    string(UserName,_,_),
+    string(Password,_,_),
+    integer(UID),
+    integer(Priority),
+    Directory = *,
+    PE = *,
+    list(CommentList)|
+        UIDT0=[empty(UID,YorN)|UIDT1],
+        NT0=[empty(UserName,YorN1)|NT1],
+        check_uid_and_username(YorN,YorN1,UID,UserName,
+            {UserName,Password,Priority,Directory,PE,EntryPoint,CommentList,0}, % 0 = ref
+            UIDT1,UIDT,NT1,NT,Rest,Status).
+put_user({UserName,Password,UID,Priority,Directory,PE,EntryPoint,CommentList},UIDT0,UIDT,NT0,NT,Rest,Status) :-
+    string(UserName,_,_),
+    string(Password,_,_),
+    integer(UID),
+    integer(Priority),
+    Directory = *,
+    PE = *,
+    CommentList = []|
+        UIDT0=[empty(UID,YorN)|UIDT1],
+        NT0=[empty(UserName,YorN1)|NT1],
+        check_uid_and_username(YorN,YorN1,UID,UserName,
+            {UserName,Password,Priority,Directory,PE,EntryPoint,CommentList,0}, % 0 = ref
+            UIDT1,UIDT,NT1,NT,Rest,Status).
+otherwise.
+put_user(_,UIDT0,UIDT,NT0,NT,Rest,Status):-
+    true |
+        UIDT0 = [get_all(_)|UIDT],
+        NT0 = [get_all(_)|NT],
+        Status = abnormal.
+
+% if same uid/username exists, user device overwrites it.
+
+check_uid_and_username(yes,yes,Uid,UName,Info,UIDT0,UIDT,NT0,NT,Rest,Status) :-
+    true |
+        NT0=[put(UName,Uid,_)|NT1],
+        UIDT0=[put(Uid,Info,_)|UIDT1],
+        put_all_users(Rest,UIDT1,UIDT,NT1,NT,Status).
+otherwise.
+check_uid_and_username(_,_,_,_,_,UIDT0,UIDT,NT0,NT,_,Status):-
+    true |
+    UIDT0 = [get_all(_)|UIDT],
+    NT0   = [get_all(_)|NT],
+    Status = abnormal.
+
+string_equal(Password,Password,PasswordN,Status):-
+    true|
+    PasswordN = Password,
+    Status = normal.
+otherwise.
+string_equal(Password,_,PasswordN,Status):-
+    true|
+    Password = PasswordN,
+    Status = abnormal.
+
+check_password(V,_,_,Info,Status):-
+    vector(V,0)|
+    Info = 0,
+    Status = abnormal.
+otherwise.
+check_password({Info},OldPassword,NewPassword,Info1,Status) :-
+    true|
+        set_vector_element(Info,1,Password,PasswordN,Info2),
+        string_equal(Password,OldPassword,PasswordN,Status),
+        set_password(Status,NewPassword,Info2,Info1).
+
+set_password(normal,NewPassword,Info,Info1) :- % Same password
+    string(NewPassword,_,16) |
+        set_vector_element(Info,1,_,NewPassword,Info2),
+        set_vector_element(Info2,7,_,1,Info1).
+otherwise.
+set_password(_,_,Info,Info1) :-
+    true |
+        Info=Info1.
+
+wait_uid_table(Info,Info1,_,Status):-
+    vector(Info,0)|
+        Info1 = 0,          %   dispose
+        Status = abnormal.
+otherwise.
+wait_uid_table({Info},Info1,Password,Status):-
+    true|
+        set_vector_element(Info,1,Password0,Password00,Info1),
+        string_equal(Password0,Password,Password00,Status).
+
+wait_user_table(UID,UID1,Status):-
+    vector(UID,0)|
+        UID1 = 0,
+        Status = abnormal.
+otherwise.
+wait_user_table({UID},UID1,Status):-
+    true|
+    UID = UID1,
+    Status = normal(UID).
+
+transform([],Out,UIDT1,UIDT2):-
+    true|
+    Out = [],
+    UIDT1 = UIDT2.
+otherwise.
+transform([{UID,{UN,PASS,PRIO,DIR,PE,EP,COM,REF}}|Rest],Out1,UIDT1,UIDT2):-
+    true|
+    copy:copy(COM,COM1,COM2),
+    copy:copy(EP,EP1,EP2),
+    UIDT1 = [put(UID,{UN,PASS,PRIO,DIR,PE,EP1,COM1,REF},_)|UIDT11],
+    Out1 = [{UN,PASS,UID,PRIO,DIR,PE,EP2,COM2}|Out11],
+    transform(Rest,Out11,UIDT11,UIDT2).
+
+transform_info(Info1,Info,Status):-
+    vector(Info1,0)|
+    Info = 0,
+    Status = abnormal.
+otherwise.
+transform_info({{UN,PA,PRIO,DIR,PE,EP,CM,RC}},Info,Status):-
+    true|
+    copy:copy(EP,EP1,EP2),
+    copy:copy(CM,CM1,CM2),
+    Status = normal({UN,PRIO,DIR,PE,EP2,CM2}),
+    Info = {UN,PA,PRIO,DIR,PE,EP1,CM1,RC}.
+
+status_info(Info1,Info,Status):-
+    vector(Info1,0)|
+    Info = 0,
+    Status = abnormal.
+otherwise.
+status_info({Info1},Info,Status):-
+    true|
+    set_vector_element(Info1,7,RC,0,Info),
+    Status = normal(RC).
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%
+
+protection_filter(Uid,[set_up(Info,Status)|UserIn],UserOut) :-
+    Uid \= 0 |       % 
+        Status=abnormal,
+        protection_filter(Uid,UserIn,UserOut).
+protection_filter(0,[set_up(Info,Status)|UserIn],UserOut) :-
+    true |
+        UserOut=[set_up(Info,Status)|UserOut1],
+        protection_filter(0,UserIn,UserOut1).
+protection_filter(Uid,[authenticate(UserName,Password,Status)|UserIn],UserOut) :-
+    true |
+        UserOut=[authenticate(UserName,Password,Status)|UserOut1],
+        protection_filter(Uid,UserIn,UserOut1).
+protection_filter(Uid,[get_uid(UserName,Status)|UserIn],UserOut) :-
+    true |
+        UserOut=[get_uid(UserName,Status)|UserOut1],
+        protection_filter(Uid,UserIn,UserOut1).
+protection_filter(Uid,[get_info(Uid,Status)|UserIn],UserOut) :-
+    true |
+        UserOut=[get_info(Uid,Status)|UserOut1],
+        protection_filter(Uid,UserIn,UserOut1).
+protection_filter(0,[get_info(Uid,Status)|UserIn],UserOut) :-
+    true |
+        UserOut=[get_info(Uid,Status)|UserOut1],
+        protection_filter(0,UserIn,UserOut1).
+protection_filter(Uid,[get_info(Uid1,Status)|UserIn],UserOut) :-
+    Uid \= 0,
+    Uid1 \= Uid|
+        Status = abnormal,
+        protection_filter(Uid,UserIn,UserOut).
+protection_filter(Uid,[status(Uid,Status)|UserIn],UserOut) :-
+    true |
+        UserOut=[status(Uid,Status)|UserOut1],
+        protection_filter(Uid,UserIn,UserOut1).
+protection_filter(0,[status(Uid,Status)|UserIn],UserOut) :-
+    true|
+        UserOut=[status(Uid,Status)|UserOut1],
+        protection_filter(0,UserIn,UserOut1).
+protection_filter(Uid,[status(Uid1,Status)|UserIn],UserOut) :-
+    Uid \= 0,
+    Uid \= Uid1|
+    Status = abnormal,
+        protection_filter(0,UserIn,UserOut).
+protection_filter(Uid,[get_all_info(Status)|UserIn],UserOut) :-
+    Uid \= 0 |
+        Status=abnormal,
+        protection_filter(Uid,UserIn,UserOut).
+protection_filter(0,[get_all_info(Status)|UserIn],UserOut) :-
+    true |
+        UserOut=[get_all_info(Status)|UserOut1],
+        protection_filter(0,UserIn,UserOut1).
+protection_filter(Uid,[change_password(Uid1,OldPassword,NewPassword,Status)|UserIn],UserOut) :-
+    Uid \= Uid1,
+    Uid \= 0 |
+        Status=abnormal,
+        protection_filter(Uid,UserIn,UserOut).
+protection_filter(Uid,[change_password(Uid1,OldPassword,NewPassword,Status)|UserIn],UserOut) :-
+    Uid = Uid1 |
+        UserOut=[change_password(Uid1,OldPassword,NewPassword,Status)|UserOut1],
+        protection_filter(Uid,UserIn,UserOut1).
+protection_filter(0,[change_password(Uid1,OldPassword,NewPassword,Status)|UserIn],UserOut) :-
+    true |
+        UserOut=[change_password(Uid1,OldPassword,NewPassword,Status)|UserOut1],
+        protection_filter(0,UserIn,UserOut1).
+
+protection_filter(_,[],Out):-
+    true|
+        Out = [].
+
+wait_authenticate({Uid},Info00,Password,Status,UIDT,UIDT1):-
+    true|
+        Info00 = Uid,
+        UIDT=[get_and_put_if_any(Uid,Info,Info1,_)|UIDT1],
+        wait_uid_table(Info,Info1,Password,Status).
+otherwise.
+wait_authenticate(_,Info00,_,Status,UIDT,UIDT1):-
+        true|
+        Info00 = 0,
+        Status = abnormal,
+        UIDT = UIDT1.
+

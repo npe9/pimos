@@ -1,0 +1,70 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  pipe controller  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- module pipecnt.
+:- public go/4.
+
+go(CNT, DST, SRC, Atom) :- true |
+    main_cont(CNT, RPT, Atom, V, normal),
+    pipe:create(SRC, DST, RPT).
+
+main_cont([],RPT,Atom,V,Stat) :- true | V = [],
+    ( Stat = normal -> true ;
+      Stat = normal(D) -> D=closed ;
+      Stat = broken -> true ;
+      Stat = full -> true ;
+      Stat = full(S,D) -> S=aborted, D=closed ).
+main_cont([attach(Status, Detect)|CNT],RPT,Atom,V,Stat) :- true |
+    ( Stat = normal -> Status=normal, NStat=normal(Detect) ;
+      Stat = normal(D) -> Status=normal, NStat=normal(Detect), D=[] ;
+      Stat = broken -> Status=abnormal, NStat=broken, Detect=broken ;
+      Stat = full -> NStat=full(Status, Detect) ;
+      Stat = full(S,D) -> NStat=full(Status,Detect), S=abnormal, D=[] ),
+    main_cont(CNT,RPT,Atom,V,NStat).
+
+main_cont([MSG|CNT],RPT,Atom,V,Stat) :- vector_element(MSG,0,V0), V0\=attach |
+     ( MSG = get_id(ID) -> ID=normal(Atom) ;
+%      MSG = reset(Status) -> Status=normal(_,V,0) ;
+%      MSG = next_attention(Status) -> Status=normal(V) ;
+%      MSG = resend(_,Status) -> Status=normal ;
+%      MSG = cancel(_,Status) -> Status=normal ;
+     otherwise ;
+      true -> error_raise(MSG, string#"pipecnt:dummy_cont : ~w~t") ),
+    main_cont(CNT,RPT,Atom,V,Stat).
+
+main_cont(CNT,[],Atom,V,Stat) :- true | main_cont(CNT,_,Atom,V,Stat).
+main_cont(CNT,[pipeEmpty|RPT],Atom,V,Stat) :- true |
+    ( Stat = normal -> NStat = normal ;
+      Stat = normal(D) -> NStat = normal(D) ;
+      Stat = broken -> NStat = broken ;
+      Stat = full -> NStat = normal ;
+      Stat = full(S,D) -> NStat = normal(D), S=normal ),
+    main_cont(CNT,RPT,Atom,V,NStat).
+main_cont(CNT,[pipeFull|RPT],Atom,V,Stat) :- true |
+    ( Stat = normal -> NStat = full ;
+      Stat = normal(D) -> NStat = full, D = full ;
+      Stat = broken -> NStat = broken ;
+      Stat = full -> NStat = full ;
+      Stat = full(S,D) -> NStat = full(S,D) ),
+    main_cont(CNT,RPT,Atom,V,NStat).
+main_cont(CNT,[pipeBroken|RPT],Atom,V,Stat) :- true |
+    ( Stat = normal -> NStat = broken ;
+      Stat = normal(D) -> NStat = broken, D = broken ;
+      Stat = broken -> NStat = broken ;
+      Stat = full -> NStat = broken ;
+      Stat = full(S,D) -> NStat = broken, S = abnormal, D = broken ),
+    main_cont(CNT,RPT,Atom,V,NStat).
+main_cont(CNT,[MSG|RPT],Atom,V,Stat) :-
+        vector_element(MSG,0,V0), V0\=pipeEmpty, V0\=pipeFull, V0\=pipeBroken |
+    error_raise(MSG, "pipecnt:main_cont : ~w~n"),
+    main_cont(CNT,RPT,Atom,V,Stat).
+
+error_raise(Data, FString) :- true |
+    Type = illegal_message_to_pipe_server,
+    variable:wrap(Data, {_, WData}, 100, 100),
+    shoen:raise(pimos_tag#error, '$PIMOS$'(Type, FString), WData).

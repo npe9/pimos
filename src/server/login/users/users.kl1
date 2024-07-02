@@ -1,0 +1,407 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- module users.
+:- public go/0 , apply_goal/4 , apply_goal/5 .
+:- include("pimos.h").
+
+go:- true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [file(FileReq)|GRN],
+    filereq_open(FileReq,GRN,_).
+
+filereq_open(normal(FR,_,_),GR,Status):- true|
+    GR = [window(WinReq)|GRN],
+    check_others(WinReq,FR,GRN,Status).
+otherwise.
+filereq_open(_,GR,Status):- true|
+    GR = [],
+    Status = abnormal.
+
+check_others(normal(WR,_,_),FR,GR,Status):- true|
+    GR = [number_of_feps(Feps),module(ModReq)|GRN],
+    check_others2(Feps,ModReq,WR,FR,GRN,Status).
+otherwise.
+check_others(_,FR,GR,Status):- true|
+    FR = [],
+    GR = [],
+    Status = abnormal.
+
+check_others2(normal(Feps),normal(ModReq,_,_),WR,FR,GR,Status):-
+    true|
+    ModReq = [create(Mod)],
+    mod_open(Mod,WR,FR,GR,Feps,Status).
+otherwise.
+check_others2(_,_,WR,FR,GR,Status):-
+    true|
+    WR = [],
+    FR = [],
+    GR = [],
+    Status = abnormal.
+
+mod_open(normal(Mod,_,_),WR,FR,GR,Feps,Status):-
+    true |
+    current_node(_,XY),
+    WR = [create(Win)],
+    win_open(Win,FR,GR,{Mod,Feps,XY},Status).
+otherwise.
+mod_open(_,WR,FR,GR,_,Status):- true|
+    WR = [],
+    FR = [],
+    GR = [],
+    Status = abnormal.
+
+win_open(normal(Win,_,_),FR,GR,OR,Status):- true|
+    Win = [set_title(string#"USERS",_),
+                     reshape(at(0,280),char(17,13),_),show(_),
+                     set_font(string#"font:test_11.font",_),
+                     putb(string#"User Name>>",_),
+                     getb(255,USER),flush(Wait)|WinN],
+    wait_login(Wait,USER,WinN,FR,GR,OR,Status).
+otherwise.
+win_open(_,FR,GR,{Mod,_,_},Status):- true|
+    Mod = [],
+    FR = [],
+    GR = [],
+    Status = abnormal.
+
+:- switch(machine).
+:- case(vm).
+wait_login(Wait,normal(USERNL),Win,FR,GR,OR,Status):-
+    wait(Wait),
+    wait(USERNL)|
+    removeNL(USERNL,USER),
+    FR = [open(string#">sys>user>me>pimos.users",
+               read(File))|FRN],
+    check_users(File,USER,Win,FRN,GR,OR,Status).
+:- default.
+wait_login(Wait,normal(USERNL),Win,FR,GR,OR,Status):-
+    wait(Wait),
+    wait(USERNL)|
+    removeNL(USERNL,USER),
+    FR = [open(string#"pimos:pimos.users",
+               read(File))|FRN],
+    check_users(File,USER,Win,FRN,GR,OR,Status).
+:- end_switch.
+otherwise.
+wait_login(_,_,Win,FR,GR,{Mod,_,_},Status):- true|
+    Win = [],
+    FR = [],
+    GR = [],
+    Mod = [],
+    Status = abnormal.
+
+check_users(normal(OFile,_,_),USER,Win,FR,GR,OR,Status):- true|
+    buffer:input_filter(File,OFile),
+    File = [getwt(Term)|FileN],
+    check_user(Term,USER,FileN,Win,FR,GR,OR,Status).
+otherwise.
+check_users(_,_,Win,FR,GR,{Mod,_,_},Status):- true|
+    Win = [],
+    FR = [],
+    GR = [],
+    Mod = [],
+    Status = abnormal.
+
+check_user(normal(end_of_file),_,File,Win,FR,GR,OR,Status):- true|
+    File = [],
+    getnl(NL),
+    Win = [putb(string#"???",_),putb(NL,_),putb(string#"User Name>>",_),
+           flush(Wait),getb(255,USER)|WinN],
+    wait_login(Wait,USER,WinN,FR,GR,OR,Status).
+check_user(normal(empty),USER,File,Win,FR,GR,OR,Status):- true|
+    File = [getwt(Term)|FileN],
+    check_user(Term,USER,FileN,Win,FR,GR,OR,Status).
+otherwise.
+check_user(normal(Term),USER2,File,Win,FR,GR,OR,Status):-
+    true|
+    variable:unwrap(Term,{_,Term2},[count(N)]),
+    check_user2(N,Term2,USER2,File,Win,FR,GR,OR,Status).
+otherwise.
+check_user(_,USER,File,Win,FR,GR,OR,Status):- true|
+    File = [getwt(Term)|FileN],
+    check_user(Term,USER,FileN,Win,FR,GR,OR,Status).
+
+check_user2(0,user(USER1,TASKS),USER2,File,Win,FR,GR,OR,Status):-
+    string(USER1,L,T),
+    string(USER2,L,T)|
+    check_user_name(L,USER1,USER2,UNStatus),
+    wait_un_status(UNStatus,USER2,TASKS,File,Win,FR,GR,OR,Status).
+otherwise.
+check_user2(_,_,USER,File,Win,FR,GR,OR,Status):- true|
+    File = [getwt(Term)|FileN],
+    check_user(Term,USER,FileN,Win,FR,GR,OR,Status).
+
+check_user_name(0,_,_,Status):- true|
+    Status = normal.
+check_user_name(L,USER1,USER2,Status):-
+    L > 0,
+    L1 := L - 1,
+    string_element(USER1,L1,E1),
+    string_element(USER2,L1,E1)|
+    check_user_name(L1,USER1,USER2,Status).
+otherwise.
+check_user_name(_,_,_,Status):- true|
+    Status = abnormal.
+
+wait_un_status(normal,USER,TASKS,File,Win,FR,GR,{Mod,Feps,XY},Status):- true|
+    File = [],
+    exec_tasks(TASKS,Mod,ModN,Feps,XY,USER),
+    Win = [clear(_),putb(string#"User Name>>",_),
+           flush(Wait),getb(255,NUSER)|WinN],
+    wait_login(Wait,NUSER,WinN,FR,GR,{ModN,Feps,XY},Status).
+otherwise.
+wait_un_status(_,USER,_,File,Win,FR,GR,OR,Status):- true|
+    File = [getwt(Term)|FileN],
+    check_user(Term,USER,FileN,Win,FR,GR,OR,Status).
+
+exec_tasks([system(FEP,Node,Dir,PE,Name,{':',Module,PredArg})|Tasks],
+                                    Mod,ModN,Feps,XY,USER):-
+    string(Name,_,_)|
+    check_fep(Node,Feps,FepStat),
+    check_dir(FEP,Dir,Feps,DirStat),
+    check_pe(PE,XY,PEStat),
+    check_code(Module,PredArg,Mod,Mod0,CodeStat),
+    exec_code(FepStat,PEStat,CodeStat,DirStat,Name,USER),
+    exec_tasks(Tasks,Mod0,ModN,Feps,XY,USER).
+exec_tasks([],Mod,ModN,_,_,_):- true|
+    Mod = ModN.
+otherwise.
+exec_tasks(_,Mod,ModN,_,_,_):- true|
+    Mod = ModN.
+
+
+check_code(Module,PredArg,Mod,ModN,Status):-
+    vector(PredArg,NN),
+    NN > 0,
+    NN1 := NN - 1,
+    atom(Module)|
+    get_pred_and_args(NN,PredArg,Pred,Args),
+    Mod = [get_code(pimos,Module,Pred,NN1,CodeStatus)|ModN],
+    check_code_0(CodeStatus,Args,Status).
+check_code(Module,Pred,Mod,ModN,Status):-
+    atom(Pred),
+    atom(Module)|
+    Mod = [get_code(pimos,Module,Pred,0,CodeStatus)|ModN],
+    check_code_0(CodeStatus,{},Status).
+otherwise.
+check_code(_,_,Mod,ModN,Status):- true|
+    Mod = ModN,
+    Status = abnormal.
+
+check_code_0(normal(Code),Args,Status):- true|
+    Status = normal(Code,Args).
+otherwise.
+check_code_0(_,_,Status):- true|
+    Status = abnormal.
+
+check_fep(Fep,Feps,Status):-
+    integer(Fep),
+    Fep >= 0,
+    Fep < Feps|
+    Status = normal(Fep).
+check_fep(Fep,_,Status):-
+    string(Fep,_,_)|
+    Status = normal(Fep).
+check_fep(*,_,Status):- true|
+    Status = normal(*).
+otherwise.
+check_fep(_,_,Status):- true|
+    Status = abnormal.
+
+check_dir(Fep,Dir,Feps,Status):-
+    integer(Fep),
+    Fep >= 0,
+    Fep < Feps,
+    string(Dir,_,_)|
+    Status = normal({Fep,Dir}).
+check_dir(*,Dir,_,Status):-
+    string(Dir,_,_)|
+    Status = normal({*,Dir}).
+otherwise.
+check_dir(_,_,_,Status):- true|
+    Status = abnormal.
+
+check_pe(PE,XY,Status):-
+    integer(PE),
+    PE >= 0,
+    PE < XY|
+    Status = normal(PE).
+check_pe(*,_,Status):- true|
+    Status = normal(*).
+otherwise.
+check_pe(_,_,Status):- true|
+    Status = abnormal.
+
+%  exec_code(FepStat,PEStat,CodeStat,DirStat,Name,USER),
+exec_code(normal(Fep),normal(PE),normal(Code,Args),normal(Dir),Name,USER):-
+    integer(Fep),
+    integer(PE)|
+%    current_node(Rel,_),
+%    current_processor(Abs,_,_),
+%    Rel1 := PE - (Abs - Rel),
+    check_code_2(Code,Args,Name,Dir,Fep,USER)@node(PE).
+exec_code(normal(*),normal(PE),normal(Code,Args),normal(Dir),Name,USER):-
+    integer(PE)|
+%    current_node(Rel,_),
+%    current_processor(Abs,_,_),
+%    Rel1 := PE - (Abs - Rel),
+    check_code_2(Code,Args,Name,Dir,USER)@node(PE).
+exec_code(normal(Fep),normal(*),normal(Code,Args),normal(Dir),Name,USER):-
+    integer(Fep)|
+    check_code_2(Code,Args,Name,Dir,Fep,USER).
+exec_code(normal(*),normal(*),normal(Code,Args),normal(Dir),Name,USER):-
+    true|
+    check_code_2(Code,Args,Name,Dir,USER).
+otherwise.
+exec_code(_,_,_,_,_,_):-
+    true |
+    true.
+
+check_code_2(Code,Args,Name,Dir,USER):-
+    true |
+    predicate_to_code(module#users,apply_goal,4,AG),
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [execute(AG,{Dir,USER,Code,Args},Name,0,4050,-1,Status)],
+    monitor(Status).
+
+check_code_2(Code,Args,Name,Dir,Fep,USER):-
+    true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    predicate_to_code(module#users,apply_goal,5,AG),
+    GR = [execute(AG,{Dir,USER,Fep,Code,Args},Name,0,4050,-1,Status)],
+    monitor(Status).
+
+get_pred_and_args(N,PredArgs,Pred,Args):-
+    N1 := N - 1|
+    set_vector_element(PredArgs,0,Pred,[],A2),
+    new_vector(A3,N1),
+    set_args(N,N1,A2,A3,Args).
+
+set_args(1,0,_,A3,Args):-
+    true|
+    A3 = Args.
+otherwise.
+set_args(N,N1,A2,A3,Args):-
+    NN1 := N1 - 1|
+    set_vector_element(A2,N1,E1,[],A21),
+    set_vector_element(A3,NN1,_,E1,A31),
+    set_args(N1,NN1,A21,A31,Args).
+
+monitor(normal(C,R)):-
+    true|
+    monitor(R,C).
+
+monitor([terminated|R],C):- true|
+   C = [].
+
+monitor([aborted|R],C):- true|
+   monitor(R,C).
+
+monitor([resource_low|R],C):- true|
+   C = [add_resource(16#"FFFFFFF",16#"FFFFFFFF"),allow_resource_report|CN],
+   monitor(R,CN).
+
+monitor([resource_added|R],C):- true|
+   monitor(R,C).
+
+monitor([return_resource(_,_)|R],C):- true|
+   monitor(R,C).
+
+monitor([resource_report_allowed|R],C):- true|
+   monitor(R,C).
+
+monitor([statistics_started|R],C):- true|
+   monitor(R,C).
+
+monitor([exception(Code,Info,_,_)|R],C):- true|
+   C = [abort(_)|CN],
+   monitor(R,CN).
+
+monitor([],C):- true|
+   C = [].
+otherwise.
+monitor([Msg|R],C):- true|
+   monitor(R,C).
+
+getnl(NL):- true|
+    new_string(ST0,1,16),
+    set_string_element(ST0,0,key#lf,NL).
+
+removeNL(String,NewString):-
+   string(String,Size,ES),
+   Size1 := Size - 1|
+   new_string(MedString,Size1,ES),
+   copy_string(String,MedString,NewString,Size1).
+copy_string(String,MedString,NewString,0):- true|
+   NewString = MedString.
+otherwise.
+copy_string(String,MedString,NewString,N):-
+   N1 := N  - 1|
+   string_element(String,N1,E,StringN),
+   set_string_element(MedString,N1,E,MedStringN),
+   copy_string(StringN,MedStringN,NewString,N1).
+
+apply_goal(Dir,USER,Code,Args):- true|
+    ground_term:efilter(Args,NewArgs),
+    apply_goal_with_new_args(Dir,USER,Code,NewArgs).
+
+apply_goal_with_new_args({Fep,Dir},USER,Code,Args):- true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    set_env(Dir,Fep,USER,GR,Code,Args).
+
+apply_goal(Dir,USER,Fep,Code,Args):- true|
+    ground_term:efilter(Args,NewArgs),
+    apply_goal_with_new_args(Dir,USER,Fep,Code,NewArgs).
+apply_goal_with_new_args({Fep,Dir},USER,Node,Code,Args):- true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    set_env(Dir,Node,Fep,USER,GR,Code,Args).
+
+set_env(Dir,Fep,USER,GR,Code,Args):-
+    integer(Fep)|
+    GR = [setenv(task:directory,Dir,Status0),
+          setenv(task:home,Dir,_),
+          setenv(task:fep,Fep,Status1),
+          setenv(task:user,USER,Status2)],
+    wait_fep(Status0,Status1,Status2,Code,Args).
+set_env(Dir,*,USER,GR,Code,Args):-
+    true|
+    GR = [setenv(task:directory,Dir,Status0),
+          setenv(task:home,Dir,_),
+          setenv(task:user,USER,Status2)],
+    wait_fep(Status0,normal,Status2,Code,Args).
+
+set_env(Dir,Node,Fep,USER,GR,Code,Args):-
+    integer(Fep)|
+    GR = [setenv(task:directory,Dir,Status0),
+          setenv(task:home,Dir,_),
+          setenv(task:io_node,Node,Status1),
+          setenv(task:fep,Fep,Status2),
+          setenv(task:user,USER,Status3)],
+    wait_fep(Status0,Status1,Status2,Status3,Code,Args).
+set_env(Dir,Node,*,USER,GR,Code,Args):-
+    true|
+    GR = [setenv(task:directory,Dir,Status0),
+          setenv(task:home,Dir,_),
+          setenv(task:io_node,Node,Status1),
+          setenv(task:user,USER,Status3)],
+    wait_fep(Status0,Status1,normal,Status3,Code,Args).
+
+wait_fep(Status0,Status1,Status2,Status3,Code,Args):-
+    wait(Status0),
+    wait(Status1),
+    wait(Status2),
+    wait(Status3)|
+    apply(Code,Args).
+
+wait_fep(Status0,Status1,Status2,Code,Args):-
+    wait(Status0),
+    wait(Status1),
+    wait(Status2)|
+    apply(Code,Args).
+
+

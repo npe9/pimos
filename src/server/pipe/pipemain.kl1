@@ -1,0 +1,331 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is PIPE module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module pipe.
+:- public create/3.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% create(SourceSide, DestinationSide, Report)    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create(Src, Dst, Rpt) :- true |
+    breakUp(Src, X, V), pipe(X, Y, Rpt, Max), Max = 1000, setUp(Dst, Y, V).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    Break up the STRING into LIST    %
+%        breakUp(In, Out)    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+breakUp([], Out, V) :- true | Out = [], V = [].
+breakUp([Mes | In], Out, V) :- true |
+    (Mes = putb(String, Status), string(String, Size, _) ->
+        break(String, Out, NOut, 0, Size, Status) ;
+     Mes = flush(Done) -> Done = normal, NOut = Out ;
+     Mes = reset(Status) -> Status = normal(_,V,0), NOut = Out ;
+     Mes = next_attention(Status) -> Status = normal(V), NOut = Out ;
+     Mes = resend(_, Status) -> Status = normal, NOut = Out ;
+     Mes = cancel(_, Status) -> Status = normal, NOut = Out ;
+     Mes = get_attributes(Status) -> Status = normal(pipe,[]), NOut = Out ;
+    otherwise ;
+     true -> NOut = Out ),
+    breakUp(In, NOut, V).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  String break up  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%  Calling Sequence  %%%%%%%%%%%
+%string(String, Size, _) |               %
+%break(String, Out, Cdr, 0, Size, Status)%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+break(_, Out, Cdr, Cntr, Size, Status) :- Cntr = Size |
+    Out = Cdr, Status = normal.
+break(String, Out, Cdr, Cntr, Size, Status) :- Cntr < Size | NCntr := Cntr + 1,
+    string_element(String, Cntr, Elmnt, NString),
+    Out = [put(Elmnt) | NOut],
+    break(NString, NOut, Cdr, NCntr, Size, Status).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    Main module of the PIPE            %
+%        pipe(Src, Dst, Rpt, Max)    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Pipe Creation  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+pipe(Src, Dst, Rpt, Max) :- true |
+    emptyPipe(Src, Dst, Rpt, DList, DList, 0, Max).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Pipe Process (Empty State)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+emptyPipe([], Dst, Rpt, _, Tail, _, _) :- true | Tail = [],
+    srcClosedEmptyPipe(Dst, Rpt).
+emptyPipe(Src, [], Rpt, Head, Tail, Cntr, Max) :- true |
+    dstClosedEmptyPipe(Src, Rpt, Head, Tail, Cntr, Max).
+emptyPipe([put(Elmnt) | Src], Dst, Rpt, Head, Tail, Cntr, Max) :-
+    add(Cntr, 1, NewCntr), NewCntr < Max, NewCntr > 0 |
+    Tail = [Elmnt | NewTail],
+    normalPipe(Src, Dst, Rpt, Head, NewTail, NewCntr, Max).
+emptyPipe([put(Elmnt) | Src], Dst, Rpt, Head, Tail, Cntr, Max) :-
+    add(Cntr, 1, NewCntr), NewCntr < Max, NewCntr =< 0 |
+    Tail = [Elmnt | NewTail],
+    emptyPipe(Src, Dst, Rpt, Head, NewTail, NewCntr, Max).
+emptyPipe(Src, [get(Elmnt, Stat) | Dst], Rpt, Head, Tail, Cntr, Max) :- true |
+    subtract(Cntr, 1, NewCntr),
+    getFromPipe(Head, NewHead, Elmnt, Stat),
+    emptyPipe(Src, Dst, Rpt, NewHead, Tail, NewCntr, Max).
+%otherwise.
+emptyPipe([M | Src], Dst, Rpt, Head, Tail, Cntr, Max) :-
+    vector_element(M, 0, V0), V0 \= put |
+    emptyPipe(Src, Dst, Rpt, Head, Tail, Cntr, Max).
+emptyPipe(Src, [M | Dst], Rpt, Head, Tail, Cntr, Max) :-
+    vector_element(M, 0, V0), V0 \= get |
+    emptyPipe(Src, Dst, Rpt, Head, Tail, Cntr, Max).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Pipe Process (Normal State)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+normalPipe(Src, [get(Elmnt, Stat) | Dst], Rpt, Head, Tail, Cntr, Max) :-
+    subtract(Cntr, 1, NewCntr), NewCntr =< 0 |
+    getFromPipe(Head, NewHead, Elmnt, Stat),
+    emptyPipe(Src, Dst, Rpt, NewHead, Tail, NewCntr, Max).
+normalPipe(Src, [get(Elmnt, Stat) | Dst], Rpt, Head, Tail, Cntr, Max) :-
+    subtract(Cntr, 1, NewCntr), NewCntr > 0 |
+    getFromPipe(Head, NewHead, Elmnt, Stat),
+    normalPipe(Src, Dst, Rpt, NewHead, Tail, NewCntr, Max).
+alternatively.
+normalPipe([], Dst, Rpt, Head, Tail, Cntr, _) :- true | Tail = [],
+    srcClosedNormalPipe(Dst, Rpt, Head, Cntr).
+normalPipe(Src, [], Rpt, Head, Tail, Cntr, Max) :- true |
+    dstClosedNormalPipe(Src, Rpt, Head, Tail, Cntr, Max).
+normalPipe([put(Elmnt) | Src], Dst, Rpt, Head, Tail, Cntr, Max) :-
+    add(Cntr, 1, NewCntr), NewCntr >= Max |
+    Tail = [Elmnt | NewTail],
+    Rpt = [pipeFull | NewRpt],
+    fullPipe(Src, Dst, NewRpt, Head, NewTail, NewCntr, Max).
+normalPipe([put(Elmnt) | Src], Dst, Rpt, Head, Tail, Cntr, Max) :-
+    add(Cntr, 1, NewCntr), NewCntr < Max |
+    Tail = [Elmnt | NewTail],
+    normalPipe(Src, Dst, Rpt, Head, NewTail, NewCntr, Max).
+%otherwise.
+normalPipe([M | Src], Dst, Rpt, Head, Tail, Cntr, Max) :-
+    vector_element(M, 0, V0), V0 \= put |
+    normalPipe(Src, Dst, Rpt, Head, Tail, Cntr, Max).
+normalPipe(Src, [M | Dst], Rpt, Head, Tail, Cntr, Max) :-
+    vector_element(M, 0, V0), V0 \= get |
+    normalPipe(Src, Dst, Rpt, Head, Tail, Cntr, Max).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Pipe Process (Full State)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+fullPipe([], Dst, Rpt, Head, Tail, Cntr, Max) :- true | Tail = [],
+    srcClosedFullPipe(Dst, Rpt, Head, Cntr, Max).
+fullPipe(_, [], Rpt, _, Tail, _, _) :- true | Tail = [], Rpt = [pipeBroken].
+fullPipe([put(Elmnt) | Src], Dst, Rpt, Head, Tail, Cntr, Max) :- true |
+    add(Cntr, 1, NewCntr), Tail = [Elmnt | NewTail],
+    fullPipe(Src, Dst, Rpt, Head, NewTail, NewCntr, Max).
+fullPipe(Src, [get(Elmnt, Stat) | Dst], Rpt, Head, Tail, Cntr, Max) :-
+    subtract(Cntr, 1, NewCntr), NewCntr < Max, NewCntr > 0 |
+    getFromPipe(Head, NewHead, Elmnt, Stat),
+    Rpt = [pipeEmpty | NewRpt],
+    normalPipe(Src, Dst, NewRpt, NewHead, Tail, NewCntr, Max).
+fullPipe(Src, [get(Elmnt, Stat) | Dst], Rpt, Head, Tail, Cntr, Max) :-
+    subtract(Cntr, 1, NewCntr), NewCntr >= Max, NewCntr > 0 |
+    getFromPipe(Head, NewHead, Elmnt, Stat),
+    fullPipe(Src, Dst, Rpt, NewHead, Tail, NewCntr, Max).
+%otherwise.
+fullPipe(Src, [M | Dst], Rpt, Head, Tail, Cntr, Max) :-
+    vector_element(M, 0, V0), V0 \= get |
+    fullPipe(Src, Dst, Rpt, Head, Tail, Cntr, Max).
+fullPipe([M | Src], Dst, Rpt, Head, Tail, Cntr, Max) :-
+    vector_element(M, 0, V0), V0 \= put |
+    fullPipe(Src, Dst, Rpt, Head, Tail, Cntr, Max).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Pipe Process (Source Closed Empty State)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+srcClosedEmptyPipe([], Rpt) :- true | Rpt = [].
+srcClosedEmptyPipe([get(Elmnt, Stat) | Dst], Rpt) :- true |
+    getFromPipe([], _, Elmnt, Stat),
+    srcClosedEmptyPipe(Dst, Rpt).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Pipe Process (Source Closed Normal State)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+srcClosedNormalPipe([get(Elmnt, Stat) | Dst], Rpt, Head, Cntr) :-
+    subtract(Cntr, 1, NewCntr), NewCntr =< 0 |
+    getFromPipe(Head, _, Elmnt, Stat),
+    srcClosedEmptyPipe(Dst, Rpt).
+srcClosedNormalPipe([get(Elmnt, Stat) | Dst], Rpt, Head, Cntr) :-
+    subtract(Cntr, 1, NewCntr), NewCntr > 0 |
+    getFromPipe(Head, NewHead, Elmnt, Stat),
+    srcClosedNormalPipe(Dst, Rpt, NewHead, NewCntr).
+alternatively.
+srcClosedNormalPipe([], Rpt, _, _) :- true | Rpt = [].
+%otherwise.
+srcClosedNormalPipe([M | Dst], Rpt, Head, Cntr) :-
+    vector_element(M, 0, V0), V0 \= get |
+    srcClosedNormalPipe(Dst, Rpt, Head, Cntr).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Pipe Process (Source Closed Full State)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+srcClosedFullPipe([], Rpt, _, _, _) :- true | Rpt = [pipeBroken].
+srcClosedFullPipe([get(Elmnt, Stat) | Dst], Rpt, Head, Cntr, Max) :-
+    subtract(Cntr, 1, NewCntr), NewCntr < Max, NewCntr > 0 |
+    getFromPipe(Head, NewHead, Elmnt, Stat),
+    Rpt = [pipeEmpty | NewRpt],
+    srcClosedNormalPipe(Dst, NewRpt, NewHead, NewCntr).
+srcClosedFullPipe([get(Elmnt, Stat) | Dst], Rpt, Head, Cntr, Max) :-
+    subtract(Cntr, 1, NewCntr), NewCntr >= Max, NewCntr > 0 |
+    getFromPipe(Head, NewHead, Elmnt, Stat),
+    srcClosedFullPipe(Dst, Rpt, NewHead, NewCntr, Max).
+%otherwise.
+srcClosedFullPipe([M | Dst], Rpt, Head, Cntr, Max) :-
+    vector_element(M, 0, V0), V0 \= get |
+    srcClosedFullPipe(Dst, Rpt, Head, Cntr, Max).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Pipe Process (Destination Closed Empty State)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+dstClosedEmptyPipe([], Rpt, _, Tail, _, _) :- true | Tail = [], Rpt = [].
+dstClosedEmptyPipe([put(Elmnt) | Src], Rpt, Head, Tail, Cntr, Max) :-
+    add(Cntr, 1, NewCntr), NewCntr < Max, NewCntr > 0 |
+    Tail = [Elmnt | NewTail],
+    dstClosedNormalPipe(Src, Rpt, Head, NewTail, NewCntr, Max).
+dstClosedEmptyPipe([put(Elmnt) | Src], Rpt, Head, Tail, Cntr, Max) :-
+    add(Cntr, 1, NewCntr), NewCntr < Max, NewCntr =< 0 |
+    Tail = [Elmnt | NewTail],
+    dstClosedEmptyPipe(Src, Rpt, Head, NewTail, NewCntr, Max).
+%otherwise.
+dstClosedEmptyPipe([M | Src], Rpt, Head, Tail, Cntr, Max) :-
+    vector_element(M, 0, V0), V0 \= put |
+    dstClosedEmptyPipe(Src, Rpt, Head, Tail, Cntr, Max).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Pipe Process (Destination Closed Normal State)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+dstClosedNormalPipe([], Rpt, _, Tail, _, _) :- true | Tail = [], Rpt = [].
+dstClosedNormalPipe([put(_) | _], Rpt, _, Tail, Cntr, Max) :-
+    add(Cntr, 1, NewCntr), NewCntr >= Max |
+    Tail = [], Rpt = [pipeBroken].
+dstClosedNormalPipe([put(Elmnt) | Src], Rpt, Head, Tail, Cntr, Max) :-
+    add(Cntr, 1, NewCntr), NewCntr < Max |
+    Tail = [Elmnt | NewTail],
+    dstClosedNormalPipe(Src, Rpt, Head, NewTail, NewCntr, Max).
+%otherwise.
+dstClosedNormalPipe([M | Src], Rpt, Head, Tail, Cntr, Max) :-
+    vector_element(M, 0, V0), V0 \= put |
+    dstClosedNormalPipe(Src, Rpt, Head, Tail, Cntr, Max).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Get a element from the pipe process  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+getFromPipe([], NewHead, Elmnt, Stat) :- true |
+    Elmnt = 0, Stat = end_of_data, NewHead = [].
+getFromPipe([M | Head], NewHead, Elmnt, Stat) :- true |
+    Elmnt = M, Stat = normal, NewHead = Head.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    Set up the LIST into STRING    %
+%        setUp(In, Out)        %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+setUp([], Out, V) :- true | Out = [], V = [].
+setUp([getb(Size, StringWithStatus) | In], Out, V) :- true |
+    builtin#new_string(NewString, Size),
+    set(NewString, TmpString, Out, NewOut, 0, Size, 0, RealSize, Status),
+    builtin#substring(TmpString, 0, RealSize, String, _),
+    checkStatus(Status, String, StringWithStatus),
+    setUp(In, NewOut, V).
+setUp([getb_noecho(Size, StringWithStatus) | In], Out, V) :- true |
+    builtin#new_string(NewString, Size),
+    set(NewString, TmpString, Out, NewOut, 0, Size, 0, RealSize, Status),
+    builtin#substring(TmpString, 0, RealSize, String, _),
+    checkStatus(Status, String, StringWithStatus),
+    setUp(In, NewOut, V).
+setUp([Mes | In], Out, V) :- vector_element(Mes, 0, V0),
+        V0 \= getb, V0 \= getb_noecho |
+    (Mes = prompt(_, Status) -> Status = normal ;
+     Mes = ungetb(_, Status) -> Status = normal ;
+     Mes = reset(Status) -> Status = normal(_,V,0) ;
+     Mes = next_attention(Status) -> Status = normal(V) ;
+     Mes = resend(_, Status) -> Status = normal ;
+     Mes = cancel(_, Status) -> Status = normal ;
+     Mes = get_attributes(Status) -> Status = normal(pipe,[]) ;
+    otherwise ;
+     true -> true ),
+    setUp(In, Out, V).
+
+checkStatus(normal, String, StringWithStatus) :- true |
+    StringWithStatus = normal(String).
+checkStatus(end_of_file, _, StringWithStatus) :- true |
+    StringWithStatus = end_of_file.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  String set up  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%  Calling Sequence  %%%%%%%%%%%%%%%%%%%%%%%
+%set(NowString, String, Out, Cdr, 0, Size, 0, RealSize, Status)%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+set(NowString, String, Out, Cdr, Cntr, Size, RealCntr, RealSize, Status) :-
+    Cntr = Size |
+    RealSize = RealCntr,
+    Out = Cdr,
+    String = NowString,
+    setStatus(Status, RealSize).
+set(NowString, String, Out, Cdr, Cntr, Size, RealCntr, RealSize, Status) :-
+    Cntr < Size |
+    add(Cntr, 1, NewCntr),
+    Out = [get(Elmnt, Stat) | NewOut],
+    set_string_element(NowString, Cntr, Elmnt, NewString),
+    set1(Stat, NewString, String, NewOut, Cdr,
+        NewCntr, Size, RealCntr, RealSize, Status).
+
+set1(normal, NowString, String, Out, Cdr,
+        Cntr, Size, RealCntr, RealSize, Status) :-
+    add(RealCntr, 1, NewRealCntr) |
+    set(NowString, String, Out, Cdr,
+        Cntr, Size, NewRealCntr, RealSize, Status).
+set1(end_of_data, NowString, String, Out, Cdr,
+        Cntr, Size, RealCntr, RealSize, Status) :- true |
+    set(NowString, String, Out, Cdr,
+        Cntr, Size, RealCntr, RealSize, Status).
+
+setStatus(Status, RealSize) :- RealSize =< 0 |
+    Status = end_of_file.
+setStatus(Status, RealSize) :- RealSize > 0 |
+    Status = normal.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                       %%%%%
+%%%%%  End of PIPE module.  %%%%%
+%%%%%                       %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+

@@ -1,0 +1,732 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ :- module socreq_filter .
+ :- public socreq_filter /2 .
+:- with_macro pimos.
+
+socreq_filter(User,OS) :-true|
+        socreq_filter(User,OS,_,[]) .
+socreq_filter(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$1'(_1,__1,Flag,[socket_request]),
+        '-attention'(_3,__3,Flag,[socket_request]) .
+socreq_filter(User,abnormal,_,Error) :-true|
+        User =abnormal .
+socreq_filter(User,aborted,_,Error) :-true|
+        User =aborted .
+socreq_filter(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+normal$$$stream$1'([User|U2],OS,_,Error) :-true|
+        '+socreq_command'(User,OS1,Flag,[socket_request]),
+        '+normal$$$stream$1$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$1'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$1$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$1'(U2,OS2,_,Error) .
+'+normal$$$stream$1$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'-attention'(User,attention,_,Error) :-true|
+        User =attention .
+'-attention'(User,[],_,Error) :-true|
+        User =[] .
+'+socreq_command'(connect(_1,_2),OS,_,Error) :-true|
+        '+socreq_command$wait'(connect(__1,_2),OS,Flag,Error),
+        '+address_host'(_1,__1,Flag,[address_host,'connect /2'|Error]) .
+'+socreq_command'(listen(_1,_2,_3),OS,_,Error) :-true|
+        '+socreq_command$wait'(listen(__1,__2,_3),OS,Flag,Error),
+        '+address'(_1,__1,Flag,[address,'listen /3'|Error]),
+        '+backlog'(_2,__2,Flag,[backlog,'listen /3'|Error]) .
+otherwise .
+'+socreq_command'(User,OS,Flag,Error) :-true|
+        '+aa_command'(User,OS,Flag,Error) .
+'+socreq_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+socreq_command$wait'(connect(__1,_2),OS,_,Error) :-wait(__1)|
+        connect(__1,__2) =OS,
+        '-connect$$$enu$1'(_2,__2,Flag,[socket]) .
+'+socreq_command$wait'(listen(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        listen(__1,__2,__3) =OS,
+        '-listen$$$enu$1'(_3,__3,Flag,[socket]) .
+'-connect$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$2'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-connect$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-connect$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-connect$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-listen$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$3'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-listen$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-listen$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-listen$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+address_host'({_1,_2},OS,_,Error) :-true|
+        '+address_host$wait'({__1,__2},OS,Flag,Error),
+        '+ip2'(_1,__1,Flag,[address_host,'connect /2'|Error]),
+        '+port'(_2,__2,Flag,[address_host,'connect /2'|Error]) .
+otherwise .
+'+address_host'(User,OS,Flag,Error) :-true|
+        '+address2'(User,OS,Flag,[address_host,'connect /2'|Error]) .
+'+address_host$wait'(User,OS,fail,Error) :-true|
+        true .
+'+address_host$wait'({__1,__2},OS,_,Error) :-wait(__1),wait(__2)|
+        {__1,__2} =OS .
+'+address'({_1},OS,_,Error) :-true|
+        '+address$wait'({__1},OS,Flag,Error),
+        '+port'(_1,__1,Flag,[address,'listen /3'|Error]) .
+otherwise .
+'+address'(User,OS,Flag,Error) :-true|
+        '+address1'(User,OS,Flag,[address,'listen /3'|Error]) .
+'+address$wait'(User,OS,fail,Error) :-true|
+        true .
+'+address$wait'({__1},OS,_,Error) :-wait(__1)|
+        {__1} =OS .
+'+backlog'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+backlog'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+aa_command'(reset(_1),OS,_,Error) :-true|
+        reset(__1) =OS,
+        '-reset$$$enu$1'(_1,__1,Flag,['reset /1'|Error]) .
+'+aa_command'(next_attention(_1),OS,_,Error) :-true|
+        next_attention(__1) =OS,
+        '-next_attention$$$enu$1'(_1,__1,Flag,['next_attention /1'|Error]) .
+'+aa_command'(resend(_1,_2),OS,_,Error) :-true|
+        '+aa_command$wait'(resend(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'resend /2'|Error]) .
+'+aa_command'(cancel(_1,_2),OS,_,Error) :-true|
+        '+aa_command$wait'(cancel(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'cancel /2'|Error]) .
+otherwise .
+'+aa_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+aa_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+aa_command$wait'(resend(__1,_2),OS,_,Error) :-wait(__1)|
+        resend(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['resend /2'|Error]) .
+'+aa_command$wait'(cancel(__1,_2),OS,_,Error) :-wait(__1)|
+        cancel(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['cancel /2'|Error]) .
+'+normal$$$stream$2'([User|U2],OS,_,Error) :-true|
+        '+socket_command_client'(User,OS1,Flag,Error),
+        '+normal$$$stream$2$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$2'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$2$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$2'(U2,OS2,_,Error) .
+'+normal$$$stream$2$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$3'([User|U2],OS,_,Error) :-true|
+        '+socket_command_server'(User,OS1,Flag,Error),
+        '+normal$$$stream$3$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$3'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$3$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$3'(U2,OS2,_,Error) .
+'+normal$$$stream$3$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'-reset$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(__1,_2,_3),
+        '-attention'(_2,__2,Flag,[attention|Error]),
+        '-msgid'(_3,__3,Flag,[msgid|Error]) .
+'-reset$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-reset$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-reset$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-next_attention$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-attention'(_1,__1,Flag,Error) .
+'-next_attention$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-next_attention$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-next_attention$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+msgid'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+msgid'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-status'(User,normal,_,Error) :-true|
+        User =normal .
+'-status'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-status'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-status'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+ip2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+'+ip2'({_1,_2,_3,_4},OS,_,Error) :-true|
+        '+ip2$wait'({__1,__2,__3,__4},OS,Flag,Error),
+        '+ip2$integer$1'(_1,__1,Flag,[address_host,'connect /2'|Error]),
+        '+ip2$integer$2'(_2,__2,Flag,[address_host,'connect /2'|Error]),
+        '+ip2$integer$3'(_3,__3,Flag,[address_host,'connect /2'|Error]),
+        '+ip2$integer$4'(_4,__4,Flag,[address_host,'connect /2'|Error]) .
+otherwise .
+'+ip2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ip2$wait'(User,OS,fail,Error) :-true|
+        true .
+'+ip2$wait'({__1,__2,__3,__4},OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4)|
+        {__1,__2,__3,__4} =OS .
+'+port'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+port'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+address2'({_1},OS,_,Error) :-true|
+        '+address2$wait'({__1},OS,Flag,Error),
+        '+port'(_1,__1,Flag,[address_host,'connect /2'|Error]) .
+otherwise .
+'+address2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+address2$wait'({__1},OS,_,Error) :-wait(__1)|
+        {__1} =OS .
+'+address2$wait'(User,OS,fail,Error) :-true|
+        true .
+'+socket_command_client'(set_option(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(set_option(__1,_2),OS,Flag,Error),
+        '+socoption'(_1,__1,Flag,[socoption,'set_option /2'|Error]) .
+'+socket_command_client'(send(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(send(__1,_2),OS,Flag,Error),
+        '+send$string$1'(_1,__1,Flag,[put_data,'send /2'|Error]) .
+'+socket_command_client'(receive(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(receive(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'receive /2'|Error]) .
+'+socket_command_client'(send_timeout(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(send_timeout(__1,_2),OS,Flag,Error),
+        '+timeout'(_1,__1,Flag,[timeout,'send_timeout /2'|Error]) .
+'+socket_command_client'(receive_timeout(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(receive_timeout(__1,_2),OS,Flag,Error),
+        '+timeout'(_1,__1,Flag,[timeout,'receive_timeout /2'|Error]) .
+'+socket_command_client'(getb(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(getb(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb /2'|Error]) .
+'+socket_command_client'(ungetb(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(ungetb(__1,_2),OS,Flag,Error),
+        '+ungetb$string$1'(_1,__1,Flag,[ungetb,'ungetb /2'|Error]) .
+'+socket_command_client'(prompt(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(prompt(__1,_2),OS,Flag,Error),
+        '+prompt$string$1'(_1,__1,Flag,[prompt,'prompt /2'|Error]) .
+'+socket_command_client'(getb_noecho(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(getb_noecho(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb_noecho /2'|Error]) .
+'+socket_command_client'(putb(_1,_2),OS,_,Error) :-true|
+        '+socket_command_client$wait'(putb(__1,_2),OS,Flag,Error),
+        '+putb$string$1'(_1,__1,Flag,[put_data,'putb /2'|Error]) .
+'+socket_command_client'(flush(_1),OS,_,Error) :-true|
+        flush(__1) =OS,
+        '-status'(_1,__1,Flag,['flush /1'|Error]) .
+'+socket_command_client'(get_attributes(_1),OS,_,Error) :-true|
+        get_attributes(__1) =OS,
+        '-get_attributes$$$enu$1'(_1,__1,Flag,['get_attributes /1'|Error]) .
+otherwise .
+'+socket_command_client'(User,OS,Flag,Error) :-true|
+        '+aa_command'(User,OS,Flag,Error) .
+'+socket_command_client$wait'(User,OS,fail,Error) :-true|
+        true .
+'+socket_command_client$wait'(set_option(__1,_2),OS,_,Error) :-wait(__1)|
+        set_option(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['set_option /2'|Error]) .
+'+socket_command_client$wait'(send(__1,_2),OS,_,Error) :-wait(__1)|
+        send(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['send /2'|Error]) .
+'+socket_command_client$wait'(receive(__1,_2),OS,_,Error) :-wait(__1)|
+        receive(__1,__2) =OS,
+        '-soc_receive_status'(_2,__2,Flag,['receive /2'|Error]) .
+'+socket_command_client$wait'(send_timeout(__1,_2),OS,_,Error) :-wait(__1)|
+        send_timeout(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['send_timeout /2'|Error]) .
+'+socket_command_client$wait'(receive_timeout(__1,_2),OS,_,Error) :-wait(__1)|
+        receive_timeout(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['receive_timeout /2'|Error]) .
+'+socket_command_client$wait'(getb(__1,_2),OS,_,Error) :-wait(__1)|
+        getb(__1,__2) =OS,
+        '-getb$$$enu$1'(_2,__2,Flag,['getb /2'|Error]) .
+'+socket_command_client$wait'(ungetb(__1,_2),OS,_,Error) :-wait(__1)|
+        ungetb(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['ungetb /2'|Error]) .
+'+socket_command_client$wait'(prompt(__1,_2),OS,_,Error) :-wait(__1)|
+        prompt(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['prompt /2'|Error]) .
+'+socket_command_client$wait'(getb_noecho(__1,_2),OS,_,Error) :-wait(__1)|
+        getb_noecho(__1,__2) =OS,
+        '-getb_noecho$$$enu$1'(_2,__2,Flag,['getb_noecho /2'|Error]) .
+'+socket_command_client$wait'(putb(__1,_2),OS,_,Error) :-wait(__1)|
+        putb(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['putb /2'|Error]) .
+'+send$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+send$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+address1'({_1,_2},OS,_,Error) :-true|
+        '+address1$wait'({__1,__2},OS,Flag,Error),
+        '+ip'(_1,__1,Flag,[address,'listen /3'|Error]),
+        '+port'(_2,__2,Flag,[address,'listen /3'|Error]) .
+otherwise .
+'+address1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+address1$wait'({__1,__2},OS,_,Error) :-wait(__1),wait(__2)|
+        {__1,__2} =OS .
+'+address1$wait'(User,OS,fail,Error) :-true|
+        true .
+'+socket_command_server'(accept(_1),OS,_,Error) :-true|
+        accept(__1) =OS,
+        '-accept_status'(_1,__1,Flag,['accept /1'|Error]) .
+'+socket_command_server'(set_option(_1,_2),OS,_,Error) :-true|
+        '+socket_command_server$wait'(set_option(__1,_2),OS,Flag,Error),
+        '+socoption'(_1,__1,Flag,[socoption,'set_option /2'|Error]) .
+'+socket_command_server'(receive_timeout(_1,_2),OS,_,Error) :-true|
+        '+socket_command_server$wait'(receive_timeout(__1,_2),OS,Flag,Error),
+        '+timeout'(_1,__1,Flag,[timeout,'receive_timeout /2'|Error]) .
+'+socket_command_server'(getb(_1,_2),OS,_,Error) :-true|
+        '+socket_command_server$wait'(getb(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb /2'|Error]) .
+'+socket_command_server'(ungetb(_1,_2),OS,_,Error) :-true|
+        '+socket_command_server$wait'(ungetb(__1,_2),OS,Flag,Error),
+        '+ungetb$string$2'(_1,__1,Flag,[ungetb,'ungetb /2'|Error]) .
+'+socket_command_server'(prompt(_1,_2),OS,_,Error) :-true|
+        '+socket_command_server$wait'(prompt(__1,_2),OS,Flag,Error),
+        '+prompt$string$2'(_1,__1,Flag,[prompt,'prompt /2'|Error]) .
+'+socket_command_server'(getb_noecho(_1,_2),OS,_,Error) :-true|
+        '+socket_command_server$wait'(getb_noecho(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb_noecho /2'|Error]) .
+'+socket_command_server'(putb(_1,_2),OS,_,Error) :-true|
+        '+socket_command_server$wait'(putb(__1,_2),OS,Flag,Error),
+        '+putb$string$2'(_1,__1,Flag,[put_data,'putb /2'|Error]) .
+'+socket_command_server'(flush(_1),OS,_,Error) :-true|
+        flush(__1) =OS,
+        '-status'(_1,__1,Flag,['flush /1'|Error]) .
+'+socket_command_server'(get_attributes(_1),OS,_,Error) :-true|
+        get_attributes(__1) =OS,
+        '-get_attributes$$$enu$2'(_1,__1,Flag,['get_attributes /1'|Error]) .
+otherwise .
+'+socket_command_server'(User,OS,Flag,Error) :-true|
+        '+aa_command'(User,OS,Flag,Error) .
+'+socket_command_server$wait'(User,OS,fail,Error) :-true|
+        true .
+'+socket_command_server$wait'(set_option(__1,_2),OS,_,Error) :-wait(__1)|
+        set_option(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['set_option /2'|Error]) .
+'+socket_command_server$wait'(receive_timeout(__1,_2),OS,_,Error) :-wait(__1)|
+        receive_timeout(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['receive_timeout /2'|Error]) .
+'+socket_command_server$wait'(getb(__1,_2),OS,_,Error) :-wait(__1)|
+        getb(__1,__2) =OS,
+        '-getb$$$enu$2'(_2,__2,Flag,['getb /2'|Error]) .
+'+socket_command_server$wait'(ungetb(__1,_2),OS,_,Error) :-wait(__1)|
+        ungetb(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['ungetb /2'|Error]) .
+'+socket_command_server$wait'(prompt(__1,_2),OS,_,Error) :-wait(__1)|
+        prompt(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['prompt /2'|Error]) .
+'+socket_command_server$wait'(getb_noecho(__1,_2),OS,_,Error) :-wait(__1)|
+        getb_noecho(__1,__2) =OS,
+        '-getb_noecho$$$enu$2'(_2,__2,Flag,['getb_noecho /2'|Error]) .
+'+socket_command_server$wait'(putb(__1,_2),OS,_,Error) :-wait(__1)|
+        putb(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['putb /2'|Error]) .
+'-msgid'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'+ip2$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+ip2$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ip2$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+ip2$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ip2$integer$3'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+ip2$integer$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ip2$integer$4'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+ip2$integer$4'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+blocksize'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+blocksize'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-soc_receive_status'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$1'(_1,__1,Flag,Error) .
+'-soc_receive_status'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-soc_receive_status'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-soc_receive_status'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$1'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'+timeout'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+timeout'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ungetb$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+ungetb$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+prompt$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+prompt$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+putb$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+putb$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-accept_status'(User,normal(__1,__2,__3,__4),_,Error) :-true|
+        User =normal(_1,_2,__3,_4),
+        '-address'(_1,__1,Flag,Error),
+        '+normal$$$stream$4'(_2,__2,Flag,[socket]),
+        '-attention'(_4,__4,Flag,Error) .
+'-accept_status'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-accept_status'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-accept_status'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+ungetb$string$2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+ungetb$string$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+prompt$string$2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+prompt$string$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+putb$string$2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+putb$string$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+socoption'([In1|In2],Out,Flag,Error) :-true|
+        '+socoption_val'(In1,In11,Flag,Error),
+        '+socoption$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+socoption'([],Out,Flag,Error) :-true|
+        [] =Out .
+'+socoption$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+socoption$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+socoption$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+socoption$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+socoption$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+socoption_val'(In1,In11,Flag,Error),
+        '+socoption$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'-getb$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$2'(_1,__1,Flag,Error) .
+'-getb$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb$$$enu$1'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$2'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-getb_noecho$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$3'(_1,__1,Flag,Error) .
+'-getb_noecho$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb_noecho$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb_noecho$$$enu$1'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb_noecho$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$3'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-get_attributes$$$enu$1'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-device_type'(_1,__1,Flag,[device_type|Error]),
+        '-normal$$$list$1'(_2,__2,Flag,Error) .
+'-get_attributes$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-get_attributes$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-get_attributes$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+ip'({_1,_2,_3,_4},OS,_,Error) :-true|
+        '+ip$wait'({__1,__2,__3,__4},OS,Flag,Error),
+        '+ip$integer$1'(_1,__1,Flag,Error),
+        '+ip$integer$2'(_2,__2,Flag,Error),
+        '+ip$integer$3'(_3,__3,Flag,Error),
+        '+ip$integer$4'(_4,__4,Flag,Error) .
+otherwise .
+'+ip'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ip$wait'({__1,__2,__3,__4},OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4)|
+        {__1,__2,__3,__4} =OS .
+'+ip$wait'(User,OS,fail,Error) :-true|
+        true .
+'+ip$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+ip$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ip$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+ip$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ip$integer$3'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+ip$integer$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ip$integer$4'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+ip$integer$4'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$4'([User|U2],OS,_,Error) :-true|
+        '+socket_command_client'(User,OS1,Flag,[socket]),
+        '+normal$$$stream$4$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$4'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$4'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$4$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$4'(U2,OS2,_,Error) .
+'+normal$$$stream$4$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'-getb$$$enu$2'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$4'(_1,__1,Flag,Error) .
+'-getb$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb$$$enu$2'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-getb_noecho$$$enu$2'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$5'(_1,__1,Flag,Error) .
+'-getb_noecho$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb_noecho$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb_noecho$$$enu$2'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb_noecho$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-get_attributes$$$enu$2'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-device_type'(_1,__1,Flag,[device_type|Error]),
+        '-normal$$$list$2'(_2,__2,Flag,Error) .
+'-get_attributes$$$enu$2'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-get_attributes$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-get_attributes$$$enu$2'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$$$list$1'(User,[OS|OS2],Flag,Error) :-true|
+        '-device_attribute'(User1,OS,Flag,[device_attribute|Error]),
+        '-normal$$$list$1$wait'(User,OS2,User1,Flag,[device_attribute|Error]) .
+'-normal$$$list$1'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$1$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$1'(User2,OS2,Flag,Error) .
+'-address'(User,{__1},_,Error) :-true|
+        User ={_1},
+        '-port'(_1,__1,Flag,Error) .
+otherwise .
+'-address'(User,OS,Flag,Error) :-true|
+        '-address1'(User,OS,Flag,Error) .
+'-normal$string$4'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-normal$string$5'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'+socoption_val'(debug,OS,_,Error) :-true|
+        debug =OS .
+'+socoption_val'(reuseaddr,OS,_,Error) :-true|
+        reuseaddr =OS .
+'+socoption_val'(keepalive,OS,_,Error) :-true|
+        keepalive =OS .
+otherwise .
+'+socoption_val'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-device_type'(User,OS,_,Error) :-atom(OS)|
+        OS =User .
+'-normal$$$list$2'(User,[OS|OS2],Flag,Error) :-true|
+        '-device_attribute'(User1,OS,Flag,[device_attribute|Error]),
+        '-normal$$$list$2$wait'(User,OS2,User1,Flag,[device_attribute|Error]) .
+'-normal$$$list$2'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$2$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$2'(User2,OS2,Flag,Error) .
+'-device_attribute'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'-port'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-address1'(User,{__1,__2},_,Error) :-true|
+        User ={_1,_2},
+        '-ip'(_1,__1,Flag,Error),
+        '-port'(_2,__2,Flag,Error) .
+'-ip'(User,{__1,__2,__3,__4},_,Error) :-true|
+        User ={_1,_2,_3,_4},
+        '-ip$integer$1'(_1,__1,Flag,Error),
+        '-ip$integer$2'(_2,__2,Flag,Error),
+        '-ip$integer$3'(_3,__3,Flag,Error),
+        '-ip$integer$4'(_4,__4,Flag,Error) .
+'-ip$integer$1'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-ip$integer$2'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-ip$integer$3'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-ip$integer$4'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+%%%%% system defined protocols %%%%%%%%%%
+'+ground'(X, Y) :- list(X) | '$$groundl'(X, Y).
+'+ground'(X, Y) :- vector(X,Size),Size \= 0 | 
+        '$$groundv'(X, 0, Size, X2),
+        '$$groundv2'(X2, Y).
+otherwise.
+'+ground'(X, Y) :- wait(X) | Y = X.
+'-ground'(X, Y) :- list(Y) | '$$groundl'(Y, X).
+'-ground'(X, Y) :- vector(Y,Size), Size \= 0 | 
+        '$$groundv'(Y, 0, Size, Y2),
+        '$$groundv2'(Y2, X).
+otherwise.
+'-ground'(X, Y) :- wait(Y) | Y = X.
+'$$groundl'([X1|X2], Y) :- true | '+ground'(X1,X11),
+        '$$groundl2'(X11, X2, Y).
+'$$groundl'([], Y) :- true | Y = [].
+'$$groundl2'(X11, X2, Y) :- wait(X11) |
+        '$$groundl31'(X2, [X11|Tail], Tail, Y).
+'$$groundl31'([X1|X2], Top, Tail, Y) :- true |
+        '+ground'(X1,X11),
+        '$$groundl32'(X11, X2, Top, Tail, Y).
+'$$groundl31'([], Top, Tail, Y) :- true |
+        Tail = [],
+        Top = Y.
+'$$groundl32'(X11, X2, Top, Tail, Y) :- wait(X11), X2 \= [] |
+        Tail = [X11|Tail2],
+        '$$groundl31'(X2, Top, Tail2, Y).
+'$$groundl32'(X11, [], Top, Tail, Y) :- wait(X11) |
+        Tail = [X11],
+        Y = Top.
+'$$groundv2'(X2, Y) :- wait(X2) | X2 = Y.
+'$$groundv'(X, Pos, Size, X2) :- Pos \= Size |
+        vector_element(X, Pos, Elm, NX),
+        '+ground'(Elm,Elm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Elm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Pos, Size, X2) :- wait(Elm), Pos \= Size |
+        vector_element(X, Pos, Nelm, NX),
+        '+ground'(Nelm, Nelm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Nelm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Size, Size, X2) :- wait(Elm) |
+        X = X2. 
+%%%%% to raise error %%%%%%%%%%
+raise_error(Info,Msg):- true |
+        atom_table:cache_table(Atom),
+        formatInfo(Info,[],Fstring,Atom),
+        shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_message_to_PIMOS,Fstring),Msg).
+formatInfo([Infoatom | Info], StringList,Fstring,Atom):- 
+        atom(Infoatom) |
+        Atom = [get_atom_name(Infoatom,normal(InfoString)) | Atail],
+        NSlist = [InfoString | StringList],
+        formatInfo(Info, NSlist, Fstring, Atail).
+formatInfo([], Slist, Fstring, Atom):- true |
+        Atom = [],
+        new_string(New,1,16),
+        set_string_element(New,0,key#lf,NL),
+        format(1,Slist,StringList,NL),
+        builtin#append_string([""|StringList], Fstring).
+format(1,[Info|Tail],StringList,NL):- true |
+        StringList = ["Device : ",Info |Stail2],
+        format(2,Tail,Stail2,NL).
+format(2,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,"Message : ",Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(3,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(_,[],StringList,_):- true |
+        StringList = [].

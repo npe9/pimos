@@ -1,0 +1,88 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- module listener_seq_executor.
+:- public go/6.
+
+%%%%%%
+% MAIN
+go(_,_,_,_,Att,_) :- wait(Att) | true.
+
+alternatively.
+go(NA,[],[],[],_,  _   ) :- listener_trace_driver:apply_goals(NA).
+go(NA,PA,[],[],Att,_   ) :- list(PA) | listener_profiler:go(NA,PA,Att).
+
+go(NA,[],NB,PB,Att,Name) :- list(NB), list(PB) |
+    predicate_to_code(module#listener_trace_driver,apply_goals,1,AplD),
+    Tag=0,
+    shoen:raise(pimos_tag#task,general_request,
+        [execute(AplD,{NA},Name,0,4000,Tag,{0,100000000},normal(Ctr,Rpt))]),
+    listener_monitor:monitor(Rpt,Ctr,_IO,_Att,NewGo,seq_executor),
+    wait_go(NewGo,NB,PB,Att).
+go(NA,[],NB,[],Att,Name) :- list(NB) |
+    predicate_to_code(module#listener_trace_driver,apply_goals,1,AplD),
+    Tag=0,
+    shoen:raise(pimos_tag#task,general_request,
+        [execute(AplD,{NA},Name,0,4000,Tag,{0,100000000},normal(Ctr,Rpt))]),
+    listener_monitor:monitor(Rpt,Ctr,_IO,_Att,NewGo,seq_executor),
+    wait_go(NewGo,NB,[],Att).
+go(NA,[],[],PB,Att,Name) :- list(PB) |
+    predicate_to_code(module#listener_trace_driver,apply_goals,1,AplD),
+    Tag=0,
+    shoen:raise(pimos_tag#task,general_request,
+        [execute(AplD,{NA},Name,0,4000,Tag,{0,100000000},normal(Ctr,Rpt))]),
+    listener_monitor:monitor(Rpt,Ctr,_IO,_Att,NewGo,seq_executor),
+    wait_go(NewGo,[],PB,Att).
+
+go(NA,PA,NB,PB,Att,Name) :- list(PA), list(NB), list(PB) |
+    predicate_to_code(module#listener_profiler,go,3,PrfGo),
+    Tag=0,
+    shoen:raise(pimos_tag#task,general_request,
+        [execute(PrfGo,{NA,PA,Att},Name,0,4000,Tag,{0,100000000},normal(Ctr,Rpt))]),
+    listener_monitor:monitor(Rpt,Ctr,_IO,_Att,NewGo,seq_executor),
+    wait_go(NewGo,NB,PB,Att).
+go(NA,PA,NB,[],Att,Name) :- list(PA), list(NB) |
+    predicate_to_code(module#listener_profiler,go,3,PrfGo),
+    Tag=0,
+    shoen:raise(pimos_tag#task,general_request,
+        [execute(PrfGo,{NA,PA,Att},Name,0,4000,Tag,{0,100000000},normal(Ctr,Rpt))]),
+    listener_monitor:monitor(Rpt,Ctr,_IO,_Att,NewGo,seq_executor),
+    wait_go(NewGo,NB,[],Att).
+go(NA,PA,[],PB,Att,Name) :- list(PA), list(PB) |
+    predicate_to_code(module#listener_profiler,go,3,PrfGo),
+    Tag=0,
+    shoen:raise(pimos_tag#task,general_request,
+        [execute(PrfGo,{NA,PA,Att},Name,0,4000,Tag,{0,100000000},normal(Ctr,Rpt))]),
+    listener_monitor:monitor(Rpt,Ctr,_IO,_Att,NewGo,seq_executor),
+    wait_go(NewGo,[],PB,Att).
+
+
+wait_go(_, _, _, Att) :- wait(Att) | true.
+alternatively.   
+wait_go(Go,NB,PB,Att) :- wait(Go)  | 
+    inherit_env(Go1),
+    wait_go1(Go1,NB,PB,Att).
+
+wait_go1(Go,NB,[],_  ) :- wait(Go)           | listener_trace_driver:apply_goals(NB).
+wait_go1(Go,NB,PB,Att) :- wait(Go), list(PB) | listener_profiler:go(NB,PB,Att).
+
+
+inherit_env(Go) :- true |
+    shoen:raise(pimos_tag#listener,resource,[environment(ENV)]),
+    ENV=[getenv(Env)],
+    inherit_env1(Env,Go).
+
+inherit_env1(normal(Vars),Go) :- true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    setenv(normal,Vars,GR,Go).
+otherwise.
+inherit_env1(_,Go) :- true | Go=go.
+
+setenv(Status,[],GR,Go) :- wait(Status) | GR=[], Go=go.
+setenv(Status,[{Name,Val}|Vars],GR,Go) :- wait(Status) |
+    GR=[setenv(Name,Val,St)|GR1],
+    setenv(St,Vars,GR1,Go).

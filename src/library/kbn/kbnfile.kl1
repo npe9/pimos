@@ -1,0 +1,97 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>KBN>kbnfile.kl1.39, 08-Sep-92 11:04:17, Edit by hori
+
+:- module kbn_file.
+:- with_macro pimos.
+:- public file/10.
+
+file(FileName,LoadAddress,ModuleAddress,StartAddress,CodeSize,Version,SF,KBN,KBNname,SYMname) :-
+    true |
+    shoen:raise(pimos_tag#task,general_request,[file(normal(FR0,_,_))]),
+    kl1_library_file_utility:default_file_extension(FileName,"kbn",KbnFileNameExt),
+    FR0 = [open(KbnFileNameExt,write(normal(FS0,_,_))),
+           open(SymFileNameExt,write(normal(SF0,_,_)))],
+    FS0 = [pathname(normal(KBNname))|FS1],
+    kl1_library_file_utility:decomp_filename(KBNname,_,Path,FN,_,_),
+    builtin#append_string([Path,string#">",FN,string#".sym"],SymFileNameExt),
+    SF0 = [pathname(normal(SYMname))|SF],
+    kbn_file_header(LoadAddress,ModuleAddress,StartAddress,CodeSize,Version,FS1,KBN).
+
+kbn_file_header(LoadAddress,ModuleAddress,StartAddress,CodeSize,Version,FS0,KBN0) :-
+    true |
+    new_string(Header00,128,16),
+    split(LoadAddress,High0,Low0),
+    set_string_element(Header00,0,Low0,Header01),
+    set_string_element(Header01,1,High0,Header10),
+    split(CodeSize,High1,Low1),
+    set_string_element(Header10,2,Low1,Header11),
+    set_string_element(Header11,3,High1,Header20),
+    split(StartAddress,High2,Low2),
+    set_string_element(Header20,4,Low2,Header21),
+    set_string_element(Header21,5,High2,Header30),
+    split(ModuleAddress,High3,Low3),
+    set_string_element(Header30,6,Low3,Header31),
+    set_string_element(Header31,7,High3,Header40),
+    split(Version,High4,Low4),
+    set_string_element(Header40,126,Low4,Header41),
+    set_string_element(Header41,127,High4,Header50),
+    change_element_size(Header50,8,Header6),
+    swap_bytes(0,Header6,Header7),
+    FS0 = [putb(Header7,Status)|FS1],
+    new_string(Buffer,256,8),
+    kbn_file_heap(Status,KBN0,Buffer,0,FS1).
+
+split(Word,High,Low) :- true |
+    High := Word >> 16,
+    Low :=  Word /\ 16#"FFFF".
+
+split4(Word,Val0,Val1,Val2,Val3) :- true |
+    Val0 :=  Word >> 24,
+    Val1 := (Word >> 16) /\ 16#"FF",
+    Val2 := (Word >>  8) /\ 16#"FF",
+    Val3 :=  Word        /\ 16#"FF".
+
+kbn_file_heap(Status,[{Tag,Value}|KBN],Buffer0,P0,FS0) :-
+    integer(Tag), integer(Value),
+    string(Buffer0,_,_), P0 < 255 |
+    P1 := P0 + 5,
+    set_string_element(Buffer0,P2,Tag,Buffer1),
+    split4(Value,V0,V1,V2,V3),
+    P2 := P0 + 4,
+    set_string_element(Buffer1,P3,V0,Buffer2),
+    P3 := P0 + 3,
+    set_string_element(Buffer2,P4,V1,Buffer3),
+    P4 := P0 + 2,
+    set_string_element(Buffer3,P5,V2,Buffer4),
+    P5 := P0 + 1,
+    set_string_element(Buffer4,P0,V3,Buffer5),
+    kbn_file_heap(Status,KBN,Buffer5,P1,FS0).
+kbn_file_heap(normal,[flush(Done)|KBN],Buffer0,P0,FS0) :- true |
+    Done = done,
+    kbn_file_heap(normal,KBN,Buffer0,P0,FS0).
+kbn_file_heap(normal,[],Buffer0,0,FS0) :- true |
+    FS0 = [].
+otherwise.
+kbn_file_heap(normal,KBN,Buffer0,P0,FS0) :- P0 > 0 |
+    change_element_size(Buffer0,16,Buffer1),
+    FS0 = [putb(Buffer1,Status)|FS1],
+    new_string(NewBuffer,256,8),
+    kbn_file_heap(Status,KBN,NewBuffer,0,FS1).
+
+swap_bytes(P0,Buffer0,Buffer) :- P0 < 254 |
+    string_element(Buffer0,P0,Elm0,Buffer1),
+    P1 := P0 + 1,
+    string_element(Buffer1,P1,Elm1,Buffer2),
+    set_string_element(Buffer2,P0,Elm1,Buffer3),
+    set_string_element(Buffer3,P1,Elm0,Buffer4),
+    P2 := P1 + 1,
+    swap_bytes(P2,Buffer4,Buffer).
+otherwise.
+swap_bytes(_,Buffer0,Buffer) :- true |
+    change_element_size(Buffer0,16,Buffer).

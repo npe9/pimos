@@ -1,0 +1,185 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module nTable.
+:- public nameTable/1, nameTable2/1, checkNum/2.
+:- with_macro pimos.
+
+nameTable(In):- true |
+        merge(In,In2),
+        pool:keyed_set(Name),
+        pool:keyed_set(Tmp),
+        atom_table:cache_table(Atom),
+        nameTable(In2,Name,Atom,Tmp).
+
+nameTable([initialize|In],Name,Atom,Tmp):- true |
+        Name = [get_all(_)|Ntail],
+        nameTable(In,Ntail,Atom,Tmp).
+nameTable([getName(top(Prot),Sign,NameB,Flag)|In],NameT,Atom,Tmp):- true |
+        Atom = [get_atom_name(Prot,normal(Name)),
+                        intern(Name,normal(NameA))|Atail],
+        NameB = top(NameA),
+        NameT = [put(NameA,exists,Old)|Ntail],
+        check(Old,Flag),
+        nameTable(In,Ntail,Atail,Tmp).
+nameTable([getName(any,Sign,NameA,Flag)|In],NameT,Atom,Tmp):- true |
+        NameA = sysany,
+        Flag = yes,
+        nameTable(In,NameT,Atom,Tmp).
+nameTable([getName(tmp(Prot,any),Sign,NameA,Flag)|In],NameT,Atom,Tmp):- 
+        true |
+        NameA = sysany,
+        Flag = yes,
+        nameTable(In,NameT,Atom,Tmp).
+
+nameTable([getName(tmp(Prot,Sys),Sign,NameA,Flag)|In],NameT,Atom,Tmp):- 
+        Sys \= any, atom(Prot) |
+        Atom = [get_atom_name(Prot,normal(Prots)),
+                intern(Name,normal(NameA))|Atail],
+        NameT = [put(NameA,exists,Old)|Ntail],
+        makeName({Prots,Sys},Sign,Name,Tmp-Tmp2),
+        check(Old,Flag),
+        nameTable(In,Ntail,Atail,Tmp2).
+nameTable([getName(tmp(top(Prot),Sys),Sign,NameA,Flag)|In],NameT,Atom,Tmp):- 
+        Sys \= any |
+        Atom = [get_atom_name(Prot,normal(Prots)),
+                intern(Name,normal(NameA))|Atail],
+        NameT = [put(NameA,exists,Old)|Ntail],
+        makeName({Prots,Sys},Sign,Name,Tmp-Tmp2),
+        check(Old,Flag),
+        nameTable(In,Ntail,Atail,Tmp2).
+nameTable([],NameT,Atom,Tmp):- true |
+        NameT = [],
+        Atom = [],
+        Tmp = [].
+otherwise.
+nameTable([getName(Prot,Sign,NameA,Flag)|In],NameT,Atom,Tmp):- 
+        Prot \= any |
+        Atom = [get_atom_name(Prot,normal(Prots)),
+                intern(Name,normal(NameA))|Atail],
+        NameT = [put(NameA,exists,Old)|Ntail],
+        makeName(Prots,Sign,Name,Tmp-Tmp2),
+        check(Old,Flag),
+        nameTable(In,Ntail,Atail,Tmp2).
+
+makeName({Prot,Sys},Sign,Name,Tmp-Tmp2):- true |
+        Tmp = [put({Prot,Sys,Sign},N,Old)|Tmp2],
+        (Old = {} -> N = 1 ;
+        otherwise ;
+        Old = {Num} -> N := Num + 1),
+        checkSys(Sys,SysS),
+        checkSign(Sign,SignS),
+        checkNum(N,NS),
+        builtin#append_string([SignS,Prot,"$",SysS,"$",NS],Name).
+makeName(Prot,Sign,Name,Tmp-Tmp2):- string(Prot,_,_) |
+        Tmp = Tmp2,
+        checkSign(Sign,SignS),
+        builtin#append_string(SignS,Prot,Name).
+        
+checkSign('+',Sign):- true |
+        Sign = "+".
+checkSign('-',Sign):- true |
+        Sign = "-".
+
+checkSys(atom,Sys):- true |
+        Sys = "atom".
+checkSys(integer,Sys):- true |
+        Sys = "integer".
+checkSys(string,Sys):- true |
+        Sys = "string".
+checkSys('code',Sys):- true |
+        Sys = "code".
+checkSys(('module'),Sys):- true |
+        Sys = "module".
+checkSys(ground,Sys):- true |
+        Sys = "ground".
+checkSys(enu,Sys):- true |
+        Sys = "$$enu".
+checkSys(stream,Sys):- true |
+        Sys = "$$stream".
+checkSys(vector,Sys):- true |
+        Sys = "$$vector".
+checkSys(list,Sys):- true |
+        Sys = "$$list".
+
+checkNum(1,N):- true |
+        N = "1".
+checkNum(2,N):- true |
+        N = "2".
+checkNum(3,N):- true |
+        N = "3".
+checkNum(4,N):- true |
+        N = "4".
+checkNum(5,N):- true |
+        N = "5".
+checkNum(6,N):- true |
+        N = "6".
+checkNum(7,N):- true |
+        N = "7".
+checkNum(8,N):- true |
+        N = "8".
+checkNum(9,N):- true |
+        N = "9".
+checkNum(0,N):- true |
+        N = "0".
+checkNum(Num,N):- Num >= 10 |
+        Fst := Num mod 10,
+        Snd := (Num - Fst)/10,
+        checkNum(Fst,FS),
+        checkNum(Snd,SS),
+        builtin#append_string(SS,FS,N).
+
+check({},Flag):- true | 
+        Flag = no.
+check({_Data},Flag):- true |
+        Flag = yes.
+
+%%%%%  for codegen
+
+nameTable2(Name):- true |
+    merge(Name,Name2),
+    atom_table:cache_table(Atom),
+    makeName2(Name2,Atom).
+
+makeName2([makeSysName(Sign,Prot,ProtN)|Name],Atom):- true |
+    checkSign(Sign,SignS),
+    checkSys(Prot,ProtS),
+    builtin#append_string(SignS,ProtS,ProtNS),
+    Atom = [intern(ProtNS,normal(ProtN))|Atail],
+    makeName2(Name,Atail).
+makeName2([secondName(Pred,Pred2)|Name],Atom):- true |
+    Atom = [get_atom_name(Pred,normal(PredS)),
+                intern(PredS2,normal(Pred2))| Atail],
+    builtin#append_string(PredS,"$wait",PredS2),
+    makeName2(Name,Atail).
+makeName2([listName0(Pred,Pred2)|Name],Atom):- true |
+    Atom = [get_atom_name(Pred,normal(PredS)),
+                intern(PredS2,normal(Pred2))| Atail],
+    builtin#append_string(PredS,"$list0",PredS2),
+    makeName2(Name,Atail).
+makeName2([listName1(Pred,Pred2)|Name],Atom):- true |
+    Atom = [get_atom_name(Pred,normal(PredS)),
+                intern(PredS2,normal(Pred2))| Atail],
+    builtin#append_string(PredS,"$list1",PredS2),
+    makeName2(Name,Atail).
+makeName2([listName2(Pred,Pred2)|Name],Atom):- true |
+    Atom = [get_atom_name(Pred,normal(PredS)),
+                intern(PredS2,normal(Pred2))| Atail],
+    builtin#append_string(PredS,"$list2",PredS2),
+    makeName2(Name,Atail).
+makeName2([vector1(Pred,Pred2)|Name],Atom):- true |
+    Atom = [get_atom_name(Pred,normal(PredS)),
+                intern(PredS2,normal(Pred2))| Atail],
+    builtin#append_string(PredS,"$vect1",PredS2),
+    makeName2(Name,Atail).
+makeName2([vector2(Pred,Pred2)|Name],Atom):- true |
+    Atom = [get_atom_name(Pred,normal(PredS)),
+                intern(PredS2,normal(Pred2))| Atail],
+    builtin#append_string(PredS,"$vect2",PredS2),
+    makeName2(Name,Atail).
+makeName2([],Atom):- true |
+    Atom = [].
+

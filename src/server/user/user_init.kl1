@@ -1,0 +1,451 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module update_users.
+:- with_macro pimos.
+:- public go/2.
+
+%   login request handling
+%   go(Req,User,Group,FR,TR,Atom,Mod,PART),
+go(UPath,GPath):-
+    true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [user(UR),file(FR)],
+    wait_go(UR,FR,UPath,GPath).
+
+wait_go(normal(UR,_,_),normal(FR,_,_),UPath,GPath):-
+    true|
+    UR = [create(user(User)),create(group(Group))],
+    atom_table:cache_table(Atom),
+    module_table:cache_table(Module),
+    wait_go2(User,Group,Atom,Module,FR,UPath,GPath).
+
+wait_go2(normal(User,_,_),normal(Group,_,_),Atom,Mod,FR,UPath,GPath):-
+    true|
+    merge(UserIn,User),
+    merge(GroupIn,Group),
+    merge(AtomIn,Atom),
+    user_setup(FR,UserIn,[],GroupIn,[],AtomIn,[],Mod,UPath,GPath).
+otherwise.
+wait_go2(_,normal(G,_,_),Atom,Mod,FR,_,_):-
+    true|
+    G = [], Atom = [], Mod = [], FR = [].
+otherwise.
+wait_go2(normal(U,_,_),_,Atom,Mod,FR,_,_):-
+    true|
+    U = [], Atom = [], Mod = [], FR = [].
+otherwise.
+wait_go2(_,_,Atom,Mod,FR,_,_):-
+    true|
+    Atom = [], Mod = [], FR = [].
+
+
+%go(Req,User,Group,FR,TR,Atom,Mod,PART):-
+%   true|
+%   user_setup(FR,User,UserN,Group,GroupN,Atom,AtomN,Mod,Status),
+%   status_request(Status,Req,UserN,GroupN,TR,AtomN,PART).
+
+user_setup(FR,User,UserN,Group,GroupN,Atom,AtomN,Mod,UPath,GPath):-
+   true|
+   FR = [open(UPath,read(F)),
+         open(GPath,read(F2))|FRN],
+   merge({FR1,FR2},FRN),
+   wait_setup(F,User,UserN0,FR1,Status2),
+   wait_setup2(F2,Status2,Group,GroupN,UserN0,UserN1,FR2,Status3),
+   wait_setup3(Status3,UserN1,UserN,Atom,AtomN,Mod).
+
+
+wait_setup(normal(In0,_,_),User,UserN,FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup(Res,InN,User,UserN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup(_,User,UserN,FR,Status):-
+   true|
+   wait_setup_retry(0,User,UserN,FR,Status).
+
+wait_setup(normal(end_of_file),In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   In = [],
+   Tail = [],
+   User = [set_up(Head,Status1)|NUser],
+   wait_setup_success(Status1,NUser,UserN,FR,Status,0).
+wait_setup(normal(empty),In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   In = [getwt(Res)|InN],
+   wait_setup(Res,InN,User,UserN,FR,Tail,Head,Status,C).
+otherwise.
+wait_setup(normal(WT),In,User,UserN,FR,Tail,Head,Status,C):-
+   variable:unwrap(WT,{_,T},NVP),
+   NVP = [count(N)],
+   wait_setup(N,T,In,User,UserN,FR,Tail,Head,Status,C).
+otherwise.
+wait_setup(abnormal(error({TL,Ps})),In,User,UserN,FR,Tail,Head,Status,C0):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_retry(0,User,UserN,FR,Status).
+wait_setup(abnormal(error({TL,Reason,Ps})),In,User,UserN,FR,Tail,Head,Status,C0):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_retry(0,User,UserN,FR,Status).
+wait_setup(abnormal(ambiguous({TL,Ps})),In,User,UserN,FR,Tail,Head,Status,C0):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_retry(0,User,UserN,FR,Status).
+
+
+wait_setup(0,T,In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   check_user_term(T,Status0),
+   wait_setup_term(Status0,In,User,UserN,FR,Tail,Head,Status,C).
+otherwise.
+wait_setup(_,_,In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success(abnormal,User,UserN,FR,Status,C).
+
+wait_setup_term(normal(T),In,User,UserN,FR,Tail,Head,Status,C):-
+   C1:= C + 1|
+   Tail = [T|TailN],
+   In = [getwt(WT)|InN],
+   wait_setup(WT,InN,User,UserN,FR,TailN,Head,Status,C1).
+otherwise.
+wait_setup_term(_,In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success(abnormal,User,UserN,FR,Status,C).
+
+wait_setup_success(normal,User,UserN,FR,Status,C):-
+   true|
+   User = UserN,
+   FR = [],
+   Status = normal.
+otherwise.
+wait_setup_success(_,User,UserN,FR,Status,Line):-
+   Line > 0|
+   wait_setup_retry(0,User,UserN,FR,Status).
+wait_setup_success(_,User,UserN,FR,Status,Line):-
+   Line < 0|
+   wait_setup_retry(0,User,UserN,FR,Status).
+wait_setup_success(_,User,UserN,FR,Status,Line):-
+   Line = 0|
+   wait_setup_retry(0,User,UserN,FR,Status).
+
+wait_setup_retry(1,User,UserN,FR,Status):-
+   true|
+   FR = [open(string#">sys>csp>PIMOS.DIR>pimos.logins",read(F))|FRN],
+   wait_setup_retry0(F,User,UserN,FRN,Status).
+otherwise.
+wait_setup_retry(_,User,UserN,FR,Status):-
+   true|
+   User = UserN,
+   FR = [],
+   Status = abnormal.
+
+wait_setup_retry0(normal(In0,_,_),User,UserN,FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup(Res,InN,User,UserN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup_retry0(_,User,UserN,FR,Status):-
+   true|
+   wait_setup_success(abnormal,User,UserN,FR,Status,-1).
+
+%%%%
+%  group
+
+
+wait_setup2(normal(In0,_,_),normal,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup2(Res,InN,Group,GroupN,User,UserN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup2(normal(In0,_,_),_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   In0 = [],
+   Group = GroupN,
+   User = UserN,
+   FR = [],
+   Status = abnormal.
+otherwise.
+wait_setup2(abnormal,_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   wait_setup_retry2(0,Group,GroupN,User,UserN,FR,Status).
+otherwise.
+wait_setup2(_,_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   Group = GroupN,
+   User = UserN,
+   FR = [],
+   Status = abnormal.
+
+wait_setup2(normal(end_of_file),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,_):-
+   true|
+   In = [],
+   Tail = [],
+   Group = [set_up(Head,Status1)|NGroup],
+   wait_setup_success2(Status1,NGroup,GroupN,User,UserN,FR,Status,0).
+wait_setup2(normal(empty),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   In = [getwt(Res)|InN],
+   wait_setup2(Res,InN,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line).
+otherwise.
+wait_setup2(normal(WT),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   variable:unwrap(WT,{_,T},NVP),
+   NVP = [count(N)],
+   wait_setup2(N,T,In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line).
+otherwise.
+wait_setup2(abnormal(error({TL,Ps})),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_retry2(0,Group,GroupN,User,UserN,FR,Status).
+wait_setup2(abnormal(error({TL,Reason,Ps})),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_retry2(0,Group,GroupN,User,UserN,FR,Status).
+wait_setup2(abnormal(ambiguous({TL,Ps})),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_retry2(0,Group,GroupN,User,UserN,FR,Status).
+
+wait_setup2(0,T,In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   check_group_term(T,User,UserN0,Status0),
+   wait_setup_term2(Status0,In,Group,GroupN,UserN0,UserN,FR,Tail,Head,Status,Line).
+otherwise.
+wait_setup2(_,_,In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success2(abnormal,Group,GroupN,User,UserN,FR,Status,Line).
+
+wait_setup_term2(normal(T),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   Line1 := Line + 1|
+   Tail = [T|TailN],
+   In = [getwt(WT)|InN],
+   wait_setup2(WT,InN,Group,GroupN,User,UserN,FR,TailN,Head,Status,Line1).
+otherwise.
+wait_setup_term2(_,In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success2(abnormal,Group,GroupN,User,UserN,FR,Status,Line).
+
+wait_setup_success2(normal,Group,GroupN,User,UserN,FR,Status,Line):-
+   true|
+   Group = GroupN,
+   User = UserN,
+   FR = [],
+   Status = normal.
+otherwise.
+wait_setup_success2(_,Group,GroupN,User,UserN,FR,Status,Line):-
+   Line > 0|
+   wait_setup_retry2(0,Group,GroupN,User,UserN,FR,Status).
+wait_setup_success2(_,Group,GroupN,User,UserN,FR,Status,Line):-
+   Line < 0|
+   wait_setup_retry2(0,Group,GroupN,User,UserN,FR,Status).
+wait_setup_success2(_,Group,GroupN,User,UserN,FR,Status,Line):-
+   Line = 0|
+   wait_setup_retry2(0,Group,GroupN,User,UserN,FR,Status).
+
+wait_setup_retry2(1,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   FR = [open(string#">sys>csp>PIMOS.DIR>pimos.groups",read(F))|FRN],
+   wait_setup_retry02(F,Group,GroupN,User,UserN,FRN,Status).
+otherwise.
+wait_setup_retry2(_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   Group = GroupN,
+   User = UserN,
+   FR = [],
+   Status = abnormal.
+
+wait_setup_retry02(normal(In0,_,_),Group,GroupN,User,UserN,FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup2(Res,InN,Group,GroupN,User,UserN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup_retry02(_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   wait_setup_success2(abnormal,Group,GroupN,User,UserN,FR,Status,-1).
+
+%%%%%%%%%%%%%%%%
+check_user_term({UN,Pass,UID,Max,Dir,PE,Prog,Com},Status):-
+   true|
+   username(UN,St0),
+   password(Pass,St1),
+   uid(UID,St2),
+   maxprio(Max,St3),
+   dir(Dir,St4),
+   pe(PE,St5),
+   prog(Prog,St6),
+   com(Com,St7),
+   wait_user_term(St0,St1,St2,St3,St4,St5,St6,St7,Status).
+
+wait_user_term(normal(UN),normal(Pass),normal(UID),normal(Max),
+               normal(Dir),normal(PE),normal(Prog),normal(Com),Status):-
+   true|
+   Status = normal({UN,Pass,UID,Max,Dir,PE,Prog,Com}).
+otherwise.
+wait_user_term(_,_,_,_,_,_,_,_,Status):-
+   true|
+   Status = abnormal.
+
+check_group_term({GN,GID,UList,Com},User,UserN,Status):-
+   true|
+   groupname(GN,St0),
+   gid(GID,St1),
+   ulist(UList,User,UserN,St2),
+   com(Com,St3),
+   wait_group_term(St0,St1,St2,St3,Status).
+
+wait_group_term(normal(GN),normal(GID),normal(UList),normal(Com),Status):-
+   true|
+   Status = normal({GN,GID,UList,Com}).
+otherwise.
+wait_group_term(_,_,_,_,Status):-
+   true|
+   Status = abnormal.
+
+username(UN,St):- string(UN,_,16)|St = normal(UN).
+otherwise.
+username(_,St):- true| St = abnormal.
+groupname(GN,St):- true| username(GN,St).
+password(Pass,St):- string(Pass,_,16)| St = normal(Pass).
+otherwise.
+password(_,St):- true| St = abnormal.
+uid(UID,St):- UID >= 0 | St = normal(UID).
+otherwise.
+uid(_,St):- true| St = abnormal.
+gid(GID,St):- GID >= 0 | St = normal(GID).
+otherwise.
+gid(_,St):- true| St = abnormal.
+maxprio(Max,St):- Max >= 0, Max =< 4096 | St = normal(Max).
+otherwise.
+maxprio(_,St):- true | St = abnormal.
+dir(Dir,St):- string(Dir,_,16)| St = normal(Dir).
+dir(*,St):-  true| St = normal(*).
+otherwise.
+dir(_,St):- true| St = abnormal.
+pe(PE,St):- 0 =< PE | St = normal(PE).
+pe(*,St):- true | St = normal(*).
+otherwise.
+pe(_,St):- true| St = abnormal.
+prog(Pak::Mod:Prog,St):- vector(Prog,N),N > 1,
+   atom(Pak),atom(Mod),vector_element(Prog,0,E),
+   atom(E)|
+   St = normal(Pak::Mod:Prog).
+prog(Mod:Prog,St):- vector(Prog,N),N > 1,
+   atom(Mod),vector_element(Prog,0,E),
+   atom(E)|
+   St = normal(Mod:Prog).
+prog(Pak::Mod:Prog,St):- atom(Prog),
+   atom(Pak),atom(Mod)|
+   St = normal(Pak::Mod:Prog).
+prog(Mod:Prog,St):- atom(Prog),
+   atom(Mod)|
+   St = normal(Mod:Prog).
+otherwise.
+prog(_,St):- true| St = abnormal.
+ulist(UList,User,UserN,St):- true|
+   ulist(UList,Tail,Tail,User,UserN,St).
+ulist([],Tail,Head,User,UserN,St):-
+   true|
+   Tail = [], User = UserN,
+   St = normal(Head).
+ulist([U|UList],Tail,Head,User,UserN,St):-
+   string(U,_,_)|
+   User = [get_uid(U,St0)|UserN0],
+   wait_ulist(St0,UList,Tail,Head,UserN0,UserN,St).
+otherwise.
+ulist(_,_,_,User,UserN,St):-
+   true|
+   User = UserN,
+   St = abnormal.
+wait_ulist(normal(UID),UList,Tail,Head,User,UserN,St):-
+   true|
+   Tail = [UID|TailN],
+   ulist(UList,TailN,Head,User,UserN,St).
+otherwise.
+wait_ulist(_,_,_,_,User,UserN,St):-
+   true|
+   User = UserN,
+   St = abnormal.
+
+com(Com,St):- true| com(Com,Med,Med,St).
+com([],Tail,Head,St):- true| Tail = [], St = normal(Head).
+com([S|Next],Tail,Head,St):- string(S,_,16)|
+   Tail = [S|TailN],
+   com(Next,TailN,Head,St).
+
+
+%%%%%%%%%%%%%%%%%%%%
+%
+%  defined package
+%
+%%%%%%%%%%%%%%%%%%%%
+
+wait_setup3(normal,User,UserN,Atom,AtomN,Mod):-
+   true|
+   User = [get_all_info(Info)|UserN],
+   wait_setup3(Info,Atom,AtomN,Mod).
+otherwise.
+wait_setup3(_,User,UserN,Atom,AtomN,Mod):-
+   true|
+   User = UserN, Atom = AtomN, Mod = [].
+
+wait_setup3(normal(Info),Atom,AtomN,Mod):-
+   true|
+   setup3(Info,Atom,AtomN,Mod).
+otherwise.
+wait_setup3(_,Atom,AtomN,Mod):-
+   true|
+   Atom = AtomN, Mod = [].
+
+setup3([],Atom,AtomN,Mod):-
+   true|
+   Atom = AtomN, Mod = [].
+setup3([UInfo|Info],Atom,AtomN,Mod):-
+   vector_element(UInfo,0,UN),
+   vector_element(UInfo,2,UID)|
+   Atom = [intern(UN,St)|AtomN0],
+   setup3(St,Info,UID,AtomN0,AtomN,Mod).
+
+setup3(normal(UN),Info,UID,Atom,AtomN,Mod):-
+   true|
+   Mod = [define_package(UN,user,8#"711",St)|ModN],
+   mod_setup(St,Info,UN,UID,Atom,AtomN,ModN).
+otherwise.
+setup3(_,info,_,Atom,AtomN,Mod):-
+   true|
+   setup3(Info,Atom,AtomN,Mod).
+
+mod_setup(normal,Info,UN,UID,Atom,AtomN,Mod):-
+   true|
+   Mod = [set_package_owner(UN,{UID,0},St)|ModN],
+   mod_setup(St,Info,Atom,AtomN,ModN).
+otherwise.
+mod_setup(_,Info,_,_,Atom,AtomN,Mod):-
+   true|
+   setup3(Info,Atom,AtomN,Mod).
+
+mod_setup(Wait,Info,Atom,AtomN,Mod):-
+   wait(Wait)|
+   setup3(Info,Atom,AtomN,Mod).
+

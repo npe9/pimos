@@ -1,0 +1,42 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module(nBitStringIn).
+:- with_macro pimos.
+:- public wexpand/2.
+
+wexpand(wrap#(Int#Vect), X) :-
+    Int = integer(N), N =:= 1,
+    Vect = vector(V), vector(V,Size) |
+    createString(Size,N,0,1, V,X).
+wexpand(wrap#(Int#Vect), X) :-
+    Int = integer(N), N =:= 8,
+    Vect = vector(V), vector(V,Size) |
+    createString(Size,N,0,16#"FF", V,X).
+wexpand(wrap#(Int#Vect), X) :-
+    Int = integer(N), N =:= 16,
+    Vect = vector(V), vector(V,Size) |
+    createString(Size,N,0,16#"FFFF", V,X).
+wexpand(wrap#(Int#Vect), X) :-
+    Int = integer(N), N =:= 32,
+    Vect = vector(V), vector(V,Size) |
+    createString(Size,N,16#"80000000",16#"7FFFFFFF", V,X).
+otherwise.
+wexpand(X, Y) :- true | Y = X.
+
+createString(Size,ESize,Min,Max, V, Str) :- true |
+    new_string(Str0,Size,ESize),
+    createStringArgs(0,Size, ESize, Min,Max, V, Str0,Str).
+
+createStringArgs(N,N, _, _,_, _, Str,NStr) :- true | NStr = string(Str).
+createStringArgs(M,N, ESize, Min,Max, V, Str,NStr) :-
+    vector_element(V,M, integer(Vm)), Min =< Vm, Vm =< Max |
+    set_string_element(Str,M, Vm, Str1),
+    createStringArgs(~(M+1),N, ESize, Min,Max, V, Str1,NStr).
+otherwise.
+createStringArgs(_,_, ESize, _,_, V, _,NStr) :- true |
+    NStr = vector({atom(#),integer(ESize),vector(V)}).
+

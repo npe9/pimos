@@ -1,0 +1,62 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module login_logging.
+:- with_macro pimos.
+:- public go/4.
+%   logging handling
+%   go(Log,FR,Atom,LOG).
+
+go(on,FR,A,LOG):-
+   true|
+   log(LOG,FR,string#">sys>csp>PIMOS.DIR>pimos.log.",1,A).
+go(off,FR,A,LOG):-
+   true|
+   FR = [], A = [].
+
+log([],FR,Name,Ver,A):-
+   true|
+   FR = [], A = [].
+log([log(Str)|Next],FR,Name,Ver,A):-
+   true|
+   copy:copy(Name,Name1,Name2),
+   login_int:int2string(1,Ver,VER),
+   builtin#append_string([Name1,VER],FName),
+   FR = [open(FName,append(Status))|FRN],
+   wait_log(Status,Next,FRN,Name2,Ver,A,Str).
+
+wait_log(normal(In,_,_),Next,FR,Name,Ver,A,Str):-
+   true|
+   new_string(NL0,1,16),
+   set_string_element(NL0,0,key#lf,NL),
+   In = [putb(Str,_),putb(NL,_)],
+   log(Next,FR,Name,Ver,A).
+otherwise.
+wait_log(_,Next,FR,Name,Ver,A,Str):-
+   Ver1 := Ver + 1|
+   copy:copy(Name,Name1,Name2),
+   login_int:int2string(1,Ver1,VER),
+   builtin#append_string([Name1,VER],FName),
+   FR = [open(FName,append(Status))|FRN],
+   wait_relog(Status,Next,FRN,Name2,Ver1,A,Str).
+
+wait_relog(normal(In,_,_),Next,FR,Name,Ver,A,Str):-
+   true|
+   new_string(NL0,1,16),
+   set_string_element(NL0,0,key#lf,NL),
+   In = [putb(Str,_),putb(NL,_)],
+   log(Next,FR,Name,Ver,A).
+otherwise.
+wait_relog(_,Next,FR,Name,Ver,A,Str):- Ver >= 100|
+   log(Next,FR,Name,99,A).
+wait_relog(_,Next,FR,Name,Ver,A,Str):- Ver < 100,
+   Ver1 := Ver + 1|
+   copy:copy(Name,Name1,Name2),
+   login_int:int2string(1,Ver1,VER),
+   builtin#append_string([Name1,VER],FName),
+   FR = [open(FName,append(Status))|FRN],
+   wait_relog(Status,Next,FRN,Name2,Ver1,A,Str).

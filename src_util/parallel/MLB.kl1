@@ -1,0 +1,213 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%(C)1992 Institute for New Generation Computer Technology         %%%
+%%%   配布その他はCOPYRIGHTファイルを参照して下さい                 %%%
+%%%	(Read COPYRIGHT for detailed information.)                  %%%
+%%%-----------------------------------------------------------------%%%
+%%% July 1, 1992: ICOT Free Software の公開準備の為に、プログラム   %%%
+%%% 全体に渡りrefinmentを行なった                                   %%%
+%%% 1992.7 Check and refine every program for IFS (ICOT Free        %%%
+%%% Software) release.                                              %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% PIMOS UTILITY (Multi level dynamic load balancer) %%%          
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Author:         MasaFuruichi                      %%%
+%%% Organization:   Mitsubishi Electric               %%%
+%%% Date  :         1990/6/7                          %%%
+%%%                 1991/10/31                        %%% 
+%%%                 1991/12/19                        %%% 
+%%% Revision history:                                 %%%
+%%%                 1990/ 6/25 Modified User I/F      %%%
+%%%                 1991/10/31 Bag fix of group merge %%%
+%%%                 1991/12/19 Another bag fix of     %%%
+%%%                            group merge.           %%%
+%%%                 1992/03/30 Modified make_list     %%%
+%%%                 1992/07/10 current_processor ->   %%%
+%%%                            current_node,          %%%
+%%%                            @processor -> @node    %%%
+%%% Copyright:      ICOT                              %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module multi_level_load_balancer.
+:- public create/1,create/2,himada/1,group_balancer/5.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Public predicates
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% create/1 :  create(ReqIn)
+%%%   Create load balancer and get request stream.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% create/2 :  create(Parameter,ReqIn)
+%%%   Create load balancer, which balance loads of PEs 
+%%%   defined in a Parameter, and get request stream.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create(ReqIn):-            true | balancer_top(ReqIn)@priority(*,4096).
+create(Parameter,ReqIn):-  true | balancer_top(Parameter,ReqIn)@priority(*,4096).
+
+balancer_top(ReqIn):- true |
+        parameters([],PEsList,SpF),
+        balancer(PEsList,SpF,ReqIn).
+balancer_top(Parameter,ReqIn):-  true | 
+        parameters(Parameter,PEsList,SpF),
+        balancer(PEsList,SpF,ReqIn)@priority(*,4096).
+
+balancer(PEs,SpF,ReqIn):- true | 
+        balancer_main(ReqIn,NofPEs,SpF,Supply,Rest,End),
+%       current_processor(PE,X,Y),
+        current_node(PE,XY),
+        who_is_idle_initially(PEs,XY,0,NofPEs,Supply).
+%       who_is_idle_initially(PEs,~(X*Y),0,NofPEs,Supply).
+balancer_main(ReqIn,NofPEs,SpF,Supply,Rest,End):- true |
+        merge(ReqIn,ReqOut),
+        merge({Supply,DemIn},DemOut),
+        merge(HimaReqIn,HimaReqOut),
+        hima_pes(HimaReqOut,DemOut,MoreHimaPEs),
+        load_balancer(ReqOut,sync,HimaReqIn,DemIn,NofPEs,SpF,
+                      [],MoreHimaPEs,Rest,End).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+load_balancer([get(PeNo,NewBL)|Req],
+       sync,HimaPes,DemIn,NofPEs,SpF,Sibs,MoreHimaPEs,Rest,End):- 
+    NNofPEs:=NofPEs/SpF|
+        HimaPes=[get(NNofPEs,PeNo,SupplyInit)|HimaPes1],
+%       balancer_main(NewBL,NNofPEs,SpF,NSupply,NRest,NEnd)@processor(PeNo),
+       balancer_main(NewBL,NNofPEs,SpF,NSupply,NRest,NEnd)@node(PeNo),
+        DemIn={NRest,NewDemIn},
+        NSupply={SupplyInit,SupplyChild},
+        sync(PeNo,Sync),
+        load_balancer(Req,Sync,HimaPes1,NewDemIn,NofPEs,SpF,
+                      [{NEnd,SupplyChild}|Sibs],MoreHimaPEs,Rest,End).
+load_balancer([get(PeNo)|Req],
+              sync,HimaPes,DemIn,NofPEs,SpF,Sibs,MoreHimaPEs,Rest,End):- true |
+        HimaPes=[get(PeNo)|NHimaPes],
+        DemIn={DemIn0,DemIn1},
+%       himada(DemIn0)@processor(PeNo),
+        himada(DemIn0)@node(PeNo),
+        sync(PeNo,Sync),
+        load_balancer(Req,Sync,NHimaPes,DemIn1,NofPEs,SpF,
+                      Sibs,MoreHimaPEs,Rest,End).
+load_balancer([],sync,HimaPes,DemIn,NofPEs,SpF,Sibs,MoreHimaPEs,Rest,End):- 
+   true | 
+        DemIn=[],HimaPes=[],
+        group_balancer(Sibs,[],MoreHimaPEs,Rest,End).
+
+sync(Sync,NSync):- wait(Sync) | NSync=sync.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Group merger main program. 
+%%% 1991/12/19 Furuichi 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Main program of "Group merger".
+%%% Wait following 2 conditions;
+%%% (1) Mapping of local processors in a group is completed.
+%%%     => Stop supplying another processor to a group.
+%%% (2) Mapping of processor group is completed.
+%%%     => Start supplying another idle processor to a group.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+group_balancer([{end,Supply}|T],Nxt,MoreHimaPEs,Rest,End):- true |
+    Supply=[],
+    group_balancer(T,Nxt,MoreHimaPEs,Rest,End).
+alternatively.
+group_balancer([{NEnd,Supply}|T],Nxt,[PE|MoreHimaPEs],Rest,End):- true |
+    Supply=[PE|NSupply],
+    group_balancer(T,[{NEnd,NSupply}|Nxt],MoreHimaPEs,Rest,End).
+group_balancer([],[],MoreHimaPEs,Rest,End):- true | 
+    Rest=MoreHimaPEs,End=end.
+otherwise.
+group_balancer([],Nxt,MoreHimaPEs,Rest,End):- true | 
+    group_balancer(Nxt,[],MoreHimaPEs,Rest,End).
+
+
+who_is_idle_initially([],NofPEs,C,Npe,Demands):- true | Demands=[],C=Npe.
+who_is_idle_initially([Pe|PEs],NofPEs,C,Npe,Demands):- PeNo := Pe mod NofPEs |
+        Demands={DemIn0,DemIn1},
+%       himada(DemIn0)@processor(PeNo),
+        himada(DemIn0)@node(PeNo),
+        who_is_idle_initially(PEs,NofPEs,~(C+1),Npe,DemIn1).
+
+
+%%% Hima processor server
+%%% Main
+hima_pes([get(C,Pe,Pes)|Req],[H|Hima],Rest):- true |
+        Pe=H, Pes=[Pe|NPes],
+        get_hima_pes(~(C-1),Hima,NHima,NPes),
+        hima_pes(Req,NHima,Rest).
+hima_pes([get(Pe)|Req],[H|Hima],Rest):- true |
+        Pe=H, hima_pes(Req,Hima,Rest).
+hima_pes([],HimaPes,Rest):- true | Rest=HimaPes.
+
+%%% Sub (Get hima processors of C)
+get_hima_pes(C,Hima,    NHima,Pes):- C=<0 | NHima=Hima,Pes=[].
+get_hima_pes(C,[H|Hima],NHima,Pes):- C> 0 |
+        Pes=[H|NPes],
+        get_hima_pes(~(C-1),Hima,NHima,NPes).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Report PE number when this processor get be idle %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+himada(S):- true | 
+    current_node(PE,XY),
+%   current_processor(PE,X,Y),
+    i_am_hima(Hima)@priority(*,0),
+    himada(Hima,S,PE).
+himada(Hima,S,PE):-wait(Hima) | S=[PE].
+i_am_hima(Hima):- true | Hima=hima.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Process parameter
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+parameters(Param,PEs,SpF):- true |
+        split_factor(Param,NParam,SpF),
+        pes_list(NParam,PEs).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Process split factor parameter
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+split_factor([],NParam,SpF):- true | SpF=4,NParam=[].
+split_factor([splitting_factor(H)|T],NParam,SpF):- integer(H) | SpF=H,NParam=T.
+split_factor([spf(H)|T],NParam,SpF):- integer(H) | SpF=H,NParam=T.
+otherwise.
+split_factor([H|T],NParam,SpF):- true | 
+        NParam=[H|NNParam],
+        split_factor(T,NNParam,SpF).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Process PEs parameter
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+pes_list([processor(PEsList)|_],PEs):- true |
+        pes_list_sub(PEsList,PEs).
+pes_list([pes(PEsList)|_],PEs):- true |
+        pes_list_sub(PEsList,PEs).
+pes_list([],PEs):- true | 
+        current_node(PE,XY),
+%       current_processor(PE,X,Y),
+%       make_list(~(X*Y-1),0,PEs,[]).
+        make_list(~(XY-1),0,PEs,[]).
+otherwise.
+pes_list([_|T],PEs):- true | pes_list(T,PEs).
+
+pes_list_sub([],PEs):- true | PEs=[].
+pes_list_sub([H|T],PEs):- integer(H) | 
+        PEs=[H|NPEs],pes_list_sub(T,NPEs).
+pes_list_sub([A-B|T],PEs):- A=<B |
+        make_list(~(B-A),A,PEs,NPEs),
+        pes_list_sub(T,NPEs).
+pes_list_sub([A-(*)|T],PEs):- integer(A) |
+%       current_processor(_,X,Y),
+        current_processor(_,XY),
+        make_list(~(XY-A-1),A,PEs,NPEs),
+%       make_list(~(X*Y-A-1),A,PEs,NPEs),
+        pes_list_sub(T,NPEs).
+pes_list_sub([A:B|T],PEs):- integer(A),integer(B) |
+        make_list(~(B-1),A,PEs,NPEs),
+        pes_list_sub(T,NPEs).
+
+make_list(C,N,PEs,NPEs):- true |
+        current_node(_,XY),
+%       current_processor(_,X,Y),
+%       make_list(C,N,PEs,NPEs,~(X*Y)).
+        make_list(C,N,PEs,NPEs,XY).
+make_list(0,N,PEs,NPEs,NofPEs):- true | PEs=[N|NPEs].
+make_list(C,N,PEs,NPEs,NofPEs):- C>0,NC:=N+C,PE:=NC mod NofPEs |
+        PEs=[PE|NewPEs],
+        make_list(~(C-1),N,NewPEs,NPEs,NofPEs).

@@ -1,0 +1,767 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v30>Util>fileutil.kl1.10, 30-Jan-92 19:23:27, Edit by hori
+
+:- module kl1_library_file_utility.
+:- with_macro pimos.
+:- public open_files/6, open_files/8.
+:- public open_files/7, open_files/9.
+:- public ls/6.
+%%:- public ls/7.
+%%:- public ls/8.
+:- public default_file_extension/3.
+%%:- public default_file_extension/4.
+%%:- public default_file_extension/5.
+:- public file_extension/2.
+%%:- public file_extension/3.
+%%:- public file_extension/4.
+:- public decomp_filename/6.
+:- public decomp_filename/7.
+%%:- public decomp_filename/7.
+%%:- public decomp_filename/8.
+:- public normalize_date_time/4.
+:- public getFileSystemInfo/2.
+
+%%%% NORMALIZE DATE & TIME
+
+normalize_date_time(FileDate,FileTime,Date,Time) :- true |
+    normalize_date(FileDate,Date),
+    normalize_time(FileTime,Time).
+
+normalize_date(FileDate,Date) :- true |
+    norm_date(FileDate,Day,Month,Year),
+    timer_utility:get_date_count(Year,Month,Day,Date).
+
+norm_date(FileDate,Day,Month,Year) :- true |
+    builtin#substring(FileDate,0,2,DayStr,FileDate0),
+    decode_number(DayStr,Day),
+    builtin#substring(FileDate0,3,3,MonthStr,FileDate1),
+    decode_month(MonthStr,Month),
+    builtin#substring(FileDate1,7,2,YearStr,_),
+    decode_number(YearStr,Year1900),
+    Year := Year1900 + 1900.
+
+normalize_time(FileTime,Time) :- true |
+    normalize_time(FileTime,Hour,Min,Sec),
+    timer_utility:get_time_count(Hour,Min,Sec,0,Time).
+
+normalize_time(FileTime,Hour,Min,Sec) :- true |
+    builtin#substring(FileTime,0,2,HourStr,FileTime0),
+    decode_number(HourStr,Hour),
+    builtin#substring(FileTime0,3,2,MinStr,FileTime1),
+    decode_number(MinStr,Min),
+    builtin#substring(FileTime1,6,2,SecStr,_),
+    decode_number(SecStr,Sec).
+
+decode_number(String,Number) :- string(String,Length,16) |
+    decode_number(String,0,Length,0,Number).
+
+decode_number(String,I,Length,Num0,Number) :-
+    I < Length, string_element(String,I,Char) |
+    Num1 := Num0 * 10 + Char - #"0",
+    J := I + 1,
+    decode_number(String,J,Length,Num1,Number).
+decode_number(_,I,Length,Num0,Number) :- I >= Length |
+    Num0 = Number.
+
+decode_month("Jan",Month) :- true | Month = 1.
+decode_month("Feb",Month) :- true | Month = 2.
+decode_month("Mar",Month) :- true | Month = 3.
+decode_month("Apr",Month) :- true | Month = 4.
+decode_month("May",Month) :- true | Month = 5.
+decode_month("Jun",Month) :- true | Month = 6.
+decode_month("Jul",Month) :- true | Month = 7.
+decode_month("Aug",Month) :- true | Month = 8.
+decode_month("Sep",Month) :- true | Month = 9.
+decode_month("Oct",Month) :- true | Month = 10.
+decode_month("Nov",Month) :- true | Month = 11.
+decode_month("Dec",Month) :- true | Month = 12.
+
+%%%% DECOMP FILENAME
+
+decomp_filename(FullPathName0, Node, Path, FileName, Extension, Version) :- true |
+    shoen:raise(pimos_tag#task, general_request, [fep_attributes(Stat)]),
+    checkStat(Stat, FullPathName0, Node, Path, FileName, Extension, Version, _).
+decomp_filename(FullPathName0, Node, Path, FileName, Extension, Version, DirChar) :- true |
+    shoen:raise(pimos_tag#task, general_request, [fep_attributes(Stat)]),
+    checkStat(Stat, FullPathName0, Node, Path, FileName, Extension, Version, DirChar).
+
+checkStat(normal(_,_,_,_,DirChar0,VerChar0,_), FullPathName0, Node, Path,
+        FileName, Extension, Version, DirChar) :- true |
+    decomp_filename_(DirChar0, VerChar0,
+        FullPathName0, Node, Path, FileName, Extension, Version),
+    DirChar0=DirChar.
+otherwise.
+checkStat(_, _, Node, Path, FileName, Extension, Version, DirChar) :- true |
+    Node="", Path="", FileName="", Extension="", Version="", DirChar="".
+
+get_file_notation_info(normal(Code, OS, Host, FepVer, DirChar, VerChar, Comment),
+            Attrib, DirChar0, VerChar0) :- true |
+    DirChar0=DirChar, VerChar0=VerChar,
+    Attrib=normal(Code, OS, Host, FepVer, DirChar, VerChar, Comment).
+get_file_notation_info({Code, OS, Host, FepVer, DirChar, VerChar, Comment},
+            Attrib, DirChar0, VerChar0) :- true |
+    DirChar0=DirChar, VerChar0=VerChar,
+    Attrib={Code, OS, Host, FepVer, DirChar, VerChar, Comment}.
+
+decomp_filename_(DirChar, VerChar, FullPathName0, Node, Path, FileName, Ext, Version) :-
+    integer(DirChar) |
+    decomp_filename__(DirChar, VerChar, FullPathName0, Node, Path, FileName, Ext, Version).
+decomp_filename_(DirStr, VerStr, FullPathName0, Node, Path, FileName, Ext, Version) :-
+    string(DirStr, _, _) |
+    convertStringToChar(DirStr, DirChar),
+    convertStringToChar(VerStr, VerChar),
+    decomp_filename__(DirChar, VerChar, FullPathName0, Node, Path, FileName, Ext, Version).
+
+decomp_filename__(DirChar, VerChar, FullPathName0,Node,Path,FileName,Extension,Version) :- 
+    string(FullPathName0,Length,16), Length > 8 |
+    decomp_node_name(FullPathName0,0,Length,P1,FullPathName1,Node),
+    decomp_version(FullPathName1,Length,Length,P2,VerChar,FullPathName2,Version),
+    decomp_extension(FullPathName2,P2,P2,P3,FullPathName3,Extension),
+    decomp_file_name(FullPathName3,P3,P3,P4,DirChar,FullPathName4,FileName),
+    Len := P4 - P1,
+    builtin#substring(FullPathName4,P1,Len,Path,_).
+
+decomp_node_name(FullName,I0,L,P,NewName,Node) :- 
+    I0 < L,
+    string_element(FullName,I0,#":"),
+    I1 := I0 + 1,
+    string_element(FullName,I1,#":") |
+    P := I1 + 1,
+    builtin#substring(FullName,0,I0,Node,NewName).
+decomp_node_name(FullName,I0,L,P,NewName,Node) :-
+    I0 >= L |
+    P = 0,
+    NewName = FullName,
+    Node = string#"".
+otherwise.
+decomp_node_name(FullName,I0,L,P,NewName,Node) :-
+    I0 < L |
+    I1 := I0 + 1,
+    decomp_node_name(FullName,I1,L,P,NewName,Node).
+
+% If the path name has no 'version' character.
+decomp_version(FullName,_,L,P,none,NewName,Version) :- true |
+    NewName=FullName,
+    Version="", L=P.
+otherwise.
+decomp_version(FullName,I0,L,P,VerChar,NewName,Version) :- 
+    decomp_version_(FullName,I0,L,P,VerChar,NewName,Version).
+
+decomp_version_(FullName,I0,L,P,VerChar,NewName,Version) :-
+    I0 > 0,
+    I1 := I0 - 1,
+    string_element(FullName,I1,VerChar) |
+    P = I1,
+    Len := L - I0,
+    builtin#substring(FullName,I0,Len,Version,NewName).
+otherwise.
+decomp_version_(FullName,I0,L,P,VerChar,NewName,Version) :-
+    I0 > 0 |
+    I1 := I0 - 1,
+    decomp_version_(FullName,I1,L,P,VerChar,NewName,Version).
+
+decomp_extension(FullPathName,P1,P2,P3,NewName,Extension) :- true |
+    decomp_version_(FullPathName,P1,P2,P3,#".",NewName,Extension).
+
+decomp_file_name(FullName,I0,L,P,DirChar,NewName,FileName) :- 
+    I0 > 0,
+    I1 := I0 - 1,
+    string_element(FullName,I1,DirChar) |
+    P = I1,
+    Len := L - I0,
+    builtin#substring(FullName,I0,Len,FileName,NewName).
+decomp_file_name(FullName,I0,L,P,_,NewName,FileName) :-
+    I0 =< 0 |
+    P = 0,
+    builtin#substring(FullName,0,L,FileName,NewName).
+otherwise.
+decomp_file_name(FullName,I0,L,P,DirChar,NewName,FileName) :-
+    I0 > 0 |
+    I1 := I0 - 1,
+    decomp_file_name(FullName,I1,L,P,DirChar,NewName,FileName).
+
+%%%% FILE EXTENSION
+
+file_extension(FullPathName, EXT) :- true |
+    shoen:raise(pimos_tag#task, general_request, [fep_attributes(Stat)]),
+   (Stat=normal(_,_,_,_,_,VerStr,_) ->
+        convertStringToChar(VerStr, VerChar),
+        file_extension(VerChar, FullPathName, EXT);
+    otherwise;
+    true -> EXT="").
+
+file_extension(VerChar, FullPathName, EXT) :- string(FullPathName, Length, 16) |
+    I := Length - 1, 
+    file_extension(VerChar, FullPathName, I, EXT).
+
+file_extension(none, FullPathName,I,EXT) :- true |
+    file_extension_0(FullPathName,I,I,EXT).
+otherwise.
+file_extension(VerChar, FullPathName, I, EXT) :- true |
+    file_extension_with_version(VerChar, FullPathName, I, EXT).
+
+file_extension_with_version(VerChar,PathName,I,EXT) :-
+    I > 0, string_element(PathName,I,VerChar) |
+    I1 := I - 1,
+    file_extension_0(PathName,I1,I1,EXT).
+file_extension_with_version(_,_,0,EXT) :- true |
+    EXT = string#"".
+otherwise.
+file_extension_with_version(VerChar,PathName,I,EXT) :- I > 0 |
+    I1 := I - 1,
+    file_extension_with_version(VerChar,PathName,I1,EXT).
+
+file_extension_0(PathName,I,J,EXT) :- 
+    I > 0, string_element(PathName,I,#".") |
+    I1 := I + 1,
+    L := J - I,
+    builtin#substring(PathName,I1,L,EXT,_).
+file_extension_0(_,0,_,EXT) :- true |
+    EXT = string#"".
+otherwise.
+file_extension_0(PathName,I,J,EXT) :- true |
+    I1 := I - 1,
+    file_extension_0(PathName,I1,J,EXT).
+
+%%%% DEFAULT_EXTENSION
+default_file_extension(FileName, EXT, FileNameExt) :- true |
+    shoen:raise(pimos_tag#task, general_request, [fep_attributes(Attr0)]),
+    wait_attrs(Attr0, FileName, EXT, FileNameExt).
+
+wait_attrs(normal(_,_,_,_,DirStr0,_,_), FileName, EXT, FileNameExt) :- true |
+    convertStringToChar(DirStr0, DirChar),
+    default_file_extension_(DirChar, FileName, EXT, FileNameExt).
+otherwise.
+wait_attrs(_, FileName, EXT, FileNameExt) :- true | FileNameExt=FileName.
+/*
+default_file_extension(Attrib0, FileName, EXT, FileNameExt) :- true |
+    default_file_extension(Attrib0, _, FileName, EXT, FileNameExt).
+
+default_file_extension(Attrib0, Attrib, FileName, EXT, FileNameExt) :- true |
+    get_file_notation_info(Attrib0, Attrib, DirChar, _),
+    default_file_extension_(DirChar, FileName, EXT, FileNameExt).
+*/
+default_file_extension_(DirChar,FileName,EXT,FileNameExt) :- string(FileName,Len,16) |
+    L := Len - 1,
+    check_ext(DirChar, FileName,L,YorN),
+    add_ext(YorN,FileName,EXT,FileNameExt).
+
+check_ext(_, FileName,L,YorN) :- 
+    L > 0, 
+    string_element(FileName,L,#".") |
+    YorN = yes.
+check_ext(DirChar,FileName,L,YorN) :- 
+    L > 0, 
+    string_element(FileName,L,DirChar) |
+    YorN = no.
+check_ext(_, _,0,YorN) :- true | YorN = no.
+otherwise.
+check_ext(DirChar, FileName,L,YorN) :- true |
+    L1 := L - 1,
+    check_ext(DirChar, FileName,L1,YorN).
+
+add_ext(yes,FileName,_,FileNameExt) :- true | 
+    FileNameExt = FileName.
+add_ext(no,FileName,EXT,FileNameExt) :- true |
+    builtin#append_string([FileName,string#".",EXT],FileNameExt).
+
+%%%% LS
+ls(Patterns,Path,Column,FR,MESG0,MESG) :- true |
+    shoen:raise(pimos_tag#task, general_request, [fep_attributes(Attrs)]),
+    wait_attrs(Attrs,Patterns,Path,Column,FR,MESG0,MESG).
+
+wait_attrs(normal(_,_,_,_,DirStr0,VerStr0,_),Patterns,Path,Column,FR,MESG0,MESG) :- true |
+    ls(Patterns,Path,Column,DirStr0,VerStr0,FR,MESG0,MESG).
+otherwise.
+wait_attrs(_,_,_,_,FR,MESG0,MESG) :- true |
+    MESG0=[error("error occured on FEP",[])|MESG].
+
+ls(Patterns,Path,Column,DirStr0,VerStr0,FR0,MESG0,MESG) :- true |
+    convertStringToChar(DirStr0, DirChar),
+    convertStringToChar(VerStr0, VerChar),
+    FR0=FR1,
+    ls_0(Patterns,["."|Path],Column,0,_,FR1,DirChar,VerChar,MESG0,MESG).
+
+ls_0(Patterns,[Path0|Rest],Column,Max0,Max,FR0,DirChar,VerChar,MESG0,MESG) :- true |
+    parse_path(Path0,Path1,DirChar,FR0,FR1),
+    FR1 = [directory(Path1,Status)|FR2],
+    ls_pathname(Status,Patterns,Column,Max0,Max1,Max,DirChar,VerChar,MESG0,MESG1),
+    ls_0(Patterns,Rest,Column,Max1,Max,FR2,DirChar,VerChar,MESG1,MESG).
+ls_0(_,[],_,Max0,Max,FR,_,_,MESG0,MESG) :- true |
+    Max := Max0 + 2,
+    FR = [],
+    MESG0 = MESG.
+
+ls_pathname(normal(Dir,_,_),Patterns,Column,Max0,Max1,Max,DirChar,VerChar,MESG0,MESG) :- true |
+    Dir = [pathname(normal(PathName))],
+    MESG0 = [message(string#"~s",[PathName])|MESG1],
+    pool:keyed_sorted_set(LS0),
+    ls_patterns(PathName,Patterns,0,N,Max0,Max1,DirChar,VerChar,LS0,[get_all(Sorted)]),
+    divide_into_columns(Sorted,N,Max,Column,DirChar,VerChar,MESG1,MESG).
+otherwise.
+ls_pathname(_,_,_,Max0,Max1,_,_,_,MESG0,MESG) :- true |
+    Max0 = Max1,
+    MESG0 = MESG.
+
+ls_patterns(PathName,[_|Rest],N0,N,Max0,Max,DirChar,VerChar,LS0,LS) :- 
+    string_element(PathName,0,DirChar) |
+    pathname:expandPathname(PathName,FileNameList),
+    ls_trans(FileNameList,LS0,LS1,N0,N1,DirChar,VerChar,Max0,Max1),
+    ls_patterns(PathName,Rest,N1,N,Max1,Max,DirChar,VerChar,LS1,LS).
+otherwise.
+ls_patterns(PathName,[Pattern|Rest],N0,N,Max0,Max,DirChar,VerChar,LS0,LS) :- true |
+    convertCharToString(DirChar,DirStr),
+    builtin#append_string([PathName,DirStr,Pattern],FileName),
+    pathname:expandPathname(FileName,FileNameList),
+    ls_trans(FileNameList,LS0,LS1,N0,N1,DirChar,VerChar,Max0,Max1),
+    ls_patterns(PathName,Rest,N1,N,Max1,Max,DirChar,VerChar,LS1,LS).
+ls_patterns(_,[],N0,N,Max0,Max,_,_,LS0,LS) :- true |
+    N0 = N,
+    Max0 = Max,
+    LS0 = LS.
+
+ls_trans([file(PathName)|Rest],LS0,LS,N0,N,DirChar,VerChar,Max0,Max) :- string(PathName,L,16) |
+%%    I := L - 1,
+    decomp_filename_(DirChar,VerChar,PathName,_,_,FileName,Extension,Version),
+    convertCharToString(VerChar,VerStr),
+    builtin#append_string([FileName,string#".",Extension,VerStr,Version],FileName0),
+%%    string(FileName0,Len,_,FileName1),
+    LS0 = [put(FileName0,0,_)|LS1],
+    N1 := N0 + 1,
+    max(L,Max0,Max1),
+    ls_trans(Rest,LS1,LS,N1,N,DirChar,VerChar,Max1,Max).
+ls_trans([],LS0,LS,N0,N,_,_,Max0,Max) :- true |
+    LS0 = LS,
+    N0 = N,
+    Max := Max0.
+otherwise.
+ls_trans([_|Rest],LS0,LS,N0,N,DirChar,VerChar,Max0,Max) :- true |
+    ls_trans(Rest,LS0,LS,N0,N,DirChar,VerChar,Max0,Max).
+
+max(X,Y,Z) :- X > Y | Z = X.
+otherwise.
+max(_,Y,Z) :- true | Z = Y.
+
+divide_into_columns(Listing,N,Max,Column,_,_,MESG0,MESG) :- true |
+    new_vector(LV0,N),
+    create_listing_vector(Listing,0,LV0,LV),
+    M := ( N + Column - 1 ) / Column,
+    ls_output(LV,0,M,N,Max,Column,MESG0,MESG).
+
+create_listing_vector([{FileName,_}|Rest],P0,LV0,LV) :- true |
+    set_vector_element(LV0,P0,_,FileName,LV1),
+    P1 := P0 + 1,
+    create_listing_vector(Rest,P1,LV1,LV).
+create_listing_vector([],P0,LV0,LV) :- vector(LV0,Len), P0 < Len |
+    set_vector_element(LV0,P0,_,string#"",LV1),
+    P1 := P0 + 1,
+    create_listing_vector([],P1,LV1,LV).
+create_listing_vector([],P0,LV0,LV) :- vector(LV0,Len), P0 >= Len |
+    LV0 = LV.
+
+ls_output(LV0,P0,M,N,Max,C,MESG0,MESG) :- P0 < M |
+    ls_one_line(LV0,LV1,N,M,P0,0,C,Max,string#"",MESG0,MESG1),
+    P1 := P0 + 1,
+    ls_output(LV1,P1,M,N,Max,C,MESG1,MESG).
+ls_output(_,P0,M,_,_,_,MESG0,MESG) :- P0 >= M |
+    MESG0 = MESG.
+
+ls_one_line(LV0,LV,N,M,P,Q,C,Max,Out0,MESG0,MESG) :- 
+    Q + 1 < C,
+    I := Q * M + P, I < N |
+    vector_element(LV0,I,FileName,LV1),
+    trail_string(FileName,Max,Trail),
+    builtin#append_string([Out0,FileName,Trail],Out1),
+    Q1 := Q + 1,
+    ls_one_line(LV1,LV,N,M,P,Q1,C,Max,Out1,MESG0,MESG).
+ls_one_line(LV0,LV,N,M,P,Q,C,Max,Out0,MESG0,MESG) :- 
+    C := Q + 1,
+    I := Q * M + P, I < N |
+    vector_element(LV0,I,FileName,LV),
+    trail_string(FileName,Max,Trail),
+    builtin#append_string([Out0,FileName,Trail],Out),
+    MESG0 = [message(string#"  ~s",[Out])|MESG].
+ls_one_line(LV0,LV,N,M,P,Q,_,_,Out,MESG0,MESG) :- 
+    Q * M + P >= N |
+    LV0 = LV,
+    MESG0 = [message(string#"  ~s",[Out])|MESG].
+
+trail_string(FileName,Max,Trail) :- string(FileName,Len,16) |
+    L := Max - Len,
+    new_string(Trail0,L,16),
+    trail_string(Trail0,0,L,Trail).
+otherwise.
+trail_string(_,Max,Trail) :- true |
+    new_string(Trail0,Max,16),
+    trail_string(Trail0,0,Max,Trail).
+
+trail_string(Trail0,P,L,Trail) :- P < L |
+    set_string_element(Trail0,P,#" ",Trail1),
+    P1 := P + 1,
+    trail_string(Trail1,P1,L,Trail).
+trail_string(Trail0,P,L,Trail) :- P >= L |
+    Trail0 = Trail.
+
+%%%% OPEN_FILES
+
+open_files(FileNames,EXTs,FSs,MESG0,MESG,Status) :- true |
+    open_files(FileNames,EXTs,FSs,MESG0,MESG,text,Status).
+
+open_files(FileNames,EXTs,FSs,MESG0,MESG,Mode,Status) :- true |
+    shoen:raise(pimos_tag#task,general_request,[file(St),getenv(compile:path,Path),
+                                                fep_attributes(Attrs0)]),
+    merge(FSs0,FSs),
+    check_FR_status(St,FR),
+    wait_path(Path,SP),
+    wait_attrs(Attrs0,DirStr,VerStr),
+    convertStringToChar(DirStr, DirChar),
+    convertStringToChar(VerStr, VerChar), 
+    open_files_0(FileNames,EXTs,SP,FSs0,FR,MESG0,MESG,DirChar,VerChar,Mode,normal,Status).   
+
+open_files(FileNames,EXTs,VP0,VP,FSs,MESG0,MESG,Status) :- true |
+    open_files(FileNames,EXTs,VP0,VP,FSs,MESG0,MESG,text,Status).
+
+open_files(FileNames,EXTs,VP0,VP,FSs,MESG0,MESG,Mode,Status):- true |
+    shoen:raise(pimos_tag#task,general_request,[fep_attributes(Attrs0)]),
+    VP0 = [get_file_request(FR),get_path(SP)|VP],
+    wait_attrs(Attrs0, DirStr, VerStr),
+    convertStringToChar(DirStr, DirChar),
+    convertStringToChar(VerStr, VerChar),
+    merge(FSs0,FSs),
+    open_files_0(FileNames,EXTs,SP,FSs0,FR,MESG0,MESG,DirChar,VerChar,Mode,normal,Status).
+
+open_files_0([FileName|Rest],EXTs,SP,FSs0,FR,MESG0,MESG,DirChar,VerChar,Mode,Status0,Status):-
+    string(FileName,L,16) |
+    check_wildcard(0,L,FileName,YorN),
+    FR = {FR0,FR1},
+    FSs0 = {FSs1,FSs2},
+    open_file(YorN,FileName,EXTs,SP,FR0,FSs1,MESG0,MESG1,DirChar,VerChar,Mode,Status0,Status1),
+    open_files_0(Rest,EXTs,SP,FSs2,FR1,MESG1,MESG,DirChar,VerChar,Mode,Status1,Status).
+open_files_0([],_,_,FSs,FR,MESG0,MESG,_,_,_,Status0,Status) :- true |
+    FSs = [],
+    FR = [],
+    MESG0 = MESG,
+    Status0 = Status.
+otherwise.
+open_files_0([FileName|Rest],EXTs,SP,FSs,FR,MESG0,MESG,DirChar,VerChar,Mode,Status0,Status):- true |
+    Status0=Status,
+    MESG0 = [error(string#"filename should be a string : ~t",[FileName])|MESG1], 
+    open_files_0(Rest,EXTs,SP,FSs,FR,MESG1,MESG,DirChar,VerChar,Mode,abnormal,Status).
+
+check_wildcard(I,L,FileName,YorN) :- I < L, string_element(FileName,I,#"*") |
+    YorN = yes.
+check_wildcard(I,L,_,YorN) :- I >= L | 
+    YorN = no.
+otherwise.
+check_wildcard(I,L,FileName,YorN) :- true |
+    I1 := I + 1,
+    check_wildcard(I1,L,FileName,YorN).
+
+open_file(no,FileName0,EXTs,Path,FR0,FSs0,MESG0,MESG,DirChar,VerChar,Mode,Status0,Status) :- true |
+    parse_path(FileName0,FileName,DirChar,FR0,FR1),
+    open_file_with_path(FileName,FileName,EXTs,Path,FR1,DirChar,VerChar,Mode,St),
+    check_file_status(St,FileName0,FSs0,MESG0,MESG,Status0,Status).
+open_file(yes,FileName0,_,Path,FR0,FSs0,MESG0,MESG,DirChar,VerChar,Mode,Status0,Status) :- 
+    string_element(FileName0,0,DirChar) |
+    pool:keyed_set(FP0,50),
+    FR0 = {FR1,FR2},
+    open_wildcard(FileName0,FileName0,Path,FR1,DirChar,FileNames0),
+    unique_file(FileNames0,FP0,DirChar,VerChar,FileNames1),
+    merge(FileNames1,FileNames2),
+    open_files_0(FileNames2,FR2,FSs0,MESG0,MESG,Mode),
+    Status0 = Status.
+otherwise.
+open_file(yes,FileName0,_,Path,FR0,FSs0,MESG0,MESG,DirChar,VerChar,Mode,Status0,Status) :- true |
+    pool:keyed_set(FP0,50),
+    FR0 = [current_directory(normal(CD))|{FR1,FR2}],
+    convertCharToString(DirChar, DirStr),
+    builtin#append_string([CD,DirStr,FileName0],FileName1),
+    open_wildcard(FileName1,FileName0,Path,FR1,DirChar,FileNames0),
+    unique_file(FileNames0,FP0,DirChar,VerChar,FileNames1),
+    merge(FileNames1,FileNames2),
+    open_files_0(FileNames2,FR2,FSs0,MESG0,MESG,Mode),
+    Status0 = Status.
+
+open_wildcard(FileName,FileName0,Path,FR,DirChar,FileNames0) :- true |
+    pathname:expandPathname(FileName,FileNameList),
+    FileNames0 = [FileNameList|FileNames1],
+    open_wildcard_0(Path,FileName0,FR,DirChar,FileNames1).
+
+open_wildcard_0([Path0|Rest],FileName0,FR0,DirChar,FileNames) :- true |
+    parse_path(Path0,Path1,DirChar,FR0,FR1),
+    FR1 = [directory(Path1,Status)|FR2],
+    full_pathname(Status,Rest,FileName0,FR2,DirChar,FileNames).
+open_wildcard_0([],_,FR,_,FileNames) :- true |
+    FR = [],
+    FileNames = [].
+
+parse_path(Path0,Path,DirChar,FR0,FR) :- string(Path0,Len,16), Len > 0 |
+    string_element(Path0,0,FirstChar,Path1),
+    parse_path(FirstChar,Len,Path1,Path,DirChar,FR0,FR).
+otherwise.
+parse_path(Path0,Path,_,FR0,FR) :- true | Path = Path0, FR = FR0.
+
+parse_path(DirChar,_,Path0,Path,DirChar,FR0,FR) :- true | Path = Path0, FR = FR0.
+parse_path(#"~",_,Path0,Path,_,FR0,FR) :- true |
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:home,Home)]),
+    home_path(Home,Path0,Path),
+    FR = FR0.
+otherwise.
+parse_path(_,_,Path0,Path,_,FR0,FR) :- true |
+    Path = Path0, FR = FR0.
+
+home_path(normal(Home),string#"~",Path) :- true |
+    Path = Home.
+otherwise.
+home_path(normal(Home),Path0,Path) :- string(Path0,Len,16) |
+    L1 := Len - 1,
+    builtin#substring(Path0,1,L1,Path1,_),
+    builtin#append_string([Home,Path1],Path).
+otherwise.
+home_path(_,Path0,Path) :- true |
+    Path = Path0.
+
+full_pathname(normal(Dir,_,_),Rest,FileName0,FR0,DirChar,FileNames) :- true |
+    Dir = [pathname(normal(PathName))],
+    convertCharToString(DirChar, DirStr),
+    builtin#append_string([PathName,DirStr,FileName0],FileName1),
+    open_wildcard(FileName1,FileName0,Rest,FR0,DirChar,FileNames).
+otherwise.
+full_pathname(_,Rest,FileName0,FR0,DirChar,FileNames) :- true |
+    open_wildcard_0(Rest,FileName0,FR0,DirChar,FileNames).
+
+unique_file([FileNameList|Rest],FP0,DirChar,VerChar,FileNames0) :- list(FileNameList) |
+    FileNames0 = {FileNames1,FileNames2},
+    unique_file_0(FileNameList,FP0,FP1,DirChar,VerChar,FileNames1),
+    unique_file(Rest,FP1,DirChar,VerChar,FileNames2).
+unique_file([[]|Rest],FP0,DirChar,VerChar,FileNames) :- true |
+    unique_file(Rest,FP0,DirChar,VerChar,FileNames).
+unique_file([],FP0,_,_,FileNames) :- true |
+    FP0 = [],
+    FileNames = [].
+
+unique_file_0(FileNames0,FP0,FP,DirChar,VerChar,FileNames) :- true |
+    unique_file_1(FileNames0,FP0,FP1,DirChar,VerChar,FileNames1),
+    add_filenames(FileNames1,FP1,FP,FileNames).
+
+unique_file_1([file(PathName)|Rest],FP0,FP,DirChar,VerChar,FileNames0) :- true |
+    decomp_filename_(DirChar,VerChar,PathName,_,_,FileName,Extension,_),
+    builtin#append_string([FileName,string#".",Extension],FileName0),
+    FP0 = [empty(FileName0,YorN)|FP1],
+    add_if_not_yet(YorN,FileName0,PathName,FileNames0,FileNames1),
+    unique_file_1(Rest,FP1,FP,DirChar,VerChar,FileNames1).
+unique_file_1([],FP0,FP,_,_,FileNames) :- true |
+    FP0 = FP,
+    FileNames = [].
+otherwise.
+unique_file_1([_|Rest],FP0,FP,DirChar,VerChar,FileNames) :- true |  % If directory
+    unique_file_1(Rest,FP0,FP,DirChar,VerChar,FileNames).
+
+add_if_not_yet(yes,FileName,PathName,FileNames0,FileNames) :- true |
+    FileNames0 = [{FileName,PathName}|FileNames].
+add_if_not_yet(no,_,_,FileNames0,FileNames) :- true |
+    FileNames0 = FileNames.
+
+add_filenames([{FileName,PathName}|Rest],FP0,FP,FileNames0) :- true |
+    FP0 = [put(FileName,PathName,_)|FP1],
+    FileNames0 = [PathName|FileNames1],
+    add_filenames(Rest,FP1,FP,FileNames1).
+add_filenames([],FP0,FP,FileNames0) :- true |
+    FP0 = FP,
+    FileNames0 = [].
+
+open_files_0([FileName|Rest],FR0,FSs0,MESG0,MESG,Mode):- true |
+    decide_mode(read, Mode, Message),
+    FR0 = [open(FileName,{Message,Status})|FR1],
+    FSs0 = {FSs1,FSs2},
+    check_file_status(Status,FileName,FSs1,MESG0,MESG1,normal,_),
+    open_files_0(Rest,FR1,FSs2,MESG1,MESG,Mode).
+open_files_0([],FR0,FSs0,MESG0,MESG,_) :- true |
+    FR0 = [],
+    FSs0 = [],
+    MESG0 = MESG.
+
+open_file_with_path(FileName0,FileName1,EXTs,Path,FR,DirChar,VerChar,Mode,Status) :- true |
+    FR = {FR0,FR1},
+    open_file_with_extension(FileName0,FileName0,EXTs,FR0,VerChar,Mode,St),
+    open_next_path(St,FileName0,FileName1,EXTs,Path,FR1,DirChar,VerChar,Mode,Status).
+
+open_next_path(normal(FS,Ab,Att),_,_,_,_,FR,_,_,_,Status) :- true |
+    Status = normal(FS,Ab,Att),
+    FR = [].
+open_next_path(abnormal,_,FileName1,EXTs,[Path0|Rest],FR0,DirChar,VerChar,Mode,Status) :- true |
+    parse_path(Path0,Path1,DirChar,FR0,FR1),
+    convertCharToString(DirChar, DirStr),
+    builtin#append_string([Path1,DirStr,FileName1],FileName2),
+    open_file_with_path(FileName2,FileName1,EXTs,Rest,FR1,DirChar,VerChar,Mode,Status).
+otherwise.
+open_next_path(_,_,_,_,[],FR,_,_,_,Status) :- true |
+    Status = abnormal,
+    FR = [].
+
+open_file_with_extension(File0,File1,EXTs,FR0,VerChar,Mode,Status) :- true |
+    decide_mode(read,Mode,MODE),
+    FR0 = [open(File0,{MODE,St0})|FR1],
+    check_open_status(St0,File0,File1,EXTs,FR1,VerChar,Mode,Status).
+
+check_open_status(normal(FS0,_,_),File0,File1,EXTs,FR0,VerChar,Mode,Status) :- true |
+    FS0 = [attributes(Status0)|FS],
+    check_attributes_status(Status0,FS,File0,File1,EXTs,FR0,VerChar,Mode,Status).
+otherwise.
+check_open_status(_,_,File1,[EXT|Rest],FR0,VerChar,Mode,Status) :- true |
+    builtin#append_string([File1,".",EXT],File2),
+    open_file_with_extension(File2,File1,Rest,FR0,VerChar,Mode,Status).
+check_open_status(_,_,_,[],FR0,_,_,Status) :- true |
+    FR0 = [],
+    Status = abnormal.
+
+check_attributes_status(Status0,FS,_,File1,[EXT|Rest],FR0,VerChar,Mode,Status) :-
+    Status0 = normal(_,_,_,_,MDate,MTime,_,_,_) |
+    normalize_date_time(MDate,MTime,FDate,FTime),
+    builtin#append_string([File1,".",EXT],File2),
+    open_file_with_extension_1(File2,File1,FS,{FDate,FTime},Rest,FR0,VerChar,Mode,Status).
+otherwise.
+check_attributes_status(_,FS,_,_,_,FR0,_,_,Status) :- true |
+    Status = normal(FS,_,_),
+    FR0 = [].
+
+open_file_with_extension_1(File0,File1,FS,DateTime,EXTs,FR0,VerChar,Mode,Status) :- true |
+    decide_mode(read, Mode, MODE),
+    FR0 = [open(File0,{MODE,St0})|FR1],
+    check_open_status_1(St0,File0,File1,FS,DateTime,EXTs,FR1,VerChar,Mode,Status).
+
+check_open_status_1(normal(FS0,_,_),File0,File1,FS,DateTime,EXTs,FR0,VerChar,Mode,Status) :- true |
+    FS0 = [attributes(Status0)|FS1],
+    check_attributes_status_1(Status0,FS1,File0,File1,FS,DateTime,EXTs,FR0,VerChar,Mode,Status).
+otherwise.
+check_open_status_1(_,_,File1,FS,DateTime,[EXT|Rest],FR0,VerChar,Mode,Status) :- true |
+    builtin#append_string([File1,".",EXT],File2),
+    open_file_with_extension_1(File2,File1,FS,DateTime,Rest,FR0,VerChar,Mode,Status).
+check_open_status_1(_,_,_,FS,_,[],FR0,_,_,Status) :- true |
+    FR0 = [],
+    Status = normal(FS,_,_).
+
+check_attributes_status_1(Status0,FS0,File0,File1,FS,DateTime,EXTs,FR0,VerChar,Mode,Status) :-
+    Status0 = normal(_,_,_,_,MDate,MTime,_,_,_) |
+    normalize_date_time(MDate,MTime,FDate,FTime),
+    DateTime0 = {FDate,FTime},
+    timer_utility:sort(DateTime0,DateTime,_,_,Swapped),
+    check_time_order(Swapped,FS0,File0,File1,FS,DateTime0,EXTs,FR0,VerChar,Mode,Status).
+otherwise.
+check_attributes_status_1(_,FS,_,_,FS,_,_,FR0,_,_,Status) :- true |
+    Status = normal(FS,_,_),
+    FR0 = [].
+
+check_time_order(yes,FS0,_,File1,FS,DateTime,[EXT|Rest],FR,VerChar,Mode,Status) :- true |
+    FS = [],
+    builtin#append_string([File1,".",EXT],File2),
+    open_file_with_extension_1(File2,File1,FS0,DateTime,Rest,FR,VerChar,Mode,Status).
+check_time_order(yes,FS0,_,_,FS,_,[],FR,_,_,Status) :- true |
+    FS = [],
+    FR = [],
+    Status = normal(FS0,_,_).
+check_time_order(no,FS0,_,_,FS,_,_,FR,_,_,Status) :- true |
+    FS0 = [],
+    FR = [],
+    Status = normal(FS,_,_).
+
+check_file_status(normal(FS,_,_),_,FSs0,MESG0,MESG,Status0,Status) :- true |
+    FSs0 = [FS],
+    MESG0 = MESG,
+    Status = Status0.
+check_file_status(abnormal,FileName,FSs0,MESG0,MESG,_,Status) :- true |
+    FSs0 = [],
+    MESG0 = [error(string#"unable to open file : ~s",[FileName])|MESG],
+    Status = abnormal.
+
+check_FR_status(normal(FR0,_,_),FR) :- true |
+    merge(FR,FR0).
+otherwise.
+check_FR_status(Status,_) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(compiler_error,string#"Unable to get file request device"),Status).
+
+wait_path(normal(Path),SearchPath) :- list(Path) |
+    SearchPath = Path.
+otherwise.
+wait_path(_,SearchPath) :- true |
+    SearchPath = [].
+
+wait_attrs(normal(Code, OS, Host,FepVer,DirStr0,VerStr0,Comment),DirStr,VerStr) :- 
+    DirStr0=DirStr, VerStr0=VerStr.
+otherwise.
+wait_attrs(_,DirStr,VerStr) :- DirStr="", VerStr="".
+
+convertStringToChar(Str0, Char, MESG0, MESG) :- string(Str0, 0, _) |
+    Char=none, MESG0=MESG.
+convertStringToChar(Str0, Char, MESG0, MESG) :- string(Str0, 1, _), string_element(Str0, 0, Char0) |
+    Char0=Char,
+    MESG0=MESG.
+otherwise.
+convertStringToChar(Str0, Char, MESG0, MESG) :- true |
+    string_element(Str0, 0, Char, _),
+    MESG0=[error("unsupported path name notation : ~s", Str0)|MESG].
+
+convertStringToChar(Str0, Char, Str, MESG0, MESG) :- string(Str0, 0, _) |
+    Str0=Str, Char=none, MESG0=MESG.
+convertStringToChar(Str0, Char, Str, MESG0, MESG) :- string(Str0, 1, _) |
+    string_element(Str0, 0, Char, Str),
+    MESG0=MESG.
+otherwise.
+convertStringToChar(Str0, Char, Str, MESG0, MESG) :- true |
+    Str0=Str,
+    string_element(Str0, 0, Char, Str),
+    MESG0=[error("unsupported path name notation : ~s", Str0)|MESG].
+
+convertStringToChar(Str0, Char) :- string(Str0, 0, _) |
+    Char=none.
+convertStringToChar(Str0, Char) :- string(Str0, 1, _), string_element(Str0, 0, Char0) |
+    Char0=Char.
+otherwise.
+convertStringToChar(Str0, Char) :- true |
+    string_element(Str0, 0, Char, _),
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(compiler_error,"Unsuppoted path name notation"), Str0).
+
+convertStringToChar(Str0, Char, Str) :- string(Str0, 0, _) |
+    Str0=Str, Char=none.
+convertStringToChar(Str0, Char, Str) :- string(Str0, 1, _) |
+    string_element(Str0, 0, Char, Str).
+otherwise.
+convertStringToChar(Str0, Char, Str) :- true |
+    Str0=Str,
+    string_element(Str0, 0, Char, Str),
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(compiler_error,"Unsuppoted path name notation"), Str0).
+
+convertCharToString(#"/", Str) :- true | % for UNIX
+    Str="/".
+convertCharToString(#">", Str) :- true | % for SIMPOS
+    Str=">".
+convertCharToString(none, Str) :- true | Str="". 
+otherwise.
+convertCharToString(Char, Str) :- true |
+    new_string(Str0, 1, 16),
+    set_string_element(Str0, 0, Char, Str).
+
+decide_mode(read,text,Mode) :- Mode=read_text.
+decide_mode(read,binary,Mode) :- Mode=read_binary.
+decide_mode(write,text,Mode) :- Mode=write_text.
+decide_mode(write,binary,Mode) :- Mode=write_binary.
+decide_mode(append,text,Mode) :- Mode=append_text.
+decide_mode(append,binary,Mode) :- Mode=append_binary.
+
+getFileSystemInfo(DirChar, VerChar) :- true  |
+    shoen:raise(pimos_tag#task, general_request, [fep_attributes(Stat)]), 
+    checkStat(Stat, DirChar, VerChar).
+
+checkStat(normal(_,_,_,_,DirChar0,VerChar0,_), DirChar, VerChar) :- true |
+    DirChar0=DirChar, VerChar0=VerChar.
+otherwise.
+checkStat(_, DirChar, VerChar) :- true | DirChar="", VerChar="".
+

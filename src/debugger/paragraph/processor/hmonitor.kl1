@@ -1,0 +1,146 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module h_monitor.
+:- public p_meter/7.
+:- with_macro pimos.
+
+p_meter(Pmeter, Timer, PE, Interval, Color,InF,T) :- true |
+    p_meter0(Pmeter, Timer, PE, Interval, Color,InF,T)@priority(*,4095).
+
+p_meter0(Pmeter, Timer, {X,Y}, Interval, Color,InF,T) :- true |
+    new_string(String0, 1, 16),
+    set_string_element(String0, 0, T, String),
+    new_string(String1, 5, 16),
+    set_string_element(String1, 0, X, String2),
+    set_string_element(String2, 1, Y, String3),
+    set_string_element(String3, 2, Interval, String4),
+    set_string_element(String4, 3, InF, String5),
+    set_string_element(String5, 4, Color, String6),
+    Pmeter = [io(3,String,_R),io(1, String6, PST1) | Pcdr],
+    PENO := X * Y,
+    p_meter1(PST1, Pcdr, Timer, PENO, InF,Interval,T).
+    
+p_meter1(normal("abnormal"), Pmeter, Timer, PE, InF,Interval,T) :- true |
+    Pmeter = [], Timer = [].
+p_meter1(normal(""), Pmeter, Timer, PE, InF,Interval,T) :- true |
+    MaxNode := PE - 1,
+    throw_profile_process(MaxNode,Repo,TStream),
+    msg_timer_control(normal(0),Timer,Interval,MaxNode,TStream),
+    make_data(Repo,PE,InF,Out,T),
+    out(Out, Pmeter).
+p_meter1(abnormal, Pmeter, Timer, PE, InF,Interval,T) :- true |
+    Pmeter = [], Timer = [].
+
+msg_timer_control(normal(Result),Timer,infinite,PE,TStream) :- true |
+    msg_timer_control(normal(Result),Timer,infinite,PE,TStream).
+msg_timer_control(normal(Result),Timer,Interval,PE,TStream) :- wait(Result), integer(Interval) |
+    Timer = [on_after(Interval,Status)|Timer2],
+    msg_timer_control2(Status,Timer2,Interval,PE,TStream).
+
+msg_timer_control2(normal(Result),Timer,Interval,PE,TStream):- wait(Result) |
+    TStream = [profile|RStream],
+    msg_timer_control(normal(Result),Timer,Interval,PE,RStream).
+
+throw_profile_process(MaxNode,DataList,TStream):- true |
+    throw_pe_profile(MaxNode,PStream),
+    reverse(PStream,RPStream),
+    get_time_stream(TStream,RPStream,DataList).
+
+throw_pe_profile(Count,PStream):- Count < 0 |
+    PStream = [].
+throw_pe_profile(Count,PStream):- Count >= 0 | 
+    pe_profile(Stream)@node(Count),
+    Stream = [start|RStream],
+    NC := Count - 1,
+    PStream = [RStream|RS],
+    throw_pe_profile(NC,RS).
+
+get_time_stream([profile|TStream],PStream,AnsStream):- true |
+    throw_profile_msg(PStream,RStream,Ans),
+    AnsStream = [Ans|AnsStream1],
+    get_time_stream(TStream,RStream,AnsStream1).
+    
+throw_profile_msg([],RStream,AnsS):- true | RStream = [], AnsS = [].
+otherwise.
+throw_profile_msg([Stream|R],RStream,AnsS):- true |
+    Stream = [get_ans(Ans)|RS],
+    AnsS = [Ans|AS1],
+    RStream = [RS|RS1],
+    throw_profile_msg(R,RS1,AS1).
+
+pe_profile([start|PStream]):- true | 
+    pe_profile(PStream). 
+pe_profile([get_ans(Ans)|PStream]):- true | 
+    throw_heap(Ans),
+    pe_profile(PStream).
+
+throw_heap(HAns):- true |
+    get_heap_size(Size,Used),
+    UnUsed := Size - Used,
+    HAns = {Used,UnUsed}.
+   
+reverse(List,RList):- true |
+    reverse(List,[],RList).
+
+reverse([],List1,List2):- true |
+    List1 = List2.
+otherwise.
+reverse([A|R],List1,List2):- true|
+    List3 = [A|List1],
+    reverse(R,List3,List2).
+
+
+make_data([Repo|R],PE,InF,Out,T) :- true |
+    Out = [NewString|O2],
+    L := PE * 5,
+    new_string(String, L, 16),
+    counter(Repo,0,String,NewString,InF),
+    make_data(R,PE,InF,O2,T).
+
+counter([],C,String,NewString,InF) :- true |
+    String = NewString.
+otherwise.
+counter([Vec|Repo],C,String,NewString,InF) :- true |
+    Po := C * 5,
+    Po2 := Po + 1,
+    Po3 := Po + 2,
+    Po4 := Po + 3,
+    Po5 := Po + 4,
+    cal(InF,Vec,Run,Idle,GC),
+    check_value(Run,Value1,Value2),
+    check_value(Idle,Value3,Value4),
+    set_string_element(String, Po, Value3, String1),
+    set_string_element(String1, Po2, Value4, String2),
+    set_string_element(String2, Po3, Value1, String3),
+    set_string_element(String3, Po4, Value2, String4),
+    set_string_element(String4, Po5, GC, String5),
+    NPE := C + 1,
+    counter(Repo,NPE,String5,NewString,InF).
+ 
+cal(_,{},R,I,GC):- true | R = 0, I = 0, GC = 0.
+cal(InF,{Used,UnUsed},R,I,GC):- true |
+    cal1(Used,R),
+    cal1(UnUsed,I),
+    GC = 0.
+
+cal1(Run,R):- Run =< 0 | R = 0.
+cal1(Run,R):- Run > 0 |
+    R := Run.
+    
+check_value(0,Value1,Value2):- true |
+        Value1 = 0,
+        Value2 = 0.
+check_value(Data,Value1,Value2):- Data > 0 |
+        Value1 := Data/65536,
+        Value2 := Data mod 65536.
+ 
+out([String|Rest], Pmeter) :- wait(String) |
+    Pmeter = [io(2, String, Status)|Pcdr],
+    out1(Status, Rest, Pcdr).
+out1(normal(_), Out, Pmeter) :- true |
+    out(Out, Pmeter) .
+

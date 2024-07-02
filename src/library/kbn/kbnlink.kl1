@@ -1,0 +1,105 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>KBN>kbnlink.kl1.24, 16-Sep-92 13:25:39, Edit by hori
+
+:- module kbn_link.
+:- with_macro pimos.
+:- public link_table/6.
+
+%% LINK_TABLE
+
+link_table(In,Module,Predicate,Arity,ModuleAddress,StartAddress) :- true |
+    pool:keyed_set(DTBL,100),
+    pool:keyed_set(RTBL,100),
+    module_table_0(In,Module,Predicate,Arity,ModuleAddress,StartAddress,DTBL,RTBL).
+
+module_table_0([module(Module,Address)|In],ModName0,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL0) :-
+    true |
+    module:get_module_name(Module,Package,ModName1),
+    DTBL0 = [put(ModName1,Address,_)|DTBL1],
+    module_0(ModName0,ModName1,Module,Pred,Arity,ModAdrs,StrtAdrs,Address,In,DTBL1,RTBL0).
+module_table_0([ref(ModName,Ref)|In],Module,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL0) :- true |
+    DTBL0 = [empty(ModName,YorN)|DTBL1],
+    RTBL0 = [put(ModName,Ref,Old)|RTBL1],
+    ref_module_0(YorN,Old,ModName,Ref,In,Module,Pred,Arity,ModAdrs,StrtAdrs,DTBL1,RTBL1).
+module_table_0([],Module,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL0) :- true |
+    DTBL0 = [],
+    RTBL0 = [].
+
+module_0(ModName,ModName,Module,Pred,Arity,ModAdrs,StrtAdrs,Address,In,DTBL0,RTBL0) :- true |
+    predicate_to_code(Module,Pred,Arity,Code),
+    code_to_offset(Code,Offset),
+    ModAdrs := Address,
+    StrtAdrs := Address + Offset,
+    RTBL0 = [empty(ModName,YorN)|RTBL1],
+    module_0(YorN,ModName,ModAdrs,In,DTBL0,RTBL1).
+otherwise.
+module_0(ModName0,ModName1,Module,Pred,Arity,ModAdrs,StrtAdrs,Address,In,DTBL0,RTBL0) :-
+    true |
+    RTBL0 = [empty(ModName1,YorN)|RTBL1],
+    module_0_(YorN,ModName0,Pred,Arity,ModAdrs,StrtAdrs,ModName1,Address,In,DTBL0,RTBL1).
+
+module_0_(yes,ModName0,Pred,Arity,ModAdrs,StrtAdrs,ModName1,Address,In,DTBL0,RTBL0) :-
+    true |
+    module_table_0(In,ModName0,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL0).
+module_0_(no,ModName0,Pred,Arity,ModAdrs,StrtAdrs,ModName1,Address,In,DTBL0,RTBL0) :-
+    true |
+    RTBL0 = [get(ModName1,Ref)|RTBL1],
+    Ref = Address,
+    module_table_0(In,ModName0,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL1).
+
+module_0(yes,ModName,ModAdrs,In,DTBL0,RTBL0) :- true |
+    module_table_1(In,DTBL0,RTBL0).
+module_0(no,ModName,ModAdrs,In,DTBL0,RTBL0) :- true |
+    RTBL0 = [get(ModName,Ref)|RTBL1],
+    Ref = ModAdrs,
+    module_table_1(In,DTBL0,RTBL1).
+
+code_to_offset(Code,Offset) :- code(Code,Arity,Module,Ofst) |
+    Offset = Ofst.
+
+ref_module_0(yes,{},ModName,Ref0,In,Module,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL0) :- true |
+    module_table_0(In,Module,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL0).
+ref_module_0(yes,{Ref},ModName,Ref0,In,Module,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL0) :-
+    true |
+    Ref0 = Ref,
+    module_table_0(In,Module,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL0).
+ref_module_0(no,_,ModName,Ref0,In,Module,Pred,Arity,ModAdrs,StrtAdrs,DTBL0,RTBL0) :- true |
+    DTBL0 = [get_and_put(ModName,ModAdrs0,ModAdrs0)|DTBL1],
+    Ref0 = ModAdrs0,
+    module_table_0(In,Module,Pred,Arity,ModAdrs,StrtAdrs,DTBL1,RTBL0).
+
+module_table_1([module(Module,Address)|In],DTBL0,RTBL0) :- true |
+    module:get_module_name(Module,Package,ModName),
+    DTBL0 = [put(ModName,Address,_)|DTBL1],
+    RTBL0 = [empty(ModName,YorN)|RTBL1],
+    module_1(YorN,ModName,Address,In,DTBL1,RTBL1).
+module_table_1([ref(ModName,Ref)|In],DTBL0,RTBL0) :- true |
+    DTBL0 = [empty(ModName,YorN)|DTBL1],
+    RTBL0 = [put(ModName,Ref,Old)|RTBL1],
+    ref_module_1(YorN,Old,ModName,Ref,In,DTBL1,RTBL1).
+module_table_1([],DTBL0,RTBL0) :- true |
+    DTBL0 = [],
+    RTBL0 = [].
+
+module_1(yes,ModName,ModAdrs,In,DTBL0,RTBL0) :- true |
+    module_table_1(In,DTBL0,RTBL0).
+module_1(no,ModName,ModAdrs,In,DTBL0,RTBL0) :- true |
+    RTBL0 = [get(ModName,Ref)|RTBL1],
+    Ref = ModAdrs,
+    module_table_1(In,DTBL0,RTBL1).
+
+ref_module_1(yes,{},ModName,Ref0,In,DTBL0,RTBL0) :- true |
+    module_table_1(In,DTBL0,RTBL0).
+ref_module_1(yes,{Ref},ModName,Ref0,In,DTBL0,RTBL0) :- true |
+    Ref0 = Ref,
+    module_table_1(In,DTBL0,RTBL0).
+ref_module_1(no,_,ModName,Ref0,In,DTBL0,RTBL0) :- true |
+    DTBL0 = [get_and_put(ModName,ModAdrs,ModAdrs)|DTBL1],
+    Ref0 = ModAdrs,
+    module_table_1(In,DTBL1,RTBL0).

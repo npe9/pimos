@@ -1,0 +1,1280 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi368::>sys>user>susaki>procom2>compile.kl1.21, 23-Apr-90 12:18:43, Edit by susaki
+:- module protCompile.
+:- public compile/3.
+:- with_macro pimos.
+
+compile(Top,Ptable,Normal):- true |
+    nTable:nameTable(Ntable),
+    Ntable = [initialize |Ntail],
+    fromTop(Top,Ptable,Ntail,Normal).
+
+fromTop([topfilter('$$top'(N))|Top],Ptable,Ntable,Normal):- 
+    true |
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2},
+    Ptable1 = [find('$$top'(N),_Name,Def)|Ptail],
+    compStart(Def,Ptable2,Ntable2,Normal2),
+    fromTop(Top,Ptail,Ntable1,Normal1).
+fromTop([],Ptable,Ntable,Normal):- true |
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+%%%%%  compilation starts
+
+compStart(u(Sign,Key,none),Ptable,Ntable,Normal):- true |
+    Ptable = [find(Key,_Name,Def)|Ptail],
+    compTop(Sign,Key,[],Def,Ptail,Ntable,Normal).
+
+%%%%%  This normal form has it's own name.
+
+compTop(Asign,Prot,Info,u(Sign,Key,Err),Ptable,Ntable,Normal):- 
+    true |
+    decSign(Asign,Sign,Nsign),
+    Ptable = [find(Key,_Name,Def)|Ptail],
+    updateErr(Err,Info,Ninfo),
+    compTop(Nsign,Prot,Ninfo,Def,Ptail,Ntable,Normal).
+compTop(Asign,Prot,_Info,s(Sign,Key,_Err),Ptable,Ntable,Normal):-
+    true |
+    decSign(Asign,Sign,Nsign),
+    Ntable = [getName(top(Prot),Nsign,Name,_Flag)],
+    Normal = [normal(Name,Nsign,s(Key))],
+    Ptable = [].
+
+compTop(Asign,Prot,Info,sp(Sign,Key,Err),Ptable,Ntable,Normal):- 
+    true |
+    decSign(Asign,Sign,Nsign),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    updateErr(Err,Info,Ninfo),
+    Ntable = [getName(top(Prot),Nsign,Name,Flag)|Ntail],
+    checkSptypeN(Flag,Asign,Nsign,Prot,Name,Type,Def,Ninfo,
+            Ptail,Ntail,Normal).
+compTop(Asign,Prot,Info,e(Sign,Enu,Err),Ptable,Ntable,Normal):-
+    true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Ninfo),
+    Ntable = [getName(top(Prot),Nsign,Name,Flag)|Ntail],
+    compEnuN(Flag,Asign,Nsign,Name,Enu,Ninfo,Ptable,Ntail,Normal).
+compTop(Asign,Prot,Info,i(Super,My),Ptable,Ntable,Normal):-
+    true |
+    Ntable = [getName(top(Prot),Sign2,Name,Flag)|Ntail],
+    compSuper(Flag,Name,Asign,Prot,Sign2,Super,My,Info,
+        Ptable,Ntail,Normal).
+
+%%%%% for user defined parameterized protocol
+compTop(Asign,Prot,Info,up(Sign,Key,Err),Ptable,Ntable,Normal):-
+    true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Parm)),
+                find({Head,Arity},_Type,Def)|Ptail],
+    Ntable = [getName(top(Prot),Nsign,Name,Flag)|Ntail],
+    compUserN(Flag,Sign2,Nsign,Prot,Name,Ninfo,Def,Parm,Ptail,Ntail,Normal).
+
+compUserN(no,Asign,Sign2,Prot,Name,Info,sp(Sign,Key,Err),Parm,Ptable,Ntable,Normal):- 
+    true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    compUserspN(no,Asign,Sign2,Prot,Name,Ninfo,Type,Def,Parm,Ptail,Ntable,Normal).
+compUserN(no,Asign,Sign2,_Prot,Name,Info,e(Sign,Enu,Err),Parm,Ptable,Ntable,Normal):- 
+    true |
+    updateErr(Err,Info,Ninfo),
+    decSign(Asign,Sign,Sign2),
+    Normal = [normal(Name,Sign2,e(EnuN))|Norm2],
+    userEnu(no,Asign,Ninfo,Enu,EnuN,Parm,Ptable,Ntable,Norm2).
+compUserN(no,Asign,Sign2,Prot,Name,Info,up(Sign,Key,Err),Actuals,Ptable,Ntable,Normal):-
+    true |
+    decSign(Asign,Sign,Sign3),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Formal)),
+            find({Head,Arity},_Type,Def)| Ptail],
+    substitute(Formal,Actuals,Nformal),
+    compUserN(no,Prot,Sign3,Sign2,Name,Ninfo,Def,Nformal,Ptail,Ntable,Normal).
+
+
+%%%%% < inheritance > It always has its name.
+
+compSuper(Flag,Name,Asign,Prot,Sign2,Super,u(Sign,Key,Err),Info,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign3),
+    updateErr(Err,Info,Ninfo),
+    Norm = normal(Name,Sign2,i(Bodies)),    
+    checkFlag(Flag,Norm,Normal1,Norm2),
+    Ptable1 = [find(Key,_Name,Def)|Ptail],
+    Bodies = [Mybody|Bodies2],
+    compMybody(Flag,Sign3,Prot,Sign2,Def,Mybody,Ninfo,Ptail,Ntable1,Norm2),
+    compSbody(Flag,Sign2,Prot,Super,Ninfo,Bodies2,Ptable2,Ntable2,Normal2),
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2}.
+compSuper(Flag,Name,Asign,Prot,Sign2,Super,s(Sign,Key,Err),Info,
+    Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    checkFlag(Flag,Norm,Normal,Norm2),
+    Norm = normal(Name,Sign2,i(Bodies)),    
+    Bodies = [s(Key)|Bodies2],
+    compSbody(Flag,Sign2,Prot,Super,Ninfo,Bodies2,Ptable,Ntable,Norm2).
+compSuper(Flag,Name,Asign,Prot,Sign2,Super,sp(Sign,Key,Err),Info,
+    Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    checkFlag(Flag,Norm,Normal1,Norm2),
+    Norm = normal(Name,Sign2,i(Bodies)),    
+    Bodies = [Mybody|Bodies2],
+    Ptable1 = [find(Key,Type,Def)|Ptail1],
+    mybodysp(Flag,Asign,Prot,Ninfo,Type,Def,Mybody,Ptail1,Ntable1,Norm2),
+    compSbody(Flag,Sign2,Prot,Super,Info,Bodies2,Ptable2,Ntable2,Normal2),
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2}.
+compSuper(Flag,Name,Asign,Prot,Sign2,Super,e(Sign,Enu,Err),Info,
+    Ptable,Ntable,Normal):- true | 
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Norm = normal(Name,Sign2,i(Bodies)),
+    checkFlag(Flag,Norm,Normal1,Norm2),
+    Bodies = [e(EnuN)|Btail],
+    compEnuN2(Flag,Asign,Enu,Ninfo,EnuN,Ptable2,Ntable2,Normal2),
+    compSbody(Flag,Sign2,Prot,Super,Ninfo,Btail,Ptable1,Ntable1,Norm2),
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2}.
+
+compSuper(Flag,Name,Asign,Prot,Sign2,Super,up(Sign,Key,Err),Info,
+    Ptable,Ntable,Normal):- true | 
+    decSign(Asign,Sign,Sign3),
+    updateErr(Err,Info,Ninfo),
+    checkFlag(Flag,Norm,Normal1,Norm2),
+    Norm = normal(Name,Sign2,i(Bodies)),
+    Bodies = [Body|Bodies2],
+    Ptable1 = [find(Key,{Head,Arity},parm(Parm)),
+                find({Head,Arity},_Type,Def)|Ptail],
+    mybodyUser(Flag,Sign3,Sign2,Prot,Ninfo,Def,Parm,Body,Ptail,Ntable1,Norm2),
+    compSbody(Flag,Sign2,Prot,Super,Info,Bodies2,Ptable2,Ntable2,Normal2),
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2}.
+    
+mybodysp(no,Asign,Prot,Info,stream,Def,Mybody,Ptable,Ntable,Normal):- 
+        true |
+    Mybody = st(Nprot,Nerr),
+    compAct(no,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntable,Normal).
+mybodysp(no,Asign,Prot,Info,list,Def,Mybody,Ptable,Ntable,Normal):- 
+        true |
+    Mybody = li(Nprot,Nerr),
+    compAct(no,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntable,Normal).
+mybodysp(no,Asign,Prot,Info,vector,elm(any,Def),Mybody,
+        Ptable,Ntable,Normal):- true |
+    Mybody = v(any,Nprot,Nerr),
+    compAct(no,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntable,Normal).
+mybodysp(no,Asign,Prot,Info,vector,elm(Num,Def),Mybody,
+        Ptable,Ntable,Normal):- integer(Num) |
+    Mybody = v(Num,In,Out),
+    compV(no,Asign,Prot,Def,Info,In,Out,Ptable,Ntable,Normal).
+mybodysp(yes,Asign,Prot,Info,Type,Def,Mybody,Ptable,Ntable,Normal):-
+    true |
+    Mybody = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+%%%%%
+compMybody(Flag,Asign,Prot,Sign2,u(Sign,Key,Err),Mybody,Info,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign3),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,_Name,Def)|Ptail],
+    compMybody(Flag,Sign3,Prot,Sign2,Def,Mybody,Ninfo,
+            Ptail,Ntable,Normal).    
+compMybody(Flag,Asign,_Prot,Sign2,s(Sign,Key,_Err),Mybody,_Info,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    Mybody = s(Key),
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+compMybody(Flag,Asign,Prot,Sign2,sp(Sign,Key,Err),Mybody,Info,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    mybodysp(Flag,Asign,Prot,Ninfo,Type,Def,Mybody,Ptail,Ntable,Normal).    
+compMybody(Flag,Asign,_Prot,Sign2,e(Sign,Enu,Err),Mybody,Info,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Mybody = e(EnuN),
+    compEnuN2(Flag,Asign,Enu,Ninfo,EnuN,Ptable,Ntable,Normal).    
+compMybody(Flag,Asign,Prot,Sign2,i(Super,My),Mybody,Info,
+        Ptable,Ntable,Normal):- true |
+    Mybody = [Body|Bodies],
+    compMybody2(Flag,Asign,Prot,Sign2,My,Body,Info,Ptable1,Ntable1,Normal1),
+    compSbody2(Flag,Sign2,Prot,Super,Info,Bodies,Ptable2,Ntable2,Normal2),
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2}.
+    
+compMybody(Flag,Asign,Prot,Sign2,up(Sign,Key,Err),Mybody,Info,
+        Ptable,Ntable,Normal):- true | 
+    decSign(Asign,Sign,Sign3),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Parm)),
+                find({Head,Arity},Def)|Ptail],
+    mybodyUser(Flag,Sign3,Sign2,Prot,Ninfo,Def,Parm,Mybody,Ptail,Ntable,Normal).
+
+%%%%%
+compMybody2(Flag,Asign,Prot,Sign2,u(Sign,Key,Err),Mybody,Info,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign3),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,_Name,Def)|Ptail],
+    compMybody2(Flag,Sign3,Prot,Sign2,Def,Mybody,Ninfo,
+            Ptail,Ntable,Normal).    
+compMybody2(Flag,Asign,_Prot,Sign2,s(Sign,Key,_Err),Mybody,_Info,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    Mybody = s(Key),
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+compMybody2(Flag,Asign,Prot,Sign2,sp(Sign,Key,Err),Mybody,Info,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    mybodysp(Flag,Asign,Prot,Ninfo,Type,Def,Mybody,Ptail,Ntable,Normal).    
+compMybody2(Flag,Asign,_Prot,Sign2,e(Sign,Enu,Err),Mybody,Info,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Mybody = e(EnuN),
+    compEnuN2(Flag,Asign,Enu,Ninfo,EnuN,Ptable,Ntable,Normal).    
+compMybody2(Flag,Asign,Prot,Sign2,i(Super,My),Mybody,Info,
+        Ptable,Ntable,Normal):- true |
+    Mybody = [Body|Bodies],
+    compMybody2(Flag,Asign,Prot,Sign2,My,Body,Info,Ptable1,Ntable1,Normal1),
+    compSbody2(Flag,Sign2,Prot,Super,Info,Bodies,Ptable2,Ntable2,Normal2),
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2}.
+    
+compMybody2(Flag,Asign,Prot,Sign2,up(Sign,Key,Err),Mybody,Info,
+        Ptable,Ntable,Normal):- true | 
+    decSign(Asign,Sign,Sign3),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Parm)),
+                find({Head,Arity},_type,Def)|Ptail],
+    mybodyUser(Flag,Sign3,Sign2,Prot,Ninfo,Def,Parm,Mybody,Ptail,Ntable,Normal).
+
+%%%%%
+compSbody(no,Asign,Prot,[last(Super)|Stail],Info,Bodies,Ptable,Ntable,Normal):- 
+        true |
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2},
+    complast(Asign,Prot,Super,Info,Bodies-Btail,Ptable1,Ntable1,Normal1),
+    compSbody(no,Asign,Prot,Stail,Info,Btail,Ptable2,Ntable2,Normal2).
+compSbody(_F,_Asign,_Prot,[],_Info,Bodies,Ptable,Ntable,Normal):- true |
+    Bodies = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+otherwise.
+compSbody(no,Asign,Prot,[Super|Stail],Info,Bodies,Ptable,Ntable,Normal):- 
+        true |
+    super(Asign,Prot,Super,Info,Bodies-Btail,Ptable1,Ntable1,Normal1),
+    compSbody(no,Asign,Prot,Stail,Info,Btail,Ptable2,Ntable2,Normal2),
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2}.
+compSbody(yes,Asign,Prot,Super,Info,Bodies,Ptable,Ntable,Normal):- true |
+    Bodies = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+%%%%% last
+
+complast(_Asign,_Prot,s(_Sign,Key,_Err),_Info,Bodies-Btail,Ptable,Ntable,Normal):- 
+    true |
+    Bodies = [s(Key)|Btail],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+complast(Asign,Prot,sp(_Sign,Key,Err),Info,Bodies-Btail,Ptable,Ntable,Normal):- 
+    true |
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)| Ptail],
+    supersp(Asign,Prot,Type,Def,Ninfo,Bodies-Btail,Ptail,Ntable,Normal).
+complast(Asign,_Prot,u(Sign,Key,Err),Info,Bodies-Btail,Ptable,Ntable,Normal):- 
+    true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Name,Def)| Ptail],
+    super2last(Sign2,Name,Def,Ninfo,Bodies-Btail,Ptail,Ntable,Normal).
+
+
+super2last(Asign,_Prot,u(Sign,Key,Err),Info,Bodies-Btail,
+    Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Name,Def)|Ptail],
+    super2last(Nsign,Name,Def,Ninfo,Bodies-Btail,Ptail,Ntable,Normal).
+super2last(_Asign,_Prot,s(_Sign,Key,_Err),_Info,Bodies-Btail,
+    Ptable,Ntable,Normal):- true |
+    Bodies = [s(Key)|Btail],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+super2last(Asign,Prot,sp(Sign,Key,Err),Info,Bodies-Btail,
+    Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    Ntable = [getName(Prot,Sign2,Name,Flag)| Ntail],
+    Bodies = [last(Name,Ninfo)|Btail],
+    checkSptypeN(Flag,Asign,Sign2,Prot,Name,Type,Def,Ninfo,Ptail,Ntail,Normal).
+super2last(Asign,Prot,e(Sign,Enu,Err),Info,Bodies-Btail,Ptable,Ntable,Normal):-
+    true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ntable = [getName(Prot,Sign2,Name,Flag)| Ntail],
+    Bodies = [last(Name,Ninfo)| Btail],
+    compEnuN(Flag,Asign,Sign2,Name,Enu,Ninfo,Ptable,Ntail,Normal).
+super2last(Asign,Prot,i(Super,My),Info,Bodies-Btail,Ptable,Ntable,Normal):- true |
+    Ntable = [getName(Prot,Asign,Name,Flag)| Ntail],
+    Bodies = [last(Name,Info)| Btail],
+    compSuper(Flag,Name,Asign,Prot,_Sign2,Super,My,[],
+        Ptable,Ntail,Normal).
+
+%%%% extend the last inherited definition
+
+compSbody2(no,Asign,Prot,[last(Super)|Stail],Info,Bodies,Ptable,Ntable,Normal):- 
+        true |
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2},
+    super(Asign,Prot,Super,Info,Bodies-Btail,Ptable1,Ntable1,Normal1),
+    compSbody2(no,Asign,Prot,Stail,Info,Btail,Ptable2,Ntable2,Normal2).
+compSbody2(_F,_Asign,_Prot,[],_Info,Bodies,Ptable,Ntable,Normal):- true |
+    Bodies = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+otherwise.
+compSbody2(no,Asign,Prot,[Super|Stail],Info,Bodies,Ptable,Ntable,Normal):- 
+        true |
+    super(Asign,Prot,Super,Info,Bodies-Btail,Ptable1,Ntable1,Normal1),
+    compSbody2(no,Asign,Prot,Stail,Info,Btail,Ptable2,Ntable2,Normal2),
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2}.
+compSbody2(yes,Asign,Prot,Super,Info,Bodies,Ptable,Ntable,Normal):- true |
+    Bodies = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+%%%%%
+
+super(_Asign,_Prot,s(_Sign,Key,_Err),_Info,
+        Bodies-Btail,Ptable,Ntable,Normal):- true |
+    Bodies = [s(Key)|Btail],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+super(Asign,_Prot,u(Sign,Key,Err),Info,
+        Bodies-Btail,Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Name,Def)|Ptail],
+    super2(Nsign,Name,Def,Ninfo,Bodies-Btail,Ptail,Ntable,Normal).
+super(Asign,Prot,sp(_Sign,Key,Err),Info,
+        Bodies-Btail,Ptable,Ntable,Normal):- true |
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    supersp(Asign,Prot,Type,Def,Ninfo,
+        Bodies-Btail,Ptail,Ntable,Normal).
+
+super2(Asign,_Prot,u(Sign,Key,Err),Info,Bodies-Btail,
+    Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Name,Def)|Ptail],
+    super2(Nsign,Name,Def,Ninfo,Bodies-Btail,Ptail,Ntable,Normal).
+super2(Asign,_Prot,s(Sign,Key,_Err),_Info,Bodies-Btail,
+    Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,_Nsign),
+    Bodies = [s(Key)|Btail],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+super2(Asign,Prot,sp(_Sign,Key,Err),Info,Bodies-Btail,
+    Ptable,Ntable,Normal):- true |
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    supersp(Asign,Prot,Type,Def,Ninfo,
+        Bodies-Btail,Ptail,Ntable,Normal).
+super2(Asign,_Prot,e(_Sign,Enu,Err),Info,Bodies-Btail,Ptable,Ntable,Normal):- 
+    true |
+    updateErr(Err,Info,Ninfo),
+    Bodies = [e(EnuN)| Btail],
+    compEnuN2(no,Asign,Enu,Ninfo,EnuN,Ptable,Ntable,Normal).
+super2(Asign,Prot,up(Sign,Key,Err),Info,Bodies-Btail,Ptable,Ntable,Normal):- 
+    true |
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Parm)),
+            find({Head,Arity},_type,Def)| Ptail],
+    super2U(Asign,Prot,Def,Ninfo,Parm,Bodies-Btail,Ptail,Ntable,Normal).
+
+super2U(Asign,Prot,sp(_Sign,Key,Err),Info,Parm,Bodies-Btail,Ptable,Ntable,Normal):-
+    true |
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    super2Usp(Asign,Type,Prot,Ninfo,Def,Parm,Bodies-Btail,Ptail,Ntable,Normal).
+super2U(Asign,_Prot,e(_Sign,Enu),Info,Parm,Bodies-Btail,Ptable,Ntable,Normal):-
+    true |
+    Bodies = [e(EnuN)|Btail],
+    userEnu(no,Asign,Info,Enu,EnuN,Parm,Ptable,Ntable,Normal).
+super2U(Asign,Prot,up(Sign,Key,Err),Info,Actual,Bodies-Btail,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Formal)),
+            find({Head,Arity},_type,Def)| Ptail],
+    substitute(Formal,Actual,Nformal),
+    super2U(Sign2,Prot,Def,Ninfo,Nformal,Bodies-Btail,Ptail,Ntable,Normal).
+
+%%%%%
+
+super2Usp(Asign,stream,Prot,Info,Def,Parm,Bodies-Btail,
+    Ptable,Ntable,Normal):- true |
+    Bodies = [st(Nprot,Nerr)|Btail],
+    compActU(Asign,Prot,Def,Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal).
+super2Usp(Asign,list,Prot,Info,Def,Parm,Bodies-Btail,
+    Ptable,Ntable,Normal):- true |
+    Bodies = [li(Nprot,Nerr)|Btail],
+    compActU(Asign,Prot,Def,Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal).
+super2Usp(Asign,vector,Prot,Info,elm(any,Def),Parm,Bodies-Btail,
+    Ptable,Ntable,Normal):- true |
+    Bodies = [v(any,Nprot,Nerr)|Btail],
+    compActU(Asign,Prot,Def,Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal).
+super2Usp(Asign,vector,Prot,Info,elm(Num,Def),Parm,Bodies-Btail,
+    Ptable,Ntable,Normal):- integer(Num) |
+    Bodies = [v(Num,In,Out)|Btail],
+    compActUV(Asign,Prot,Def,Info,Parm,In,Out,Ptable,Ntable,Normal).
+
+%%%%%
+supersp(Asign,Prot,stream,Def,Info,Bodies-Btail,
+        Ptable,Ntable,Normal):- true |
+    Bodies = [st(Nprot,Nerr)|Btail],
+    compAct(no,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntable,Normal).
+supersp(Asign,Prot,list,Def,Info,Bodies-Btail,
+        Ptable,Ntable,Normal):- true |
+    Bodies = [li(Nprot,Nerr)|Btail],
+    compAct(no,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntable,Normal).
+supersp(Asign,Prot,vector,elm(any,Def),Info,Bodies-Btail,
+        Ptable,Ntable,Normal):- true |
+    Bodies = [v(any,Nprot,Nerr)|Btail],
+    compAct(no,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntable,Normal).
+supersp(Asign,Prot,vector,elm(Num,Def),Info,Bodies-Btail,
+        Ptable,Ntable,Normal):- integer(Num) |
+    Bodies = [v(Num,In,Out)|Btail],
+    compV(no,Asign,Prot,Def,Info,In,Out,Ptable,Ntable,Normal).
+
+
+
+%%% vector([p1,p2,...])
+
+compV(no,Asign,Prot,[{Ekey,Def}|Elm],Info,In,Out,
+        Ptable,Ntable,Normal):- true |
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2},
+    compVelm(Asign,Prot,Ekey,Def,Info,In-In2,Out-Out2,
+            Ptable1,Ntable1,Normal1),
+    compV(no,Asign,Prot,Elm,Info,In2,Out2,Ptable2,Ntable2,Normal2).
+compV(no,_Asign,_Prot,[],_Info,In,Out,Ptable,Ntable,Normal):- true |
+    In = [],
+    Out = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+compV(yes,_Asign,_Prot,_Elm,_Info,In,Out,Ptable,Ntable,Norm):- true |
+    In = [],
+    Out = [],
+    Ptable = [],
+    Ntable = [],
+    Norm = [].            
+
+compVelm(Asign,_Prot,Ekey,u(Sign,Key,Err),Info,In-In2,Out-Out2,
+            Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Name,Def)|Ptail],
+    compVelmN(no,Asign,Sign2,Name,Ekey,Def,Ninfo,In-In2,Out-Out2,
+            Ptail,Ntable,Normal).
+compVelm(Asign,Prot,Ekey,s(Sign,Key,Err),Info,In-In2,Out-Out2,
+            Ptable,Ntable,Normal):- Key \= any |
+    updateErr(Err,Info,Ninfo),
+    decSign(Asign,Sign,Sign2),
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    Ntable = [getName(tmp(Prot,Key),Sign2,Name,_Flag)],
+    Normal = [normal(Name,Sign2,s(Key))],
+    Ptable = [].
+compVelm(Asign,Prot,Ekey,s(Sign,any,Err),Info,In-In2,Out-Out2,
+            Ptable,Ntable,Normal):- true |
+    Ntable = [],
+    Normal = [],
+    Ptable = [],
+    In = In2,
+    Out = Out2.
+compVelm(Asign,Prot,Ekey,sp(Sign,Key,Err),Info,In-In2,Out-Out2,
+            Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    compVelmsp(Asign,Sign2,Prot,Ekey,Type,Def,Ninfo,In-In2,Out-Out2,
+            Ptail,Ntable,Normal).
+compVelm(Asign,Prot,Ekey,e(Sign,Enu,Err),Info,In-In2,Out-Out2,
+            Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    Ntable = [getName(tmp(Prot,enu),Sign2,Name,Flag)|Ntail],
+    compEnuN(Flag,Asign,Sign2,Name,Enu,[],Ptable,Ntail,Normal).
+compVelm(Asign,Prot,Ekey,up(Sign,Key,Err),Info,In-In2,Out-Out2,
+    Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Parm)),
+            find({Head,Arity},_Type,Def)| Ptail],
+    compVelmU(Asign,Sign2,Prot,Ekey,Def,Ninfo,Parm,In-In2,Out-Out2,
+            Ptail,Ntable,Normal).
+
+%%%%%%
+
+compVelmU(Asign,Msign,Prot,Ekey,sp(Sign,Key,Err),Info,Parm,In-In2,Out-Out2,
+    Ptable,Ntable,Normal):- true |
+    decSign(Msign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    Ntable = [makeName(tmp(Prot,Type),Sign2,Name,Flag)|Ntail],
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    compUserspN(Flag,Msign,Sign2,Prot,Name,Ninfo,Type,Def,Parm,Ptail,Ntail,Normal).
+compVelmU(Asign,Msign,Prot,Ekey,e(Sign,Enu,Err),Info,Parm,In-In2,Out-Out2,
+    Ptable,Ntable,Normal):- true |
+    updateErr(Err,Info,Ninfo),
+    decSign(Msign,Sign,Sign2),
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    Ntable = [getName(tmp(Prot,enu),Sign2,Name,Flag)|Ntail],
+    Normal = [normal(Name,Sign2,e(EnuN))|Norm2],
+    userEnu(Flag,Msign,[],Enu,EnuN,Parm,Ptable,Ntail,Norm2).
+compVelmU(Asign,Msign,Prot,Ekey,up(Sign,Key,Err),Info,Parm,In-In2,Out-Out2,
+    Ptable,Ntable,Normal):- true |
+    decSign(Msign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Parm)),
+            find({Head,Arity},_Type,Def)| Ptail],
+    compVelmU(Asign,Sign2,Prot,Ekey,Def,Ninfo,Parm,In-In2,Out-Out2,
+            Ptail,Ntable,Normal).
+
+    
+%%%%%  It has its own name.
+
+compVelmN(no,Asign,Msign,_Prot,Ekey,u(Sign,Key,Err),Info,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    decSign(Msign,Sign,Sign2),    
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Name,Def)|Ptail],
+    compVelmN(no,Asign,Sign2,Name,Ekey,Def,Ninfo,In-In2,Out-Out2,
+        Ptail,Ntable,Normal).
+compVelmN(no,Asign,Msign,Prot,Ekey,s(Sign,Key,Err),Info,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- Key \= any |
+    decSign(Msign,Sign,Sign2),    
+    updateErr(Err,Info,Ninfo),
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    Ntable = [getName(Prot,Sign2,Name,Flag)],
+    Norm = normal(Name,Sign2,s(Key)),
+    Ptable = [],
+    checkFlag(Flag,Norm,Normal,[]).
+compVelmN(no,Asign,Msign,Prot,Ekey,s(Sign,any,Err),Info,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    Ntable = [],
+    Ptable = [],
+    Normal = [],
+    In = In2,
+    Out = Out2.
+compVelmN(no,Asign,Msign,Prot,Ekey,sp(Sign,Key,Err),Info,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):-
+    decSign(Msign,Sign,Sign2),    
+    updateErr(Err,Info,Ninfo),
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    Ntable = [getName(Prot,Sign2,Name,Flag)|Ntail],
+    Ptable = [find(Key,Type,Def)|Ptail],
+    checkSptypeN(Flag,Msign,Sign2,Prot,Name,Type,Def,[],
+        Ptail,Ntail,Normal).
+compVelmN(no,Asign,Msign,Prot,Ekey,e(Sign,Enu,Err),Info,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    decSign(Msign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    Ntable = [getName(Prot,Sign2,Name,Flag)|Ntail],
+    compEnuN(Flag,Msign,Sign2,Name,Enu,[],Ptable,Ntail,Normal).
+compVelmN(no,Asign,Msign,Prot,Ekey,i(Super,My),Info,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true | 
+    Ntable = [getName(Prot,Sign2,Name,Flag)|Ntail],
+    checkIO(Asign,Sign2,Ekey,Name,Info,In-In2,Out-Out2),
+    compSuper(Flag,Name,Asign,Prot,Sign2,Super,My,Info,
+            Ptable,Ntail,Normal).
+compVelmN(no,Asign,Msign,Prot,Ekey,up(Sign,Key,Err),Info,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true | 
+    decSign(Msign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Parm)),
+            find({Head,Arity},_Type,Def)| Ptail],
+    compVelmNU(Asign,Sign2,Prot,Ekey,Def,Ninfo,Parm,In-In2,Out-Out2,
+            Ptail,Ntable,Normal).
+compVelmN(yes,_Asign,_Msign,_Prot,_Ekey,_Def,_Info,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    In = In2,
+    Out = Out2,
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+%%%%%
+compVelmNU(Asign,Msign,Prot,Ekey,sp(Sign,Key,Err),Info,Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):-
+    decSign(Msign,Sign,Sign2),    
+    updateErr(Err,Info,Ninfo),
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    Ntable = [getName(Prot,Sign2,Name,Flag)|Ntail],
+    Ptable = [find(Key,Type,Def)|Ptail],
+    compUserspN(Flag,Asign,Sign2,Prot,Name,[],Type,Def,Parm,
+        Ptail,Ntail,Normal).
+
+compVelmNU(Asign,Msign,Prot,Ekey,up(Sign,Key,Err),Info,Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true | 
+    decSign(Msign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Parm)),
+            find({Head,Arity},_Type,Def)| Ptail],
+    compVelmNU(Asign,Sign2,Prot,Ekey,Def,Ninfo,Parm,In-In2,Out-Out2,
+            Ptail,Ntable,Normal).
+compVelmNU(Asign,Msign,Prot,Ekey,e(Sign,Enu,Err),Info,Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    decSign(Msign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    Ntable = [getName(Prot,Sign2,Name,Flag)|Ntail],
+    Normal = [normal(Name,Sign2,e(EnuN))|Norm2],
+    userEnu(Flag,Asign,[],Enu,EnuN,Parm,Ptable,Ntail,Norm2).
+
+%%%%%    
+
+
+checkSptypeN(no,Asign,Msign,Prot,Name,stream,Def,
+        Info,Ptable,Ntable,Normal):- true |
+    Normal = [normal(Name,Msign,st(Nprot,Nerr))|Norm2],
+    compAct(no,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntable,Norm2).
+checkSptypeN(no,Asign,Msign,Prot,Name,list,Def,
+        Info,Ptable,Ntable,Normal):- true |
+    Normal = [normal(Name,Msign,li(Nprot,Nerr))|Norm2],
+    compAct(no,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntable,Norm2).
+checkSptypeN(no,Asign,Msign,Prot,Name,vector,elm(Num,Def),Info,
+        Ptable,Ntable,Normal):- integer(Num) |
+    Normal = [normal(Name,Msign,v(Num,In,Out))|Norm2],
+    compV(no,Asign,Prot,Def,Info,In,Out,Ptable,Ntable,Norm2).
+checkSptypeN(no,Asign,Msign,Prot,Name,vector,elm(any,Def),Info,
+        Ptable,Ntable,Normal):- true |
+    Normal = [normal(Name,Msign,v(any,Nprot,Nerr))|Norm2],
+    compAct(no,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntable,Norm2).    
+checkSptypeN(yes,_Asign,_Msign,_Prot,_Name,_Type,_Def,_Info,
+        Ptable,Ntable,Normal):- true |
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+%%%% make name and make normal form for sp
+
+compVelmsp(Asign,Msign,Prot,Ekey,stream,Def,Info,In-In2,Out-Out2,
+            Ptable,Ntable,Normal):- true |
+    checkIO(Asign,Msign,Ekey,Name,Info,In-In2,Out-Out2),
+    Ntable = [getName(tmp(Prot,stream),Msign,Name,Flag)|Ntail],
+    Normal = [normal(Name,Msign,st(Nprot,Nerr))|Norm2],
+    compAct(Flag,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntail,Norm2).   
+compVelmsp(Asign,Msign,Prot,Ekey,list,Def,Info,In-In2,Out-Out2,
+            Ptable,Ntable,Normal):- true |
+    checkIO(Asign,Msign,Ekey,Name,Info,In-In2,Out-Out2),
+    Ntable = [getName(tmp(Prot,list),Msign,Name,Flag)|Ntail],
+    Normal = [normal(Name,Msign,li(Nprot,Nerr))|Norm2],
+    compAct(Flag,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntail,Norm2).   
+compVelmsp(Asign,Msign,Prot,Ekey,vector,elm(Num,Def),Info,In-In2,Out-Out2,
+            Ptable,Ntable,Normal):- integer(Num) |
+    checkIO(Asign,Msign,Ekey,Name,Info,In-In2,Out-Out2),
+    Ntable = [getName(tmp(Prot,vector),Msign,Name,Flag)|Ntail],
+    Normal = [normal(Name,Msign,v(Num,Inv,Outv))|Norm2],
+    compV(Flag,Asign,Prot,Def,Info,Inv,Outv,Ptable,Ntail,Norm2).
+compVelmsp(Asign,Msign,Prot,Ekey,vector,elm(any,Def),Info,In-In2,Out-Out2,
+            Ptable,Ntable,Normal):- true |
+    checkIO(Asign,Msign,Ekey,Name,Info,In-In2,Out-Out2),
+    Ntable = [getName(tmp(Prot,vector),Msign,Name,Flag)|Ntail],
+    Normal = [normal(Name,Msign,v(any,Nprot,Nerr))|Norm2],
+    compAct(Flag,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntail,Norm2).
+
+%%%%% compile actuals without name
+
+compAct(no,Asign,_Prot,u(Sign,Key,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Name,Def)|Ptail],
+    compActN(Nsign,Name,Def,Ninfo,Nprot,Nerr,Ptail,Ntable,Normal).
+compAct(no,Asign,Prot,s(Sign,Key,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- Key \= any |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Nerr),
+    Ntable = [getName(tmp(Prot,Key),Nsign,Nprot,_Flag)],
+    Normal = [normal(Nprot,Nsign,s(Key))],
+    Ptable = [].
+compAct(no,Asign,Prot,s(Sign,any,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    Nprot = s(any),
+    Nerr = [],
+    Ntable = [],
+    Normal = [],
+    Ptable = [].
+    
+compAct(no,Asign,Prot,sp(Sign,Key,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Nerr),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    Ntable = [getName(tmp(Prot,Type),Nsign,Nprot,Flag)|Ntail],
+    checkSptypeN(Flag,Asign,Nsign,Prot,Nprot,Type,Def,[],Ptail,Ntail,Normal).
+compAct(no,Asign,Prot,e(Sign,Enu,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Nerr),
+    Ntable = [getName(tmp(Prot,enu),Nsign,Nprot,Flag)|Ntail],
+    compEnuN(Flag,Asign,Nsign,Nprot,Enu,[],Ptable,Ntail,Normal).
+compAct(no,Asign,Prot,up(Sign,Key,Err),Info,Nprot,Nerr,
+    Ptable,Ntable,Normal):- true | 
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Name,Arity},parm(Parm)),
+            find({Name,Arity},_Type,Def)|Ptail],
+    compActU(Sign2,Prot,Def,Ninfo,Parm,Nprot,Nerr,Ptail,Ntable,Normal).
+
+compAct(yes,_Asign,_Prot,_Def,_Info,Nprot,Nerr,Ptable,Ntable,Normal):- 
+    true |
+    Nprot = [],
+    Nerr = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+%%%%%  
+
+compActN(Asign,_Prot,u(Sign,Key,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Name,Def)|Ptail],
+    compActN(Nsign,Name,Def,Ninfo,Nprot,Nerr,Ptail,Ntable,Normal).
+compActN(Asign,Prot,s(Sign,Key,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- Key \= any |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Nerr),
+    Ntable = [getName(Prot,Nsign,Nprot,Flag)],
+    checkFlag(Flag,Norm,Normal,[]),
+    Norm = normal(Nprot,Nsign,s(Key)),
+    Ptable = [].
+compActN(Asign,Prot,s(Sign,any,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    Nprot = s(any),
+    Nerr = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+compActN(Asign,Prot,sp(Sign,Key,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Nerr),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    Ntable = [getName(Prot,Nsign,Nprot,Flag)|Ntail],
+    checkSptypeN(Flag,Asign,Nsign,Prot,Nprot,Type,Def,[],Ptail,Ntail,Normal).
+compActN(Asign,Prot,e(Sign,Enu,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Nsign),
+    updateErr(Err,Info,Nerr),
+    Ntable = [getName(Prot,Nsign,Nprot,Flag)|Ntail],
+    compEnuN(Flag,Asign,Nsign,Nprot,Enu,[],Ptable,Ntail,Normal).
+compActN(Asign,Prot,i(Super,My),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+        Info = Nerr,
+    Ntable = [getName(Prot,Sign2,Nprot,Flag)|Ntail],
+    compSuper(Flag,Nprot,Asign,Prot,Sign2,Super,My,[],
+            Ptable,Ntail,Normal).
+compActN(Asign,Prot,up(Sign,Key,Err),Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true | 
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Name,Arity},parm(Parm)),
+            find({Name,Arity},_Type,Def)|Ptail],
+    compActNU(Sign2,Prot,Def,Parm,Ninfo,Nprot,Nerr,Ptail,Ntable,Normal).
+
+%%%%%
+compActNU(Asign,Prot,sp(Sign,Key,Err),Parm,Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Nerr),
+    Ntable = [getName(Prot,Sign2,Nprot,Flag)|Ntail],
+    Ptable = [find(Key,Type,Def)|Ptail],
+    compUserspN(Flag,Asign,Sign2,Prot,Nprot,[],Type,Def,Parm,Ptail,Ntail,Normal).
+compActNU(Asign,Prot,e(Sign,Enu,Err),Parm,Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    updateErr(Err,Info,Nerr),
+    decSign(Asign,Sign,Sign2),
+    Ntable = [getName(Prot,Sign2,Nprot,Flag)|Ntail],
+    Normal1 = normal(Nprot,Sign2,e(EnuN)),
+    checkFlag(Flag,Normal1,Normal,Norm2),
+    userEnu(Flag,Asign,[],Enu,EnuN,Parm,Ptable,Ntail,Norm2).
+compActNU(Asign,Prot,up(Sign,Key,Err),Actuals,Info,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Head,Arity},parm(Formal)),
+            find({Head,Arity},_Type,Def)|Ptail],    
+    substitute(Formal,Actuals,Nformal),
+    compActNU(Sign2,Prot,Def,Nformal,Ninfo,Nprot,Nerr,Ptail,Ntable,Normal).
+
+%%%%%
+
+checkSptype(Asign,Msign,Prot,stream,Def,Info,Ptable,Ntable,Normal):- 
+    true |
+    Ntable = [getName(tmp(Prot,stream),Msign,Name,Flag)|Ntail],
+    Normal = [normal(Name,Msign,st(Nprot,Nerr))|Norm2],
+    compAct(Flag,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntail,Norm2).
+checkSptype(Asign,Msign,Prot,list,Def,Info,Ptable,Ntable,Normal):- 
+    true |
+    Ntable = [getName(tmp(Prot,list),Msign,Name,Flag)|Ntail],
+    Normal = [normal(Name,Msign,li(Nprot,Nerr))|Norm2],
+    compAct(Flag,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntail,Norm2).
+checkSptype(Asign,Msign,Prot,vector,elm(Num,Def),Info,
+        Ptable,Ntable,Normal):- integer(Num) |
+    Ntable = [getName(tmp(Prot,vector),Msign,Name,Flag)|Ntail],
+    Normal = [normal(Name,Msign,v(Num,In,Out))|Norm2],
+    compV(Flag,Asign,Prot,Def,Info,In,Out,Ptable,Ntail,Norm2).
+checkSptype(Asign,Msign,Prot,vector,elm(any,Def),Info,
+        Ptable,Ntable,Normal):- true |
+    Ntable = [getName(tmp(Prot,vector),Msign,Name,Flag)|Ntail],
+    Normal = [normal(Name,Msign,v(any,Nprot,Nerr))|Norm2],
+    compAct(Flag,Asign,Prot,Def,Info,Nprot,Nerr,Ptable,Ntail,Norm2).    
+
+%%%%%  for enumeration
+
+compEnuN(yes,_Asign,_Msign,_Name,_Enu,_Info,Ptable,Ntable,Normal):- true |
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+compEnuN(no,Asign,Msign,Name,[Pattern|Enu],Info,Ptable,Ntable,Normal):-
+         true |
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2},
+    Normal1 = [normal(Name,Msign,e(EnuN))|Norm1],
+    EnuN = [Npat|Etail],
+    compPat(Asign,Pattern,Npat,Info,Ptable1,Ntable1,Norm1),
+    compEnuN2(no,Asign,Enu,Info,Etail,Ptable2,Ntable2,Normal2).
+
+compEnuN2(no,Asign,[Pattern|Enu],Info,EnuN,Ptable,Ntable,Normal):- true |
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2},
+    EnuN = [Npat|Etail],
+    compPat(Asign,Pattern,Npat,Info,Ptable1,Ntable1,Normal1),
+    compEnuN2(no,Asign,Enu,Info,Etail,Ptable2,Ntable2,Normal2).
+compEnuN2(_F,_Asign,[],_Info,EnuN,Ptable,Ntable,Normal):- true |
+    EnuN = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+compEnuN2(yes,Asign,Enu,Info,EnuN,Ptable,Ntable,Normal):- true |
+    EnuN = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+compPat(Asign,pt(Size,Pat,Act,Err),Npat,Info,Ptable,Ntable,Normal):- true |
+    updateErr(Err,Info,Ninfo),
+    Npat = pt(Size,Pat,In,Out),
+    compV(no,Asign,Pat,Act,Ninfo,In,Out,Ptable,Ntable,Normal).
+compPat(Asign,sp(_Sign,Key,Err),Npat,Info,Ptable,Ntable,Normal):- true |
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,_Type,Def)|Ptail],
+    Npat = li(Nprot,Nerr),
+    compAct(no,Asign,'$$list',Def,Ninfo,Nprot,Nerr,Ptail,Ntable,Normal).
+
+%%%%% user defined protocol with parameter
+
+compUserspN(no,Asign,Msign,Prot,Name,Info,stream,Def,Parm,Ptable,Ntable,Normal):- 
+    true |
+    Normal = [normal(Name,Msign,st(Nprot,Nerr))|Norm2],
+    compActU(Asign,Prot,Def,Info,Parm,Nprot,Nerr,Ptable,Ntable,Norm2).
+compUserspN(no,Asign,Msign,Prot,Name,Info,list,Def,Parm,Ptable,Ntable,Normal):- 
+    true |
+    Normal = [normal(Name,Msign,li(Nprot,Nerr))|Norm2],
+    compActU(Asign,Prot,Def,Info,Parm,Nprot,Nerr,Ptable,Ntable,Norm2).
+compUserspN(no,Asign,Msign,Prot,Name,Info,vector,elm(any,Def),Parm,Ptable,Ntable,Normal):- 
+    true |
+    Normal = [normal(Name,Msign,v(any,Nprot,Nerr))|Norm2],
+    compActU(Asign,Prot,Def,Info,Parm,Nprot,Nerr,Ptable,Ntable,Norm2).
+compUserspN(no,Asign,Msign,Prot,Name,Info,vector,elm(Num,Def),Parm,Ptable,Ntable,Normal):- 
+    integer(Num) |
+    Normal = [normal(Name,Msign,v(Num,In,Out))|Norm2],
+    compActUV(Asign,Prot,Def,Info,Parm,In,Out,Ptable,Ntable,Norm2).
+compUserspN(yes,_Asign,_Msign,_Prot,_Name,_Info,_Type,_Def,_Parm,
+    Ptable,Ntable,Normal):- true |
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+substitute([{Key,Act}|Next],Actuals,Nformal):- true |
+    search(Act,Actuals,Nact),
+    Nformal = [{Key,Nact}|Tail],
+    substitute(Next,Actuals,Tail).
+substitute([],_Actuals,Nformal):- true |
+    Nformal = [].
+
+search(Act,[{Act,Value}|_Next],Nact):- true |
+    Nact = Value.
+search(Act, [], Nact):- true |
+    Nact = Act.
+otherwise.
+search(Act, [{_Key,_Value}|Next], Nact):- true |
+    search(Act,Next,Nact).
+
+%%%%% mybody (when it has inheritance)
+
+mybodyUser(no,Asign,Sign2,Prot,Info,sp(Sign,Key,Err),Parm,
+        Body,Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    mybodyUsp(no,Asign,Prot,Ninfo,Type,Def,Parm,Body,Ptail,Ntable,Normal).
+mybodyUser(no,Asign,Sign2,Prot,Info,up(Sign,Key,Err),Parm,
+        Body,Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign3),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Name,Arity},parm(Formal)),
+            find({Name,Arity},_Type,Def)|Ptail],
+    substitute(Formal,Parm,Nformal),
+    mybodyUser(no,Sign2,Sign3,Prot,Ninfo,Def,Nformal,Body,
+        Ptail,Ntable,Normal).
+mybodyUser(no,Asign,Sign2,_Prot,Info,e(Sign,Enu,Err),Parm,
+        Body,Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Body = e(EnuN),
+    userEnu(no,Asign,Ninfo,Enu,EnuN,Parm,Ptable,Ntable,Normal).
+mybodyUser(yes,Asign,Sign2,Prot,Info,Def,Parm,Body,Ptable,Ntable,Normal):-
+    true |
+    Body = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+mybodyUsp(no,Asign,Prot,Info,stream,Def,Parm,Body,Ptable,Ntable,Normal):- 
+    true |
+    Body = st(Nprot,Nerr),
+    compActU(Asign,Prot,Def,Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal).
+mybodyUsp(no,Asign,Prot,Info,list,Def,Parm,Body,Ptable,Ntable,Normal):- 
+    true |
+    Body = li(Nprot,Nerr),
+    compActU(Asign,Prot,Def,Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal).
+mybodyUsp(no,Asign,Prot,Info,vector,v(any,Def),Parm,Body,Ptable,Ntable,Normal):- 
+    true |
+    Body = v(any,Nprot,Nerr),
+    compActU(Asign,Prot,Def,Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal).
+mybodyUsp(no,Asign,Prot,Info,vector,v(Num,Def),Parm,Body,Ptable,Ntable,Normal):- 
+    integer(Num) |
+    Body = v(Num,In,Out),
+    compActUV(Asign,Prot,Def,Info,Parm,In,Out,Ptable,Ntable,Normal).
+mybodyUsp(yes,Asign,Prot,Info,Type,Def,Parm,Body,Ptable,Ntable,Normal):- 
+    true |
+    Body = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+compActU(Asign,Prot,p(Sign,Key,Err),Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal):-
+    true |
+    updateErr(Err,Info,Ninfo),
+    decSign(Asign,Sign,Sign2),
+    checkParm(Key,Parm,Act),
+    compAct(no,Sign2,Prot,Act,Ninfo,Nprot,Nerr,Ptable,Ntable,Normal).
+compActU(Asign,Prot,s(Sign,Key,Err),Info,_Parm,Nprot,Nerr,
+        Ptable,Ntable,Normal):- Key \= any |
+    updateErr(Err,Info,Nerr),
+    decSign(Asign,Sign,Sign2),
+    Ntable = [getName(tmp(Prot,Key),Sign2,Nprot,_Flag)],
+    Normal = [normal(Nprot,Sign2,s(Key))],
+    Ptable = [].
+compActU(Asign,Prot,s(Sign,any,Err),Info,_Parm,Nprot,Nerr,
+        Ptable,Ntable,Normal):- true |
+    Nprot = s(any),
+    Nerr = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+compActU(Asign,_Prot,u(Sign,Key,Err),Info,_Parm,Nprot,Nerr,Ptable,Ntable,Normal):-
+    true |
+    updateErr(Err,Info,Nerr),
+    decSign(Asign,Sign,Sign2),
+    Ptable = [find(Key,Name,Def)|Ptail],
+    compActN(Sign2,Name,Def,Nerr,Nprot,Nerr,Ptail,Ntable,Normal).
+compActU(Asign,Prot,sp(Sign,Key,Err),Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal):-
+    true |
+    updateErr(Err,Info,Nerr),
+    decSign(Asign,Sign,Sign2),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    Ntable = [getName(tmp(Prot,Type),Sign2,Nprot,Flag)|Ntail],
+    compUserspN(Flag,Asign,Sign2,Prot,Nprot,[],Type,Def,Parm,Ptail,Ntail,Normal).
+compActU(Asign,Prot,up(Sign,Key,Err),Info,Actuals,Nprot,Nerr,Ptable,Ntable,Normal):-
+    true |
+    updateErr(Err,Info,Ninfo),
+    decSign(Asign,Sign,Sign2),
+    Ptable = [find(Key,{Head,Arity},parm(Formals)),
+            find({Head,Arity},_Type,Def)|Ptail],
+    substitute(Formals,Actuals,Nformals),
+    compActU2(Sign2,Prot,Def,Ninfo,Nformals,Nprot,Nerr,Ptail,Ntable,Normal).
+compActU(Asign,Prot,e(Sign,Enu,Err),Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal):-
+    true |
+    updateErr(Err,Info,Nerr),
+    decSign(Asign,Sign,Sign2),
+    Ntable = [getName(tmp(Prot,enu),Sign2,Nprot,Flag)|Ntail],
+    Normal1 = normal(Nprot,Sign2,e(EnuN)),    
+    checkFlag(Flag,Normal1,Normal,Norm2),
+    userEnu(Flag,Asign,[],Enu,EnuN,Parm,Ptable,Ntail,Norm2).
+
+compActU2(Asign,Prot,sp(Sign,Key,Err),Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal):-
+    true |
+    updateErr(Err,Info,Nerr),
+    decSign(Asign,Sign,Sign2),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    Ntable = [getName(tmp(Prot,Type),Sign2,Nprot,Flag)|Ntail],
+    compUserspN(Flag,Asign,Sign2,Prot,Nprot,[],Type,Def,Parm,Ptail,Ntail,Normal).
+compActU2(Asign,Prot,up(Sign,Key,Err),Info,Actuals,Nprot,Nerr,Ptable,Ntable,Normal):-
+    true |
+    updateErr(Err,Info,Ninfo),
+    decSign(Asign,Sign,Sign2),
+    Ptable = [find(Key,{Head,Arity},parm(Formals)),
+            find({Head,Arity},_Type,Def)|Ptail],
+    substitute(Formals,Actuals,Nformals),
+    compActU2(Sign2,Prot,Def,Ninfo,Nformals,Nprot,Nerr,Ptail,Ntable,Normal).
+compActU2(Asign,Prot,e(Sign,Enu,Err),Info,Parm,Nprot,Nerr,Ptable,Ntable,Normal):-
+    true |
+    updateErr(Err,Info,Nerr),
+    decSign(Asign,Sign,Sign2),
+    Ntable = [getName(tmp(Prot,enu),Sign2,Nprot,Flag)|Ntail],
+    Normal1 = normal(Nprot,Sign2,e(EnuN)),    
+    checkFlag(Flag,Normal1,Normal,Norm2),
+    userEnu(Flag,Asign,[],Enu,EnuN,Parm,Ptable,Ntail,Norm2).
+
+
+userEnu(no,Asign,Info,[Pattern|Enu],EnuN,
+        Parm,Ptable,Ntable,Normal):- true |
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2},
+    EnuN = [Npat|Etail],
+    compPatU(Asign,Pattern,Npat,Info,Parm,Ptable1,Ntable1,Normal1),
+    userEnu2(Asign,Enu,Info,Etail,Parm,Ptable2,Ntable2,Normal2).
+userEnu(yes,_Asign,_Info,_Enu,EnuN,_Parm,Ptable,Ntable,Normal):- true |
+        EnuN = [],
+        Ptable = [],
+        Ntable = [],
+        Normal = [].
+
+userEnu2(Asign,[Pattern|Enu],Info,EnuN,Parm,Ptable,Ntable,Normal):- true |
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2},
+    EnuN = [Npat|Etail],
+    compPatU(Asign,Pattern,Npat,Info,Parm,Ptable1,Ntable1,Normal1),
+    userEnu2(Asign,Enu,Info,Etail,Parm,Ptable2,Ntable2,Normal2).
+userEnu2(_Asign,[],_Info,EnuN,_Parm,Ptable,Ntable,Normal):- true |
+    EnuN = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+compPatU(Asign,pt(Size,Pat,Act,Err),Npat,Info,Parm,Ptable,Ntable,Normal):- 
+    true |
+    updateErr(Err,Info,Ninfo),
+    Npat = pt(Size,Pat,In,Out),
+    compActUV(Asign,Pat,Act,Ninfo,Parm,In,Out,Ptable,Ntable,Normal).
+compPatU(Asign,sp(_Sign,Key,Err),Npat,Info,Parm,Ptable,Ntable,Normal):- 
+    true |
+    Ptable = [find(Key,_Type,Def)|Ptail],
+    updateErr(Err,Info,Ninfo),
+    Npat = li(Nprot,Nerr),
+    compActU(Asign,'$$list',Def,Ninfo,Parm,Nprot,Nerr,Ptail,Ntable,Normal).
+
+compActUV(Asign,Pat,[{Ekey,Def}|Elm],Info,Parm,In,Out,Ptable,Ntable,Normal):- true |
+    Ptable = {Ptable1,Ptable2},
+    Ntable = {Ntable1,Ntable2},
+    Normal = {Normal1,Normal2},
+    compElmU(Asign,Pat,Ekey,Def,Info,Parm,In-In2,Out-Out2,Ptable1,Ntable1,Normal1),
+    compActUV(Asign,Pat,Elm,Info,Parm,In2,Out2,Ptable2,Ntable2,Normal2).
+compActUV(_Asign,_Pat,[],_Info,_Parm,In,Out,Ptable,Ntable,Normal):- true |
+    In = [],
+    Out = [],
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+
+compElmU(Asign,Pat,Ekey,p(Sign,Key,Err),Info,Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    checkParm(Key,Parm,Act),
+    compVelm(Sign2,Pat,Ekey,Act,Ninfo,In-In2,Out-Out2,Ptable,Ntable,Normal).
+compElmU(Asign,_Pat,Ekey,u(Sign,Key,Err),Info,_Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Name,Def)|Ptail],
+    compVelmN(no,Asign,Sign2,Name,Ekey,Def,Ninfo,In-In2,Out-Out2,Ptail,Ntable,Normal).
+compElmU(Asign,Pat,Ekey,s(Sign,Key,Err),Info,_Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- Key \= any |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    Ptable = [],
+    Ntable = [getName(tmp(Pat,Key),Sign2,Name,_Flag)],
+    Normal = [normal(Name,Sign2,s(Key))].
+compElmU(Asign,Pat,Ekey,s(Sign,any,Err),Info,_Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    In = In2,
+    Out = Out2,
+    Ptable = [],
+    Ntable = [],
+    Normal = [].
+compElmU(Asign,Pat,Ekey,sp(Sign,Key,Err),Info,Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    Ntable = [getName(tmp(Pat,Type),Sign2,Name,Flag)|Ntail],
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    compUserspN(Flag,Asign,Sign2,Pat,Name,Ninfo,Type,Def,Parm,Ptail,Ntail,Normal).
+compElmU(Asign,Pat,Ekey,up(Sign,Key,Err),Info,Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Name,Arity},parm(Formal)),
+            find({Name,Arity},_Type,Def)|Ptail],
+    substitute(Formal,Parm,Nformal),
+    compElmU2(Asign,Sign2,Pat,Ekey,Def,Ninfo,Nformal,In-In2,Out-Out2,
+            Ptail,Ntable,Normal).
+compElmU(Asign,Pat,Ekey,e(Sign,Enu,Err),Info,Parm,In-In2,Out-Out2,
+        Ptable,Ntable,Normal):- true |
+    decSign(Asign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ntable = [getName(tmp(Pat,enu),Sign2,Name,Flag)|Ntail],
+    Normal = [normal(Name,Sign2,e(EnuN))|Norm2],
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    userEnu(Flag,Asign,[],Enu,EnuN,Parm,Ptable,Ntail,Norm2).
+
+compElmU2(Asign,Msign,Pat,Ekey,sp(Sign,Key,Err),Info,Parm,In-In2,Out-Out2,
+    Ptable,Ntable,Normal):- true |    
+    decSign(Msign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,Type,Def)|Ptail],
+    Ntable = [getName(tmp(Pat,Type),Sign2,Name,Flag)|Ntail],
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    compUserspN(Flag,Asign,Sign2,Pat,Name,Ninfo,Type,Def,Parm,Ptail,Ntail,Normal).
+compElmU2(Asign,Msign,Pat,Ekey,up(Sign,Key,Err),Info,Parm,In-In2,Out-Out2,
+    Ptable,Ntable,Normal):- true |    
+    decSign(Msign,Sign,Sign2),
+    updateErr(Err,Info,Ninfo),
+    Ptable = [find(Key,{Name,Arity},parm(Formal)),
+            find({Name,Arity},_Type,Def)|Ptail],
+    substitute(Formal,Parm,Nformal),
+    compElmU2(Asign,Sign2,Pat,Ekey,Def,Ninfo,Nformal,In-In2,Out-Out2,
+            Ptail,Ntable,Normal).
+compElmU2(Asign,Msign,Pat,Ekey,e(Sign,Enu,Err),Info,Parm,In-In2,Out-Out2,
+    Ptable,Ntable,Normal):- true |    
+    updateErr(Err,Info,Ninfo),
+    decSign(Msign,Sign,Sign2),
+    Ntable = [getName(tmp(Pat,enu),Sign2,Name,Flag)|Ntail],
+    Normal = [normal(Name,Sign2,e(EnuN))|Norm2],
+    checkIO(Asign,Sign2,Ekey,Name,Ninfo,In-In2,Out-Out2),
+    userEnu(Flag,Asign,[],Enu,EnuN,Parm,Ptable,Ntail,Norm2).
+
+%%%%% make error info
+
+updateErr(none,Info,Ninfo):- true |
+    Ninfo = Info.
+updateErr(add(E),Info,Ninfo):- true |
+    Ninfo = [add(E)|Info].
+updateErr(reset(E),_Info,Ninfo):- true |
+    Ninfo = [reset(E)].
+
+%%%%% decide sign
+
+decSign('+','+',Sign):- true |
+    Sign = '+'.
+decSign('+','-',Sign):- true |
+    Sign = '-'.
+decSign('-','+',Sign):- true |
+    Sign = '-'.
+decSign('-','-',Sign):- true |
+    Sign = '+'.
+
+%%%%% check IO
+
+checkIO('+','+',Ekey,Name,Info,In-In2,Out-Out2):- true |
+    In = [{Ekey,Name,Info}|In2],
+    Out = Out2.
+checkIO('+','-',Ekey,Name,Info,In-In2,Out-Out2):- true |
+    Out = [{Ekey,Name,Info}|Out2],
+    In = In2.
+checkIO('-','+',Ekey,Name,Info,In-In2,Out-Out2):- true |
+    Out = [{Ekey,Name,Info}|Out2],
+    In = In2.
+checkIO('-','-',Ekey,Name,Info,In-In2,Out-Out2):- true |
+    Out = [{Ekey,Name,Info}|Out2],
+    In = In2.
+
+%%%%% check flag   exists or not
+
+checkFlag(yes,_Norm,Normal,Ntail):- true |
+    Normal =  Ntail.
+checkFlag(no,Norm,Normal,Ntail):- true |
+    Normal = [Norm | Ntail].
+
+%%%%% check parameter
+
+checkParm(Key,[{Key,Actual}|_Parameter],Act):- true |
+    Act = Actual.
+checkParm(_Key,[],_Act):- true |
+    shoen:raise(pimos_tag#shell,get_std_out,Out),
+    shoen:raise(pimos_tag#pimos,general_request,[suicide(_)]),
+    Out = [putt(illegal_definition)].
+otherwise.
+checkParm(Key,[{_Key2,_Actual}|Parameter],Act):- true |
+    checkParm(Key,Parameter,Act).

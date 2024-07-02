@@ -1,0 +1,114 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>user>yashiro>V31>vm.kl1.2, 04-Feb-92 21:18:58, Edit by yashiro
+:- module vm.
+:- with_macro pimos.
+:- public  go/0,module_table/1, atom_table/1, make_boot_info/1.
+
+go :-
+    true |
+        module_table(Modules),
+        atom_table(Atoms),
+        make_boot_info(CSPParam),
+        Comments = [{"???","VM version"}],
+        pim:go(CSPParam,Atoms,Modules,Comments).
+
+atom_table(Atoms) :-
+    true |
+        atom_table:cache_table(Atom),
+        Atom = [get_all_atoms(normal(Atoms0))],
+        atom_table0(Atoms0,Atoms).
+
+atom_table0([],Atoms) :-
+    true |
+        Atoms = [].
+atom_table0([{Name,Atom}|Atoms0],Atoms) :-
+    true |
+        Atoms = [{Atom,Name}|NAtoms],
+        atom_table0(Atoms0,NAtoms).
+
+module_table(All) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,[getenv(task:package,normal(Package))]),
+        module_table:cache_table(Mod),
+        current_modules(Package,Mod,All).
+
+current_modules(Package,Mod,ALL) :-
+    atom(Package) |
+        pool:keyed_set(POOL),
+        get_super_packages(Package,Mod,Mod1,Packages),
+        get_modules(Packages,Mod1,POOL,ALL).
+
+get_super_packages(pimos,Mod,RMod,Packages) :-
+    true |
+        Packages=[pimos,privilege],Mod=RMod.
+get_super_packages(Package,Mod,RMod,Packages) :-
+    Package \= pimos |
+        Packages=[Package|Packages1],
+        Mod=[get_super_package(Package,normal(Super))|Mod1],
+        get_super_packages(Super,Mod1,RMod,Packages1).
+
+get_modules([Package|Packages],Mod,POOL,ALL) :-
+    true |
+        Mod=[get_all_modules(Package,normal(Package_ALL))|Mod1],
+        make_module_table(Package_ALL,POOL,POOL1),
+        get_modules(Packages,Mod1,POOL1,ALL).
+get_modules([],Mod,POOL,ALL) :-
+    true |
+        Mod=[],
+        POOL = [get_all(ALL)].
+
+make_module_table([{Name,Module,_}|B],POOL,RPOOL) :-
+    true |
+        POOL=[get_if_any_and_put(Name,X,Y)|POOL1],
+        check_module(Module,X,Y),
+        make_module_table(B,POOL1,RPOOL).
+make_module_table([],POOL,RPOOL) :-
+    true |
+        POOL=RPOOL.
+
+check_module(Module,{},Y) :-
+    true |
+        Module=Y.
+check_module(_,{A},Y) :-
+    true |
+        A=Y.
+%   CSP Parameter (16bit String)
+%   Elem No. +============================+
+%         0  |  Cluster Number            |
+%         1  |  Processor Number          |   PIM/m and Multi-PSI's procesor number is always 0.
+%         2  |  Unit Number               |
+%         3  |  LUN for sender            |
+%         4  |  LUN for receiver          |
+%         5  |  (Reserved)                |
+%         ......
+%        15  |  (Reserved)                |
+%        16  |Length of IPL FILE Pathname |  (N elements, N > 0)
+%        17  |   Pathname (last element)  |
+%         ......
+%       16+N |   Pathname (First element) |
+%     16+N+1 |  (Reserved)                |
+%            +============================+
+
+make_boot_info(CSPParam) :-
+    true |
+        Pathname = string#"pimos:pimos.ipl",
+        Cluster = 0, Processor = 0,
+        Unit = 7, Send_LUN = 0, Receive_LUN = 1,
+        make_boot_info0(CSPParam,Pathname,Cluster,Processor,Unit,Send_LUN,Receive_LUN).
+
+make_boot_info0(CSPParam,Pathname,Cluster,Processor,Unit,Send_LUN,Receive_LUN) :-
+    string(Pathname,PathnameLength,16) |
+        Length0 := PathnameLength + 17 ,
+        new_string(CSPParam0,Length0,16),
+        set_string_element(CSPParam0,0,Cluster,CSPParam1),
+        set_string_element(CSPParam1,1,Processor,CSPParam2),
+        set_string_element(CSPParam2,2,Unit,CSPParam3),
+        set_string_element(CSPParam3,3,Send_LUN,CSPParam4),
+        set_string_element(CSPParam4,4,Receive_LUN,CSPParam5),
+        set_string_element(CSPParam5,16,PathnameLength,CSPParam6),
+        builtin#copy_string_elements(CSPParam6,17,PathnameLength,Pathname,0,CSPParam,_).

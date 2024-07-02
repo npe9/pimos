@@ -1,0 +1,472 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- user_macro pimos.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   super user/group  uid/gid
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+pimos_user#super_pimos          =>      0.
+pimos_group#super_pimos          =>      0.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   stream message macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Common Status
+fep#nil             => 0 .   fep#normal          => 1 .
+fep#eod             => 2 .   fep#control_c       => 3 .   fep#attention   => 3 .
+fep#continue        => 4 .   fep#abnormal        => 5 .
+fep#aborted         => 6 .   fep#yes             => 7 .
+fep#no              => 8 .   fep#wake_up         => 9 .
+
+fep#reset               => 50 .          % reset(?abort,?attention,^st,?cdr)
+fep#next_attention      => 51 .          % next_attention(^att,^st,?cdr)
+fep#close               => 60 .          % close(^st,?cdr)
+fep#abort               => 70 .          % abort 
+
+%% Window Manager
+fep#window                  => 100 .     % window(?window,^st,?cdr)
+    %%  Window Manager Commands
+    fep#create              => 101 .     % create(?window,^st,?cdr)
+    fep#create_with_buffer  => 102 .     % create_with_buffer(buf,?window,^st,?cdr)
+    fep#get_max_size        => 103 .     % get_max_size(x,y,font,^c,^l,^st,?cdr)
+        %% Window IO commands
+        fep#getl            => 110 .     % getl(^string,^st,?cdr)
+        fep#putb            => 111 .     % putb(string,^st,?cdr)
+        fep#flush           => 112 .     % flush(^st,?cdr)
+        fep#beep            => 113 .     % beep(^st,?cdr)
+        %% Set/Get Position and Size
+        fep#set_size        => 120 .     % set_size(^st,?cdr)
+        fep#set_inside_size => 121 .     % set_inside_size(chr,lin,^st,?cdr)
+        fep#get_inside_size => 122 .     % get_inside_size(^chr,^lin,^st,?cdr)
+        fep#set_position_by_mouse => 123 . % set_position_by_mouse(^st,?cdr)
+        fep#set_position    => 124 .     % set_position(x,y,^st,?cdr)
+        fep#get_position    => 125 .     % get_position(^x,^y,^st,?cdr)
+        fep#reshape_by_mouse => 126 .    % reshape_by_mouse(^st,?cdr)
+        fep#reshape         => 127 .     % reshape(x,y,chr,lin,^st,?cdr)
+        %% Set/Get Window Title and Font
+        fep#set_title       => 130 .     % set_title(string,^st,?cdr)
+        fep#get_title       => 131 .     % get_title(^string,^st,?cdr)
+        fep#set_font        => 132 .     % set_font(string,^st,?cdr)
+        fep#get_font        => 133 .     % get_font(^string,^st,?cdr)
+        %% Other Window Controls
+        fep#select_buffer   => 140 .     % select_buffer(string,^st,?cdr)
+        fep#activate        => 141 .     % activate(^st,?cdr)
+        fep#deactivate      => 142 .     % deactivate(^st,?cdr)
+        fep#show            => 143 .     % show(^st,?cdr)
+        fep#hide            => 144 .     % hide(^st,?cdr)
+        fep#clear           => 145 .     % clear(^st,?cdr)
+        fep#buffer_name     => 146 .     % buffer_name(string,^st,?cdr)
+
+%% File Manager
+fep#file                    => 200 .     % file(?file,^st,?cdr)
+    %% File Manager Commands
+    fep#read_open           => 201 .     % read_open(string,?file,^st,?cdr)
+    fep#write_open          => 202 .     % write_open(string,?file,^st,?cdr)
+    fep#append_open         => 203 .     % append_open(string,?file,^st,?cdr)
+    fep#directory           => 204 .     % directory(string,?dir,^st,?cdr)
+    fep#make_directory      => 205 .     % 
+        %% File IO Commands
+        fep#getb            => 210 .     % getb(number,^string,^st,?cdr)
+%%      fep#putb            => 111 .     % putb(string,^st,?cdr)
+        %% Get File Status
+        fep#end_of_file     => 220 .     % end_of_file(^eof,^st,?cdr)
+        fep#pathname        => 221 .     % pathname(^string,^st,?cdr)
+        %% Directory Control Commands
+        fep#listing         => 230 .     % listing(string,?filenames,^st,?cdr)
+        fep#delete          => 231 .     % delete(string,^st,?cdr)
+        fep#undelete        => 232 .     % undelete(string,^st,?cdr)
+        fep#purge           => 233 .     % purge(string,^st,?cdr)
+        fep#deleted         => 234 .     % deleted(string,?filenames,^st,?cdr)
+        fep#expunge         => 235 .     % expunge(^st,?cdr)
+            %% Filenames Stream Command
+            fep#next_filename => 236 .   % next_filename(^string,^st,?cdr)
+    fep#fep_attributes      => 240 .
+
+%% Timer Manager
+fep#timer                   => 300 .     % timer(?timer,^st,?cdr)
+    %% Timer Commands
+    fep#get_count           => 301 .     % get_count(?count,^st,?cdr)
+    fep#on_at               => 302 .     % on_at(count,^now,^st,?cdr)
+    fep#on_after            => 303 .     % on_after(count,^now,^st,?cdr)
+    fep#get_date_time       => 304 .     % get_date_time(^date,^time,^st,?cdr)
+
+%% String_io Manager
+fep#string_io               => 600 .     % string_io(?string_io,^st,?cdr)
+    %% String_io Command
+    fep#io     => 620 .    % io(command,to_fep_string,^from_fep_string,^st,?cdr)
+
+%%%%%%%%%% Add 92/1/16 by HIRATA(MRI)
+%% Socket Manager
+fep#socket                      => 800 .
+    %%  Socket Manager Commands
+    fep#create_socket           => 801 .
+        %% Socket IO commands
+        fep#bind                => 802 .
+        fep#listen              => 803 .
+        fep#accept              => 804 .
+        fep#connect             => 805 .
+        fep#set_socket_option   => 806 .
+        fep#so_debug            => 807 .
+        fep#so_reuseaddr        => 808 .
+        fep#so_keepalive        => 809 .
+        fep#send_timeout        => 810 .
+        fep#receive_timeout     => 811 .
+        fep#connect_hostname    => 812 .
+
+%% IPL
+fep#ipl                     => 400 .     % ipl(?ipl,^st,?cdr)
+
+%% SYMBOL
+fep#symbol                  => 500 .     % symbol(?symbol,^st,?cdr)
+%%%%%%%%%% Add 89/10/12 by REIKO
+%% REMOTE DEVICE MANAGER
+fep#remote_window           => 700.     % remote_window(node,?window,^status,?cdr)
+fep#remote_file             => 701.     % remote_file(node,?file,^status,?cdr)
+fep#remote_timer            => 702.     % remote_timer(node,?timer,^status,?cdr)
+fep#remote_string_io        => 703.     % remote_string_io(node,?string_io,^status,?cdr)
+%%%%%%%%%% Add 92/1/16 by HIRATA(MRI)
+fep#remote_socket           => 704.     % remote_socket(node,?socket,^status,?cdr)
+%% ALL DEVICE ATTRIBUTES
+    fep#node_name           => 710.     % node_name(^name,^status,?cdr)
+        %% WINDOW IO COMMAND
+        fep#ungetb    => 114.     % ungetb(preinput_string,^status,?cdr)
+        %% FILE Attributes
+        fep#attributes           => 222.
+        %% DIRECTORY CONTROL COMMAND
+        fep#listing_all         => 237.
+        fep#deleted_all         => 238.
+        fep#kill                => 239.
+%%% added D.Sekita 90/01/31
+fep#disconnected                => 10.
+fep#create_window               => 104.
+fep#create_timer                => 310.
+fep#create_string_io            => 601.
+
+%%% added S.Ishida 91/11/08
+fep#end                         => 11.
+fep#terminate                   => 80.
+
+%% packet flag
+%%% added S.Ishida 91/11/08
+fep#packet_last                 => 0.
+fep#packet_continued            => 1.
+
+%%% added N.Hirata 92/10/28
+fep#jiskanji                    => 0.
+fep#euc                         => 1.
+fep#jis                         => 2.
+fep#sjis                        => 3.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%       shoen stream macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% for control stream 
+shoen#start                   => start  .
+shoen#stop                    => stop  .
+shoen#abort                   => abort  .
+shoen#statistics              => statistics  .
+shoen#add_resource(HR,LR)     => add_resource(HR,LR)  .
+shoen#allow_resource_report   => allow_resource_report  .
+shoen#profile(Sh, Newsh)      => profile(Sh, Newsh) .
+
+%% for report stream 
+shoen#aborted                  => 1  .
+shoen#exception(Kind,Info,NewCode,NewArgv)
+                               => {2,Kind,Info,NewCode,NewArgv}  .
+%shoen#failure(Code,Argv,NewCode,NewArgv)
+%                               => {3,Code,Argv,NewCode,NewArgv}  .
+%shoen#raised(Info1,Info2,NewCode,NewArgv)
+%                               => {4,Info1,Info2,NewCode,NewArgv}  .
+shoen#resource_added           => 5  .
+shoen#resource_low             => 6  .
+shoen#resource_report_allowed  => 7  .
+shoen#started                  => 8  .
+shoen#statistics(HR,LR)        => {9,HR,LR}  .
+shoen#statistics_started       => 10  .
+shoen#stopped                  => 11  .
+shoen#terminated               => 12  .
+shoen#unification_failure(X,Y,NewCode,NewArgv)
+                               => {13,X,Y,NewCode,NewArgv}  .
+shoen#return_resource(HR,LR)   => {14,HR,LR} .
+shoen#profiling_information(Processor, Type, Depth, Data) 
+            =>    {15, Processor, Type, Depth, Data} .
+shoen#profiling_started      => 16 .
+shoen#profiling_rejected    => 17.
+shoen#profiling_completed   => 18.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Constant Macro of String Operation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+string_operation#reset      =>  0.
+string_operation#clear      =>  0.
+string_operation#and        =>  1.
+string_operation#s2_and_s1  =>  1.
+string_operation#and_not_s1 =>  2.
+string_operation#s2_and_not_s1 => 2.
+string_operation#s2          => 3.
+string_operation#nop          => 3.
+string_operation#and_not_s2    => 4.
+string_operation#s1_and_not_s2 => 4.
+string_operation#s1           => 5.
+string_operation#xor          => 6.
+string_operation#s1_xor_s2     => 6.
+string_operation#or            => 7.
+string_operation#s1_or_s2      => 7.
+string_operation#nor           => 8.
+string_operation#s1_nor_s2     => 8.
+string_operation#not_or        => 8.
+string_operation#s1_not_or_s2  => 8.
+string_operation#not_xor       => 9.
+string_operation#s1_not_xor_s2 => 9.
+string_operation#not_s1        => 10.
+string_operation#or_not_s1     => 11.
+string_operation#s2_or_not_s1     => 11.
+string_operation#not_s2     => 12.
+string_operation#or_not_s2     => 13.
+string_operation#s1_or_not_s2     => 13.
+string_operation#nand          => 14.
+string_operation#not_and    => 14.
+string_operation#s1_nand_s2      => 14.
+string_operation#s1_not_and_s2    => 14.
+string_operation#set    => 15.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%       pseudo builtin macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+builtin#apply(Cod,Argvect)      => apply(Cod,Argvect)  .
+builtin#merge_in(In1,In2,In)    => In = {In1,In2}  .
+
+builtin#substring(S,P,L,SubS,NewS)
+        => builtin_utility:substring(S,P,L,SubS,NewS)  .
+builtin#copy_string_elements(S1,P1,L,S2,P2,NewS1,NewS2)
+        => binary_string_operation(string_operation#s2,S1,P1,L,S2,P2,NewS1,NewS2).
+builtin#set_substring(S1,P1,L,S2,NewS1,NewS2)
+        => binary_string_operation(string_operation#s2,S1,P1,L,S2,0,NewS1,NewS2).
+builtin#set_substring(S1,P1,L,S2,NewS1)
+        => binary_string_operation(string_operation#s2,S1,P1,L,S2,0,NewS1,_).
+builtin#set_substring(S1,P1,S2,NewS1)
+        => string(S2,L,_,S22),
+           binary_string_operation(string_operation#s2,S1,P1,L,S22,0,NewS1,_).
+builtin#append_string(String_list,Appended_string)
+        => builtin_utility:append_string(String_list,Appended_string)  .
+builtin#append_string(String1,String2,Appended_string)
+        => builtin_utility:append_string(String1,String2,Appended_string)  .
+
+builtin#or_string_elements(S, P, L, MaskS, MaskPosition, NewS, NewMaskS)
+        => binary_string_operation(string_operation#or,S,P,L,MaskS,MaskPosition,NewS,NewMaskS).
+
+builtin#and_string_elements(S, P, L, MaskS, MaskPosition, NewS, NewMaskS)
+        => binary_string_operation(string_operation#and,S,P,L,MaskS,MaskPosition,NewS,NewMaskS).
+
+builtin#xor_string_elements(S, P, L, MaskS, MaskPosition, NewS, NewMaskS)
+        => binary_string_operation(string_operation#xor,S,P,L,MaskS,MaskPosition,NewS,NewMaskS).
+
+builtin#nand_string_elements(S, P, L, MaskS, MaskPosition, NewS, NewMaskS)
+        => binary_string_operation(string_operation#nand,S,P,L,MaskS,MaskPosition,NewS,NewMaskS).
+
+builtin#nor_string_elements(S, P, L, MaskS, MaskPosition, NewS, NewMaskS)
+        => binary_string_operation(string_operation#nor,S,P,L,MaskS,MaskPosition,NewS,NewMaskS).
+
+builtin#not_xor_string_elements(S, P, L, MaskS, MaskPosition, NewS, NewMaskS)
+        => binary_string_operation(string_operation#not_xor,S,P,L,MaskS,MaskPosition,NewS,NewMaskS).
+
+builtin#complement_string_elements(S, P, L, NewS)
+        => unary_string_operation(string_operation#not_s1, S, P ,L, NewS).
+
+builtin#move_string_elements(S, P, L, ShiftCount, NewS)
+       =>  shifting_string_operation(string_operation#s2, S, ~(P+ShiftCount), L, P, NewS).
+
+builtin#string_tail(S, P, NewS) 
+       => string(S, L, Type, S2),
+          new_string(S1, ~(L - P), Type),
+          binary_string_operation(string_operation#s2, S1, 0, ~(L-P), S2, P, NewS, _).
+
+:- switch(machine_type).
+:-case(mpsi,pimm).
+builtin#atom_number(X,N)        => hash(X,N,_) .
+:- default.
+builtin#atom_number(X,N)        => atom_number(X,N) .
+:-end_switch.
+
+builtin#hash(X,H,NewX)          => hasher:hash(X,H,NewX)  .
+
+builtin#new_string(X,S)         => new_string(X,S,16) .
+
+builtin#code(X)                 => wait(X) .
+
+builtin#module(X)               => wait(X) .
+
+builtin#trace_start             => halt(16'1000) .
+builtin#halt                    => halt(0) .
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%       exception tag macros
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+pimos_tag#task  => 16'100 .
+pimos_tag#pimos => 16'200 .
+pimos_tag#error => 16'400 .
+pimos_tag#job   => 16'1000 .
+pimos_tag#tos   => 16'2000 .
+pimos_tag#shell => 16'4000 .
+pimos_tag#listener => 16'8000.
+
+
+shell_tag#none  => 0 .
+shell_tag#tos   => 16'4000 .
+%shell_tag#job   => 4160749618 .
+%shell_tag#job   => 16'FFFF3600 .        % pimos,job,tos,builtin,tatal_error
+shell_tag#job   => 16'FFFFBFFF .        % pimos,job,tos,builtin,tatal_error,user,pimos(undefined_tag)
+
+
+listener_tag#task  => 16'FFFFFFFF .
+listener_tag#raise => 16'8000 .
+
+
+exception_code#illegal_input => 0 .
+exception_code#range_overflow => 1 .
+exception_code#out_of_bounds => 2 .
+exception_code#integer_overflow => 3 .
+exception_code#integer_zero_division => 4 .
+exception_code#invalid_floating_point_operation => 5 .
+exception_code#arity_mismatch => 6 .
+exception_code#reserved_7 => 7 .
+exception_code#undefined_module_or_predicate => 7 .
+exception_code#illegal_merger_input => 8 .
+exception_code#reduction_failure => 9 .
+exception_code#unification_failure => 10 .
+exception_code#deadlock => 11 .
+exception_code#merger_deadlock => 12 .
+exception_code#trace => 13 .
+exception_code#spy => 13 .
+exception_code#reserved_14 => 14 .
+exception_code#etc => 15 .
+exception_code#raised => 16 .
+
+exception_tag#illegal_input => 16'10000 .
+exception_tag#range_overflow => 16'20000 .
+exception_tag#out_of_bounds => 16'40000 .
+exception_tag#integer_overflow => 16'80000 .
+exception_tag#integer_zero_division => 16'100000 .
+exception_tag#invalid_floating_point_operation => 16'200000 .
+exception_tag#arity_mismatch => 16'400000 .
+exception_tag#reserved_7 => 16'800000 .
+exception_tag#undefined_module => 16'800000 .
+exception_tag#undefined_predicate => 16'800000 .
+exception_tag#illegal_merger_input => 16'1000000 .
+exception_tag#reduction_failure => 16'2000000 .
+exception_tag#unification_failure => 16'4000000 .
+exception_tag#deadlock => 16'8000000 .
+exception_tag#merger_deadlock => 16'10000000 .
+exception_tag#trace => 16'20000000 .
+exception_tag#spy => 16'20000000 .
+exception_tag#reserved_14 => 16'40000000 .
+exception_tag#etc => 16'80000000 .
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  Machine Dependent part macro LIBrary
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% builtin predicate
+
+
+:- switch(machine_type).
+:-case(mpsi).
+mdlib#current_cluster(Cluster, Total) => current_processor(Cluster, X, Y),
+                                                 Total := X*Y.
+:-case(vpim).
+mdlib#current_cluster(Cluster, Total) => current_cluster(Cluster, Total).
+:-end_switch.
+
+:- switch(double_width_integer).
+:-case(yes).
+mdlib#add_extended(X, Y, Zh, Zl) => add_extended(X, Y, Zh, Zl).
+mdlib#subtract_extended(X, Y, Borrow, Z) => subtract_extended(X, Y, Borrow, Z).
+mdlib#multiply_extended(X, Y, Zh, Zl) => multiply_extended(X, Y, Zh, Zl).
+mdlib#divide_extended(Xh, Xl, Y, Z, Mod) => divide_extended(Xh, Xl, Y, Z, Mod).
+
+:-case(no).
+mdlib#add_extended(X, Y, Zh, Zl) => bnum_util:add_ext(X, Y, Zh, Zl).
+mdlib#subtract_extended(X, Y, Borrow, Z) => bnum_util:sub_ext(X, Y, Borrow, Z).
+mdlib#multiply_extended(X, Y, Zh, Zl) => bnum_util:mul_ext(X, Y, Zh, Zl).
+mdlib#divide_extended(Xh, Xl, Y,Z, Mod) => bnum_util:div_ext(Zh, Xl, Z, Mod).
+:-end_switch.
+
+:-switch(bignum).
+:-case(yes).
+mdlib#bignum_less_than(Bignum1, Bignum2) => bignum_less_than(Bignum1, Bignum2).
+mdlib#bignum_not_less_than(Bignum1, Bignum2) => bignum_not_less_than(Bignum1, Bignum2).
+mdlib#add_bignum(BigX, BigY, BigZ) => add_bignum(BigX, BigY, BigZ).
+mdlib#subtract_bignum(BigX, BigY, BorroW, BigZ) 
+                    => subtract_bignum(BigX, BigY, BorroW, BigZ).
+mdlib#multiply_bignum_by_word(BigX, Y, BigZ) => multiply_bignum_by_word(BigX, Y, BigZ).
+
+:-case(no).
+mdlib#bignum_less_than(Bignum1, Bignum2) => string(Bignum1, _, Elem1), Elem1 = 32,
+                      string(Bignum2,_,Elem2),Elem2 = 32, Bignum1 > Bignum2.
+mdlib#bignum_not_less_than(Bignum1, Bignum2) => string(Bignum1, _, Elem1), Elem1 = 32,
+                      string(Bignum2,_,Elem2),Elem2 = 32, Bignum1 =< Bignum2.
+mdlib#add_bignum(BigX, BigY, BigZ) => bnum_util:add_bnum(BigX, BigY, BigZ).
+mdlib#sub_bignum(BigX, BigY, BorroW, BigZ) 
+                    => bnum_util:sub_bnum(BigX, BigY, BorroW, BigZ).
+mdlib#multiply_bignum_by_word(BigX, Y, BigZ) => bnum_util:mul_word(BigX, Y, BigZ).
+
+:- end_switch.
+
+% timer
+
+:- switch(machine).
+:- case(mpsi,pimm).
+mdlib#system_timer_unit => msec16.
+mdlib#alarm_timer_range => 32#{-1}.                 % = 32#{16#"ffffffff"}
+mdlib#alarm_timer_rangeD => 32#{2147483647}.        % = 32#{16#"7fffffff"}
+:- case(pimp).
+mdlib#system_timer_unit => usec.
+mdlib#alarm_timer_range => 32#{524287,-1}.          % = 32#{16#"7ffff",16#"ffffffff"}
+:- case(pimc).
+mdlib#system_timer_unit => usec15.
+mdlib#alarm_timer_range => 32#{255,-1}.             % = 32#{16#"ff",16#"ffffffff"}
+:- end_switch.
+
+/* old
+:- switch(machine).
+:- case(mpsi,pimm).
+mdlib#system_timer_unit => msec16.
+mdlib#system_timer_range => {16#"ffffffff",16#"ffffffff"}.
+mdlib#alarm_timer_range => {0,16#"ffffffff"}.
+mdlib#alarm_timer_rangeD => {0,16#"7fffffff"}.
+:- case(pimp).
+mdlib#system_timer_unit => usec.
+mdlib#system_timer_range => {16#"7ffff",16#"ffffffff"}.
+mdlib#alarm_timer_range => {16#"7ffff",16#"ffffffff"}.
+mdlib#alarm_timer_rangeD => {16#"7ffff",16#"ffffffff"}.
+:- default.
+mdlib#system_timer_unit => 0.
+mdlib#system_timer_range => 0.
+mdlib#alarm_timer_range => 0.
+mdlib#alarm_timer_rangeD => 0.
+:- end_switch.
+*/
+
+% foating point
+
+:- switch(machine).
+:-case(mpsi, pimm).
+
+mdlib#fltEXPmax => 127.
+mdlib#fltEXPmin => -127.
+
+:-case(pimp).
+
+mdlib#fltEXPmax => 127.
+mdlib#fltEXPmin => -127.
+
+:- end_switch.
+
+end.

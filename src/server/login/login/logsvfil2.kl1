@@ -1,0 +1,194 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ :- module login_server_filter2 .
+ :- public logincoms /2 .
+:- with_macro pimos.
+
+logincoms(User,OS) :-true|
+        logincoms(User,OS,_,[]) .
+logincoms([User|U2],OS,_,Error) :-true|
+        '+logincom'(User,OS1,Flag,Error),
+        'logincoms$wait'(U2,OS,OS1,Flag,Error) .
+logincoms([],OS,_,Error) :-true|
+        []=OS .
+otherwise .
+logincoms(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        OS =[],
+        raise_error(Error,User) .
+'logincoms$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        logincoms(U2,OS2,_,Error) .
+'logincoms$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+logincom'(login(_1,_2,_3,_4,_5,_6,_7,_8,_9),OS,_,Error) :-true|
+        '+logincom$wait'(login(__1,__2,__3,__4,__5,__6,__7,__8,_9),OS,Flag,Error),
+        '+partno'(_1,__1,Flag,Error),
+        '+fepno'(_2,__2,Flag,Error),
+        '+ionode'(_3,__3,Flag,Error),
+        '+ruser'(_4,__4,Flag,Error),
+        '+rpass'(_5,__5,Flag,Error),
+        '+lan'(_6,__6,Flag,Error),
+        '+login$code$1'(_7,__7,Flag,Error),
+        '+args'(_8,__8,Flag,Error) .
+'+logincom'(kill(_1,_2),OS,_,Error) :-true|
+        '+logincom$wait'(kill(__1,_2),OS,Flag,Error),
+        '+lid'(_1,__1,Flag,Error) .
+otherwise .
+'+logincom'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+logincom$wait'(User,OS,fail,Error) :-true|
+        true .
+'+logincom$wait'(login(__1,__2,__3,__4,__5,__6,__7,__8,_9),OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4),wait(__5),wait(__6),wait(__7),wait(__8)|
+        login(__1,__2,__3,__4,__5,__6,__7,__8,__9) =OS,
+        '-logoutstatus'(_9,__9,Flag,Error) .
+'+logincom$wait'(kill(__1,_2),OS,_,Error) :-wait(__1)|
+        kill(__1,__2) =OS,
+        '-status'(_2,__2,Flag,Error) .
+'+login$code$1'(User,OS,_,Error) :-code(User,_,_,_)|
+        User =OS .
+otherwise .
+'+login$code$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+partno'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+partno'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+fepno'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+fepno'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ionode'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+'+ionode'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+ionode'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+ruser'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+ruser'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+rpass'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+rpass'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+lan'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+lan'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+args'(User,OS,_,Error) :-true|
+        '+ground'(User,User2),
+        '+args$wait'(User2,OS,Flag,Error) .
+'+args$wait'(User2,OS,_,Error) :-wait(User2)|
+        User2 =OS .
+'+args$wait'(User2,OS,fail,Error) :-true|
+        true .
+'-logoutstatus'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$atom$1'(_1,__1,Flag,Error) .
+'-logoutstatus'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-logoutstatus'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-normal$atom$1'(User,OS,_,Error) :-atom(OS)|
+        OS =User .
+'+lid'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+lid'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-status'(User,normal,_,Error) :-true|
+        User =normal .
+'-status'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-status'(User,aborted,_,Error) :-true|
+        User =aborted .
+%%%%% system defined protocols %%%%%%%%%%
+'+ground'(X, Y) :- list(X) | '$$groundl'(X, Y).
+'+ground'(X, Y) :- vector(X,Size),Size \= 0 | 
+        '$$groundv'(X, 0, Size, X2),
+        '$$groundv2'(X2, Y).
+otherwise.
+'+ground'(X, Y) :- wait(X) | Y = X.
+'-ground'(X, Y) :- list(Y) | '$$groundl'(Y, X).
+'-ground'(X, Y) :- vector(Y,Size), Size \= 0 | 
+        '$$groundv'(Y, 0, Size, Y2),
+        '$$groundv2'(Y2, X).
+otherwise.
+'-ground'(X, Y) :- wait(Y) | Y = X.
+'$$groundl'([X1|X2], Y) :- true | '+ground'(X1,X11),
+        '$$groundl2'(X11, X2, Y).
+'$$groundl'([], Y) :- true | Y = [].
+'$$groundl2'(X11, X2, Y) :- wait(X11) |
+        '$$groundl31'(X2, [X11|Tail], Tail, Y).
+'$$groundl31'([X1|X2], Top, Tail, Y) :- true |
+        '+ground'(X1,X11),
+        '$$groundl32'(X11, X2, Top, Tail, Y).
+'$$groundl31'([], Top, Tail, Y) :- true |
+        Tail = [],
+        Top = Y.
+'$$groundl32'(X11, X2, Top, Tail, Y) :- wait(X11), X2 \= [] |
+        Tail = [X11|Tail2],
+        '$$groundl31'(X2, Top, Tail2, Y).
+'$$groundl32'(X11, [], Top, Tail, Y) :- wait(X11) |
+        Tail = [X11],
+        Y = Top.
+'$$groundv2'(X2, Y) :- wait(X2) | X2 = Y.
+'$$groundv'(X, Pos, Size, X2) :- Pos \= Size |
+        vector_element(X, Pos, Elm, NX),
+        '+ground'(Elm,Elm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Elm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Pos, Size, X2) :- wait(Elm), Pos \= Size |
+        vector_element(X, Pos, Nelm, NX),
+        '+ground'(Nelm, Nelm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Nelm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Size, Size, X2) :- wait(Elm) |
+        X = X2. 
+%%%%% to raise error %%%%%%%%%%
+raise_error(Info,Msg):- true |
+        atom_table:cache_table(Atom),
+        formatInfo(Info,[],Fstring,Atom),
+        shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_message_to_PIMOS,Fstring),Msg).
+formatInfo([Infoatom | Info], StringList,Fstring,Atom):- 
+        atom(Infoatom) |
+        Atom = [get_atom_name(Infoatom,normal(InfoString)) | Atail],
+        NSlist = [InfoString | StringList],
+        formatInfo(Info, NSlist, Fstring, Atail).
+formatInfo([], Slist, Fstring, Atom):- true |
+        Atom = [],
+        new_string(New,1,16),
+        set_string_element(New,0,key#lf,NL),
+        format(1,Slist,StringList,NL),
+        builtin#append_string([""|StringList], Fstring).
+format(1,[Info|Tail],StringList,NL):- true |
+        StringList = ["Device : ",Info |Stail2],
+        format(2,Tail,Stail2,NL).
+format(2,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,"Message : ",Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(3,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(_,[],StringList,_):- true |
+        StringList = [].

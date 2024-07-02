@@ -1,0 +1,337 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_task_manager.
+:- public create/5, create_with_tracer/12.
+:- with_macro pimos.
+
+%%%%%%%%%%%%%%%%
+% TASK MANAGER %
+%%%%%%%%%%%%%%%%
+% create(Normal,File,RSC,CTR,SW)                 
+%   Normal: status from listener_window_manager 
+%   File  : command file for initiation         
+%   RSC   : stream for listener_rsc_manager     
+%   CTR   : stream for listener_io_switch
+%   SW    : stream of stdio switch              
+
+% Creates the first task (take for initiation)
+create(Normal,File,RSC,CTR,SW) :- wait(Normal)|
+    predicate_to_code(module#listener_take_command,go,2,Cde),
+    create_task(normal([{notrace(Cde),{File,init}}],fore),
+            {[],[],listener},0,normal(wrap#take(listener)),RSC,CTR,SW,LFT,LFT).
+
+% Creates a child listener.
+create_with_tracer(Normal,CTR,Rpt,Ctr,SW,RSC,GM,MM,Mon,Abort,GStr,Start) :- 
+  wait(Normal)|
+    CTR=[fore(0,MSG,Done)|CTR1],
+    merge({IN,MWIN},MSG),
+    RSC={RSC1,RSC2},
+    SW={[attach(StdID,_,De)|SW1],SW2},
+    dummy_task(TF,StdID),
+    listener_task_monitor:  % 'child' is tracer ID.
+        monitor(Rpt,Ctr,fore,SW1,De,IN,RSC1,GM,0,Abort,    
+            {0,Start,_Can,child,StdID,GStr,MWIN,MM,listener,TF},Mon,LFT,RGT),
+    man(RSC2,CTR1,SW2,LFT,RGT,Done).
+
+
+% back or stop command
+man(RSC,CTR,SW,LFT,[answer(toplevel)|RGT],_) :- true| man(RSC,CTR,SW,LFT,RGT,done).
+
+% fore command
+% After Flush is instantiated, task_monitor attaches the stdio.
+man(RSC,CTR,SW,LFT,[answer(fore(ID,GStr,Flush))|RGT],_) :- true|
+    CTR=[putf(" ~t: ~s~n",[ID,GStr]), flush(Flush), fore(ID,Done)|CTR1],
+    man(RSC,CTR1,SW,LFT,RGT,Done).
+
+% kill command
+% TF is termination sign of aborted task.
+man(RSC,CTR,SW,LFT,[answer(kill(ID,GStr,TF))|RGT],_) :- wait(TF) |
+    CTR=[kill(ID),
+         putf(" ~t: ~s  aborted.~n",[ID,GStr])|CTR1],
+    man(RSC,CTR1,SW,LFT,RGT,done).
+
+% status command
+man(RSC,CTR,SW,LFT,[status(Status)|RGT],_) :- true|
+    listener_utility:reverse(Status,Status1),
+    print_status(Status1,CTR,CTR1),
+    man(RSC,CTR1,SW,LFT,RGT,done).
+
+% Task non_existent
+man(RSC,CTR,SW,LFT,[Msg|RGT],_) :- 
+  (Msg=fore; Msg=back; Msg=stop; Msg=kill) |
+    CTR=[putf(" No current task.~n",[])|CTR1],
+    man(RSC,CTR1,SW,LFT,RGT,done).
+man(RSC,CTR,SW,LFT,[{Msg,ID}|RGT],_) :- 
+  (Msg=fore; Msg=back; Msg=stop; Msg=kill) |
+    CTR=[putf(" ~t: No such task.~n",[ID])|CTR1],
+    man(RSC,CTR1,SW,LFT,RGT,done).
+
+% Exit in child listener.
+man(RSC,CTR,SW,LFT,RGT,exit) :- true|
+    LFT=[status([])|LFT1],
+    exit_tracer(RSC,CTR,SW,LFT1,RGT).
+
+% Read commands
+man(RSC,CTR,SW,LFT,RGT,done) :- true|
+    listener_command_reader:get(RSC,RSC1,CTR,CTR1,Goal,Dev,Num,WT),
+    create_task(Goal,Dev,Num,WT,RSC1,CTR1,SW,LFT,RGT).
+man(RSC,CTR,SW,LFT,RGT,print(Event)) :- true|
+    listener_command_reader:print(Event,RSC,RSC1,CTR,CTR1,Goal,Dev,Num,WT),
+    create_task(Goal,Dev,Num,WT,RSC1,CTR1,SW,LFT,RGT).
+man(RSC,CTR,SW,LFT,RGT,execute(Event)) :- true|
+    listener_command_reader:execute(Event,RSC,RSC1,CTR,CTR1,Goal,Dev,Num,WT),
+    create_task(Goal,Dev,Num,WT,RSC1,CTR1,SW,LFT,RGT).
+
+
+% Normal goals 
+create_task(normal(GOAL,ForB),DEV,Num,normal(WT),RSC,CTR,SW,LFT,RGT) :- true|
+    CTR=[wterm_to_string(WT,5,3,String),fore(Num,MSG,Done)|CTR1],
+    merge(IN,MSG),
+    RSC={RSC1,RSC2},
+    SW={SW1,SW2},
+    goal_string(String,32,GoalString),
+    listener_task:create(GOAL,DEV,ForB,Num,GoalString,RSC1,IN,SW1,NewLFT,LFT),
+    man(RSC2,CTR1,SW2,NewLFT,RGT,Done).
+
+% Fore
+create_task(fore,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[fore|LFT1],
+    man(RSC,CTR,SW,LFT1,RGT,_).
+create_task(fore(N),_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[fore(N)|LFT1],
+    man(RSC,CTR,SW,LFT1,RGT,_).
+
+% Stop
+create_task(stop,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[stop|LFT1],
+    man(RSC,CTR,SW,LFT1,RGT,_).
+create_task(stop(N),_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[stop(N)|LFT1],
+    man(RSC,CTR,SW,LFT1,RGT,_).
+
+% Back
+create_task(back,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[back|LFT1],
+    man(RSC,CTR,SW,LFT1,RGT,_).
+create_task(back(N),_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[back(N)|LFT1],
+    man(RSC,CTR,SW,LFT1,RGT,_).
+
+% Kill
+create_task(kill,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[kill|LFT1],
+    man(RSC,CTR,SW,LFT1,RGT,_).
+create_task(kill(N),_,_,_,RSC,CTR,SW,LFT,RGT) :- integer(N)|
+    LFT=[kill(N)|LFT1],
+    man(RSC,CTR,SW,LFT1,RGT,_).
+create_task(kill(all),_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[kill|LFT1],
+    kill_all(RSC,CTR,SW,LFT1,RGT).
+
+% Status
+create_task(status,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[status([])|LFT1],
+    man(RSC,CTR,SW,LFT1,RGT,_).
+
+% Pwd
+%create_task(pwd,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+%    RSC=[getenv(task:directory,Status)|RSC1],
+%    pwd(Status,CTR,CTR1),
+%    man(RSC1,CTR1,SW,LFT,RGT,done).
+%
+% Value
+%create_task(value,_,Num,_,RSC,CTR,SW,LFT,RGT) :- true|
+%    RSC=[variable(get_variables(Num,List))|RSC1],
+%    listener_execution_query:display_var(List,CTR,CTR1),
+%    man(RSC1,CTR1,SW,LFT,RGT,done).
+
+% Change debug-mode. 
+%create_task(trace,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+%    RSC=[set(debug,trace,_)|RSC1],
+%    man(RSC1,CTR,SW,LFT,RGT,done).
+%create_task(notrace,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+%    RSC=[set(debug,notrace,_)|RSC1],
+%    man(RSC1,CTR,SW,LFT,RGT,done).
+%create_task(spy_reduction,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+%    RSC=[set(debug,spyr,_)|RSC1],
+%    man(RSC1,CTR,SW,LFT,RGT,done).
+%create_task(spy_fork,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+%    RSC=[set(debug,spyf,_)|RSC1],
+%    man(RSC1,CTR,SW,LFT,RGT,done).
+
+% ?- .          % period return
+create_task(empty,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    RSC=[variable(forget(_))|RSC1],
+    man(RSC1,CTR,SW,LFT,RGT,done).
+
+% listener:listener <= file("???")
+create_task(end_of_file,_,_,_,RSC,CTR,SW,LFT,_RGT) :- true|
+    RSC=[], CTR=[], SW=[], LFT=[].
+
+% end_of_take
+create_task(end_of_take,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    man(RSC,CTR,SW,LFT,RGT,done).
+
+% ?- !Number.   % print event.
+create_task(print_event(N),_,_,_,RSC,CTR,SW,LFT,RGT) :- N>0  |
+    RSC=[command(get(N,Event))|RSC1],
+    man(RSC1,CTR,SW,LFT,RGT,print(Event)).
+create_task(print_event(N),_,Num,_,RSC,CTR,SW,LFT,RGT) :- N=<0 |
+    RSC=[command(get(~(Num+N+1),Event))|RSC1],
+    man(RSC1,CTR,SW,LFT,RGT,print(Event)).
+create_task(print_event(last),_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    RSC=[command(last(Event))|RSC1],
+    man(RSC1,CTR,SW,LFT,RGT,print(Event)).
+
+% ?- Number.    % re-execute
+create_task(execute(N),_,_,_,RSC,CTR,SW,LFT,RGT) :- N>0  |
+    RSC=[command(get(N,Event))|RSC1],
+    man(RSC1,CTR,SW,LFT,RGT,execute(Event)).
+create_task(execute(N),_,Num,_,RSC,CTR,SW,LFT,RGT) :- N=<0 |
+    RSC=[command(get(~(Num+N+1),Event))|RSC1],
+    man(RSC1,CTR,SW,LFT,RGT,execute(Event)).
+create_task(execute(last),_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    RSC=[command(last(Event))|RSC1],
+    man(RSC1,CTR,SW,LFT,RGT,execute(Event)).
+
+% ?- [N1,N2,...].   % do
+create_task(list(List),_,Num,_,RSC,CTR,SW,LFT,RGT) :- true|
+    get_events(list(List),Num,RSC,RSC1,Events),
+    event_check(Events,St,L),
+    put_events(St,L,CTR,CTR1,RSC1,RSC2),
+    man(RSC2,CTR1,SW,LFT,RGT,done).
+
+% Syntax error
+create_task(abnormal(WTrm),_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    RSC=[command(reset_command(_))|RSC1],
+    CTR=[print_error(WTrm)|CTR1],
+    man(RSC1,CTR1,SW,LFT,RGT,done).
+
+% Macro error 91.2.13
+create_task(macro_error(Format,Arg),_,Num,_,RSC,CTR,SW,LFT,RGT) :- true|
+    RSC=[command(reset_command(_)), variable(abort(Num,_))|RSC1],
+    CTR=[putf(Format,Arg)|CTR1],
+    man(RSC1,CTR1,SW,LFT,RGT,done).
+
+% Another error
+create_task(error(Format,Arg),_,Num,_,RSC,CTR,SW,LFT,RGT) :- true|
+    RSC=[command(reset_command(_)), variable(abort(Num,_))|RSC1],
+    CTR=[putf(Format,Arg)|CTR1],
+    man(RSC1,CTR1,SW,LFT,RGT,done).
+
+% Exit
+create_task(exit,_,_,_,RSC,CTR,SW,LFT,RGT) :- true|
+    LFT=[status([])|LFT1],
+    exit(RSC,CTR,SW,LFT1,RGT).
+
+exit(RSC,CTR,SW,LFT,[status([])|_RGT]) :- true|
+    RSC=[], CTR=[], SW=[], LFT=[].
+exit(RSC,CTR,SW,LFT,[status(Status)|RGT]) :- list(Status)|
+    listener_utility:reverse(Status,Status1),
+    print_status(Status1,CTR,CTR1),
+    CTR1=[prompt(" Do you really exit?(y/n <cr>)"),getc(YN)|CTR2],
+    exit1(YN,RSC,CTR2,SW,LFT,RGT).
+
+exit_tracer(RSC,CTR,SW,LFT,[status([])|_RGT]) :- true|
+    RSC=[], SW=[], LFT=[],
+    CTR=[nl, prompt(" !! Return to exit !!"),getl(_)].
+exit_tracer(RSC,CTR,SW,LFT,[status(Status)|RGT]) :- list(Status)|
+    CTR=[nl|CTR1],
+    listener_utility:reverse(Status,Status1),
+    print_status(Status1,CTR1,CTR2),
+    CTR2=[nl, prompt(" Do you want to exit?(y/n <cr>)",[]),getc(YN)|CTR3],
+    exit1(YN,RSC,CTR3,SW,LFT,RGT).
+
+exit1(#"y",  RSC,CTR,SW,LFT,_RGT) :- true| RSC=[], CTR=[], SW=[], LFT=[].
+exit1(key#lf,RSC,CTR,SW,LFT, RGT) :- true|
+    man(RSC,CTR,SW,LFT,RGT,done).
+otherwise.
+exit1(_,     RSC,CTR,SW,LFT, RGT) :- true|
+    CTR=[skip(key#lf)|CTR1],
+    man(RSC,CTR1,SW,LFT,RGT,done).
+
+
+kill_all(RSC,CTR,SW,LFT,[answer(kill(ID,GStr,TF))|RGT]) :- wait(TF)|
+    CTR=[kill(ID),
+         putf(" ~t: ~s  aborted.~n",[ID,GStr])|CTR1],
+    LFT=[kill|LFT1],
+    kill_all(RSC,CTR1,SW,LFT1,RGT).
+kill_all(RSC,CTR,SW,LFT,[kill|RGT]) :- true|
+    man(RSC,CTR,SW,LFT,RGT,done).
+
+
+get_events(list([integer(N)|Ns]),Num,RSC,RSC2,Events) :- N>0 |
+    RSC=[command(get(N,E))|RSC1], Events=[E|Es],
+    get_events(Ns,Num,RSC1,RSC2,Es).
+get_events(list([integer(N)|Ns]),Num,RSC,RSC2,Events) :- N=<0 |
+    RSC=[command(get(~(Num+N+1),E))|RSC1], Events=[E|Es],
+    get_events(Ns,Num,RSC1,RSC2,Es).
+get_events(list([atom(!)|Ns]),Num,RSC,RSC2,Events) :-
+    RSC=[command(last(E))|RSC1], Events=[E|Es],
+    get_events(Ns,Num,RSC1,RSC2,Es).
+get_events(atom([]),_,RSC,RSC1,Events) :- RSC1=RSC, Events=[].
+otherwise.
+get_events(list([X|_]),_,RSC,RSC1,Events) :- RSC1=RSC, Events=[illegal_event(X)].
+
+event_check([non_existent(N) |_],St,_) :- St=non_existent(N).
+event_check([illegal_event(X)|_],St,_) :- St=illegal_event(X).
+event_check([],                  St,L) :- St=normal, L=[].
+otherwise.
+event_check([E|Es],              St,L) :- L=[E|Ls], event_check(Es,St,Ls).
+
+put_events(non_existent(N), _,IN,IN1,RSC,RSC1) :-
+    IN=[putf(" ~t: Event not found.~n",[N])|IN1],
+    RSC=[command(reset_command(_))|RSC1].
+put_events(illegal_event(X),_,IN,IN1,RSC,RSC1) :-
+    IN=[tab(1),putwtq(X,10000,10000),putf(": Event not found.~n",[])|IN1],
+    RSC=[command(reset_command(_))|RSC1].
+put_events(normal,          L,IN,IN1,RSC,RSC1) :-
+    IN=IN1, RSC=[command(put_command(L,_))|RSC1].
+
+
+%pwd(normal(Dir),IN,IN1) :- string(Dir,_,_) |
+%    IN=[putf(" ~s~n",[Dir])|IN1].
+%otherwise.
+%pwd(_,IN,IN1) :- true |
+%    IN=[putf(" pwd: task:directory is abnormal.~n",[])|IN1].
+
+
+print_status([],CTR,CTR1) :- true| CTR1=CTR.
+print_status([{ID,GStr,back}|Status],CTR,CTR2) :- true|
+    CTR=[putf(" ~t --> running  ~s~n",[ID,GStr])|CTR1],
+    print_status(Status,CTR1,CTR2).
+otherwise.
+print_status([{ID,GStr,St}|Status],CTR,CTR2) :- true|
+    CTR=[putf(" ~t --> ~t  ~s~n",[ID,St,GStr])|CTR1],
+    print_status(Status,CTR1,CTR2).
+
+
+goal_string(Str,N,GStr) :- N>4, string(Str,N1,_), N1>N |
+    builtin#set_substring(Str,~(N-4)," ...",NewStr),
+    builtin#substring(NewStr,0,N,GStr,_).
+otherwise.
+goal_string(Str,_,GStr) :- true| GStr=Str.
+    
+
+dummy_task(Abort,StdID) :- true|
+    predicate_to_code(module#listener_utility,dummy,1,Dummy),
+    shoen:raise(pimos_tag#task, general_request,
+        [execute(Dummy,{Abort},
+            [stdio([],StdSt),
+             name("Dummy for child tracer"),
+             resource(0,1000),
+             prio(0,1000),
+             tag(-1)],
+                TskSt)]),
+    dummy_monitor(StdSt,TskSt,StdID).
+
+dummy_monitor(normal(ID,Info),normal(Ctr,Rpt),StdID) :- wait(ID), wait(Info)|
+    StdID=ID,
+    listener_monitor:monitor(Rpt,Ctr,_,_,_,dummy).
+otherwise.
+dummy_monitor(_,_,StdID) :- true| StdID=0.

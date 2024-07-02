@@ -1,0 +1,228 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_pragma.
+:- public pragma_expander/5.
+
+:- with_macro pimos.
+
+%%%%%%%%%%%% convert pragma %%%%%%%%%%%%%%
+
+:- local_implicit err:oldnew, out:oldnew.
+pragma_expander(Stream) --> true |
+  {{atom_table:cache_table(AtomStr),
+    kl1cmp_reader:name_generator(&err, AtomStr, [], 0, string#"$$", Name),
+    merge(Name0, Name)}},
+    pragma_expander(Name0, [], Stream).
+
+:- local_implicit err:oldnew, out:oldnew, name:stream.
+pragma_expander([Cls-PA|Rest], [read_predicate(Clauses, Pred)|Cdr]) --> true |
+    PA=Pred,
+    Clauses=Cls,
+%%    &err <<= [message("~t", [Cls])],
+    pragma_expander(Rest, Cdr).
+pragma_expander([], [read_predicate(Clauses, Pred)|Cdr]) --> true |
+    &out <<= [read_predicate(Clauses0, Attr)],
+%%    &err <<= [message("~t", [Clauses])],
+    check_pred(Clauses0, Attr, Clauses, Pred, Cdr).
+pragma_expander([], []) --> true | true.
+
+check_pred(Clauses0, Attr, Clauses, Pred, Cdr) --> atom(Attr) |
+    Clauses0=Clauses, Attr=Pred,
+    pragma_expander([], Cdr).
+check_pred(Clauses0, F/A, Clauses, Pred, Cdr) --> true |
+    Pred=F/A,
+    convert_clause(F/A, Expanded, [], Clauses0, Clauses),
+    pragma_expander(Expanded, Cdr).
+
+:- local_implicit err:oldnew, out:oldnew, name:stream, pred:shared, expand:oldnew.
+convert_clause([H0|T0], Clauses) --> true |
+    convert_clause(H0, H),
+    convert_clause(T0, T),
+    Clauses=[H|T].
+convert_clause([], Clauses) --> true |
+    Clauses=[].
+otherwise.
+convert_clause(wrap#(H0:-'|'(G0,B0))-Info0, Clause0) --> true |
+  {{kl1cmp_error_filter:addErrorInfo(&err, Err0, Info0, Info1),
+    addInfoToExpandedPredicates(&expand, Expanded, Info1, Info),
+    normalize_pragma(B0, B),
+    Clause0=Clause-Info,
+    convert_clause_(Err0, [], &out, &name, &pred, Expanded, [], wrap#(H0:-'|'(G0,B)), Clause)}}.
+otherwise.
+% otherwise, directives and other's sake
+convert_clause(Clause0, Clause) --> true | Clause0=Clause.
+
+:- local_implicit expand:oldnew.
+addInfoToExpandedPredicates([[[Clause]]-Func|Rest], Info0, Info) --> true |
+    &expand <<= [[[Clause-Info0]]-Func],
+    addInfoToExpandedPredicates(Rest, Info0, Info).
+addInfoToExpandedPredicates([], Info0, Info) --> true | Info0=Info.
+
+normalize_pragma(wrap#(G0,G1), Goals) :- true |
+    normalize_pragma(G0, NewG0),
+    normalize_pragma(G1, NewG1),
+    Goals=wrap#(NewG0, NewG1).
+otherwise.
+normalize_pragma(G0, Goal) :- true |
+    normalize_pragma_goal(G0, Goal).
+
+normalize_pragma_goal(wrap#(Package::Module:Goal@Pragma), NewGoal) :- true |
+    flatten(PragmaList, [],Pragma),
+    make_term(PragmaList, NewPragma),
+    NewGoal=wrap#(Package::Module:Goal@NewPragma).
+normalize_pragma_goal(wrap#(Module:Goal@Pragma), NewGoal) :- true |
+    flatten(PragmaList, [],Pragma),
+    make_term(PragmaList, NewPragma),
+    NewGoal=wrap#(Module:Goal@NewPragma).
+otherwise.
+normalize_pragma_goal(wrap#(Goal@Pragma), NewGoal) :- true |
+    flatten(PragmaList, [], Pragma),
+    make_term(PragmaList, NewPragma),
+    NewGoal=wrap#(Goal@NewPragma).
+otherwise.
+normalize_pragma_goal(Goal0, Goal) :- true |
+    Goal0=Goal.
+
+:- local_implicit pragma:oldnew.
+flatten(wrap#(Goal0@Goal1)) --> true |
+    flatten(Goal1),
+    flatten(Goal0).
+otherwise.
+flatten(Goal) --> true |
+    &pragma <<= [Goal].
+
+make_term([Pragma], NewPragma) :- true |
+    NewPragma=Pragma.
+otherwise.
+make_term([Pragma|Rest], NewPragma0) :- true |
+    NewPragma0=wrap#(NewPragma@Pragma),
+    make_term(Rest, NewPragma).
+
+:- local_implicit err:oldnew, out:oldnew, name:stream, pred:shared, expand:oldnew.
+
+convert_clause_(wrap#(H0:-'|'(G0,B0)), Clause) --> true |
+    convert_body(B0, B),
+    Clause=wrap#(H0:-'|'(G0,B)).
+
+convert_body(wrap#(G0,G1), Goals) --> true |
+    convert_body(G0, NewG0),
+    convert_body(G1, NewG1),
+    Goals=wrap#(NewG0,NewG1).
+otherwise.
+convert_body(Goal0, Goal) --> true |
+    convert_pragma(Goal0, Goal).
+
+convert_pragma(wrap#(Module:Goal0@Pragmas@Pragma), Goal) --> true |
+    make_new_clause_and_goal(wrap#(Module:Goal0@Pragmas), NewGoal),
+    Goal=wrap#(NewGoal@Pragma).
+otherwise.
+convert_pragma(wrap#(Module:Goal0@Pragma), Goal) --> true |
+    make_new_clause_and_goal(wrap#(Module:Goal0), NewGoal),
+    Goal=wrap#(NewGoal@Pragma).
+convert_pragma(wrap#(Goal0@Pragma1@Pragma2), Goal) --> true |
+    make_new_clause_and_goal(wrap#(Goal0@Pragma1), NewGoal),
+    Goal=wrap#(NewGoal@Pragma2).
+otherwise.
+convert_pragma(Goal0, Goal) --> true | Goal0=Goal.
+
+make_new_clause_and_goal(Goal0, WNewGoal) --> true |
+  {{extract_argument(Arg, [], 0, N, Goal0, Goal1),
+    N1 := N+1}},
+    &name <<= [new_name(&pred, Func)],
+  {{new_vector(NewGoal0, N1),
+    set_vector_element(NewGoal0, 0, _, atom(Func), NewGoal1),
+    new_vector(NewHead0, N1),
+    set_vector_element(NewHead0, 0, _, atom(Func), NewHead1),
+    copy_argument(1, Arg, NewGoal1, NewGoal2, NewHead1, NewHead2)}},
+%%    WNewHead=vector(NewHead),
+%%    WNewGoal=vector(NewGoal),
+  {{makeNewGoal(NewHead2, WNewHead),
+    makeNewGoal(NewGoal2, WNewGoal)}},
+    convert_clause_(wrap#(WNewHead:- '|'(true,Goal1)), NewClause),
+    &expand <<= [[[NewClause]]-Func/N].
+
+makeNewGoal(Goal, WGoal) :- vector(Goal, 1) |
+    set_vector_element(Goal, 0, Func, [], _),
+    WGoal=Func.
+makeNewGoal(Goal, WGoal) :- vector(Goal, N), N>1 |
+    WGoal=vector(Goal).
+
+:- local_implicit arg:oldnew.
+
+extract_argument(A0, A, wrap#(Module:Goal0@Pragmas0), NewGoal) --> true |
+    extract_arg_goal(A0, A1, Goal0, Goal),
+    extract_arg_pragma(A1, A, Pragmas0, Pragmas),
+    NewGoal=wrap#(Module:Goal@Pragmas).
+otherwise.
+extract_argument(A0, A, wrap#(Goal0@Pragmas0), NewGoal) --> true |
+    extract_arg_goal(A0, A1, Goal0, Goal),
+    extract_arg_pragma(A1, A, Pragmas0, Pragmas),
+    NewGoal=wrap#(Goal@Pragmas).
+extract_argument(A0, A, wrap#(Module:Goal0), NewGoal) --> true |
+    extract_arg_goal(A0, A, Goal0, Goal),
+    NewGoal=wrap#(Module:Goal).
+
+extract_arg_pragma(A0, A, wrap#(Pragma0@Pragma1), NewPragmas) --> true |
+    extract_arg_pragma(A0, A1, Pragma0, NewPragma0),
+    extract_arg_pragma(A1, A, Pragma1, NewPragma1),
+    NewPragmas=wrap#(NewPragma0@NewPragma1).
+otherwise.
+extract_arg_pragma(A0, A, wrap#priority(M,WP), WNewGoal) --> WP=integer(P) |
+    NewP=integer(P),
+    A0=A,
+    WNewGoal=wrap#priority(M,NewP).
+%%extract_arg_pragma(A0, A, wrap#processor(WP), WNewGoal) --> WP=integer(P) |
+%%    NewP=integer(P),
+%%    A0=A,
+%%    WNewGoal=wrap#processor(NewP).
+extract_arg_pragma(A0, A, wrap#node(WP), WNewGoal) --> WP=integer(P) |
+    NewP=integer(P),
+    A0=A,
+    WNewGoal=wrap#node(NewP).
+otherwise.
+extract_arg_pragma(A0, A, wrap#priority(M,P), WNewGoal) --> true |
+    &arg <<= [P, variable(A0)],
+  {{A := A0+1}},
+    NewP=variable(A0),
+    WNewGoal=wrap#priority(M,NewP).
+%%extract_arg_pragma(A0, A, wrap#processor(P), WNewGoal) --> true |
+%%    &arg <<= [P, variable(A0)],
+%%  {{A := A0+1}},
+%%    NewP=variable(A0),
+%%    WNewGoal=wrap#processor(NewP).
+extract_arg_pragma(A0, A, wrap#node(P), WNewGoal) --> true |
+    &arg <<= [P, variable(A0)],
+  {{A := A0+1}},
+    NewP=variable(A0),
+    WNewGoal=wrap#node(NewP).
+otherwise.
+extract_arg_pragma(A0, A, Goal0, NewGoal) --> true |
+    A0=A, Goal0=NewGoal.
+
+extract_arg_goal(A0, A, vector(Goal0), WGoal) --> vector(Goal0, N) |
+    extract_arg_goal(1, N, A0, A, Goal0, Goal),
+    WGoal=vector(Goal).
+extract_arg_goal(A0, A, atom(Goal0), WGoal) --> true |
+    A0=A,
+    WGoal=atom(Goal0).
+
+extract_arg_goal(A, N, V0, V, Goal0, Goal) --> A<N |
+  {{set_vector_element(Goal0, A, Arg, variable(V0), Goal1),
+    A1 := A+1,
+    V1 := V0+1,
+    &arg <<= [Arg, variable(V0)]}},
+    extract_arg_goal(A1, N, V1, V, Goal1, Goal).
+extract_arg_goal(N, N, V0, V, Goal0, Goal) --> true |
+    V0=V, Goal0=Goal.
+
+copy_argument(A, [Arg, V|Cdr], NewGoal0, NewGoal, NewHead0, NewHead)  :- true |
+    set_vector_element(NewGoal0, A, _, Arg, NewGoal1),
+    set_vector_element(NewHead0, A, _, V, NewHead1),
+    A1 := A+1,
+    copy_argument(A1, Cdr, NewGoal1, NewGoal, NewHead1, NewHead).
+copy_argument(_, [], NewGoal0, NewGoal, NewHead0, NewHead) :- true |
+    NewGoal0=NewGoal, NewHead0=NewHead.

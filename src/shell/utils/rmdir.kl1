@@ -1,0 +1,78 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module rmdir.
+:- public go/1.
+:- with_macro pimos.
+
+go(Pathname) :- string(Pathname,_,_)|
+    shoen:raise(pimos_tag#task,general_request,[file(FRS)]),
+    shellUtils:file_type(DLM),
+    fileReq_status(FRS,Pathname,DLM).
+otherwise.
+go(Pathname) :- true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[getenv(task:directory,CWD), 
+        getenv(task:home,HD),
+        file(FRS)],
+    atom_table:cache_table(ATM),
+    shellUtils:file_type(DLM),
+    shellUtils:expand_pathname(Pathname,NewPathname,ATM,[],CWD,HD,DLM),
+    fileReq_status(FRS,NewPathname,DLM).
+
+fileReq_status(normal(FR,_,_),Pathname,DLM) :- true|
+    FR=[directory(Pathname,Result)|FR1],
+    directory_status(Result,Pathname,DLM,FR1).
+otherwise.
+fileReq_status(_,_,_) :- true|
+    shoen:raise(pimos_tag#shell,get_std_mes,MES),
+    MES=[putf("rmdir: Cannot create file_request_device~n",[])].
+
+directory_status(normal(Dir,_,_),Pathname,DLM,FR) :- true|
+    Dir=[pathname(Result)],
+    rmdir(Result,Pathname,DLM,FR).
+otherwise.
+directory_status(_,Pathname,_,FR) :- true|
+    FR=[],
+    shoen:raise(pimos_tag#shell,get_std_mes,MES),
+    MES=[putf("rmdir: ~s: No such directory~n",[Pathname])].
+
+rmdir(normal(FullPathname),Pathname,{_,_,C,_},FR) :-true|
+    divide_pathname(C,FullPathname,Parent,Dir),
+    FR=[directory(Parent,Result)],
+    rmdir1(Result,Dir,Pathname).
+otherwise.
+rmdir(_,_,_,FR) :- true|
+    FR=[],
+    shoen:raise(pimos_tag#shell,get_std_mes,MES),
+    MES=[putf("rmdir: Cannot get full pathname~n",[])].    
+
+rmdir1(normal(Parent,_,_),Dir,Pathname) :- true|
+    Parent=[kill(Dir,Status)],
+    rmdir_status(Status,Pathname).
+otherwise.
+rmdir1(_,_,_) :- true|
+    shoen:raise(pimos_tag#shell,get_std_mes,MES),
+    MES=[putf("rmdir: Cannot open parent directory~n",[])]. 
+    
+rmdir_status(normal,_) :- true| true.
+otherwise.
+rmdir_status(_,Pathname) :- true|
+    shoen:raise(pimos_tag#shell,get_std_mes,MES),
+    MES=[putf("rmdir: ~s: Directory not empty~n",[Pathname])]. 
+
+
+divide_pathname(C,Pathname,Parent,Dir) :- string(Pathname,Size,_)|
+    search_character(Pathname,~(Size-1),0,C,Pos,NewPathname),
+    divide_pathname1(NewPathname,Pos,Size,Parent,Dir).
+
+divide_pathname1(Pathname,Pos,_,   Parent,Dir) :- Pos<0 | Parent= -1, Dir=Pathname.
+divide_pathname1(Pathname,Pos,Size,Parent,Dir) :- Pos>=0| 
+    L := Pos+1,
+    builtin#substring(Pathname,0,Pos,Parent,Pathname1),
+    builtin#substring(Pathname1,L,~(Size-L),Dir,_).
+    

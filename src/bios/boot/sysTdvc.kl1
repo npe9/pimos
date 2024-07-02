@@ -1,0 +1,160 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module physical_alarm_timer_device.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public create/3.
+
+create(In,E,E1) :- true |
+        E=E1,
+        merge(In,In1),
+        pool:keyed_sorted_bag(Q),
+        timer(In1,Q).
+
+:- switch(machine_type).
+:- case(mpsi).
+timer(In,Q) :- true |
+        timer_1(In,Q).
+:- case(vpim).
+timer(In,Q) :- true |
+        timer_1(In,Q)@resident_to_processor(0).
+:- end_switch.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% timer_1(In,Q)
+%%      In      :: Input stream from system_timer_manager
+%%      Q       :: Output stream to keyed_sorted_set
+
+%% on_at(Abort,Cnt,^Result)
+%% Cnt :: 32-bit string
+
+timer_1([on_at(Ab,C,Res)|In],Q) :- true |
+        Res=normal(W),
+        check_and_set_alarm(Ab,C,W,Res0,Q,Q1),
+        wait_set(In,Q1,Res0).
+timer_1([],Q) :- true | Q=[].
+
+wait_set(In,Q,normal(Ab,C,W,W0)) :- true |
+        timer_2(In,Q,Ab,C,W,W0).
+wait_set(In,Q,normal) :- true |
+        timer_1(In,Q).
+
+timer_2([],Q,_,_,_,_) :- true | Q=[].
+
+alternatively.
+timer_2(In,Q,_,_,W,W0) :- integer(W0) |
+        W=wake_up,
+        Q=[get_min_if_any(X)|Q1],
+        if_set_next(In,Q1,X).
+timer_2(In,Q,Ab,C,W,[]) :- true |
+        set_alarm(Ab,C,W,Res),
+        wait_set_2(In,Q,Res).
+timer_2(In,Q,abort,_,_,_) :- true |
+        Q=[get_min_if_any(X)|Q1],
+        if_set_next(In,Q1,X).
+
+alternatively.
+timer_2([on_at(Ab1,C1,Res)|In],Q,Ab,C,W,W0) :-
+    mdlib#bignum_not_less_than(C1,C) |
+        Res=normal(W1),
+        Q=[put(C1,{Ab1,W1})|Q1],
+        timer_2(In,Q1,Ab,C,W,W0).
+timer_2([on_at(Ab1,C1,Res)|In],Q,Ab,C,W,W0) :-
+    mdlib#bignum_less_than(C1,C) |
+        Res=normal(W1),
+        set_alarm(Ab1,C1,W1,Res0),
+        wait_reset_2(In,Q,Ab,C,W,W0,Res0).
+
+wait_set_2(In,Q,normal(Ab,C,W,W0)) :- true |
+        timer_2(In,Q,Ab,C,W,W0).
+wait_set_2(In,Q,normal) :- true |
+        Q=[get_min_if_any(X)|Q1],
+        if_set_next(In,Q1,X).
+
+if_set_next(In,Q,{}) :- true |
+        timer_1(In,Q).
+if_set_next(In,Q,{C,{Ab,W}}) :- true |
+        check_and_set_alarm(Ab,C,W,Res,Q,Q1),
+        wait_set_2(In,Q1,Res).
+
+wait_reset_2(In,Q,Ab,C,W,_,normal(Ab1,C1,W1,W0)) :- true |
+        Q=[put(C,{Ab,W})|Q1],
+        timer_2(In,Q1,Ab1,C1,W1,W0).
+wait_reset_2(In,Q,Ab,C,W,W0,normal) :- true |
+        timer_2(In,Q,Ab,C,W,W0).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_and_set_alarm(Ab,C,W,^Res,Q,Q1)
+%% set_alarm(Ab,C,W,^Res)
+
+:- switch(machine_type).
+:- case(mpsi).
+
+check_and_set_alarm(Ab,C,W,Res,Q,Q1) :- system_timer(NowU,NowL) |
+        timer_calc:dbl_to_bignum(NowU,NowL,Now),
+        if_future(Ab,C,W,Res,Q,Q1,Now).
+
+if_future(Ab,C,W,Res,Q,Q1,Now) :-
+    mdlib#bignum_less_than(Now,C) |             % Now<C
+        mdlib#add_bignum(Now,mdlib#alarm_timer_rangeD,Max),
+        if_multiple_timer(Ab,C,W,Res,Q,Q1,Max).
+if_future(_,C,W,Res,Q,Q1,Now) :-
+    mdlib#bignum_not_less_than(Now,C) |         % Now>=C
+        W=wake_up,Res=normal,Q=Q1.
+
+if_multiple_timer(Ab,C,W,Res,Q,Q1,Max) :-
+    mdlib#bignum_not_less_than(Max,C) |
+        Q=Q1,
+        do_set_alarm(Ab,C,W,Res).
+if_multiple_timer(Ab,C,W,Res,Q,Q1,Max) :-
+    mdlib#bignum_less_than(Max,C) |
+        Q=[put(C,{Ab,W})|Q1],
+        do_set_alarm(Ab,Max,_,Res).
+
+do_set_alarm(Ab,C,W,Res) :-
+    string(C,N,_),N1:=N-1,string_element(C,N1,Cnt) |
+%%        bignum:construct('+',C,CB),
+%%        bignum:modulo(CB,mdlib#alarm_timer_range,Cnt),
+        set_timer(Cnt,W0),
+        Res=normal(Ab,C,W,W0).
+
+set_alarm(Ab,C,W,Res) :- system_timer(NowU,NowL) |
+        timer_calc:dbl_to_bignum(NowU,NowL,Now),
+        if_future2(Ab,C,W,Res,Now).
+
+if_future2(Ab,C,W,Res,Now) :-
+    mdlib#bignum_less_than(Now,C) |
+        do_set_alarm(Ab,C,W,Res).
+if_future2(_,C,W,Res,Now) :-
+    mdlib#bignum_not_less_than(Now,C) |
+        W=wake_up,Res=normal.
+
+:- case(vpim).
+
+check_and_set_alarm(Ab,C,W,Res,Q,Q1) :-
+    mdlib#bignum_not_less_than(mdlib#alarm_timer_range,C) |
+        Q=Q1,
+        set_alarm(Ab,C,W,Res).
+check_and_set_alarm(Ab,C,W,Res,Q,Q1) :-
+    mdlib#bignum_less_than(mdlib#alarm_timer_range,C) |
+        Q=[put(C,{Ab,W})|Q1],
+        set_alarm(Ab,mdlib#alarm_timer_range,_,Res).
+
+set_alarm(Ab,C,W,Res) :- string(C,N,_),N>=2,
+    N2:=N-2,string_element(C,N2,U),
+    N1:=N-1,string_element(C,N1,L) |
+        set_timer(U,L,W0),
+        Res=normal(Ab,C,W,W0).
+set_alarm(Ab,C,W,Res) :- string(C,1,_),string_element(C,0,L) |
+        set_timer(0,L,W0),
+        Res=normal(Ab,C,W,W0).
+set_alarm(Ab,C,W,Res) :- string(C,0,_) |
+        set_timer(0,0,W0),
+        Res=normal(Ab,C,W,W0).
+
+:- end_switch.

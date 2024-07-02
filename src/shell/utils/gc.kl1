@@ -1,0 +1,52 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is 'gc' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module gc.
+:- public usage/1, go/0, go/1.
+
+usage(Usage) :- true | Usage = [{string#"~s~n~s~n~s", [S1, S2, S3]}],
+    S1 = string#"Usage : gc",
+    S2 = string#"Usage : gc(PE-number)",
+    S3 = string#"           PE-number = positive-integer | 'self'".
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Create the 'gc'  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+go :- true | current_node(CP, PENO), merge(In, Out),
+%go :- true | current_processor(CP, X, Y), PENO := X * Y, merge(In, Out),
+    gcLoop(0, PENO, CP, In), gcCall(Out, CP).
+
+go(PE) :- integer(PE) |
+    current_node(_, PENO), go1(PE, PENO).
+%    current_processor(_, X, Y), PENO := X * Y, go1(PE, PENO).
+go(self) :- true | current_node(CP, _), gcCall@node(CP).
+%go(self) :- true | current_processor(CP, _, _), gcCall@node(CP).
+
+go1(PE, PENO) :- PE < PENO | gcCall@node(PE).
+
+gcLoop(PE, Max, CP, M) :- PE = CP | NPE := PE + 1, gcLoop(NPE, Max, CP, M).
+gcLoop(PE, Max, _, M) :- PE >= Max | M = [].
+otherwise.
+gcLoop(PE, Max, CP, M) :- true | M = {M1, M2}, NPE := PE + 1,
+    gcCall(M1)@node(PE), gcLoop(NPE, Max, CP, M2).
+
+gcCall :- collect_garbage | true.
+gcCall(M) :- collect_garbage | M = [].
+gcCall(M, CP) :- M = [] | gcCall@node(CP).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                       %%%%%
+%%%%%  End of 'gc' module.  %%%%%
+%%%%%                       %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

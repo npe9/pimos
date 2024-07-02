@@ -1,0 +1,805 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TRANSLATOR MODULE FOR REPORT MESSAGES OF PIM/m(MULTI-PSI) %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 91.7.4    K.Nakao
+
+:- include("pimos.h").
+
+:- with_macro pimos.
+
+:- switch(machine_type).
+:- case(mpsi).
+:- module exception_table.
+
+%:- default.
+%:- module exception_table.
+
+:- end_switch.
+
+:- public translate/4,translate/6,                                  % FOR EXCEPTIONS
+          translate_profiling_data/2, translate_profiling_data/4,   % FOR PROFILING_INFORMATION
+          get_node/2, get_node/4,                                   % GET NODE_FORMAT FROM PROC_NUMBER
+          get_builtin_name/3, get_builtin_name/5,                   % GET BUILTIN NAME FROM MODULE+OFFSET
+          builtin_id_to_name/2, builtin_id_to_name/4.               % GET BUILTIN NAME FROM OPCODE.
+
+translate(A,B,C,D) :- true| translate(A,B,C,D,_,_).
+translate_profiling_data(A,B) :- true| translate_profiling_data(A,B,_,_).
+get_node(A,B) :- true| get_node(A,B,_,_).
+get_builtin_name(A,B,C) :- true| get_builtin_name(A,B,C,_,_).
+builtin_id_to_name(A,B) :- true| builtin_id_to_name(A,B,_,_).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TRANSLATOR FOR EXCEPTIONS %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%
+% FIRMWARE FORMAT %
+%%%%%%%%%%%%%%%%%%%
+%  0. illegal_input                     {Pe,Pos,Mod,Offs,ArgV}
+%       Pos is 1 origin.
+%  1. range_overflow                    {Pe,Mod,Offs,ArgV}
+%  2. out_of_bounds                     {Pe,Mod,Offs,ArgV}
+%  3. integer_overflow                  {Pe,Mod,Offs,ArgV}
+%  4. integer_zero_division             {Pe,Mod,Offs,ArgV}
+%  5. invalid_floating_point_operation  {Pe,Mod,Offs,ArgV}
+%  6. arity_mismatch                    {Pe,Mod,Offs,ArgV}
+%  7. undefined_module                  {Pe,Mod,Offs,{{PacName,ModName,Pred,Arity},ArgV}}
+%       PacName ::= <Atom> | 0 (Same package of Mod)
+%  7. undefined_predicate               {Pe,Mod,Offs,{{Mod1,Pred,Arity},ArgV}}
+%  8. illegal_merger_input              {Pe,Mod,Offs,Input,NewInput}
+%  9. reduction_failure                 {Pe,Code,ArgV}
+% 10. unification_failure               {Pe,DataX,DataY}
+%                                       {Pe,Mod,Offs,DataX,DataY}
+% 11. deadlock                          {Pe,Type,Code,ArgV}
+%                                       {Pe,Type,Code,ArgV,Collector}
+%                                       {Pe,Type,Mod,Offs,ArgV}
+%                                       {Pe,Type,Mod,Offs,ArgV,Collector}
+%       Collector ::= {Code} | {Mod,Offs} | {}
+% 12. merger_deadlock                   {Pe,Type,Mod,Offs,Inputs}
+%                                       {Pe,Type,Mod,Offs,Inputs,Collector}
+% 13. trace                             {Pe,TraceIdList,SubGoalsInfoList}
+%                                       {Pe,TraceIdList,SubGoalsInfoList,DebugInfo}
+% 13. spy                               {Pe,SpyID,Mod,Offs,ArgV}
+% 14. reserved_14                       ?
+% 15. etc                               {Pe,SubCode,SubInfo}
+% 16. raised                            {Pe,Info,Data}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% 0. ILLEGAL_INPUT
+translate(exception_code#illegal_input,
+        {Proc,Position,Mod,Offset,ArgV},            Kind,Info,Dn,DnN) :- true |
+    Kind = illegal_input, 
+    Info = {Node,{Name,{Mod,Offset}},NewArgV,NewPosition},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,Dn3),
+    replace_position(Name,Position,NewPosition,Dn3,DnN).
+
+
+% 1. RANGE_OVERFLOW
+translate(exception_code#range_overflow,
+        {Proc,Mod,Offset,ArgV},                     Kind,Info,Dn,DnN) :- true |
+    Kind = range_overflow,
+    Info = {Node,{Name,{Mod,Offset}},NewArgV},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,DnN).
+translate(exception_code#range_overflow,
+        {Proc,Position,Mod,Offset,ArgV},            Kind,Info,Dn,DnN) :- true |
+    Kind = range_overflow, 
+    Info = {Node,{Name,{Mod,Offset}},NewArgV,NewPosition},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,Dn3),
+    replace_position(Name,Position,NewPosition,Dn3,DnN).
+
+
+% 2. OUT_OF_BOUNDS
+translate(exception_code#out_of_bounds,
+        {Proc,Mod,Offset,ArgV},                     Kind,Info,Dn,DnN) :- true |
+    Kind = out_of_bounds, 
+    Info = {Node,{Name,{Mod,Offset}},NewArgV},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,DnN).
+translate(exception_code#out_of_bounds,
+        {Proc,Position,Mod,Offset,ArgV},            Kind,Info,Dn,DnN) :- true |
+    Kind = out_of_bounds, 
+    Info = {Node,{Name,{Mod,Offset}},NewArgV,NewPosition},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,Dn3),
+    replace_position(Name,Position,NewPosition,Dn3,DnN).
+
+
+% 3. INTEGER_OVERFLOW
+translate(exception_code#integer_overflow,
+        {Proc,Mod,Offset,ArgV},                     Kind,Info,Dn,DnN) :- true |
+    Kind = integer_overflow,
+    Info = {Node,{Name,{Mod,Offset}},NewArgV},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,DnN).
+
+% 4. INTEGER_ZERO_DIVISION
+translate(exception_code#integer_zero_division,
+        {Proc,Mod,Offset,ArgV},                     Kind,Info,Dn,DnN) :- true |
+    Kind = integer_zero_division,
+    Info = {Node,{Name,{Mod,Offset}},NewArgV},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,DnN).
+
+% 5. INVALID_FLOATING_POINT_OPERATION
+translate(exception_code#invalid_floating_point_operation,
+        {Proc,Mod,Offset,ArgV},                     Kind,Info,Dn,DnN) :- true |
+    Kind = invalid_floating_point_operation,
+    Info = {Node,{Name,{Mod,Offset}},NewArgV},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,DnN).
+
+% 6. ARITY_MISMATCH
+translate(exception_code#arity_mismatch,
+        {Proc,Mod,Offset,ArgV},                     Kind,Info,Dn,DnN) :- true |
+    Kind = arity_mismatch,
+    Info = {Node,{Name,{Mod,Offset}},NewArgV},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,DnN).
+
+
+% 7. UNDEFINED_MODULE
+% Other Package of Caller
+translate(exception_code#undefined_module_or_predicate,
+        {Proc,Mod,Offset,{{PackName,ModName,Pred,Arity},ArgV}}, Kind,Info,Dn,DnN) :-
+  atom(PackName) |
+    Kind = undefined_module,
+    Info = {Node,{{PackName,ModName,Pred,Arity},{Mod,Offset}},ArgV},
+    get_node(Proc,Node,Dn,DnN).
+
+
+% 7. UNDEFINED_PREDICATE
+translate(exception_code#undefined_module_or_predicate,
+        {Proc,Mod,Offset,{{Mod1,Pred,Arity},ArgV}},             Kind,Info,Dn,DnN) :- true |
+    Kind = undefined_predicate,
+    Info = {Node,{{Mod1,Pred,Arity},{Mod,Offset}},ArgV},
+    get_node(Proc,Node,Dn,DnN).
+
+%%% FOR BUG OF MACRO_EXPANDER
+% 7. UNDEFINED_MODULE
+% Other Package of Caller
+translate(7,
+        {Proc,Mod,Offset,{{PackName,ModName,Pred,Arity},ArgV}}, Kind,Info,Dn,DnN) :-
+  atom(PackName) |
+    Kind = undefined_module,
+    Info = {Node,{{PackName,ModName,Pred,Arity},{Mod,Offset}},ArgV},
+    get_node(Proc,Node,Dn,DnN).
+% 7. UNDEFINED_PREDICATE
+translate(7,
+        {Proc,Mod,Offset,{{Mod1,Pred,Arity},ArgV}},             Kind,Info,Dn,DnN) :- true |
+    Kind = undefined_predicate,
+    Info = {Node,{{Mod1,Pred,Arity},{Mod,Offset}},ArgV},
+    get_node(Proc,Node,Dn,DnN).
+%%%
+
+
+% 8. ILLEGAL_MERGER_INPUT
+translate(exception_code#illegal_merger_input,
+        {Proc,Mod,Offset,Input,Merger},                         Kind,Info,Dn,DnN) :- true |
+    Kind = illegal_merger_input,
+    Info = {Node,{Name,{Mod,Offset}},Input,Merger},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,DnN).
+
+
+% 9. REDUCTION_FAILURE
+translate(exception_code#reduction_failure, 
+        {Proc,Code,ArgV},                       Kind,Info,Dn,DnN) :- true |
+    Kind = reduction_failure, 
+    Info = {Node,Code,ArgV},
+    get_node(Proc,Node,Dn,DnN).
+
+
+% 10.UNIFICATION_FAILURE
+% without Caller
+translate(exception_code#unification_failure,
+        {Proc,DataX,DataY},                     Kind,Info,Dn,DnN) :- true |
+    Kind = unification_failure,
+    Info = {Node,DataX,DataY},
+    get_node(Proc,Node,Dn,DnN).    
+
+% with Caller
+translate(exception_code#unification_failure,
+        {Proc,Mod,Offset,DataX,DataY},          Kind,Info,Dn,DnN) :- true |
+    Kind = unification_failure,
+    Info = {Node,DataX,DataY,{Mod,Offset}},
+    get_node(Proc,Node,Dn,DnN).
+
+
+% 11.DEADLOCK
+% Code without Collector
+translate(exception_code#deadlock,
+        {Proc,Type,Code,ArgV},                  Kind,Info,Dn,DnN) :- true |
+    Kind = deadlock, 
+    Info = {Node,Code,ArgV,Type},
+    get_node(Proc,Node,Dn,DnN).
+translate(exception_code#deadlock,
+        {Proc,Type,Code,ArgV,{}},               Kind,Info,Dn,DnN) :- code(Code,_,_,_) |
+    Kind = deadlock, 
+    Info = {Node,Code,ArgV,Type},
+    get_node(Proc,Node,Dn,DnN).
+
+% Code with Caller
+translate(exception_code#deadlock,
+        {Proc,Type,Code,ArgV,{Code1}},          Kind,Info,Dn,DnN) :- code(Code,_,_,_) |
+    Kind = deadlock, 
+    Info = {Node,Code,ArgV,Type,Code1},
+    get_node(Proc,Node,Dn,DnN).
+translate(exception_code#deadlock,
+        {Proc,Type,Code,ArgV,{Mod1,Offset1}},   Kind,Info,Dn,DnN) :- code(Code,_,_,_) |
+    Kind = deadlock, 
+    Info = {Node,Code,ArgV,Type,{Name1,{Mod1,Offset1}}},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod1,Offset1,Name1,Dn1,DnN).
+
+% Builtin without Collector
+translate(exception_code#deadlock,
+        {Proc,Type,Mod,Offset,ArgV},            Kind,Info,Dn,DnN) :- module(Mod,_) |
+    Kind = deadlock, 
+    Info = {Node,{Name,{Mod,Offset}},NewArgV,Type},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,DnN).
+translate(exception_code#deadlock,
+        {Proc,Type,Mod,Offset,ArgV,{}},         Kind,Info,Dn,DnN) :- true |
+    Kind = deadlock, 
+    Info = {Node,{Name,{Mod,Offset}},NewArgV,Type},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,DnN).
+
+% Builtin with Collector
+translate(exception_code#deadlock,
+        {Proc,Type,Mod,Offset,ArgV,{Code1}},    Kind,Info,Dn,DnN) :- true |
+    Kind = deadlock, 
+    Info = {Node,{Name,{Mod,Offset}},NewArgV,Type,Code1},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    replace_argument(Name,ArgV,NewArgV,Dn2,DnN).
+translate(exception_code#deadlock,
+        {Proc,Type,Mod,Offset,ArgV,{Mod1,Offset1}},     Kind,Info,Dn,DnN) :- true |
+    Kind = deadlock, 
+    Info = {Node,{Name,{Mod,Offset}},NewArgV,Type,{Name1,{Mod1,Offset1}}},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod1,Offset1,Name1,Dn1,Dn2),
+    get_builtin_name(Mod,Offset,Name,Dn2,Dn3),
+    replace_argument(Name,ArgV,NewArgV,Dn3,DnN).
+
+
+% 12.MERGER_DEADLOCK
+% without Collector
+translate(exception_code#merger_deadlock,
+        {Proc,Type,Mod,Offset,Inputs},          Kind,Info,Dn,DnN) :- true |
+    Kind = merger_deadlock, 
+    Info = {Node,{Name,{Mod,Offset}},Inputs,Type},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,DnN).
+translate(exception_code#merger_deadlock,
+        {Proc,Type,Mod,Offset,Inputs,{}},       Kind,Info,Dn,DnN) :- true |
+    Kind = merger_deadlock, 
+    Info = {Node,{Name,{Mod,Offset}},Inputs,Type},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,DnN).
+
+% with Collector
+translate(exception_code#merger_deadlock,
+        {Proc,Type,Mod,Offset,Inputs,{Code1}},          Kind,Info,Dn,DnN) :- true |
+    Kind = merger_deadlock, 
+    Info = {Node,{Name,{Mod,Offset}},Inputs,Type,Code1},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,DnN).
+translate(exception_code#merger_deadlock,
+        {Proc,Type,Mod,Offset,Inputs,{Mod1,Offset1}},   Kind,Info,Dn,DnN) :- true |
+    Kind = merger_deadlock, 
+    Info = {Node,{Name,{Mod,Offset}},Inputs,Type,{Name1,{Mod1,Offset1}}},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    get_builtin_name(Mod1,Offset1,Name1,Dn2,DnN).
+
+
+% 13.TRACE
+translate(exception_code#trace,
+        {Proc,TraceIdList,SubGoalsInfoList},            Kind,Info,Dn,DnN) :- true |
+    Kind = trace,
+    Info = {Node,TraceIdList,NewSubGoalsInfoList},
+    get_node(Proc,Node,Dn,Dn1),
+    translate_subGoalsInfoList(SubGoalsInfoList,NewSubGoalsInfoList,Dn1,DnN).
+translate(exception_code#trace,
+        {Proc,TraceIdList,SubGoalsInfoList,DebugInfo},  Kind,Info,Dn,DnN) :- true |
+    Kind = trace,
+    Info = {Node,TraceIdList,NewSubGoalsInfoList,DebugInfo},
+    get_node(Proc,Node,Dn,Dn1),
+    translate_subGoalsInfoList(SubGoalsInfoList,NewSubGoalsInfoList,Dn1,DnN).
+
+
+% 13.SPY
+translate(exception_code#spy,
+        {Proc,SpyID,Mod,Offset,ArgV},                   Kind,Info,Dn,DnN) :- true |
+    Kind = spy,
+    Info = {Node,SpyID,SubGoalInfo,{Mod,Offset}},
+    get_node(Proc,Node,Dn,Dn1),
+    get_builtin_name(Mod,Offset,Name,Dn1,Dn2),
+    translate_subGoalInfo(Name,ArgV,SubGoalInfo,Dn2,DnN).
+
+
+% 14.RESERVED_14
+%translate(exception_code#reserved_14, I,               Kind,Info) :- true |
+%    Kind = reserved_14,
+%    Info = I.
+
+% 15.ETC
+%translate(exception_code#etc, I,                       Kind,Info) :- true |
+%    Kind = etc,
+%    Info = {exception_code#etc,I}.
+
+% 16.RAISED
+translate(exception_code#raised, 
+        {Proc,RaisedInfo,Data},             Kind,Info,Dn,DnN) :- true |
+    Kind = raised, 
+    Info = {Node,RaisedInfo,Data},
+    get_node(Proc,Node,Dn,DnN).
+
+otherwise.
+% 7. UNDEFINED_MODULE
+% Same Package of Caller
+translate(exception_code#undefined_module_or_predicate,
+        {Proc,Mod,Offset,{{_,ModName,Pred,Arity},ArgV}}, Kind,Info,Dn,DnN) :- true |
+    Kind = undefined_module,
+    Info = {Node,{{ModName,Pred,Arity},{Mod,Offset}},ArgV},
+    get_node(Proc,Node,Dn,DnN).
+
+%%% FOR BUG OF MACRO_EXPANDER
+% 7. UNDEFINED_MODULE
+% Same Package of Caller
+translate(7,
+        {Proc,Mod,Offset,{{_,ModName,Pred,Arity},ArgV}}, Kind,Info,Dn,DnN) :- true |
+    Kind = undefined_module,
+    Info = {Node,{{ModName,Pred,Arity},{Mod,Offset}},ArgV},
+    get_node(Proc,Node,Dn,DnN).
+%%%
+
+otherwise.
+% UNKNOWN EXCEPTION (RESERVED_14, ETC, ...) FOR FIRMWARE NEW RELEASE
+translate(K,I,Kind,Info,Dn,DnN) :- true |
+    Kind = etc,
+    Info = {K,I},
+    DnN=Dn.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TRANSLATOR FOR PROFILING_INFORMATION %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+translate_profiling_data([],Data,Dn,DnN) :- true | Data=[], DnN=Dn.
+translate_profiling_data({Cde,_,Dequeue,Susp,Next},Data,Dn,DnN) :- code(Cde,_,_,_) |
+    Data=[{Cde,Dequeue,Susp}|Data1],
+    translate_profiling_data(Next,Data1,Dn,DnN).
+translate_profiling_data({Mod,Offset,Dequeue,Susp,Next},Data,Dn,DnN) :- module(Mod,_) |
+    get_builtin_name(Mod,Offset,Name,Dn,Dn1),
+    Data=[{{Name,{Mod,Offset}},Dequeue,Susp}|Data1],
+    translate_profiling_data(Next,Data1,Dn1,DnN).
+otherwise.
+translate_profiling_data({Opcode,_,Dequeue,Susp,Next},Data,Dn,DnN) :- true |
+    builtin_id_to_name(Opcode,Name,Dn,Dn1),
+    Data=[{Name,Dequeue,Susp}|Data1],
+    translate_profiling_data(Next,Data1,Dn1,DnN).
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TRANSLATOR FOR SUBGOALS_INFO_LIST OF TRACE EXCEPTION %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%
+% FIRMWARE FORMAT %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% execute                   {16#"361", Code,ArgV}
+% execute_external          {16#"362",{Mod,Pred,Arity},ArgV}
+% enqueue                   {16#"363", Code,ArgV}
+% enqueue_with_priority     {16#"364", Priority,Code,ArgV}
+% enqueue_to_processor      {16#"365", Proc,Code,ArgV}
+% enqueue_external          {16#"366",{Mod,Pred,Arity},ArgV}
+% Builtin                   {OpCode,ArgV}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+translate_subGoalsInfoList([Goal|Goals],Data,Dn,DnN) :- vector_element(Goal,0,16#"361") |
+    set_vector_element(Goal,0,_,execute,Goal1),
+    Data=[Goal1|Data1],
+    translate_subGoalsInfoList(Goals,Data1,Dn,DnN).
+translate_subGoalsInfoList([{16#"362",{Mod,Pred,Arity},ArgV}|Goals],Data,Dn,DnN) :- true |
+    predicate_to_code(Mod,Pred,Arity,Code),
+    Data=[{execute_external,Code,ArgV}|Data1],
+    translate_subGoalsInfoList(Goals,Data1,Dn,DnN).
+translate_subGoalsInfoList([Goal|Goals],Data,Dn,DnN) :- vector_element(Goal,0,16#"363") |
+    set_vector_element(Goal,0,_,enqueue,Goal1),
+    Data=[Goal1|Data1],
+    translate_subGoalsInfoList(Goals,Data1,Dn,DnN).
+translate_subGoalsInfoList([{16#"364",Prio,Code,ArgV}|Goals],Data,Dn,DnN) :- true |
+    Data=[{enqueue_with_priority,Code,ArgV,Prio}|Data1],
+    translate_subGoalsInfoList(Goals,Data1,Dn,DnN).
+translate_subGoalsInfoList([{16#"365",Proc,Code,ArgV}|Goals],Data,Dn,DnN) :- true |
+    Data=[{enqueue_to_processor,Code,ArgV,Proc}|Data1],
+    translate_subGoalsInfoList(Goals,Data1,Dn,DnN).
+translate_subGoalsInfoList([{16#"366",{Mod,Pred,Arity},ArgV}|Goals],Data,Dn,DnN) :- true |
+    predicate_to_code(Mod,Pred,Arity,Code),
+    Data=[{enqueue_external,Code,ArgV}|Data1],
+    translate_subGoalsInfoList(Goals,Data1,Dn,DnN).
+
+translate_subGoalsInfoList([{OpCode,ArgV}|Goals],Data,Dn,DnN) :- true |
+    builtin_id_to_name(OpCode,Name,Dn,Dn1),
+    replace_argument(Name,ArgV,NewArgV,Dn1,Dn2),
+    Data=[{Name,NewArgV}|Data1],
+    translate_subGoalsInfoList(Goals,Data1,Dn2,DnN).
+translate_subGoalsInfoList([],                   Data,Dn,DnN) :- true | Data=[], DnN=Dn.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TRANSLATOR FOR SUBGOAL_INFO OF SPY EXCEPTION %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% FIRMWARE ARGUMENT FORMAT %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% execute                   {Code,ArgV}
+% execute_external          {Code,ArgV}
+% enqueue                   {Code,ArgV}
+% enqueue_with_priority     {Priority,Code,ArgV}
+% enqueue_to_processor      {Proc,Code,ArgV}
+% enqueue_external          {Code,ArgV}
+% Builtin                         ArgV
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+translate_subGoalInfo(execute,{Code,ArgV},SubGoal,Dn,DnN) :- true |
+    SubGoal={execute,Code,ArgV}, DnN=Dn.
+translate_subGoalInfo(execute_external,{Code,ArgV},SubGoal,Dn,DnN) :- true |
+    SubGoal={execute_external,Code,ArgV}, DnN=Dn.
+translate_subGoalInfo(enqueue,{Code,ArgV},SubGoal,Dn,DnN) :- true |
+    SubGoal={enqueue,Code,ArgV}, DnN=Dn.
+translate_subGoalInfo(enqueue_with_priority,{Prio,Code,ArgV},SubGoal,Dn,DnN) :- true |
+    SubGoal={enqueue_with_priority,Code,ArgV,Prio}, DnN=Dn.
+translate_subGoalInfo(enqueue_to_processor,{Proc,Code,ArgV},SubGoal,Dn,DnN) :- true |
+    SubGoal={enqueue_to_processor,Code,ArgV,Proc}, DnN=Dn.
+translate_subGoalInfo(enqueue_external,{Code,ArgV},SubGoal,Dn,DnN) :- true |
+    SubGoal={enqueue_external,Code,ArgV}, DnN=Dn.
+otherwise.
+% APPLY, APPLY_XXX, CREATE_SHOEN, CREATE_PROFILING_SHOEN
+translate_subGoalInfo(Name,ArgV,SubGoal,Dn,DnN) :- true |
+    SubGoal={Name,ArgV}, DnN=Dn.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% GET NODE FORMAT FROM PROCESSOR_NUMBER %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+get_node(Proc,Node,Dn,DnN) :- integer(Proc) |
+    current_node(CurrentNode,_),
+    current_processor(CurrentProcessor,_,_),
+    Cluster := ~(Proc-CurrentProcessor+CurrentNode),
+    Processor = 0,                                  % Processor number is always zero.
+    Node={Cluster,Processor},
+    DnN=Dn.
+otherwise.
+get_node(Proc,Node,Dn,DnN) :- Node=Proc, DnN=Dn.    % FOR UNKNOWN EXCEPTION
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% GET BUILTIN(KLB) NAME FROM MODULE+OFFSET %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+get_builtin_name(Mod,Offset,Name,Dn,DnN) :- 
+        tag_and_value(Mod,_,Value),
+        Value < 0 |                     % NOT D-CODE
+    Pos := Offset-1,
+    module_element(Mod,Pos,Elm),
+    get_builtin_name(Elm,Name,Dn,DnN).
+otherwise.                              % D-CODE
+get_builtin_name(_,_,Name,Dn,DnN) :- true |
+    Name = unknown, DnN=Dn.
+
+get_builtin_name(Elm,Name,Dn,DnN) :- tag_and_value(Elm,Tag,Value),
+    TagId   := Tag /\ 2'00000011,
+    Value1  := Value >> 16,
+    ValueId := Value1 >> 8,
+    TypeId  := Value1 /\ 2'0000000011111111 |
+    builtin_table(TagId,ValueId,TypeId,Name,Dn,DnN).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% GET BUILTIN(KLB) NAME FROM KL1B_ID(OPCODE) %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+builtin_id_to_name(OpCode,Name,Dn,DnN) :- OpCode > 2'1111111111, 
+  TagId   := OpCode>>16,
+  ValueId := (OpCode>>8)/\2'0011111111,
+  TypeId  := OpCode/\2'000000000011111111 |
+    builtin_table(TagId,ValueId,TypeId,Name,Dn,DnN).
+otherwise.
+builtin_id_to_name(OpCode,Name,Dn,DnN) :- 
+  TagId   := OpCode>>8,
+  ValueId := OpCode/\2'0011111111 |
+    builtin_table(TagId,ValueId,16#"00",Name,Dn,DnN).
+
+
+replace_argument(merge,          {A,B},  ArgV,Dn,DnN) :- true | ArgV={B,A}, DnN=Dn.
+replace_argument(new_vector,     {A,B},  ArgV,Dn,DnN) :- true | ArgV={B,A}, DnN=Dn.
+replace_argument(new_string,     {A,B,C},ArgV,Dn,DnN) :- true | ArgV={C,A,B}, DnN=Dn.
+replace_argument(new_instruction,{A,B,C},ArgV,Dn,DnN) :- true | ArgV={C,A,B}, DnN=Dn.
+replace_argument(new_module,     {A,B},  ArgV,Dn,DnN) :- true | ArgV={B,A}, DnN=Dn.
+replace_argument(set_vector_element,     
+                             {A,B,C,D,E},ArgV,Dn,DnN) :- true | ArgV={A,B,D,C,E}, DnN=Dn.
+otherwise.
+replace_argument(_,               V,     ArgV,Dn,DnN) :- true | ArgV=V, DnN=Dn.
+
+
+%replace_position(merge,                                    1,P,Dn,DnN) :- true | P=2, DnN=Dn.
+replace_position(merge,                                     2,P,Dn,DnN) :- true | P=1, DnN=Dn.
+replace_position(new_vector,                                1,P,Dn,DnN) :- true | P=2, DnN=Dn.
+%replace_position(new_vector,                               2,P,Dn,DnN) :- true | P=1, DnN=Dn.
+replace_position(new_string,                                1,P,Dn,DnN) :- true | P=2, DnN=Dn.
+replace_position(new_string,                                2,P,Dn,DnN) :- true | P=3, DnN=Dn.
+%replace_position(new_string,                               3,P,Dn,DnN) :- true | P=1, DnN=Dn.
+replace_position(new_instruction,                           1,P,Dn,DnN) :- true | P=2, DnN=Dn.
+replace_position(new_instruction,                           2,P,Dn,DnN) :- true | P=3, DnN=Dn.
+replace_position(new_instruction,                           3,P,Dn,DnN) :- true | P=1, DnN=Dn.
+replace_position(new_module,                                1,P,Dn,DnN) :- true | P=2, DnN=Dn.
+replace_position(new_module,                                2,P,Dn,DnN) :- true | P=1, DnN=Dn.
+replace_position(set_vector_element,                        3,P,Dn,DnN) :- true | P=4, DnN=Dn.     
+replace_position(set_vector_element,                        4,P,Dn,DnN) :- true | P=3, DnN=Dn.
+replace_position(floating_point_to_integer,                 N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(integer_to_floating_point,                 N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(floating_point_add,                        N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(floating_point_subtract,                   N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(floating_point_multiply,                   N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(floating_point_divide,                     N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+
+replace_position(extended_floating_point_to_integer,        N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(integer_to_extended_floating_point,        N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_to_floating_point, N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(floating_point_to_extended_floating_point, N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_sinh,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_sqrt,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_lognp1,            N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_etoxm1,            N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_tanh,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_atan,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_asin,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_atanh,             N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_sin,               N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_tan,               N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_etox,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_twotox,            N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_tentox,            N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_logn,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_log10,             N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_log2,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_abs,               N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_cosh,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_neg,               N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_acos,              N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_cos,               N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+
+replace_position(extended_floating_point_add,               N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_subtract,          N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_multiply,          N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+replace_position(extended_floating_point_divide,            N,P,Dn,DnN) :- true | P := N-1, DnN=Dn.
+otherwise.
+replace_position(_,                                         N,P,Dn,DnN) :- true | P=N, DnN=Dn.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% GET POSITION OF INPUT_MODE_ARGUMENT FOR RANGE_OVERFLOW&OUT_OF_BOUNDS %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%in_arg_position(vector_element,                 P,Dn,DnN) :- true | P=2, DnN=Dn.
+%in_arg_position(string_element,                 P,Dn,DnN) :- true | P=2, DnN=Dn.
+%in_arg_position(set_vector_element,             P,Dn,DnN) :- true | P=2, DnN=Dn.
+%in_arg_position(set_string_element,             P,Dn,DnN) :- true | P=2, DnN=Dn.
+%in_arg_position(new_vector,                     P,Dn,DnN) :- true | P=2, DnN=Dn.
+%in_arg_position(new_string,                     P,Dn,DnN) :- true | P=0, DnN=Dn.
+%in_arg_position(new_instruction,                P,Dn,DnN) :- true | P=0, DnN=Dn.
+%in_arg_position(copy_string_elements,           P,Dn,DnN) :- true | P=0, DnN=Dn.
+%in_arg_position(move_string_elements,           P,Dn,DnN) :- true | P=0, DnN=Dn.
+%in_arg_position(search_character,               P,Dn,DnN) :- true | P=0, DnN=Dn.
+%in_arg_position(change_element_size,            P,Dn,DnN) :- true | P=2, DnN=Dn.
+%in_arg_position(create_shoen,                   P,Dn,DnN) :- true | P=0, DnN=Dn.
+%in_arg_position(add_shoen_resource,             P,Dn,DnN) :- true | P=0, DnN=Dn.
+%in_arg_position(consume_resource,               P,Dn,DnN) :- true | P=0, DnN=Dn.
+%in_arg_position(calculate_priority_from_current,P,Dn,DnN) :- true | P=1, DnN=Dn.
+%in_arg_position(calculate_priority_from_minimum,P,Dn,DnN) :- true | P=1, DnN=Dn.
+%in_arg_position(module_offset_to_code,          P,Dn,DnN) :- true | P=2, DnN=Dn.
+%in_arg_position(module_element,                 P,Dn,DnN) :- true | P=2, DnN=Dn.
+%in_arg_position(create_profiling_shoen,         P,Dn,DnN) :- true | P=0, DnN=Dn.
+%in_arg_position(set_heap_alert,                 P,Dn,DnN) :- true | P=1, DnN=Dn.
+%otherwise.
+%in_arg_position(_,                              P,Dn,DnN) :- true | P=0, DnN=Dn.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+% KLB&KBLT OPCODE TABLE %
+%%%%%%%%%%%%%%%%%%%%%%%%%
+builtin_table(2,16#"A0",_,      P,Dn,DnN) :- true | P=scsi_where, DnN=Dn.
+builtin_table(2,16#"A1",_,      P,Dn,DnN) :- true | P=scsi_bus_reset, DnN=Dn.
+builtin_table(2,16#"A2",_,      P,Dn,DnN) :- true | P=log_event, DnN=Dn.
+
+builtin_table(2,16#"B0",_,      P,Dn,DnN) :- true | P=string_operation, DnN=Dn.
+builtin_table(2,16#"B1",_,      P,Dn,DnN) :- true | P=search_characters, DnN=Dn.
+builtin_table(2,16#"B2",_,      P,Dn,DnN) :- true | P=add_extended, DnN=Dn.
+builtin_table(2,16#"B3",_,      P,Dn,DnN) :- true | P=subtract_extended, DnN=Dn.
+builtin_table(2,16#"B4",_,      P,Dn,DnN) :- true | P=multiply_extended, DnN=Dn.
+builtin_table(2,16#"B5",_,      P,Dn,DnN) :- true | P=divide_extended, DnN=Dn.
+builtin_table(2,16#"B6",_,      P,Dn,DnN) :- true | P=add_bignum, DnN=Dn.
+builtin_table(2,16#"B7",_,      P,Dn,DnN) :- true | P=subtract_bignum, DnN=Dn.
+builtin_table(2,16#"B8",_,      P,Dn,DnN) :- true | P=multiply_bignum_by_word, DnN=Dn.
+builtin_table(2,16#"B9",_,      P,Dn,DnN) :- true | P=supply_atom_number, DnN=Dn.
+
+builtin_table(2,16#"BC",_,      P,Dn,DnN) :- true | P=binary_to_extended_floating_point, DnN=Dn.
+builtin_table(2,16#"BD",_,      P,Dn,DnN) :- true | P=extended_floating_point_to_binary, DnN=Dn.
+builtin_table(2,16#"BE",16#"00",P,Dn,DnN) :- true | P=extended_floating_point_to_integer, DnN=Dn.
+builtin_table(2,16#"BE",16#"01",P,Dn,DnN) :- true | P=integer_to_extended_floating_point, DnN=Dn.
+builtin_table(2,16#"BE",16#"02",P,Dn,DnN) :- true | P=extended_floating_point_to_floating_point, DnN=Dn.
+builtin_table(2,16#"BE",16#"03",P,Dn,DnN) :- true | P=floating_point_to_extended_floating_point, DnN=Dn.
+builtin_table(2,16#"BE",16#"22",P,Dn,DnN) :- true | P=extended_floating_point_sinh, DnN=Dn.
+builtin_table(2,16#"BE",16#"24",P,Dn,DnN) :- true | P=extended_floating_point_sqrt, DnN=Dn.
+builtin_table(2,16#"BE",16#"26",P,Dn,DnN) :- true | P=extended_floating_point_lognp1, DnN=Dn.
+builtin_table(2,16#"BE",16#"28",P,Dn,DnN) :- true | P=extended_floating_point_etoxm1, DnN=Dn.
+builtin_table(2,16#"BE",16#"29",P,Dn,DnN) :- true | P=extended_floating_point_tanh, DnN=Dn.
+builtin_table(2,16#"BE",16#"2A",P,Dn,DnN) :- true | P=extended_floating_point_atan, DnN=Dn.
+builtin_table(2,16#"BE",16#"2C",P,Dn,DnN) :- true | P=extended_floating_point_asin, DnN=Dn.
+builtin_table(2,16#"BE",16#"2D",P,Dn,DnN) :- true | P=extended_floating_point_atanh, DnN=Dn.
+builtin_table(2,16#"BE",16#"2E",P,Dn,DnN) :- true | P=extended_floating_point_sin, DnN=Dn.
+builtin_table(2,16#"BE",16#"2F",P,Dn,DnN) :- true | P=extended_floating_point_tan, DnN=Dn.
+builtin_table(2,16#"BE",16#"30",P,Dn,DnN) :- true | P=extended_floating_point_etox, DnN=Dn.
+builtin_table(2,16#"BE",16#"31",P,Dn,DnN) :- true | P=extended_floating_point_twotox, DnN=Dn.
+builtin_table(2,16#"BE",16#"32",P,Dn,DnN) :- true | P=extended_floating_point_tentox, DnN=Dn.
+builtin_table(2,16#"BE",16#"34",P,Dn,DnN) :- true | P=extended_floating_point_logn, DnN=Dn.
+builtin_table(2,16#"BE",16#"35",P,Dn,DnN) :- true | P=extended_floating_point_log10, DnN=Dn.
+builtin_table(2,16#"BE",16#"36",P,Dn,DnN) :- true | P=extended_floating_point_log2, DnN=Dn.
+builtin_table(2,16#"BE",16#"38",P,Dn,DnN) :- true | P=extended_floating_point_abs, DnN=Dn.
+builtin_table(2,16#"BE",16#"39",P,Dn,DnN) :- true | P=extended_floating_point_cosh, DnN=Dn.
+builtin_table(2,16#"BE",16#"3A",P,Dn,DnN) :- true | P=extended_floating_point_neg, DnN=Dn.
+builtin_table(2,16#"BE",16#"3C",P,Dn,DnN) :- true | P=extended_floating_point_acos, DnN=Dn.
+builtin_table(2,16#"BE",16#"3D",P,Dn,DnN) :- true | P=extended_floating_point_cos, DnN=Dn.
+
+builtin_table(2,16#"BF",16#"00",P,Dn,DnN) :- true | P=extended_floating_point_add, DnN=Dn.
+builtin_table(2,16#"BF",16#"01",P,Dn,DnN) :- true | P=extended_floating_point_subtract, DnN=Dn.
+builtin_table(2,16#"BF",16#"02",P,Dn,DnN) :- true | P=extended_floating_point_multiply, DnN=Dn.
+builtin_table(2,16#"BF",16#"03",P,Dn,DnN) :- true | P=extended_floating_point_divide, DnN=Dn.
+
+builtin_table(2,16#"C0",_,      P,Dn,DnN) :- true | P=add, DnN=Dn.
+builtin_table(2,16#"C1",_,      P,Dn,DnN) :- true | P=subtract, DnN=Dn.
+builtin_table(2,16#"C2",_,      P,Dn,DnN) :- true | P=multiply, DnN=Dn.
+builtin_table(2,16#"C3",_,      P,Dn,DnN) :- true | P=divide, DnN=Dn.
+builtin_table(2,16#"C4",_,      P,Dn,DnN) :- true | P=modulo, DnN=Dn.
+builtin_table(2,16#"C5",_,      P,Dn,DnN) :- true | P=shift_left, DnN=Dn.
+builtin_table(2,16#"C6",_,      P,Dn,DnN) :- true | P=shift_right, DnN=Dn.
+builtin_table(2,16#"C7",_,      P,Dn,DnN) :- true | P=and, DnN=Dn.
+builtin_table(2,16#"C8",_,      P,Dn,DnN) :- true | P=or, DnN=Dn.
+builtin_table(2,16#"C9",_,      P,Dn,DnN) :- true | P=exclusive_or, DnN=Dn.
+builtin_table(2,16#"CA",_,      P,Dn,DnN) :- true | P=vector, DnN=Dn.
+builtin_table(2,16#"CB",_,      P,Dn,DnN) :- true | P=string, DnN=Dn.
+builtin_table(2,16#"CC",_,      P,Dn,DnN) :- true | P=vector_element, DnN=Dn.
+builtin_table(2,16#"CD",_,      P,Dn,DnN) :- true | P=string_element, DnN=Dn.
+builtin_table(2,16#"CE",16#"00",P,Dn,DnN) :- true | P=floating_point_to_integer, DnN=Dn.
+builtin_table(2,16#"CE",16#"01",P,Dn,DnN) :- true | P=integer_to_floating_point, DnN=Dn.
+builtin_table(2,16#"CF",16#"00",P,Dn,DnN) :- true | P=floating_point_add, DnN=Dn.
+builtin_table(2,16#"CF",16#"01",P,Dn,DnN) :- true | P=floating_point_subtract, DnN=Dn.
+builtin_table(2,16#"CF",16#"02",P,Dn,DnN) :- true | P=floating_point_multiply, DnN=Dn.
+builtin_table(2,16#"CF",16#"03",P,Dn,DnN) :- true | P=floating_point_divide, DnN=Dn.
+
+builtin_table(2,16#"D0",_,      P,Dn,DnN) :- true | P=set_vector_element, DnN=Dn.
+builtin_table(2,16#"D1",_,      P,Dn,DnN) :- true | P=set_string_element, DnN=Dn.
+builtin_table(2,16#"D2",_,      P,Dn,DnN) :- true | P=new_atom, DnN=Dn.
+builtin_table(2,16#"D3",_,      P,Dn,DnN) :- true | P=new_vector, DnN=Dn.
+builtin_table(2,16#"D4",_,      P,Dn,DnN) :- true | P=new_string, DnN=Dn.
+builtin_table(2,16#"D5",_,      P,Dn,DnN) :- true | P=new_instruction, DnN=Dn.
+builtin_table(2,16#"D6",_,      P,Dn,DnN) :- true | P=new_module, DnN=Dn.
+builtin_table(2,16#"D7",_,      P,Dn,DnN) :- true | P=copy_string_elements, DnN=Dn.
+builtin_table(2,16#"D8",_,      P,Dn,DnN) :- true | P=move_string_elements, DnN=Dn.
+builtin_table(2,16#"D9",_,      P,Dn,DnN) :- true | P=search_character, DnN=Dn.
+builtin_table(2,16#"DA",_,      P,Dn,DnN) :- true | P=change_element_size, DnN=Dn.
+builtin_table(2,16#"DB",_,      P,Dn,DnN) :- true | P=scsi_command, DnN=Dn.
+builtin_table(2,16#"DC",_,      P,Dn,DnN) :- true | P=scsi_transfer, DnN=Dn.
+builtin_table(2,16#"DD",_,      P,Dn,DnN) :- true | P=scsi_abort, DnN=Dn.
+builtin_table(2,16#"DE",_,      P,Dn,DnN) :- true | P=scsi_reset, DnN=Dn.
+builtin_table(2,16#"DF",_,      P,Dn,DnN) :- true | P=scsi_init, DnN=Dn.
+
+builtin_table(2,16#"E0",_,      P,Dn,DnN) :- true | P=create_shoen, DnN=Dn.
+builtin_table(2,16#"E1",_,      P,Dn,DnN) :- true | P=start_shoen, DnN=Dn.
+builtin_table(2,16#"E2",_,      P,Dn,DnN) :- true | P=stop_shoen, DnN=Dn.
+builtin_table(2,16#"E3",_,      P,Dn,DnN) :- true | P=abort_shoen, DnN=Dn.
+builtin_table(2,16#"E4",_,      P,Dn,DnN) :- true | P=remove_shoen, DnN=Dn.
+builtin_table(2,16#"E5",_,      P,Dn,DnN) :- true | P=add_shoen_resource, DnN=Dn.
+builtin_table(2,16#"E6",_,      P,Dn,DnN) :- true | P=shoen_statistics, DnN=Dn.
+builtin_table(2,16#"E7",_,      P,Dn,DnN) :- true | P=allow_shoen_resource_report, DnN=Dn.
+builtin_table(2,16#"E8",_,      P,Dn,DnN) :- true | P=consume_resource, DnN=Dn.
+builtin_table(2,16#"EA",_,      P,Dn,DnN) :- true | P=current_priority, DnN=Dn.
+builtin_table(2,16#"EB",_,      P,Dn,DnN) :- true | P=current_processor, DnN=Dn.
+builtin_table(2,16#"EC",_,      P,Dn,DnN) :- true | P=calculate_priority_from_current, DnN=Dn.
+builtin_table(2,16#"ED",_,      P,Dn,DnN) :- true | P=calculate_priority_from_minimum, DnN=Dn.
+builtin_table(2,16#"EE",_,      P,Dn,DnN) :- true | P=current_node, DnN=Dn.
+builtin_table(2,16#"EF",_,      P,Dn,DnN) :- true | P=unbound, DnN=Dn.
+
+builtin_table(2,16#"F0",_,      P,Dn,DnN) :- true | P=merge, DnN=Dn.
+builtin_table(2,16#"F1",_,      P,Dn,DnN) :- true | P=apply, DnN=Dn.
+builtin_table(2,16#"F2",_,      P,Dn,DnN) :- true | P=raise, DnN=Dn.
+builtin_table(2,16#"F3",_,      P,Dn,DnN) :- true | P=predicate_to_code, DnN=Dn.
+builtin_table(2,16#"F4",_,      P,Dn,DnN) :- true | P=code_to_predicate, DnN=Dn.
+builtin_table(2,16#"F5",_,      P,Dn,DnN) :- true | P=module_offset_to_code, DnN=Dn.
+builtin_table(2,16#"F6",_,      P,Dn,DnN) :- true | P=hash, DnN=Dn.
+builtin_table(2,16#"F7",_,      P,Dn,DnN) :- true | P=module_element, DnN=Dn.
+builtin_table(2,16#"F8",_,      P,Dn,DnN) :- true | P=apply_tracing, DnN=Dn.
+builtin_table(2,16#"F9",_,      P,Dn,DnN) :- true | P=apply_spying, DnN=Dn.
+builtin_table(2,16#"FA",_,      P,Dn,DnN) :- true | P=create_profiling_shoen, DnN=Dn.
+builtin_table(2,16#"FB",_,      P,Dn,DnN) :- true | P=shoen_profile, DnN=Dn.
+builtin_table(2,16#"FC",_,      P,Dn,DnN) :- true | P=processor_profile, DnN=Dn.
+builtin_table(2,16#"FD",_,      P,Dn,DnN) :- true | P=set_heap_alert, DnN=Dn.
+builtin_table(2,16#"FE",_,      P,Dn,DnN) :- true | P=get_heap_size, DnN=Dn.
+builtin_table(2,16#"FF",_,      P,Dn,DnN) :- true | P=set_timer, DnN=Dn.
+
+%%%%%%%%%%%%%%%%%%%%%
+% ENQUEUE & EXECUTE %
+%%%%%%%%%%%%%%%%%%%%%
+builtin_table(3,16#"60",_,      P,Dn,DnN) :- true | P=proceed, DnN=Dn.
+builtin_table(3,16#"61",_,      P,Dn,DnN) :- true | P=execute, DnN=Dn.
+builtin_table(3,16#"62",_,      P,Dn,DnN) :- true | P=execute_external, DnN=Dn.
+builtin_table(3,16#"63",_,      P,Dn,DnN) :- true | P=enqueue, DnN=Dn.
+builtin_table(3,16#"64",_,      P,Dn,DnN) :- true | P=enqueue_with_priority, DnN=Dn.
+builtin_table(3,16#"65",_,      P,Dn,DnN) :- true | P=enqueue_to_processor, DnN=Dn. 
+builtin_table(3,16#"66",_,      P,Dn,DnN) :- true | P=enqueue_external, DnN=Dn.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+% STRUCTURE UNIFICATION %
+%%%%%%%%%%%%%%%%%%%%%%%%%
+builtin_table(3,16#"68",_,      P,Dn,DnN) :- true | P=unify_vector, DnN=Dn.    % try_me_else
+builtin_table(3,16#"A6",_,      P,Dn,DnN) :- true | P=unify_list, DnN=Dn.      % wait_list
+
+%%%%%%%%%%%%%%
+% UNFICATION %
+%%%%%%%%%%%%%%
+builtin_table(3,16#"B8",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_constant
+builtin_table(3,16#"B9",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_integer
+builtin_table(3,16#"BA",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_nil
+builtin_table(3,16#"BC",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_value
+builtin_table(3,16#"BD",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_bound_value
+
+builtin_table(3,16#"C0",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_0
+builtin_table(3,16#"C1",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_1
+builtin_table(3,16#"C2",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_2
+builtin_table(3,16#"C3",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_3
+builtin_table(3,16#"C4",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_4
+builtin_table(3,16#"C5",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_5
+builtin_table(3,16#"C6",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_6
+builtin_table(3,16#"C7",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_7
+builtin_table(3,16#"C8",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_8
+builtin_table(3,16#"C9",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_9
+builtin_table(3,16#"CA",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_10
+builtin_table(3,16#"CB",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_11
+builtin_table(3,16#"CC",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_12
+builtin_table(3,16#"CD",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_13
+builtin_table(3,16#"CE",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_14
+builtin_table(3,16#"CF",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_15
+builtin_table(3,16#"D0",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_16
+builtin_table(3,16#"D1",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_17
+builtin_table(3,16#"D2",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_18
+builtin_table(3,16#"D3",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_19
+builtin_table(3,16#"D4",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_20
+builtin_table(3,16#"D5",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_21
+builtin_table(3,16#"D6",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_22
+builtin_table(3,16#"D7",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_23
+builtin_table(3,16#"D8",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_24
+builtin_table(3,16#"D9",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_25
+builtin_table(3,16#"DA",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_26
+builtin_table(3,16#"DB",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_27
+builtin_table(3,16#"DC",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_28
+builtin_table(3,16#"DD",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_29
+builtin_table(3,16#"DE",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_30
+builtin_table(3,16#"DF",_,      P,Dn,DnN) :- true | P=unify, DnN=Dn. % Get_atom_31
+
+otherwise.
+builtin_table(_,_,      _,      P,Dn,DnN) :- true | P=unknown, DnN=Dn.

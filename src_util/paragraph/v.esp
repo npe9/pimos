@@ -1,0 +1,512 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class v has
+ nature bar_layout;
+
+  :create(Class,Obj,Win,Attribute):-
+    :new(Class,Obj),
+    set_attribute(Obj,Attribute),
+    :init(Obj,Win);
+
+ instance
+   attribute width := 300,
+             h_min := 25,
+             from := nil,
+             drawing_graph,
+             xb;
+ 
+  :layout(Obj,GList):-
+     Obj!h > 230, Obj!w > 165,!,
+     total_y_max(GList,0,Total),
+     TotalH = Obj!h - (Obj!num - 1)*Obj!y_space - 2*Obj!y_start ,
+     integer_to_floating_point(Total,FTotal),
+     integer_to_floating_point(TotalH,FTotalH),
+     integer_to_floating_point(Obj!h_min,FH_Min),
+     FV = FTotal * FH_Min/FTotalH ,
+     floating_point_to_integer(FV,V),
+     H0 = TotalH - Obj!h_min*Obj!num,
+    ( H0 =< 10,!,
+      invisible_graph(GList);
+      Obj!w-55 =< 10,!,
+      invisible_graph(GList);
+      H = H0,
+      ( Obj!w > Obj!width ,!, W = Obj!width-55 ;
+        W = Obj!w-55 ),
+      set_y_unit(GList,Y_Unit),     
+      integer_to_floating_point(H,FH),
+      layout(Obj!x+Obj!x_start,Obj!y+Obj!y_start,GList,FTotal,W,FH,Obj!y_space,Obj!h_min,V,Y_Unit) ),
+      GList = [G|R],
+      Obj!drawing_graph:=G!drawing_graph,
+     :regist(Obj,GList),
+     Graph = Obj!graph_list;
+
+ :layout(Obj,GList):-
+     :regist(Obj,GList);
+ 
+  :draw(Obj):-
+    Obj!window = Win,
+    Obj!h > 230, Obj!w > 165,!,
+    init_graph(Obj!graph_list,Obj!from,0,Obj!num,Win,DrawL),
+    :draw(Obj!window,DrawL),
+    set_scale_unit(Obj,X,Y,XB),
+    draw_scale_unit(Obj,X,Y,Win);
+
+
+  :draw(Obj):-
+    invisible_graph(Obj!graph_list,0,Obj!num);
+
+  :clear(Obj,Win):-
+    :clear(Win!window,10,10,Obj!width+Obj!x+Obj!x_start,Obj!h);
+
+%%%%% time scroll %%%%%%
+
+  :time_scale_small(Obj):-
+     Obj!window = Win,
+     set_scale_unit(Obj,X,Y,XB),
+     clear_scale(Win,X,Y),
+     time_scale_small(Obj!graph_list,0,Obj!num,Obj!from,Win,DrawL),
+     :draw(Win,DrawL),
+     draw_scale_unit(Obj,X,Y,Win);
+
+  :time_scale_large(Obj):-
+     Obj!window = Win,
+     set_scale_unit(Obj,X,Y,XB),
+     clear_scale(Win,X,Y),
+     time_scale_large(Obj!graph_list,0,Obj!num,Obj!from,Win,DrawL),
+     :draw(Obj!window,DrawL),
+     draw_scale_unit(Obj,X,Y,Win);
+
+  :next_page_time(Obj):-
+     next_page_time(Obj!graph_list,0,Obj!num);
+  
+  :next_time(Obj):-
+     next_time(Obj!graph_list,0,Obj!num);
+  
+  :previous_page_time(Obj):-
+     previous_page_time(Obj!graph_list,0,Obj!num);
+  
+  :previous_time(Obj):-
+     previous_time(Obj!graph_list,0,Obj!num);
+
+  :top_time(Obj):-
+     top_time(Obj!graph_list,0,Obj!num);
+
+  :bottom_time(Obj):-
+     bottom_time(Obj!graph_list,0,Obj!num);
+
+
+  :node_scale_small(Obj):-
+     Obj!window = Win,
+     set_scale_unit(Obj,X,Y,XB),
+     clear_scale(Win,X,Y),
+     node_scale_small(Obj!graph_list,0,Obj!num,Obj!from,Obj!window,DrawL),
+     :draw(Obj!window,DrawL),
+     draw_scale_unit(Obj,X,Y,Win);
+
+  :node_scale_large(Obj):-
+     Obj!window = Win,
+     set_scale_unit(Obj,X,Y,XB),
+     clear_scale(Win,X,Y),
+     node_scale_large(Obj!graph_list,0,Obj!num,Obj!from,Obj!window,DrawL),
+     :draw(Obj!window,DrawL),
+     draw_scale_unit(Obj,X,Y,Win);
+
+  :next_page_node(Obj):-
+     next_page_node(Obj!graph_list,0,Obj!num);
+  
+  :next_node(Obj):-
+     next_node(Obj!graph_list,0,Obj!num);
+  
+  :previous_page_node(Obj):-
+     previous_page_node(Obj!graph_list,0,Obj!num);
+  
+  :previous_node(Obj):-
+     previous_node(Obj!graph_list,0,Obj!num);
+
+  :top_node(Obj):-
+     top_node(Obj!graph_list,0,Obj!num);
+
+  :bottom_node(Obj):-
+     bottom_node(Obj!graph_list,0,Obj!num);
+    
+ local
+
+   layout(X,Y,[],_,_,_,_,_,_,_):-!;
+   layout(X,Y,[G|R],FTotal,W,FH,Sp,HMin,V,Y_Unit):-
+     :get_max_value(G,Y_Max),
+     integer_to_floating_point(Y_Max,FY_Max),
+     FGH=FH*FY_Max/FTotal,
+     floating_point_to_integer(FGH,GH),
+     G!y_unit:=Y_Unit,
+     G!x_size := W,
+     G!y_size := GH + HMin,
+     ( Y_Max =< V,!,
+       G!scale_max := V ; true ),
+     :set_position(G,X,Y),
+     layout(X,Y+GH+HMin+Sp,R,FTotal,W,FH,Sp,HMin,V,Y_Unit);
+
+    
+    set_y_unit([G|R],Y_Unit):-
+      set_layout_max([G|R],0,Y_Max),
+      set_y_unit0(Y_Max,Y_Unit);
+
+    set_layout_max([],AllMax,AllMax):-!;
+    set_layout_max([G|R],Max0,AllMax):-!,
+      :get_max_value(G,Max),
+      ( Max0 > Max,!,
+        PMax = Max0;
+        PMax = Max),
+      set_layout_max(R,PMax,AllMax);
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      0=<Y_Max,
+      100>=Y_Max,!,
+      Y_Unit=10;
+   
+    set_y_unit0(Y_Max,Y_Unit):-
+      100<Y_Max,
+      200>=Y_Max,!,
+      Y_Unit=20;
+  
+    set_y_unit0(Y_Max,Y_Unit):-
+      200<Y_Max,
+      500>=Y_Max,!,
+      Y_Unit=50;
+ 
+    set_y_unit0(Y_Max,Y_Unit):-
+      500<Y_Max,
+      1000>=Y_Max,!,
+      Y_Unit=100;
+  
+    set_y_unit0(Y_Max,Y_Unit):-
+      1000<Y_Max,
+      2000>=Y_Max,!,
+      Y_Unit=200;
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      1000<Y_Max,
+      5000>=Y_Max,!,
+      Y_Unit=500;
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      5000<Y_Max,
+      10000>=Y_Max,!,
+      Y_Unit=1000;
+ 
+    set_y_unit0(Y_Max,Y_Unit):-
+      10000<Y_Max,
+      20000>=Y_Max,!,
+      Y_Unit=2000;
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      20000<Y_Max,
+      50000>=Y_Max,!,
+      Y_Unit=5000;
+ 
+    set_y_unit0(Y_Max,Y_Unit):-
+      50000<Y_Max,
+      100000>=Y_Max,!,
+      Y_Unit=10000;
+  
+    set_y_unit0(Y_Max,Y_Unit):-
+      100000<Y_Max,
+      200000>=Y_Max,!,
+      Y_Unit=20000;
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      200000<Y_Max,
+      500000>=Y_Max,!,
+      Y_Unit=50000;
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      500000<Y_Max,
+      1000000>=Y_Max,!,
+      Y_Unit=100000;
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      1000000<Y_Max,
+      5000000>=Y_Max,!,
+      Y_Unit=500000;
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      5000000<Y_Max,
+      10000000>=Y_Max,!,
+      Y_Unit=1000000;
+ 
+    set_y_unit0(Y_Max,Y_Unit):-
+      10000000<Y_Max,
+      20000000>=Y_Max,!,
+      Y_Unit=2000000;
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      20000000<Y_Max,
+      50000000>=Y_Max,!,
+      Y_Unit=5000000;
+
+    set_y_unit0(Y_Max,Y_Unit):-
+      50000000<Y_Max,
+      Y_Unit=10000000;
+ 
+      
+   init_graph(GL,_,Num,Num,_,[]):-!;
+   init_graph(GL,From,Count,Num,Win,DrawL):-
+     From = nil,!,
+     vector_element(GL,Count,G),
+     Win!scale_mode = Mode,
+     ( Mode = part,
+       :method(G,draw_std,2),!,
+       :draw_std(G,Win);
+       :draw_all(G,Win)) ,
+%     ( :method(G,draw_std,2),!,
+%       :draw_std(G,Win);
+%       :draw_all(G,Win) ) ,
+     init_graph(GL,From,Count+1,Num,Win,DrawL);
+   init_graph(GL,From,Count,Num,Win,DrawL):-
+       vector_element(GL,Count,G),
+     ( G!draw_flag = invisible,!,
+       DrawL = RD ;
+       :get_number_string(#symbolizer,From,From1),
+       :append(#string,[From1,":"],String),
+       DrawL=[{draw_string,{20,G!y,String,Win!font,set}}|RD] ),
+     Win!scale_mode = Mode,
+     ( Mode = part,
+       :method(G,draw_std,2),!,
+       :draw_std(G,Win);
+       :draw_all(G,Win)) ,
+%     ( :method(G,draw_std,2),!,
+%       :draw_std(G,Win);
+%       :draw_all(G,Win) ) ,
+     init_graph(GL,From+1,Count+1,Num,Win,RD);
+
+   total_y_max([],T,Total):-!,
+     ( T = 0,!,
+       Total = 1 ;
+       T = Total );
+   total_y_max([G|R],Width,T):-
+     :get_max_value(G,Max),
+     Width2 = Width + Max,
+     total_y_max(R,Width2,T);
+
+    count([],Ans,Ans):- !;
+    count([H|T],C,Ans):- !,
+        count(T,C+1,Ans);
+
+   invisible_graph(GL,Num,Num):-!;
+   invisible_graph(GL,Count,Num):-
+      vector_element(GL,Count,G),
+      G!draw_flag:=invisible,
+      invisible_graph(GL,Count+1,Num);
+
+   invisible_graph([]):-!;
+   invisible_graph([G|R]):-
+      G!draw_flag:=invisible,
+      invisible_graph(R);
+
+%%%%%%%%  time scroll %%%%%%%%%
+
+    time_scale_small(GL,Num,Num,_,_,[]):-!;
+    time_scale_small(GL,Count,Num,nil,Win,DL):-!,
+        vector_element(GL,Count,G),
+        :draw_all(G),
+        time_scale_small(GL,Count+1,Num,nil,Win,DL);
+    time_scale_small(GL,Count,Num,From,Win,DL):-
+        vector_element(GL,Count,G),
+        :get_number_string(#symbolizer,From,From1),
+        :append(#string,[From1,":"],String),
+        DL=[{draw_string,{20,G!y,String,Win!font,set}}|RD],
+        :draw_all(G),
+        time_scale_small(GL,Count+1,Num,From+1,Win,RD);
+
+    time_scale_large(GL,Num,Num,_,_,[]):-!;
+    time_scale_large(GL,Count,Num,nil,Win,DL):-!,
+        vector_element(GL,Count,G),
+        :draw_std(G),!,
+        time_scale_large(GL,Count+1,Num,nil,Win,DL);
+    time_scale_large(GL,Count,Num,From,Win,DL):-
+        vector_element(GL,Count,G),
+        :get_number_string(#symbolizer,From,From1),
+        :append(#string,[From1,":"],String),
+        DL=[{draw_string,{20,G!y,String,Win!font,set}}|RD],
+        :draw_std(G),
+        time_scale_large(GL,Count+1,Num,From+1,Win,RD);
+
+    previous_page_time(GL,Num,Num):-!;
+    previous_page_time(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :previous_page_time(G),!,
+        previous_page_time(GL,Count+1,Num);
+
+    previous_time(GL,Num,Num):-!;
+    previous_time(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :previous_time(G),!,
+        previous_time(GL,Count+1,Num);
+  
+    next_page_time(GL,Num,Num):-!;
+    next_page_time(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :next_page_time(G),!,
+        next_page_time(GL,Count+1,Num);
+
+    next_time(GL,Num,Num):-!;
+    next_time(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :next_time(G),!,
+        next_time(GL,Count+1,Num);
+
+    top_time(GL,Num,Num):-!;
+    top_time(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :top_time(G),!,
+        top_time(GL,Count+1,Num);
+
+    bottom_time(GL,Num,Num):-!;
+    bottom_time(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :bottom_time(G),!,
+        bottom_time(GL,Count+1,Num);
+
+%%%%%%%% node scale %%%%%%%
+
+    node_scale_small(GL,Num,Num,_,_,[]):-!;
+    node_scale_small(GL,Count,Num,nil,Win,DL):-!,
+        vector_element(GL,Count,G),
+        :draw_all(G),
+        node_scale_small(GL,Count+1,Num,nil,Win,DL);
+    node_scale_small(GL,Count,Num,From,Win,DL):-
+        vector_element(GL,Count,G),
+        :get_number_string(#symbolizer,From,From1),
+        :append(#string,[From1,":"],String),
+        DL=[{draw_string,{20,G!y,String,Win!font,set}}|RD],
+        :draw_all(G),
+        node_scale_small(GL,Count+1,Num,From+1,Win,RD);
+
+    node_scale_large(GL,Num,Num,_,_,[]):-!;
+    node_scale_large(GL,Count,Num,nil,Win,DL):-!,
+        vector_element(GL,Count,G),
+        :draw_std(G),!,
+        node_scale_large(GL,Count+1,Num,nil,Win,DL);
+    node_scale_large(GL,Count,Num,From,Win,DL):-
+        vector_element(GL,Count,G),
+        :get_number_string(#symbolizer,From,From1),
+        :append(#string,[From1,":"],String),
+        DL=[{draw_string,{20,G!y,String,Win!font,set}}|RD],
+        :draw_std(G),
+        node_scale_large(GL,Count+1,Num,From+1,Win,RD);
+
+    previous_page_node(GL,Num,Num):-!;
+    previous_page_node(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :previous_page_node(G),!,
+        previous_page_node(GL,Count+1,Num);
+
+    previous_node(GL,Num,Num):-!;
+    previous_node(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :previous_node(G),!,
+        previous_node(GL,Count+1,Num);
+  
+    next_page_node(GL,Num,Num):-!;
+    next_page_node(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :next_page_node(G),!,
+        next_page_node(GL,Count+1,Num);
+
+    next_node(GL,Num,Num):-!;
+    next_node(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :next_node(G),!,
+        next_node(GL,Count+1,Num);
+ 
+    top_node(GL,Num,Num):-!;
+    top_node(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :top_node(G),!,
+        top_node(GL,Count+1,Num);
+ 
+    bottom_node(GL,Num,Num):-!;
+    bottom_node(GL,Count,Num):-
+        vector_element(GL,Count,G),
+        :bottom_node(G),!,
+        bottom_node(GL,Count+1,Num);
+  
+   set_attribute(Obj,[]):-!;
+   set_attribute(Obj,[num(Num)|R]):-
+     Obj!num := Num,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[space(Y)|R]):-
+     Obj!y_space := Y,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[start(X,Y)|R]):-
+     Obj!x_start := X,
+     Obj!y_start := Y,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[position(X,Y)|R]):-
+     Obj!x := X,
+     Obj!y := Y,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[area(W,H)|R]):-
+     Obj!w := W,
+     Obj!h := H,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[width(W)|R]):-
+     Obj!width := W,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[min(H)|R]):-!,
+     Obj!h_min := H,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[from(From)|R]):-!,
+     Obj!from := From,
+     set_attribute(Obj,R);
+    set_attribute(Obj,[H|T]):-
+     set_attribute(Obj,T);
+ 
+  set_scale_unit(Obj,X,Y,XB):-
+       set_xb(Obj,XB,W),
+       :get_size(Obj!window,_,H),
+       X = Obj!x+Obj!x_start+W-10,
+       Y = H-10;
+       
+  clear_scale(Win,X,Y):-
+     :clear(Win!window,X,Y,110,20);
+
+  draw_scale_unit(Obj,X,Y,Win):-
+     Win!font=Font,
+   ( Win!scale_mode==all,!,
+     XB = Obj!xb;
+     XB = 1 ),
+     :get_number_string(#symbolizer,XB,XBS),
+     string(XBS,XL,_), XL1=XL*7,
+    ( Obj!drawing_graph = bar,!,
+     List = [{draw_string,{X,Y,"scale",Font,set}},
+             {draw_string,{X+38,Y,"x:",Font,set}},
+             {draw_string,{X+55,Y,XBS,Font,set}},   
+             {draw_string,{X+57+XL1,Y,"node",Font,set}}];   
+     List = [{draw_string,{X,Y,"scale",Font,set}},
+             {draw_string,{X+38,Y,"x:",Font,set}},
+             {draw_string,{X+55,Y,XBS,Font,set}},   
+             {draw_string,{X+57+XL1,Y,"cycle",Font,set}}]),   
+      :execute_graphics_command(Win!window,List);
+    draw_scale_unit(Obj,X,Y,Win,XB):-!;
+  
+  
+ set_xb(Obj,XB,W):-
+     vector_element(Obj!graph_list,0,G),
+     G!x_size = W,
+     W/5 = XVisNum, 
+    (G!x_max+1)/G!x_unit = XNum,
+    (XNum > XVisNum,!,
+     set_xb1(XVisNum,XB,XNum);
+     XB = 1),
+     Obj!xb:=XB;
+
+  set_xb1(XVisNum,XB,XNum):-
+     (XNum/XVisNum = 1,!,
+      XB = 2;
+      XNum mod XVisNum = 0,!,
+      XB = XNum/XVisNum ;
+      XB = XNum/XVisNum+1);
+          
+    
+end.
+

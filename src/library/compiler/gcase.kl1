@@ -1,0 +1,88 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_guard_case.
+:- public guard_case/2.
+:- public convertGuard/2.
+:- with_macro pimos.
+
+guard_case(In, Out) :- true |
+    guard_case(Out, [], In, 1).
+
+:- local_implicit goals:oldnew.
+guard_case([Block0|Rest], N0) --> true |
+  {{guard_case_(Block, [], Block0, N0, N1)}},
+    &goals <<= [Block],
+    guard_case(Rest, N1).
+guard_case([], _) --> true | true.
+
+guard_case_([wrap#(H:-G0|B)-Info|Rest], N0, N) --> true |
+  {{convertGuard(G0, GList)}},
+    createClauses(GList, H, B, Info, N0),
+  {{N1 := N0+1}},
+    guard_case_(Rest, N1, N).
+otherwise.
+guard_case_([Cls-Info|Rest], N0, N) --> true |
+    &goals <<= [Cls-N0-Info],
+    guard_case_(Rest, N0, N).
+guard_case_([], N0, N) --> true | N0=N.
+
+%
+% debugging aids
+convertGuard(Goals, GList) :- true |
+    convertGuard(GList0, [], Goals, wrap#true, wrap#true),
+    flattenAndDeleteTRUE(GList, [], GList0).
+
+%
+:- local_implicit goals:oldnew.
+convertGuard(wrap#(G0;G1), L, R) --> true |
+    convertGuard(G0, L, R),
+    convertGuard(G1, L, R).
+convertGuard(wrap#(G0,G1), L, R) --> true |
+  {{convertGuard(Goals1, [], G0, L, wrap#true),
+    convertGuard(Goals2, [], G1, wrap#true, R)}},
+    crossTerm(Goals1, Goals2).
+otherwise.
+convertGuard(Goal, L, R) --> true |
+    &goals <<= [wrap#(L,Goal,R)].
+
+crossTerm([Goals|Cdr], RGoals) --> true |
+    crossTerm_(Goals, RGoals),
+    crossTerm(Cdr, RGoals).
+crossTerm([], _) --> true | true.
+
+crossTerm_(Goals0, [Goals|Cdr]) --> true |
+    &goals <<= [wrap#(Goals0, Goals)],
+    crossTerm_(Goals0, Cdr).
+crossTerm_(_, []) --> true | true.
+
+flattenAndDeleteTRUE([Goals0|Rest]) --> true |
+  {{flatten(Goals0, GoalList, []),
+    deleteTRUE(GoalList, Goals)}},
+    &goals <<=[Goals],
+    flattenAndDeleteTRUE(Rest).
+flattenAndDeleteTRUE([]) --> true | true.
+
+flatten(wrap#(G0,G1),Goals0, Goals) :- true |
+    flatten(G0, Goals0, Goals1),
+    flatten(G1, Goals1, Goals).
+otherwise.
+flatten(wrap#true, Goals0, Goals) :- true | Goals0=Goals.
+otherwise.
+flatten(G0, Goals0, Goals) :- true | Goals0=[G0|Goals].
+
+deleteTRUE([Goal], Goals) :- true | Goals=Goal.
+otherwise.
+deleteTRUE([G0|Rest], Goals0) :- true |
+   Goals0=wrap#(G0,Goals),
+   deleteTRUE(Rest, Goals).
+deleteTRUE([], Goals) :- true | Goals=wrap#(true).
+
+createClauses([G|Rest], H, B, Info, N) --> true |
+   &goals <<= [wrap#(H:-G|B)-N-Info],
+   createClauses(Rest, H, B, Info, N).
+createClauses([], _, _, _, _) --> true | true.
+

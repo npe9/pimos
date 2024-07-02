@@ -1,0 +1,106 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is 'stdio' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module stdioChecker.
+:- public go/1.
+
+go(1) :- true |
+    shoen:raise(pimos_tag#shell, get_std_in, StdIn),
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    shoen:raise(pimos_tag#shell, get_std_mes, StdMes),
+    shoen:raise(pimos_tag#shell, get_std_inter, StdInter),
+    loop1(StdIn, StdOut, StdMes, StdInter).
+go(2) :- true |
+    shoen:raise(pimos_tag#shell, get_std_io, StdIo),
+    shoen:raise(pimos_tag#shell, get_std_mes, StdMes),
+    merge({StdIo1, StdIo2}, StdIo),
+    buffer:interaction_filter(Io, StdIo1),
+    loop2(Io, StdIo2, StdMes).
+
+loop1(StdIn, StdOut, StdMes, StdInter) :- true |
+    StdIn = [prompt(string#" 1. StdIn"),
+                prompt(string#" 2. StdOut"),
+                prompt(string#" 3. StdMes"),
+                prompt(string#" 4. StdInter"),
+                prompt(string#"Which kind of StdIo Stream, do you choose ? "),
+                gett(No) | StdIn1],
+    check1(No, StdIn1, StdOut, StdMes, StdInter).
+
+check1(0, StdIn, StdOut, StdMes, StdInter) :- true |
+    StdIn = [], StdOut = [], StdMes = [], StdInter = [].
+check1(1, StdIn, StdOut, StdMes, StdInter) :- true |
+    StdIn = [prompt(string#"StdInTest>> "), getl(Line) | NStdIn],
+    waitStat(Line, NStdIn, NNStdIn),
+    loop1(NNStdIn, StdOut, StdMes, StdInter).
+check1(2, StdIn, StdOut, StdMes, StdInter) :- true |
+    StdOut = [putl(string#"StdOutTest>> "), nl, flush(Done) | NStdOut],
+    waitStat(Done, StdIn, NStdIn),
+    loop1(NStdIn, NStdOut, StdMes, StdInter).
+check1(3, StdIn, StdOut, StdMes, StdInter) :- true |
+    StdMes = [putl(string#"StdMesTest>> "), nl, flush(Done) | NStdMes],
+    waitStat(Done, StdIn, NStdIn),
+    loop1(NStdIn, StdOut, NStdMes, StdInter).
+check1(4, StdIn, StdOut, StdMes, StdInter) :- true |
+    StdInter = [prompt(string#"StdInterInputTest>> "), getl(_),
+        putl(string#"StdInterOutputTest>> "), nl, flush(Done) | NStdInter],
+    waitStat(Done, StdIn, NStdIn),
+    loop1(NStdIn, StdOut, StdMes, NStdInter).
+otherwise.
+check1(_, StdIn, StdOut, StdMes, StdInter) :- true |
+    StdMes = [putl(string#"*** Illegal No ***"), nl, flush(Done) | NStdMes],
+    waitStat(Done, StdIn, NStdIn),
+    loop1(NStdIn, StdOut, NStdMes, StdInter).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+loop2(Io, StdIo, StdMes) :- true |
+    Io = [prompt(string#" 1. StdIn"),
+                prompt(string#" 2. StdOut"),
+                prompt(string#" 3. StdMes"),
+                prompt(string#" 4. StdInter"),
+                prompt(string#"Which kind of StdIo Stream, do you choose ? "),
+                gett(No) | Io1],
+    check2(No, Io1, StdIo, StdMes).
+
+check2(0, Io, StdIo, StdMes) :- true |
+    Io = [], StdIo = [], StdMes = [].
+check2(1, Io, StdIo, StdMes) :- true |
+    StdIo = [prompt(string#"StdInTest>> ", Status) | NStdIo],
+    waitStat(Status, Io, NIo),
+    loop2(NIo, NStdIo, StdMes).
+check2(2, Io, StdIo, StdMes) :- true |
+    StdIo = [putb(string#"StdOutTest>> ", _), flush(Done) | NStdIo],
+    waitStat(Done, Io, NIo),
+    loop2(NIo, NStdIo, StdMes).
+check2(3, Io, StdIo, StdMes) :- true |
+    StdMes = [putl(string#"StdMesTest>> "), flush(Done) | NStdMes],
+    waitStat(Done, Io, NIo),
+    loop2(NIo, StdIo, NStdMes).
+check2(4, Io, StdIo, StdMes) :- true |
+    StdIo = [iprompt(string#"StdInterInputTest>> ", _),
+             iputb(string#"StdInterOutputTest>> ", _), iflush(Done) | NStdIo],
+    waitStat(Done, Io, NIo),
+    loop2(NIo, NStdIo, StdMes).
+otherwise.
+check2(_, Io, StdIo, StdMes) :- true |
+    StdMes = [putl(string#"*** Illegal No ***"), nl, flush(Done) | NStdMes],
+    waitStat(Done, Io, NIo),
+    loop2(NIo, StdIo, NStdMes).
+
+waitStat(Stat, In, Out) :- wait(Stat) | In = Out.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                           %%%%%
+%%%%%  End of 'stdio' module.   %%%%%
+%%%%%                           %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

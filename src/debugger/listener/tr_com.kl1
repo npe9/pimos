@@ -1,0 +1,901 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_trace_command.
+:- public query_or_auto/14.
+:- with_macro pimos.
+
+
+query_or_auto(0,GL,IN,IN1,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,Num) :- true |
+    query(GL,IN,IN1,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,Num).
+query_or_auto(Cnt,GL,IN,IN3,RSC,RSC2,GM,GM2,MM,NewArg,Status,SW,SW1,Num) :- Cnt>0 |
+        IN=[get_print_depth(D),get_print_length(L)|IN1],
+        listener_trace_output:display_reduction(GL,D,L,IN1,
+            [putf("? c % ~t~n",[Cnt])|IN2],GM,GM1,RSC,RSC1),
+        do_command(return,Status,NewArg,GM1,GM2,MM,RSC1,RSC2,IN2,IN3,SW,SW1,Num,GL).
+query_or_auto(Cnt,GL,IN,IN3,RSC,RSC2,GM,GM2,MM,NewArg,Status,SW,SW1,Num) :- Cnt<0 |
+        IN=[get_print_depth(D),get_print_length(L)|IN1],
+        listener_trace_output:display_reduction(GL,D,L,IN1,
+            [putf("? s % ~t~n",[~(0-Cnt)])|IN2],GM,GM1,RSC,RSC1),
+        do_command(spy_reduction,Status,NewArg,GM1,GM2,MM,RSC1,RSC2,IN2,IN3,SW,SW1,Num,GL).
+         
+
+query(GL,IN,IN2,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,Num) :-
+    IN=[get_print_depth(D),get_print_length(L)|IN1],
+    query(GL,D,L,IN1,IN2,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,Num).
+
+query(GL,D,L,IN,IN3,RSC,RSC2,GM,GM2,MM,NewArg,Status,SW,SW1,Num) :-
+    listener_trace_output:display_reduction(GL,D,L,IN,IN1,GM,GM1,RSC,RSC1),
+    listener_tracer_utility:read_command(tr,IN1,IN2,Com),
+    argument_check(Com,Command,GL),
+    do_command(Command,Status,NewArg,GM1,GM2,MM,RSC1,RSC2,IN2,IN3,SW,SW1,Num,GL).
+
+argument_check(remember((X,Y)),             Com,_) :- Com=remember(X,Y).
+argument_check(monitor((X,Y)),              Com,_) :- Com=monitor(X,Y).
+argument_check(monitor_and_fork((X,Y)),     Com,_) :- Com=monitor_and_fork(X,Y).
+argument_check(write((D,L)),                Com,_) :- Com=write(D,L).
+argument_check(spying((Pac::M)),            Com,_) :- Com=spying(Pac,M).
+argument_check(spying((Pac,M)),             Com,_) :- Com=spying(Pac,M).
+argument_check(spy((Pac::M:P/A)),           Com,_) :- Com=spy(Pac,M,P,A).
+argument_check(spy((Pac::M,P,A)),           Com,_) :- Com=spy(Pac,M,P,A).
+argument_check(spy((Pac,M,P,A)),            Com,_) :- Com=spy(Pac,M,P,A).
+argument_check(spy((M:P/A)),                Com,_) :- atom(M) | Com=spy(M,P,A).
+argument_check(spy((P/A)),                  Com,_) :- Com=spy(P,A).
+argument_check(spy(Pac::M,P,A),             Com,_) :- Com=spy(Pac,M,P,A).
+argument_check(nospy((Pac::M:P/A)),         Com,_) :- Com=nospy(Pac,M,P,A).
+argument_check(nospy((Pac::M,P,A)),         Com,_) :- Com=nospy(Pac,M,P,A).
+argument_check(nospy((Pac,M,P,A)),          Com,_) :- Com=nospy(Pac,M,P,A).
+argument_check(nospy((M:P/A)),              Com,_) :- atom(M) | Com=nospy(M,P,A).
+argument_check(nospy((P/A)),                Com,_) :- Com=nospy(P,A).
+argument_check(nospy(Pac::M,P,A),           Com,_) :- Com=nospy(Pac,M,P,A).
+argument_check(nospy,                       Com,_) :- Com=nospy(*,*,*,*).
+argument_check(trace((Pac::M:P/A)),         Com,_) :- Com=trace(Pac,M,P,A).
+argument_check(trace((Pac::M,P,A)),         Com,_) :- Com=trace(Pac,M,P,A).
+argument_check(trace((Pac,M,P,A)),          Com,_) :- Com=trace(Pac,M,P,A).
+argument_check(trace((M:P/A)),              Com,_) :- atom(M) | Com=trace(M,P,A).
+argument_check(trace((M,P,A)),              Com,_) :- atom(M) | Com=trace(M,P,A).
+argument_check(trace(Pac::M,P,A),           Com,_) :- Com=trace(Pac,M,P,A).
+argument_check(notrace((Pac::M:P/A)),       Com,_) :- Com=notrace(Pac,M,P,A).
+argument_check(notrace((Pac::M,P,A)),       Com,_) :- Com=notrace(Pac,M,P,A).
+argument_check(notrace((Pac,M,P,A)),        Com,_) :- Com=notrace(Pac,M,P,A).
+argument_check(notrace(Pac::M,P,A),         Com,_) :- Com=notrace(Pac,M,P,A).
+argument_check(notrace((M:P/A)),            Com,_) :- atom(M) | Com=notrace(M,P,A).
+argument_check(notrace((M,P,A)),            Com,_) :- atom(M) | Com=notrace(M,P,A).
+argument_check(notrace_all,                 Com,_) :- Com=notrace(*,*,*,*).
+otherwise.
+argument_check(spy((M,P,A)),                Com,_) :- atom(M) | Com=spy(M,P,A).
+argument_check(nospy((M,P,A)),              Com,_) :- atom(M) | Com=nospy(M,P,A).
+otherwise.
+argument_check(spy((P,A)),                  Com,_) :- Com=spy(P,A).
+argument_check(nospy((P,A)),                Com,_) :- Com=nospy(P,A).
+otherwise.
+argument_check(reverse(V),       Com,GL) :-
+    listener_utility:to_list(V,L), argument_check1(L,reverse,Com,GL).
+argument_check(spy_reduction(V), Com,GL) :-
+    listener_utility:to_list(V,L), argument_check1(L,spy_reduction,Com,GL).
+argument_check(spy_fork(V),      Com,GL) :-
+    listener_utility:to_list(V,L), argument_check1(L,spy_fork,Com,GL).
+argument_check(toggle(V),        Com,GL) :-
+    listener_utility:to_list(V,L), argument_check1(L,toggle,Com,GL).
+argument_check(keep(V),          Com,GL) :-
+    listener_utility:to_list(V,L), argument_check2(L,keep,{},Com,GL).
+argument_check(inspect(V),       Com,GL) :-
+    listener_utility:to_list(V,L), argument_check2(L,inspect,{},Com,GL).
+argument_check(spy(V),           Com,GL) :-
+    listener_utility:to_list(V,L), argument_check2(L,spy,{},Com,GL).
+argument_check(fork(V),          Com,GL) :-
+    listener_utility:to_list(V,L), argument_check2(L,fork,{},Com,GL).
+argument_check(fork(V,X),        Com,GL) :-
+    listener_utility:to_list(V,L), argument_check2(L,fork,{X},Com,GL).
+otherwise.
+argument_check(Command,          Com,_) :- Com=Command.
+
+
+argument_check1([A|B],Name,Com,GL) :-
+    goal_status(A,GL,St),
+    arg_check1(St,B,[A],Name,Com,GL).
+
+arg_check1(subgoal,     [A|B],L,    Name,Com,GL) :-
+    goal_status(A,GL,St), 
+    arg_check1(St,B,[A|L],Name,Com,GL).
+arg_check1(subgoal,     [],   L,    Name,Com,_) :- Com={Name,L}.
+arg_check1(non_existent,_,    [N|_],_,   Com,_) :- integer(N) | Com=illegal_number(N).
+arg_check1(keeping,     _,    [N|_],_,   Com,_) :- Com=cannot_apply(N).
+otherwise.
+arg_check1(_,           _,    [A|_],_,   Com,_) :- Com=illegal_parameter(A).
+
+argument_check2([A|B],Name,Args,Com,GL) :-
+    goal_status(A,GL,St), 
+    arg_check2(St,B,[A],Name,Args,Com,GL).
+
+arg_check2(non_existent,_,    [N|_],_,_,   Com,_) :- integer(N) | Com=illegal_number(N).
+arg_check2(builtin,     _,    [A|_],_,_,   Com,_) :- Com=illegal_parameter(A).
+arg_check2(reduction,   _,    [A|_],_,_,   Com,_) :- Com=illegal_parameter(A).
+otherwise.
+arg_check2(non_existent,_,    [A|_],_,_,   Com,_) :- Com=illegal_parameter(A).
+otherwise.
+arg_check2(_,           [A|B],L,    Name,Args,Com,GL) :-
+    goal_status(A,GL,St), 
+    arg_check2(St,B,[A|L],Name,Args,Com,GL).
+arg_check2(_,           [],   L,    Name,Args,Com,_) :- vector(Args,S) |
+    new_vector(V,~(S+2)),
+    set_vector_element(V, 0,_,Name,V1),
+    set_vector_element(V1,1,_,L,   V2),
+    make_command(Args,S,V2,Com).
+
+make_command(_,0,V,C) :- C=V.
+otherwise.
+make_command(Args,S,V,C) :- 
+    S1 := S-1,
+    vector_element(Args,S1,X,Args1),
+    set_vector_element(V,~(S1+2),_,X,V1),
+    make_command(Args1,S1,V1,C).
+
+do_command(help,Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN2,SW,SW1,NUM,GL) :-
+    help(go,
+        [{"*BASIC COMMANDS (c,n,s,sr,sf,a,b,...): ",basic},
+         {"*SUB COMMANDS (k,kg,tg,f,s,...): ",sub},
+         {"*INSPECT COMMANDS (ins,m,mf,mm,mt): ",ins},
+         {"*MANIPULATION FOR VARIABLE COMMANDS (rem,l,v): ",var},
+         {"*ENVIRONMENT COMMANDS (env,w,pl,pd,...): ",env}],IN,IN1),
+    query(GL,IN1,IN2,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+
+do_command(auto_trace(N),
+        Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :- N>0 |
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    executable_goals(GL,KEEPSTM,[],Goals,Keep),
+    listener_trace_driver:put_goals(Goals,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status := N-1, IN1=IN, MM=[], SW1=SW.
+do_command(auto_spy(N),
+        Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :- N>0 |
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    executable_goals(GL,KEEPSTM,[],Goals,Keep),
+    spy_all(Goals,spyr,Goals1),
+    listener_trace_driver:put_goals(Goals1,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status := 1-N, IN1=IN, MM=[],
+    SW1=SW.
+
+
+do_command(return,Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :-
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1], % For spy of kept goals.
+    executable_goals(GL,KEEPSTM,[],Goals,Keep),
+    listener_trace_driver:put_goals(Goals,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status=fore, IN1=IN, MM=[], 
+    SW1=SW.
+
+do_command(reverse,Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :-
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    executable_goals(GL,KEEPSTM,[],Goals,Keep),
+    reverse_all(Goals,RGoals),
+    listener_trace_driver:put_goals(RGoals,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status=fore, IN1=IN, MM=[],
+    SW1=SW.
+
+do_command(reverse(L),Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :-
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    sorter:sort(L,L1),
+    toggle(L1,GL,GL1),
+    executable_goals(GL1,KEEPSTM,[],Goals,Keep),
+    listener_trace_driver:put_goals(Goals,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status=fore, IN1=IN, MM=[], 
+    SW1=SW.
+
+do_command(toggle,Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN1,SW,SW1,NUM,[R|GL]) :-
+    toggle_all(GL,GL1),
+    query([R|GL1],IN,IN1,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(toggle(L),Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN1,SW,SW1,NUM,[R|GL]) :-
+    sorter:sort(L,L1),
+    toggle(L1,GL,GL1),
+    query([R|GL1],IN,IN1,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(notrace,Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :-
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    executable_goals(GL,KEEPSTM,[],Goals,Keep),
+    notrace_all(Goals,Goals1),
+    listener_trace_driver:put_goals(Goals1,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status=fore, IN1=IN, MM=[],
+    SW1=SW.
+
+do_command(notrace_anymore,Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :-
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    executable_goals(GL,KEEPSTM,[],Goals,Keep),
+    notrace_all(Goals,Goals1),
+    listener_trace_driver:put_goals(Goals1,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status=notrace, IN1=IN, MM=[],
+    SW1=SW.
+
+do_command(spy_reduction,Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :-
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    executable_goals(GL,KEEPSTM,[],Goals,Keep),
+    spy_all(Goals,spyr,Goals1),
+    listener_trace_driver:put_goals(Goals1,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status=fore, IN1=IN, MM=[],
+    SW1=SW.
+
+do_command(spy_fork,Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :-
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    executable_goals(GL,KEEPSTM,[],Goals,Keep),
+    spy_all(Goals,spyf,Goals1),
+    listener_trace_driver:put_goals(Goals1,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status=fore, IN1=IN, MM=[],
+    SW1=SW.
+
+do_command(spy_reduction(L),Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :-
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    sorter:sort(L,L1),
+    set_spy_mode(L1,GL,GL1,spyr),
+    executable_goals(GL1,KEEPSTM,[],Goals,Keep),
+    listener_trace_driver:put_goals(Goals,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status=fore, IN1=IN, MM=[],
+    SW1=SW.
+
+do_command(spy_fork(L),Status,NewArg,GM,GM2,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,[_|GL]) :-
+    GM=[keep(Keep)|GM1],
+    RSC=[spy(spied_code_vector(SpyCV))|RSC1],
+    sorter:sort(L,L1),
+    set_spy_mode(L1,GL,GL1,spyf),
+    executable_goals(GL1,KEEPSTM,[],Goals,Keep),
+    listener_trace_driver:put_goals(Goals,GM1,GM2,GOAL,SpyCV),
+    merge({GOAL,KEEPSTM},ARGLIST),
+    NewArg={ARGLIST},
+    Status=fore, IN1=IN, MM=[],
+    SW1=SW.
+
+do_command(abort,Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,_) :-
+    NewArg={[]}, GM1=GM, RSC1=RSC, IN1=IN, SW1=SW, MM=[], Status=aborted.
+
+do_command(break,Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN1,SW,SW1,_NUM,GL) :- true|
+    Status=stopped(GL,NewArg),
+    GM1=GM, MM=[], RSC1=RSC, IN1=IN, SW1=SW.
+
+do_command(list_traced_goals,Status,NewArg,GM,GM2,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :-
+    MM={MM1,MM2},
+    listener_traced_goals:list(local,GM,GM1,IN,IN1,RSC,RSC1,MM1,NUM),
+    query(GL,IN1,IN2,RSC1,RSC2,GM1,GM2,MM2,NewArg,Status,SW,SW1,NUM).
+do_command(list_traced_goals(TrIDs),Status,NewArg,GM,GM2,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :-
+    MM={MM1,MM2},
+    listener_traced_goals:to_list(TrIDs,TrIDs1),
+    listener_traced_goals:list(TrIDs1,GM,GM1,IN,IN1,RSC,RSC1,MM1,NUM),
+    query(GL,IN1,IN2,RSC1,RSC2,GM1,GM2,MM2,NewArg,Status,SW,SW1,NUM).
+
+do_command(spying_patterns,Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :-
+    RSC=[spy(spied_list(Spied))|RSC1],
+    listener_spy_manager:list_spied(Spied,IN,IN1),
+    query(GL,IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(spy,Status,NewArg,GM,GM1,MM,RSC,RSC3,IN,IN1,SW,SW1,NUM,GL) :-
+    goal(reduction,GL,Red),
+    get_predicate(Red,M,Pred,Arity),
+    RSC=[spy(spying(M,Pred,Arity,YorN))|RSC1],
+    set_spy1(YorN,M,Pred,Arity,RSC1,RSC2),
+    query(GL,IN,IN1,RSC2,RSC3,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(spy([N]),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN1,SW,SW1,NUM,GL) :-
+    goal(N,GL,X),
+    vector_element(X,5,Code,_),
+    set_spy(Code,RSC,RSC1),
+    query(GL,IN,IN1,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(trace(Pac,M,P,A),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,[R|GL]) :- 
+  atom(Pac), atom(M), atom(P), integer(A) |
+    RSC=[spy(_TF,SPY)|RSC1],
+    SPY=[trace(Pac,M,P,A,SpyStatus)|SPY1],
+    IN=[do(Msg)|IN1],
+    listener_spy_manager:debug_msg(SpyStatus,Pac,M,P,A,trace,Msg),
+    reset_tracemode(GL,GL1,SPY1),
+    query([R|GL1],IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(trace(Pac,M,P,*),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,[R|GL]) :- 
+  atom(Pac), atom(M), atom(P) |
+    RSC=[spy(_TF,SPY)|RSC1],
+    SPY=[trace(Pac,M,P,*,SpyStatus)|SPY1],
+    IN=[do(Msg)|IN1],
+    listener_spy_manager:debug_msg(SpyStatus,Pac,M,P,*,trace,Msg),
+    reset_tracemode(GL,GL1,SPY1),
+    query([R|GL1],IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(trace(M,P,A),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,[R|GL]) :- 
+  atom(M), atom(P), integer(A) |
+    RSC=[spy(_TF,SPY)|RSC1],
+    SPY=[trace(M,P,A,SpyStatus)|SPY1],
+    IN=[do(Msg)|IN1],
+    listener_spy_manager:debug_msg(SpyStatus,0,M,P,A,trace,Msg),
+    reset_tracemode(GL,GL1,SPY1),
+    query([R|GL1],IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(trace(M,P,*),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,[R|GL]) :- 
+  atom(M), atom(P) |
+    RSC=[spy(_TF,SPY)|RSC1],
+    SPY=[trace(M,P,*,SpyStatus)|SPY1],
+    IN=[do(Msg)|IN1],
+    listener_spy_manager:debug_msg(SpyStatus,0,M,P,*,trace,Msg),
+    reset_tracemode(GL,GL1,SPY1),
+    query([R|GL1],IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(notrace(Pac,M,P,A),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,[R|GL]) :- 
+  atom(Pac), atom(M), atom(P), integer(A) |
+    RSC=[spy(_TF,SPY)|RSC1],
+    SPY=[notrace(Pac,M,P,A,SpyStatus)|SPY1],
+    IN=[do(Msg)|IN1],
+    listener_spy_manager:debug_msg(SpyStatus,Pac,M,P,A,notrace,Msg),
+    reset_tracemode(GL,GL1,SPY1),
+    query([R|GL1],IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(notrace(Pac,M,P,*),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,[R|GL]) :- 
+  atom(Pac), atom(M), atom(P) |
+    RSC=[spy(_TF,SPY)|RSC1],
+    SPY=[notrace(Pac,M,P,*,SpyStatus)|SPY1],
+    IN=[do(Msg)|IN1],
+    listener_spy_manager:debug_msg(SpyStatus,Pac,M,P,*,notrace,Msg),
+    reset_tracemode(GL,GL1,SPY1),
+    query([R|GL1],IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(notrace(M,P,A),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,[R|GL]) :- 
+  atom(M), atom(P), integer(A) |
+    RSC=[spy(_TF,SPY)|RSC1],
+    SPY=[notrace(M,P,A,SpyStatus)|SPY1],
+    IN=[do(Msg)|IN1],
+    listener_spy_manager:debug_msg(SpyStatus,0,M,P,A,notrace,Msg),
+    reset_tracemode(GL,GL1,SPY1),
+    query([R|GL1],IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(notrace(M,P,*),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,[R|GL]) :- 
+  atom(M), atom(P) |
+    RSC=[spy(_TF,SPY)|RSC1],
+    SPY=[notrace(M,P,*,SpyStatus)|SPY1],
+    IN=[do(Msg)|IN1],
+    listener_spy_manager:debug_msg(SpyStatus,0,M,P,*,notrace,Msg),
+    reset_tracemode(GL,GL1,SPY1),
+    query([R|GL1],IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(tracing,Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :-
+    RSC=[spy(traced_list(Spied))|RSC1],
+    listener_spy_manager:list_tracing(Spied,IN,IN1),
+    query(GL,IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(trace_shoen,Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN1,SW,SW1,NUM,GL) :-
+    RSC=[spy(trace_shoen)|RSC1],
+    query(GL,IN,IN1,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(notrace_shoen,Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN1,SW,SW1,NUM,GL) :-
+    RSC=[spy(notrace_shoen)|RSC1],
+    query(GL,IN,IN1,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+
+do_command(inspect,Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN3,SW,SW2,NUM,GL) :-
+    SW=[detach(Detach)|SW1],
+    MM={MM1,MM2},
+    goal(reduction,GL,Red),
+    get_reduction(Red,Goal),
+    RSC=[abort_line(Kill), variable(_TF,VAR), get(tracer,TrID)|RSC1],
+    listener_utility:wait_unify(Detach,IN,[next_attention(normal(At)),do(IN1)|IN2]),
+    listener_inspector:inspect_goal(Kill,TrID,Goal,VAR,IN1,At,_,MM1),
+    query(GL,IN2,IN3,RSC1,RSC2,GM,GM1,MM2,NewArg,Status,SW1,SW2,NUM).
+
+do_command(inspect([N]),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN3,SW,SW2,NUM,GL) :-
+    SW=[detach(Detach)|SW1],
+    MM={MM1,MM2},
+    goal(N,GL,X),
+    get_goal(X,_,Pred,ArgV),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[abort_line(Kill), variable(_TF,VAR), get(tracer,TrID)|RSC1],
+    listener_utility:wait_unify(Detach,IN,[next_attention(normal(At)),do(IN1)|IN2]),
+    listener_inspector:inspect_goal(Kill,TrID,Goal,VAR,IN1,At,_,MM1),
+    query(GL,IN2,IN3,RSC1,RSC2,GM,GM1,MM2,NewArg,Status,SW1,SW2,NUM).
+
+do_command(keep,Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN1,SW,SW1,NUM,[R|GL]) :-
+    keep_all(GL,GL1),
+    query([R|GL1],IN,IN1,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(keep(L),Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN1,SW,SW1,NUM,[R|GL]) :-
+    sorter:sort(L,L1),
+    keep(L1,GL,GL1),
+    query([R|GL1],IN,IN1,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(list_kept_goals,Status,NewArg,GM,GM2,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :-
+    MM={MM1,MM2},
+    listener_goal_keeper:list(local,GM,GM1,IN,IN1,RSC,RSC1,MM1,NUM),
+    query(GL,IN1,IN2,RSC1,RSC2,GM1,GM2,MM2,NewArg,Status,SW,SW1,NUM).
+do_command(list_kept_goals(TrIDs),Status,NewArg,GM,GM2,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :-
+    MM={MM1,MM2},
+    listener_traced_goals:to_list(TrIDs,TrIDs1),
+    listener_goal_keeper:list(TrIDs1,GM,GM1,IN,IN1,RSC,RSC1,MM1,NUM),
+    query(GL,IN1,IN2,RSC1,RSC2,GM1,GM2,MM2,NewArg,Status,SW,SW1,NUM).
+
+do_command(fork,Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN3,SW,SW1,NUM,[R|GL]) :-
+    IN=[putb(" Tracer number: "),getlt(Trm)|IN1],
+    listener_utility:check_input(Trm,default,TrID,IN1,IN2),
+    set_tracer_id(GL,GL1,TrID),
+    query([R|GL1],IN2,IN3,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(fork(L),Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN3,SW,SW1,NUM,[R|GL]) :-
+    IN=[putb(" Tracer number: "),getlt(Trm)|IN1],
+    listener_utility:check_input(Trm,default,TrID,IN1,IN2),
+    sorter:sort(L,L1),
+    set_tracer_id(L1,GL,GL1,TrID),
+    query([R|GL1],IN2,IN3,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(fork(L,TrID),Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN1,SW,SW1,NUM,[R|GL]) :- TrID>=0 |
+    sorter:sort(L,L1),
+    set_tracer_id(L1,GL,GL1,TrID),
+    query([R|GL1],IN,IN1,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+%do_command(title,Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :-
+%    RSC=[get(tracer,TrID)|RSC1],
+%    IN=[putb(" Title: "), getl(Title), set_title(Title1,_)|IN1],
+%    listener_utility:integer_to_string(TrID,Str),
+%    builtin#append_string([" ",Str,": ",Title],Title1),
+%    query(GL,IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+%do_command(title(Title),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :- 
+%  string(Title,_,_) |
+%    RSC=[get(tracer,TrID)|RSC1],
+%    IN=[set_title(Title1,_)|IN1],
+%    listener_utility:integer_to_string(TrID,Str),
+%    builtin#append_string([" ",Str,": ",Title],Title1),
+%    query(GL,IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(write,Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN1,SW,SW1,NUM,GL) :- 
+    RSC=[get(rewrite_depth,Dep),get(rewrite_length,Len)|RSC1],
+    query(GL,Dep,Len,IN,IN1,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(write(Dep,Len),Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN1,SW,SW1,NUM,GL) :- 
+  Dep>=0, Len>=0 |
+    query(GL,Dep,Len,IN,IN1,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(display_ancestor(DA),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :- atom(DA) |
+    (
+    DA=full -> RSC=[set(display_ancestor,full,_)|RSC1],IN1=IN;
+    DA=abbr -> RSC=[set(display_ancestor,abbr,_)|RSC1],IN1=IN;
+    DA=num  -> RSC=[set(display_ancestor,num,_) |RSC1],IN1=IN;
+    DA=no   -> RSC=[set(display_ancestor,no,_)  |RSC1],IN1=IN;
+    otherwise;
+    true ->
+        RSC1=RSC,
+        IN=[putf(" da: ~t Unknown mode.~n",[DA])|IN1]
+    ),
+    query(GL,IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(display_ancestor,Status,NewArg,GM,GM1,MM,RSC,RSC3,IN,IN3,SW,SW1,NUM,GL) :-
+    RSC=[get(display_ancestor,DA)|RSC1],
+    IN=[putf(" Display ancestor: ~t => ",[DA]),getlt(NDA)|IN1],
+    (
+    NDA=end_of_file -> RSC2=RSC1,IN2=IN1;
+    NDA=full        -> RSC1=[set(display_ancestor,full,_)|RSC2],IN2=IN1;
+    NDA=abbr        -> RSC1=[set(display_ancestor,abbr,_)|RSC2],IN2=IN1;
+    NDA=num         -> RSC1=[set(display_ancestor,num,_) |RSC2],IN2=IN1;
+    NDA=no          -> RSC1=[set(display_ancestor,no,_)  |RSC2],IN2=IN1;
+    otherwise;
+    true ->
+        RSC2=RSC1,
+        IN1=[putf(" da: ~t Unknown mode.~n",[NDA])|IN2]
+    ),
+    query(GL,IN2,IN3,RSC2,RSC3,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(scope(SCP),Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :- atom(SCP) |
+    (
+    SCP=clause -> RSC=[set(scope,clause,_)|RSC1],IN1=IN;
+    SCP=tracer -> RSC=[set(scope,tracer,_)|RSC1],IN1=IN;
+    otherwise;
+    true ->
+        RSC1=RSC,
+        IN=[putf(" scope: ~t Unknown mode.~n",[SCP])|IN1]
+    ),
+    query(GL,IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+do_command(scope,Status,NewArg,GM,GM1,MM,RSC,RSC3,IN,IN3,SW,SW1,NUM,GL) :-
+    RSC=[get(scope,SCP)|RSC1],
+    IN=[putf(" Scope of variables: ~t => ",[SCP]),getlt(NSCP)|IN1],
+    (
+    NSCP=end_of_file -> RSC2=RSC1,IN2=IN1;
+    NSCP=clause      -> RSC1=[set(scope,clause,_)|RSC2],IN2=IN1;
+    NSCP=tracer      -> RSC1=[set(scope,tracer,_)|RSC2],IN2=IN1;
+    otherwise;
+    true ->
+        RSC2=RSC1,
+        IN1=[putf(" scope: ~t Unknown mode.~n",[NSCP])|IN2]
+    ),
+    query(GL,IN2,IN3,RSC2,RSC3,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(holophrasting,Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN9,SW,SW1,NUM,GL) :-
+    IN=[print_depth(D,Dep),
+        print_length(L,Len),
+        print_string_length(SL,SLen),
+        print_atom_length(AL,ALen),
+        putb(" Print depth        : "), putt(D), 
+        putb(" => "), getlt(Dep1)|IN1],
+    listener_utility:check_input(Dep1,D,Dep,IN1,IN2),
+    IN2=[putb(" Print length       : "), putt(L), 
+          putb(" => "), getlt(Len1)|IN3],
+    listener_utility:check_input(Len1,L,Len,IN3,IN4),
+    IN4=[putb(" Print string length: "), putt(SL), 
+          putb(" => "), getlt(SLen1)|IN5],
+    listener_utility:check_input(SLen1,SL,SLen,IN5,IN6),
+    IN6=[putb(" Print atom length  : "), putt(AL), 
+          putb(" => "), getlt(ALen1)|IN7],
+    listener_utility:check_input(ALen1,AL,ALen,IN7,IN8),
+    query(GL,IN8,IN9,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(environment,Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :-
+    RSC=[get(display_ancestor,DAM),
+         get(scope,SCP)|RSC1],
+    IN=[get_print_depth(D),
+        get_print_length(L),
+        get_print_string_length(SL),
+        get_print_atom_length(AL),
+        get_print_variable(Pvar),
+        putf(" Print depth         : ~t~n",[D]),
+        putf(" Print length        : ~t~n",[L]),
+        putf(" Print string length : ~t~n",[SL]),
+        putf(" Print atom   length : ~t~n",[AL]),
+        putf(" Print variable mode : ~t~n",[Pvar]),
+        putf(" Display ancestor    : ~t~n",[DAM]),
+        putf(" Scope of variables  : ~t~n",[SCP])|IN1],
+    query(GL,IN1,IN2,RSC1,RSC2,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(illegal_parameter(Ipt),Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN2,SW,SW1,NUM,GL) :-
+    IN=[tab(1), putft(Ipt), putf(": Illegal parameter.~n",[])|IN1],
+    query(GL,IN1,IN2,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(illegal_number(Ipt),Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN2,SW,SW1,NUM,GL) :- 
+    IN=[putb(">"), putft(Ipt), putf(": Subgoal nonexistent.~n",[])|IN1],
+    query(GL,IN1,IN2,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+do_command(cannot_apply(N),Status,NewArg,GM,GM1,MM,RSC,RSC1,IN,IN2,SW,SW1,NUM,GL) :-
+    IN=[putf(">~t: Subgoal is kept.~n",[N])|IN1],
+    query(GL,IN1,IN2,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,NUM).
+
+otherwise.
+do_command(Com,Status,NewArg,GM,GM1,MM,RSC,RSC2,IN,IN2,SW,SW1,NUM,GL) :- true|
+    listener_sub_command:do(Com,IN,IN1,RSC,RSC1,MM,MM1,NUM),
+    query(GL,IN1,IN2,RSC1,RSC2,GM,GM1,MM1,NewArg,Status,SW,SW1,NUM).
+
+reverse_all([Builtin|T],Goals) :- vector(Builtin,2) |
+    Goals=[Builtin|RT], reverse_all(T,RT).
+otherwise.
+reverse_all([Goal|T],   Goals) :- 
+    switch(A,B),
+    set_vector_element(Goal,0,A,B,Goal1),
+    Goals=[Goal1|RT], reverse_all(T,RT).
+reverse_all([],         Goals) :- Goals=[].
+
+
+notrace_all([Builtin|T],Goals) :- vector(Builtin,2) |
+    Goals=[Builtin|RT], notrace_all(T,RT).
+notrace_all([],         Goals) :- Goals=[].
+otherwise.
+notrace_all([Goal|T],   Goals) :- vector_element(Goal,0,trace) |
+    set_vector_element(Goal,0,_,notrace,Goal1),
+    Goals=[Goal1|RT], notrace_all(T,RT).
+otherwise.
+notrace_all([Goal|T],   Goals) :- Goals=[Goal|RT], notrace_all(T,RT).
+
+
+
+spy_all([Builtin|T],SPY,Goals) :- vector(Builtin,2) |
+    Goals=[Builtin|T1], spy_all(T,SPY,T1).
+otherwise.
+spy_all([Goal|T],        SPY,Goals) :- 
+    set_vector_element(Goal,0,_,SPY,Goal1),
+    Goals=[Goal1|T1], spy_all(T,SPY,T1).
+spy_all([],               _,  Goals) :- Goals=[].
+
+
+toggle_all([{N,Data}|L],        GL) :- N<0 |    % builtin
+    GL=[{N,Data}|GL1],
+    toggle_all(L,GL1).
+otherwise.
+toggle_all([{N,Data}|L],        GL) :-    % subgoal
+    set_vector_element(Data,0,X,Y,Data1),
+    switch(X,Y),
+    GL=[{N,Data1}|GL1],
+    toggle_all(L,GL1).
+toggle_all([],                  GL) :-  GL=[].
+
+toggle([N|L],[{N,X}|GL],GOAL) :- 
+    set_vector_element(X,0,A,B,Y),
+    GOAL=[{N,Y}|GOAL1],
+    switch(A,B),
+    toggle(L,GL,GOAL1).
+toggle([],[],GOAL) :- GOAL=[].
+otherwise.
+toggle(L,[G|GL],GOAL) :- 
+    GOAL=[G|GOAL1],
+    toggle(L,GL,GOAL1).
+
+switch(trace,  SW) :- SW=notrace.
+switch(notrace,SW) :- SW=trace.
+switch(on,     SW) :- SW=off.
+switch(off,    SW) :- SW=on.
+otherwise.
+switch(M,      SW) :- SW=M. % keep
+
+set_spy_mode([N|L],[{N,X}|GL],GOAL,SPY) :- 
+    set_vector_element(X,0,_,SPY,Y),
+    GOAL=[{N,Y}|GOAL1],
+    set_spy_mode(L,GL,GOAL1,SPY).
+set_spy_mode([],[],GOAL,_) :- GOAL=[].
+otherwise.
+set_spy_mode(L,[G|GL],GOAL,SPY) :- 
+    GOAL=[G|GOAL1],
+    set_spy_mode(L,GL,GOAL1,SPY).
+
+set_spy(Code,RSC,RSC2) :- code(Code,_,_,_) |
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    RSC=[spy(spying(M,Pred,Arity,YorN))|RSC1],
+    set_spy1(YorN,M,Pred,Arity,RSC1,RSC2).
+otherwise.
+set_spy(_,RSC,RSC1) :- RSC1=RSC. % apply
+    
+
+set_spy1(no ,M,Pred,Arity,RSC,RSC1) :- RSC=[spy(spy(M,Pred,Arity,_))|RSC1].
+otherwise.
+set_spy1(yes,M,Pred,Arity,RSC,RSC1) :- RSC=[spy(nospy(M,Pred,Arity,_))|RSC1].
+
+
+get_predicate({spyf,_,_,_,_,_,M,Pred,Arity},M1,Pred1,Arity1) :- 
+    M1=M, Pred1=Pred, Arity1=Arity.
+otherwise.
+get_predicate(Red,M,Pred,Arity) :- 
+    vector_element(Red,7,Code,_),
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M).
+
+get_reduction({spyf,_,_,_,_,_,_,Pred,Arity},Goal) :- 
+    Goal=(Pred/Arity).
+otherwise.
+get_reduction(Red,Goal) :- 
+    vector_element(Red,7,Code,_),
+    vector_element(Red,8,ArgV,_),
+    code_to_predicate(Code,_,Pred,_,_),
+    listener_utility:make_up_goal(Pred,ArgV,Goal).
+
+get_goal(X,Z,Pred,ArgV) :- vector(X,6) |
+    Pred=apply, vector_element(X,5,ArgV,Z).
+otherwise.
+get_goal(X,Z,Pred,ArgV) :-
+    vector_element(X,5,Code,Y),
+    vector_element(Y,6,ArgV,Z),
+    code_to_predicate(Code,_,Pred,_,_).
+
+
+
+% 91.2.8
+spied_code_vector([{_,M,P,A}|G],N,Vct,SpyCV) :- 
+    N1 := N+1, N2 := N1+1, N3 := N2+1,
+    module_wildcard(M,M1),
+    predicate_wildcard(P,P1),
+    arity_wildcard(A,A1),
+    set_vector_element(Vct, N ,_,M1,Vct1),
+    set_vector_element(Vct1,N1,_,P1,Vct2),
+    set_vector_element(Vct2,N2,_,A1,Vct3),
+    spied_code_vector(G,N3,Vct3,SpyCV).
+spied_code_vector([],             _,Vct,SpyCV) :-  SpyCV=Vct.
+
+module_wildcard('*',M1) :-  M1=0.
+otherwise.
+module_wildcard(M,  M1) :-  M1=M.
+
+predicate_wildcard('*',P1) :-  P1=0.
+otherwise.
+predicate_wildcard(P,  P1) :-  P1=P.
+
+arity_wildcard('*',A1) :-  A1=[].
+otherwise.
+arity_wildcard(A,  A1) :-  A1=A.
+
+
+special_continue([Builtin|T],Goals) :- vector(Builtin,2) |
+    Goals=[Builtin|T1], special_continue(T,T1).
+otherwise.
+special_continue([Goal|T],   Goals) :- 
+    set_vector_element(Goal,0,M,M1,Goal1),  
+    notrace_to_spyr(M,M1),
+    Goals=[Goal1|T1], special_continue(T,T1).
+special_continue([],         Goals) :- Goals=[].
+
+notrace_to_spyr(notrace,M) :- M=spyr.
+otherwise.
+notrace_to_spyr(M0,     M) :- M=M0.
+
+
+%executable_goals([{reduction,_}|GL],KEEPSTM,G,Goals,Keep) :-
+%    executable_goals(GL,KEEPSTM,G,Goals,Keep).
+executable_goals([{N,Builtin}|GL],KEEPSTM,G,Goals,Keep) :- N<0 |
+    executable_goals(GL,KEEPSTM,[Builtin|G],Goals,Keep).
+otherwise.
+executable_goals([{_,Data}|GL],KEEPSTM,G,Goals,Keep) :- 
+  vector_element(Data,0,keeping(_)) |
+    KEEPSTM={KEEPSTM1,KEEPSTM2},
+    set_vector_element(Data,0,_,KEEPSTM1,Data1),
+    vector_element(Data1,1,TID,Data2),
+    Keep=[{TID,Data2}|Keep1],
+    executable_goals(GL,KEEPSTM2,G,Goals,Keep1).
+otherwise.
+executable_goals([{_,Data}|GL],KEEPSTM,G,Goals,Keep) :- 
+    executable_goals(GL,KEEPSTM,[Data|G],Goals,Keep).
+executable_goals([],KEEPSTM,G,Goals,Keep) :-  Goals=G, Keep=[], KEEPSTM=[].
+
+
+goal(K,[{K,G}|_],Goal) :- Goal=G.
+otherwise.
+goal(K,[_|GL],Goal) :- goal(K,GL,Goal).
+
+
+reset_tracemode([{N,Data}|L],        GL,SPY) :- N<0 |    % builtin
+    GL=[{N,Data}|GL1],
+    reset_tracemode(L,GL1,SPY).
+reset_tracemode([{N,Data}|L],        GL,SPY) :-    % apply
+  vector_element(Data,4,apply) |
+    GL=[{N,Data}|GL1],
+    reset_tracemode(L,GL1,SPY).
+otherwise.
+reset_tracemode([{N,Data}|L],        GL,SPY) :-    % subgoal
+    set_vector_element(Data, 0,TP, TP1,Data1),
+    set_vector_element(Data1,5,Cde,Cde,Data2),
+    code_to_predicate(Cde,Mdl,P,A,_),
+    module:get_module_name(Mdl,M),
+    SPY=[tracing(M,P,A,YorN)|SPY1],
+    trace_mode(TP,YorN,TP1),
+    GL=[{N,Data2}|GL1],
+    reset_tracemode(L,GL1,SPY1).
+reset_tracemode([],                  GL,SPY) :-  GL=[], SPY=[].
+
+trace_mode(trace,  yes,TP) :- TP=trace.
+trace_mode(notrace,yes,TP) :- TP=trace.
+trace_mode(trace,  no, TP) :- TP=notrace.
+trace_mode(notrace,no, TP) :- TP=notrace.
+otherwise.
+trace_mode(Mde,    _,  TP) :- TP=Mde.
+
+
+keep_all([{N,Data}|L],        GL) :- N<0 |    % builtin
+    GL=[{N,Data}|GL1],
+    keep_all(L,GL1).
+otherwise.
+keep_all([{N,Data}|L],        GL) :-    % subgoal
+    set_vector_element(Data,0,X,Y,Data1),
+    keep_mode(X,Y),
+    GL=[{N,Data1}|GL1],
+    keep_all(L,GL1).
+keep_all([],                  GL) :-  GL=[].
+
+keep_mode(keeping(TP),M) :-  M=TP.
+otherwise.
+keep_mode(TP,         M) :-  M=keeping(TP).
+
+keep([N|L],[{N,X}|GL],GOAL) :- 
+    set_vector_element(X,0,A,B,Y),
+    GOAL=[{N,Y}|GOAL1],
+    keep_mode(A,B),
+    keep(L,GL,GOAL1).
+keep([],[],GOAL) :- GOAL=[].
+otherwise.
+keep(L,[G|GL],GOAL) :- 
+    GOAL=[G|GOAL1],
+    keep(L,GL,GOAL1).
+
+set_tracer_id(L,        GL,default) :- GL=L.
+otherwise.
+set_tracer_id([{N,Data}|L],        GL,ID) :- N<0 |    % builtin
+    GL=[{N,Data}|GL1],
+    set_tracer_id(L,GL1,ID).
+otherwise.
+set_tracer_id([{N,Data}|L],        GL,ID) :-    % subgoal
+    set_vector_element(Data,2,_,ID,Data1),
+    GL=[{N,Data1}|GL1],
+    set_tracer_id(L,GL1,ID).
+set_tracer_id([],                  GL,_) :-  GL=[].
+
+set_tracer_id(_,GL,GOAL,default) :- GOAL=GL.
+otherwise.
+set_tracer_id([N|L],[{N,X}|GL],GOAL,ID) :- 
+    set_vector_element(X,2,_,ID,Y),
+    GOAL=[{N,Y}|GOAL1],
+    set_tracer_id(L,GL,GOAL1,ID).
+set_tracer_id([],[],GOAL,_) :- GOAL=[].
+otherwise.
+set_tracer_id(L,[G|GL],GOAL,ID) :- 
+    GOAL=[G|GOAL1],
+    set_tracer_id(L,GL,GOAL1,ID).
+
+
+goal_status(_,[],       St) :-       St=non_existent.
+goal_status(N,[{N,Data}|_],St) :- vector_element(Data,0,keeping(_)) | St=keeping.
+goal_status(N,[{N,_}|_],St) :- N>0 | St=subgoal.
+goal_status(N,[{N,_}|_],St) :- N<0 | St=builtin.
+goal_status(reduction,_,St) :-       St=reduction.
+otherwise.
+goal_status(N,[_|GL],St) :- goal_status(N,GL,St).
+
+
+help(#"q",_,             IN,IN1) :- IN1=IN.
+help(_,   [],            IN,IN1) :- IN=[putb(":"),getl(_)|IN1].
+otherwise.
+help(_,   [{Msg,Type}|L],IN,IN3) :-
+    IN=[putb(Msg),getc(C)|IN1],
+    help_msg(C,Type,IN1,IN2,C1),
+    help(C1,L,IN2,IN3).
+
+help_msg(#"q",  _,    IN,IN1,C) :- IN=[skip(key#lf)|IN1], C= #"q".
+help_msg(#"n",  _,    IN,IN1,C) :- IN=[skip(key#lf)|IN1], C= #"n".
+help_msg(key#lf,Type, IN,IN1,C) :- 
+    help_msg1(Type,IN,IN1), C= key#lf.
+otherwise.
+help_msg(Key,   Type, IN,IN2,C) :-
+    IN=[skip(key#lf)|IN1],
+    help_msg1(Type,IN1,IN2), C=Key.
+
+help_msg1(basic,IN,IN1) :-
+    IN=[ putf(" <cr>, c         : continue (act on trace modes)~n",[]),
+         putf(" n               : notrace all (subgoals)~n",[]),
+         putf(" x               : toggle trace mode all & continue~n",[]),
+         putf(" N,...           : toggle trace mode & continue~n",[]),
+         putf(" t  <N,...>      : toggle trace mode~n",[]),
+         putf(" s  <N,...>      : apply the reduction spy~n",[]),
+         putf(" sr <N,...>      : apply the reduction spy~n",[]),
+         putf(" sf <N,...>      : apply the fork spy~n",[]),
+         putf(" at COUNT        : auto trace (COUNT times)~n",[]),
+         putf(" as COUNT        : auto reduction-spy (COUNT times)~n",[]),
+         putf(" ntr             : notrace anymore~n",[]),
+         putf(" a               : abort~n",[]),
+         putf(" b               : break~n",[])|IN1].
+help_msg1(sub,IN,IN1) :-
+    IN=[ putf(" k  <N,...>      : toggle keep mode~n",[]),
+         putf(" f  <N,...>      : set the tracer to trace~n",[]),
+         putf(" kg <TRACERS|all>: list kept goals~n",[]),
+         putf(" tg <TRACERS|all>: list traced goals~n",[]),
+         putf(" spy <N>         : set(reset) spy~n",[]),
+         putf(" spy   M,P,A     : set spy~n",[]),
+         putf(" nospy M,P,A     : reset spy~n",[]),
+         putf(" sp              : list spying patterns~n",[]),
+         putf(" si <MODULE>     : list spying predicates~n",[]),
+         putf(" tr  M,P,A       : set default trace mode~n",[]),
+         putf(" ntr M,P,A       : reset default trace mode~n",[]),
+         putf(" ntr_all         : reset default trace mode all~n",[]),
+         putf(" tri             : list tracing predicates~n",[])|IN1].
+help_msg1(ins,IN,IN1) :-
+    IN=[ putf(" ins <N>         : inspect goal~n",[]),
+         putf(" m  VAR <,NAME>  : monitor variable~n",[]),
+         putf(" mf VAR <,NAME>  : monitor variable and fork~n",[]),
+         putf(" mm              : change monitor mode~n",[]),
+         putf(" mt              : list monitored terms~n",[])|IN1].
+help_msg1(var,IN,IN1) :-
+    IN=[ putf(" rem VAR <,NAME> : remember the binding of VAR~n",[]),
+         putf(" l               : list variables~n",[]),
+         putf(" v  <VARS>       : display variables~n",[])|IN1].
+help_msg1(env,IN,IN1) :-
+    IN=[ putf(" scope           : change scope of variable~n",[]),
+         putf(" w <DEPTH,LENGTH>: rewrite reduction~n",[]),
+         putf(" pd  <DEPTH>     : change print depth~n",[]),
+         putf(" pl  <LENGTH>    : change print length~n",[]),
+         putf(" psl <LENGTH>    : change print string length~n",[]),
+         putf(" pal <LENGTH>    : change print atom length~n",[]),
+         putf(" pv              : toggle print variable mode~n",[]),
+         putf(" ho              : change holophrasting~n",[]),
+         putf(" da <MODE>       : change display mode of ancestor~n",[]),
+         putf(" env             : print environment parameters~n",[])|IN1].
+

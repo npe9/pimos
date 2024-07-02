@@ -1,0 +1,174 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>user>yashiro>V33>scsi>scsi_processor.kl1.14, 12-May-92 15:16:24, Edit by yashiro
+:- module scsi_processor.
+%:- with_macro scsi_library.
+:- with_macro pimos.
+:- include("pimos.h").
+:- switch(fep_interface).
+:- case(kl1_network).
+:- public dummy/0.
+dummy:- true.
+:-default.
+:- public processor_manager/4.
+
+processor_manager([],SCSI_OUT,_,_) :-
+    true |
+        SCSI_OUT=[].
+
+processor_manager([test_unit_ready(Result)|NPROCESSOR],SCSI_OUT,Unit,LUN) :-
+    true |
+        scsi_common:test_unit_ready(processor,Result,SCSI_OUT,SCSI_OUT1,Unit,LUN),
+        processor_manager(NPROCESSOR,SCSI_OUT1,Unit,LUN).
+
+processor_manager([inquiry(Result)|NPROCESSOR],SCSI_OUT,Unit,LUN) :-
+        scsi_common:inquiry(processor,Result,SCSI_OUT,SCSI_OUT1,Unit,LUN),
+        processor_manager(NPROCESSOR,SCSI_OUT1,Unit,LUN).
+%  *********** Send Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |      Reserve      |
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Length (MSB)       | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Length             | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |            Length (LSB)       | 
+%     +---+---+---+---+---+---+---+---+
+%
+processor_manager([send(Buffer,Size,Result)|NPROCESSOR],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF"|
+        new_string(CDB,scsi#group_0_command_size,8),
+%        new_string(Data,scsi#inquiry_data_max,8),
+        set_string_element(CDB,0,scsi#send_command,CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        new_string(CDB0,scsi#group_0_command_size,8),
+        set_string_element(CDB0,0,scsi#send_command,CDB01),
+        set_string_element(CDB01,1,ELUN,CDB02),
+        set_string_element(CDB02,2,Length2,CDB03),
+        set_string_element(CDB03,3,Length1,CDB04),
+        set_string_element(CDB04,4,Length0,CDB05),
+        SCSI_OUT=[command({Unit,LUN,CDB5,Size,scsi#direction_out,Buffer,0},
+                            NData,Length3,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Status1,processor,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_send_command(Status1,10,{Unit,LUN,CDB05,Size,scsi#direction_out},NData,Length3,SCSI_OUT2,SCSI_OUT3,Result), % retry count = 10.
+        processor_manager(NPROCESSOR,SCSI_OUT3,Unit,LUN).
+
+%  *********** Receive Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |      Reserve      |
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Length (MSB)       | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Length             | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |            Length (LSB)       | 
+%     +---+---+---+---+---+---+---+---+
+%
+processor_manager([receive(Buffer,Size,Result)|NPROCESSOR],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF" |
+        new_string(CDB,scsi#group_0_command_size,8),
+        set_string_element(CDB,0,scsi#receive_command,CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        new_string(CDB0,scsi#group_0_command_size,8),
+        set_string_element(CDB0,0,scsi#receive_command,CDB01),
+        set_string_element(CDB01,1,ELUN,CDB02),
+        set_string_element(CDB02,2,Length2,CDB03),
+        set_string_element(CDB03,3,Length1,CDB04),
+        set_string_element(CDB04,4,Length0,CDB05),
+        SCSI_OUT=[command({Unit,LUN,CDB5,Size,scsi#direction_in,Buffer,0}
+                          ,NData,Length3,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Status1,processor,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_receive_command(Status1,10,{Unit,LUN,CDB05,Size,scsi#direction_in},NData,Length3,SCSI_OUT2,SCSI_OUT3,Result), % retry count = 10.
+        processor_manager(NPROCESSOR,SCSI_OUT3,Unit,LUN).
+
+check_send_command(normal,Cnt,DevInfo,Data,Length,SCSI_OUT,NSCSI_OUT,Result) :-
+    string(Data,_,8) |
+        SCSI_OUT=NSCSI_OUT,
+        Result=normal(Length,Data).
+check_send_command(abnormal(no_status(CompletionCode,Detail)),Cnt,
+                          DevInfo,Data,Length,SCSI_OUT,NSCSI_OUT,Result) :-
+    string(Data,_,8), Length =:= 0 |
+        resend(Cnt,DevInfo,Data,SCSI_OUT,NSCSI_OUT,no_status(CompletionCode,Detail),Result).
+otherwise.
+check_send_command(abnormal(Reason),Cnt,
+                          DevInfo,Data,Length,SCSI_OUT,NSCSI_OUT,Result) :-
+    true |
+        SCSI_OUT=NSCSI_OUT,
+        Result=abnormal(Reason,Length,Data).
+otherwise.
+check_send_command(St,Cnt,DevInfo,Data,Length,SCSI_OUT,NSCSI_OUT,Result) :-
+    true |
+        SCSI_OUT=NSCSI_OUT,
+        Result=abnormal(illegal_data(St),Length,Data).
+
+check_receive_command(normal,Cnt,DevInfo,Data,Length,SCSI_OUT,NSCSI_OUT,Result) :-
+    string(Data,_,8) |
+        SCSI_OUT=NSCSI_OUT,
+        Result=normal(Length,Data).
+check_receive_command(abnormal(no_status(CompletionCode,Detail)),Cnt,
+                        DevInfo,Data,Length,SCSI_OUT,NSCSI_OUT,Result) :-
+    string(Data,_,8), Length =:= 0 |
+        re_receive(Cnt,DevInfo,Data,SCSI_OUT,NSCSI_OUT,no_status(CompletionCode,Detail),Result).
+otherwise.
+check_receive_command(abnormal(Reason),Cnt,DevInfo,Data,Length,SCSI_OUT,NSCSI_OUT,Result) :-
+    true |
+        SCSI_OUT=NSCSI_OUT,
+        Result=abnormal(Reason,Length,Data).
+otherwise.
+check_receive_command(St,Cnt,DevInfo,Data,Length,SCSI_OUT,NSCSI_OUT,Result) :-
+    true |
+        SCSI_OUT=NSCSI_OUT,
+        Result=abnormal(illegal_data(St),Length,Data).
+
+resend(0,{Unit,LUN,CDB05,Size,scsi#direction_out},Data,SCSI_OUT,NSCSI_OUT,Reason,Result) :-
+    display_console(ascii#"SCSI : processor(send): Retry counts exceeded. "),
+    display_console(ascii#"Unit:"),display_console(Unit) |
+                SCSI_OUT=NSCSI_OUT,
+                Result=abnormal(Reason,0,Data).
+otherwise.
+resend(Cnt,{Unit,LUN,CDB,Size,scsi#direction_out},Data,SCSI_OUT,NSCSI_OUT,Reason,Result) :-
+    Cnt1 := Cnt -1,
+    display_console(ascii#"SCSI: send retry!!")  |
+        copy:copy(CDB,CDB1,CDB2),
+        SCSI_OUT=[command({Unit,LUN,CDB1,Size,scsi#direction_out,Data,0}
+                          ,NData,Length,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Status1,processor,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_send_command(Status1,Cnt1,{Unit,LUN,CDB2,Size,scsi#direction_out},NData,Length,SCSI_OUT2,NSCSI_OUT,Result).
+
+re_receive(0,{Unit,LUN,CDB05,Size,scsi#direction_in},Data,SCSI_OUT,NSCSI_OUT,Reason,Result) :-
+    display_console(ascii#"SCSI : processor(receive): Retry counts exceeded. "),
+    display_console(ascii#"Unit:"),display_console(Unit) |
+                SCSI_OUT=NSCSI_OUT,
+                Result=abnormal(Reason,0,Data).
+otherwise.
+re_receive(Cnt,{Unit,LUN,CDB,Size,scsi#direction_in},Data,SCSI_OUT,NSCSI_OUT,Reason,Result) :-
+    Cnt1 := Cnt - 1,
+    display_console(ascii#"SCSI: receive retry!!") |
+        copy:copy(CDB,CDB1,CDB2),
+        SCSI_OUT=[command({Unit,LUN,CDB1,Size,scsi#direction_in,Data,0}
+                          ,NData,Length,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Status1,processor,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_receive_command(Status1,Cnt1,{Unit,LUN,CDB2,Size,scsi#direction_in},NData,Length,SCSI_OUT2,NSCSI_OUT,Result).
+:-end_switch.

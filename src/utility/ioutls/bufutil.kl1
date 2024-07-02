@@ -1,0 +1,569 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module buffer_utility.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public integer_to_string/3,integer_to_string/5,
+    integer_to_string_code/4,integer_to_string_code/6,
+    string_to_integer/3.
+
+% For buffer_local_utility:
+:- public string_code_to_string/2.
+
+:- switch(floating_point).
+:- case(yes).
+:- public get_floating_point_type/3,
+    floating_point_to_string/2,
+    floating_point_to_string_code/3.
+
+% For buffer_local_utility:
+:- public get_float_type/3,get_special_float_string_code/4,float_to_cod2/3.
+:- end_switch.
+
+:- switch(extended_floating_point).
+:- case(yes).
+:- public get_extended_floating_point_type/3,
+    extended_floating_point_to_string/2,
+    extended_floating_point_to_string_code/3.
+:- end_switch.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% integer_to_string(+N,+Adic,-String)
+%%      N       :: Integer or bignum
+%%      Adic    :: 2=<Adic,Adic=<36
+%%      Keta    :: Length of output string
+%%      Char    :: Character code to fill empty keta
+%%      String  :: Print pattern of N (16bit-string)
+
+integer_to_string(N,A,Str) :- N=\=0,N>16#"80000000",2=<A,A=<36 |
+        int_to_str(N,A,Str,N,0).
+integer_to_string(N,A,Str) :- N=0,2=<A,A=<36 | Str="0".
+integer_to_string(N,A,Str) :- N=16#"80000000" |
+        integer_to_string_code(N,A,H,[]),
+        string_code_to_string(H,Str).
+otherwise.
+integer_to_string(N,A,Str) :- true |
+        raise_error(illegal_args,integer_to_string(N,A,Str)).
+
+int_to_str(N,A,Str,I,K) :- I=\=0 |
+        int_to_str(N,A,Str,~(I/A),~(K+1)).
+int_to_str(N,A,Str,0,K) :- N>0 |
+        new_string(Str0,K,16),
+        int_to_str2(N,A,Str,Str0,~(K-1)).
+int_to_str(N,A,Str,0,K) :- N<0 |
+        K1:=K+1,
+        new_string(Str0,K1,16),
+        set_string_element(Str0,0,#"-",Str1),
+        int_to_str2(~(-N),A,Str,Str1,K).
+
+int_to_str2(N,A,Str1,Str,K) :- N>0,N1:=N/A,R:=N-N1*A,0=<R,R=<9 |
+        set_string_element(Str,K,~(R+ #"0"),Str0),
+        int_to_str2(N1,A,Str1,Str0,~(K-1)).
+int_to_str2(N,A,Str1,Str,K) :- N>0,N1:=N/A,R:=N-N1*A,9<R,R=<36 |
+        set_string_element(Str,K,~(R-10+ #"A"),Str0),
+        int_to_str2(N1,A,Str1,Str0,~(K-1)).
+int_to_str2(0,_,Str1,Str,_) :- true | Str=Str1.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% integer_to_string(+N,+Adic,+Keta,+Char,-String)
+
+integer_to_string(N,A,K,C,Str) :- N>0,2=<A,A=<36,K>=0,0=<C,C=<16#"ffff" |
+        new_string(Str0,K,16),
+        int_to_str(N,A,~(K-1),C,Str,Str0,'+').
+integer_to_string(N,A,K,C,Str) :- 16#"80000000"<N,N<0,2=<A,A=<36,K>=0,0=<C,C=<16#"ffff" |
+        new_string(Str0,K,16),
+        int_to_str(~(-N),A,~(K-1),C,Str,Str0,'-').
+integer_to_string(N,A,K,C,Str) :- N=0,2=<A,A=<36,K>=0,0=<C,C=<16#"ffff" |
+        new_string(Str0,K,16),
+        set_string_element(Str0,~(K-1),#"0",Str1),
+        fill_string(Str1,Str,~(K-2),C).
+integer_to_string(N,A,K,C,Str) :- N=16#"80000000",2=<A,A=<36,K>=0,0=<C,C=<16#"ffff" |
+        integer_to_string_code(N,A,K,C,H,[]),
+        string_code_to_string(H,Str).
+otherwise.
+integer_to_string(N,A,K,C,Str) :- true |
+        raise_error(illegal_args,integer_to_string(N,A,K,C,Str)).
+
+int_to_str(N,A,K,C,Str1,Str,Sign) :- K>=0,N>0,N1:=N/A,R:=N-N1*A,0=<R,R=<9 |
+        set_string_element(Str,K,~(R+ #"0"),Str0),
+        int_to_str(N1,A,~(K-1),C,Str1,Str0,Sign).
+int_to_str(N,A,K,C,Str1,Str,Sign) :- K>=0,N>0,N1:=N/A,R:=N-N1*A,9<R,R=<36 |
+        set_string_element(Str,K,~(R-10+ #"A"),Str0),
+        int_to_str(N1,A,~(K-1),C,Str1,Str0,Sign).
+int_to_str(N,A,K,C,Str1,Str,Sign) :- K>=0,N=0,Sign='+' |
+        fill_string(Str,Str1,K,C).
+int_to_str(N,A,K,C,Str1,Str,Sign) :- K>=0,N=0,Sign='-' |
+        set_string_element(Str,K,#"-",Str0),
+        fill_string(Str0,Str1,~(K-1),C).
+int_to_str(_,_,K,_,Str1,Str,_) :- K<0 | Str=Str1.
+
+fill_string(Str,Str1,K,C) :- K>=0 |
+        set_string_element(Str,K,C,Str0),
+        fill_string(Str0,Str1,~(K-1),C).
+fill_string(Str,Str1,K,_) :- K<0 | Str=Str1.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% integer_to_string_code(+N,+Adic,-H,+T)
+%% integer_to_string_code(+N,+Adic,+Keta,+Char,-H,+T)
+%%      N       :: Integer or bignum
+%%      Adic    :: 2=<Adic,Adic=<36
+%%      Keta    :: Length of output string
+%%      Char    :: Character code to fill empty keta
+%%      H,T     :: Print pattern character codes list of N (d-list)
+
+integer_to_string_code(N,A,H,T) :- N>0,2=<A,A=<36 |
+        int_to_strc(N,A,H,T).
+integer_to_string_code(N,A,H,T) :- 16#"80000000"<N,N<0,2=<A,A=<36 |
+        H=[#"-"|H1],
+        int_to_strc(~(-N),A,H1,T).
+integer_to_string_code(0,A,H,T) :- 2=<A,A=<36 | H=[#"0"|T].
+integer_to_string_code(N,A,H,T) :- N=16#"80000000" |
+        H=[#"-"|H1],
+        int_to_strcMinus(N,A,H1,T).
+otherwise.
+integer_to_string_code(N,A,H,T) :- true |
+        raise_error(illegal_args,integer_to_string_code(N,A,H,T)).
+
+int_to_strc(N,A,H,T) :- N>0,N1:=N/A,R:=N-N1*A,0=<R,R=<9 |
+        int_to_strc(N1,A,H,[~(R+ #"0")|T]).
+int_to_strc(N,A,H,T) :- N>0,N1:=N/A,R:=N-N1*A,9<R,R=<36 |
+        int_to_strc(N1,A,H,[~(R-10+ #"A")|T]).
+int_to_strc(0,_,H,T) :- true | H=T.
+
+int_to_strcMinus(N,A,H,T) :- N<0,N1:=N/A,R:= -(N-N1*A),0=<R,R=<9 |
+        int_to_strcMinus(N1,A,H,[~(R+ #"0")|T]).
+int_to_strcMinus(N,A,H,T) :- N<0,N1:=N/A,R:= -(N-N1*A),9<R,R=<36 |
+        int_to_strcMinus(N1,A,H,[~(R-10+ #"A")|T]).
+int_to_strcMinus(0,_,H,T) :- true | H=T.
+
+integer_to_string_code(N,A,K,C,H,T) :- K>0,N>0 |
+        int_to_strc(N,A,K,C,H,T,'+').
+integer_to_string_code(N,A,K,C,H,T) :- K>0,16#"80000000"<N,N<0 |
+        int_to_strc(~(-N),A,K,C,H,T,'-').
+integer_to_string_code(N,_,K,C,H,T) :- K>0,N=0 |
+        T0=[#"0"|T],
+        fill_string_code(H,T0,~(K-1),C).
+integer_to_string_code(N,A,K,C,H,T) :- K>0,N=16#"80000000" |
+        int_to_strcMinus(N,A,K,C,H,T,'-').
+integer_to_string_code(_,_,0,_,H,T) :- true | H=T.
+otherwise.
+integer_to_string_code(N,A,K,C,H,T) :- true |
+        raise_error(illegal_args,integer_to_string_code(N,A,K,C,H,T)).
+
+int_to_strc(N,A,K,C,H,T,Sign) :- K>0,N>0,N1:=N/A,R:=N-N1*A,0=<R,R=<9 |
+        int_to_strc(N1,A,~(K-1),C,H,[~(R+ #"0")|T],Sign).
+int_to_strc(N,A,K,C,H,T,Sign) :- K>0,N>0,N1:=N/A,R:=N-N1*A,9<R,R=<36 |
+        int_to_strc(N1,A,~(K-1),C,H,[~(R-10+ #"A")|T],Sign).
+int_to_strc(N,_,K,C,H,T,Sign) :- K>0,N=0,Sign='+' |
+        fill_string_code(H,T,K,C).
+int_to_strc(N,_,K,C,H,T,Sign) :- K>0,N=0,Sign='-' |
+        fill_string_code(H,[#"-"|T],~(K-1),C).
+int_to_strc(_,_,0,_,H,T,_) :- true | H=T.
+
+int_to_strcMinus(N,A,K,C,H,T,Sign) :- K>0,N<0,N1:=N/A,R:= -(N-N1*A),0=<R,R=<9 |
+        int_to_strcMinus(N1,A,~(K-1),C,H,[~(R+ #"0")|T],Sign).
+int_to_strcMinus(N,A,K,C,H,T,Sign) :- K>0,N<0,N1:=N/A,R:= -(N-N1*A),9<R,R=<36 |
+        int_to_strcMinus(N1,A,~(K-1),C,H,[~(R-10+ #"A")|T],Sign).
+int_to_strcMinus(N,_,K,C,H,T,Sign) :- K>0,N=0,Sign='+' |
+        fill_string_code(H,T,K,C).
+int_to_strcMinus(N,_,K,C,H,T,Sign) :- K>0,N=0,Sign='-' |
+        fill_string_code(H,[#"-"|T],~(K-1),C).
+int_to_strcMinus(_,_,0,_,H,T,_) :- true | H=T.
+
+fill_string_code(H,T,K,C) :- K>0 |
+        H=[C|H1],
+        fill_string_code(H1,T,~(K-1),C).
+fill_string_code(H,T,0,_) :- true | H=T.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% string_to_integer(+String,+Adic,-Integer)
+
+string_to_integer(Str,A,Int) :- A=<10,2=<A,
+    string(Str,N,_),N>0 |
+        str_to_int_dec(Str,A,Int,0,0,N).
+string_to_integer(Str,A,Int) :- 10<A,A=<36,
+    string(Str,N,_),N>0 |
+        str_to_int(Str,A,Int,0,0,N).
+otherwise.
+string_to_integer(Str,A,Int) :- true |
+        raise_error(illegal_args,string_to_integer(Str,A,Int)).
+
+str_to_int_dec(Str,A,M1,M,I,N) :- I<N,
+    string_element(Str,I,E0),E:=E0- #"0",0=<E,E<A,M0:=M*A+E |
+        str_to_int_dec(Str,A,M1,M0,~(I+1),N).
+str_to_int_dec(_,_,M1,M,N,N) :- true | M=M1.
+otherwise.
+str_to_int_dec(Str,A,M1,M,I,N) :- I<N,
+    string_element(Str,I,E0),E:=E0- #"0",0=<E,E<A,A=:=10 |
+        bignum:parse(Str,M1).
+str_to_int_dec(Str,A,M1,M,I,N) :- I<N,
+    string_element(Str,I,E0),E:=E0- #"0",0=<E,E<A,A \= 10 |
+        raise_error(non_dec_bignum,string_to_integer(Str,A,M1)).
+otherwise.
+str_to_int_dec(Str,A,M,_,_,_) :- true |
+        raise_error(illegal_char,string_to_integer(Str,A,M)).
+
+str_to_int(Str,A,M1,M,I,N) :- I<N,
+    string_element(Str,I,E0),#"0"=<E0,E0=< #"9",E:=E0- #"0",M0:=M*A+E |
+        str_to_int(Str,A,M1,M0,~(I+1),N).
+str_to_int(Str,A,M1,M,I,N) :- I<N,
+    string_element(Str,I,E0),E:=E0-9015,10=<E,E<A,M0:=M*A+E |               % E:=E0- #"A"+10,
+        str_to_int(Str,A,M1,M0,~(I+1),N).
+str_to_int(Str,A,M1,M,I,N) :- I<N,
+    string_element(Str,I,E0),E:=E0-9047,10=<E,E<A,M0:=M*A+E |               % E:=E0- #"a"+10,
+        str_to_int(Str,A,M1,M0,~(I+1),N).
+str_to_int(_,_,M1,M,N,N) :- true | M=M1.
+otherwise.
+str_to_int(Str,A,M1,M,I,N) :- I<N,
+    string_element(Str,I,E),#"0"=<E,E=< #"9" |
+        raise_error(non_dec_bignum,string_to_integer(Str,A,M1)).
+str_to_int(Str,A,M1,M,I,N) :- I<N,
+    string_element(Str,I,E0),E:=E0-9015,10=<E,E<A |
+        raise_error(non_dec_bignum,string_to_integer(Str,A,M1)).
+str_to_int(Str,A,M1,M,I,N) :- I<N,
+    string_element(Str,I,E0),E:=E0-9047,10=<E,E<A |
+        raise_error(non_dec_bignum,string_to_integer(Str,A,M1)).
+otherwise.
+str_to_int(Str,A,M1,M,_,_) :- true |
+        raise_error(illegal_char,string_to_integer(Str,A,M1)).
+
+raise_error(illegal_args,Pred) :- true |
+        shoen:raise(pimos_tag#error,
+            '$PIMOS$'(buffer_utility,"illegal_argument(s)"),Pred).
+raise_error(non_dec_bignum,Pred) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(buffer_utility,
+            "Non-decimal bignum unsupported"),Pred).
+raise_error(illegal_char,Pred) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(buffer_utility,
+            "Non-numeral character found"),Pred).
+
+
+:- switch(floating_point).
+:- case(yes).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% get_floating_point_type(+Float, -Sign, -FloatType)
+%%      Sign        :: = 0 when positive ; 1 when negative
+%%      FloatType   :: = normalized; denormalized; zero ; infinity ; nan
+
+get_floating_point_type(Float,Sign,Type) :- floating_point(Float) |
+        get_float_type(Float,Sign,Type).
+otherwise.
+get_floating_point_type(Float,Sign,Type) :- true |
+        raise_error(illegal_args,get_floating_point_type(Float,Sign,Type)).
+
+:- switch(machine_type).
+:- case(mpsi).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Floating_point structure (32bits)
+%%       |------------------------------------|
+%%       |S| Exponent |   Mantissa            |
+%%       |------------------------------------|
+%%        0          8                      31
+
+get_float_type(Float,Sign,FType) :- tag_and_value(Float,_,Val) |
+        Sign := Val >> 31,
+        Exp := (Val << 1) >> 24,
+        Mantissa := Val/\16#"7fffff",
+        get_float_type1(Exp,Mantissa,FType).
+
+get_float_type1(0,0,      Type) :- true  | Type=zero.
+get_float_type1(16#"FF",0,Type) :- true  | Type=infinity.
+get_float_type1(16#"FF",M,Type) :- M=\=0 | Type=nan.
+get_float_type1(E,      0,Type) :- E=\=0,E=\=16#"FF" | Type=normalized.
+get_float_type1(E,      M,Type) :- E=\=0,E=\=16#"FF",M=\=0 | Type=denormalized.
+
+:- case(vpim).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Kind of floating_point (64bits) :
+%% 39     31         7   6   5   4   3   2   1   0     bits
+%% +-----+---------+---+---+---+---+---+---+---+---+
+%% | INT |         |   |   |   |   |   |   |   |   |
+%% +-----+---------+---+---+---+---+---+---+---+---+   IEEE class:
+%%                   |           |   |   |   |   |
+%%                   |           |   |   |   |   +---  normalized
+%%                  sign         |   |   |   +-------  zero
+%%                               |   |   +-----------  denormalized
+%%                               |   +---------------  infinity
+%%                               +-------------------  nan
+%%
+
+get_float_type(Float,Sign,Type) :- floating_point(Float,Type0) |
+        Sign := (Type0/\16#"80")>>7,
+        Kind := Type0/\16#"1f",
+        get_float_type1(Kind,Type).
+
+get_float_type1(2#"10000",Type) :- true | Type=nan.
+get_float_type1(2#"01000",Type) :- true | Type=infinity.
+get_float_type1(2#"00100",Type) :- true | Type=denormalized.
+get_float_type1(2#"00010",Type) :- true | Type=zero.
+get_float_type1(2#"00001",Type) :- true | Type=normalized.
+
+:- end_switch.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% floating_point_to_string(+Float,-String)
+%%      Float       :: Floating point
+
+floating_point_to_string(Float,Str) :- floating_point(Float) |
+        get_float_type(Float,Sign,Type),
+        float_to_cod(Float,H,[],Sign,Type),
+        string_code_to_string(H,Str).
+otherwise.
+floating_point_to_string(Float,Str) :- true |
+        raise_error(illegal_args,floating_point_to_string(Float,Str)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% floating_point_to_string_code(+Float,-H,+T)
+
+floating_point_to_string_code(Float,H,T) :- floating_point(Float) |
+        get_float_type(Float,Sign,Type),
+        float_to_cod(Float,H1,T,Sign,Type).
+otherwise.
+floating_point_to_string_code(Float,H,T) :- true |
+        raise_error(illegal_args,floating_point_to_string_code(Float,H,T)).
+
+float_to_cod(Float,H,T,0,Type) :- (Type=normalized ; Type=denormalized) |
+        float_to_cod2(Float,H,T).
+float_to_cod(Float,H,T,1,Type) :- (Type=normalized ; Type=denormalized) |
+        H=[#"-"|H1],
+        Float1 $:= -Float,
+        float_to_cod2(Float1,H1,T).
+float_to_cod(_,H,T,Sign,Type) :- Type\=normalized,Type\=denormalized |
+        get_special_float_string_code(Type,Sign,H,T).
+
+get_special_float_string_code(zero,    0,H,T) :- true | H=[putb(" 0.0 ")|T].
+get_special_float_string_code(infinity,0,H,T) :- true | H=[putb(" float#(+infinity) ")|T].
+get_special_float_string_code(nan,     0,H,T) :- true | H=[putb(" float#(+nan) ")|T].
+get_special_float_string_code(zero,    1,H,T) :- true | H=[putb(" -0.0 ")|T].
+get_special_float_string_code(infinity,1,H,T) :- true | H=[putb(" float#(-infinity) ")|T].
+get_special_float_string_code(nan,     1,H,T) :- true | H=[putb(" float#(-nan) ")|T].
+
+/* old interface:
+get_special_float_string_code(zero,    0,H,T) :- true | H=[putb(" 0.0 ")|T].
+get_special_float_string_code(infinity,0,H,T) :- true | H=[putb(" floating+infinity ")|T].
+get_special_float_string_code(nan,     0,H,T) :- true | H=[putb(" floating+Nan ")|T].
+get_special_float_string_code(zero,    1,H,T) :- true | H=[putb(" 0.0 ")|T].
+get_special_float_string_code(infinity,1,H,T) :- true | H=[putb(" floating+infinity ")|T].
+get_special_float_string_code(nan,     1,H,T) :- true | H=[putb(" floating+Nan ")|T].
+*/
+
+float_to_cod2(Float,H,T) :- Ten $:= float(10),Float $>= Ten |
+        write_exp_divide(Float,H,T,0).
+float_to_cod2(Float, H,T) :- One $:= float(1),Float $< One |
+        write_exp_multiply(Float,H,T,0).
+float_to_cod2(Float,H,T) :- Ten $:= float(10),One $:=float(1),One $=< Float,Float $< Ten |
+        float_to_cod3(Float,H,T,#"+",0).
+
+write_exp_divide(Float,H,T,Fig) :- Ten $:= float(10),Float $>= Ten |
+        Float0 $:= Float / Ten,
+        write_exp_divide(Float0,H,T,~(Fig+1)).
+write_exp_divide(Float,H,T,Fig) :- Ten $:= float(10),Float $< Ten |
+        float_to_cod3(Float,H,T,#"+",Fig).
+
+write_exp_multiply(Float,H,T,Fig) :- One $:= float(1),Float $< One |
+        Ten $:= float(10),
+        Float0 $:= Float * Ten,
+        write_exp_multiply(Float0,H,T,~(Fig+1)).
+write_exp_multiply(Float,H,T,Fig) :- One $:= float(1),Float $>= One |
+        float_to_cod3(Float,H,T,#"-",Fig).
+
+float_to_cod3(Float,H,T,S,Fig) :- true |
+        get_mantissa(Float,[],MantL,B,7),
+        float_to_cod4(MantL,H,T,#"E",S,Fig,B).
+
+get_mantissa(Float,L,MantL,B,I) :- I>0 |
+        Int := int(Float),
+        FloatM $:= float(Int),
+        Float1 $:= (Float-FloatM) * float(10),
+        get_mantissa(Float1,[Int|L],MantL,B,~(I-1)).
+get_mantissa(Float,L,MantL,B,0) :- true |
+        Int := int(Float),
+        if_round(Int,L,MantL,B).
+
+if_round(Int,L,L1,B) :- Int<5 | B=0,L=L1.
+if_round(Int,L,L1,B) :- Int>=5 |
+        round(L,L1,B).
+
+round([N,M|L],L1,B) :- N1:=N+1,N1=:=10 |
+        L1=[0|L2],
+        round([M|L],L2,B).
+round([N,M|L],L1,B) :- N1:=N+1,N1<10 | L1=[N1,M|L],B=0.
+round([N],L,B) :- N1:=N+1,N1=:=10 | L=[0,1],B=1.
+round([N],L,B) :- N1:=N+1,N1<10 | L=[N1],B=0.
+
+float_to_cod4(MantL,H,T,EX,S,Fig,0) :- true |
+        float_to_cod5(MantL,H,T,EX,S,Fig).
+float_to_cod4(MantL,H,T,EX,S,Fig,1) :- S= #"+",MantL=[_|MantL0] |
+        float_to_cod5(MantL0,H,T,EX,S,~(Fig+1)).
+float_to_cod4(MantL,H,T,EX,S,Fig,1) :- S= #"-",MantL=[_|MantL0] |
+        float_to_cod5(MantL0,H,T,EX,S,~(Fig-1)).
+
+float_to_cod5(ML,H,T,EX,S,Fig) :- true |
+        write_mantissa(ML,H,[EX,S|H1]),
+        integer_to_string_code(Fig,10,H1,T).
+
+write_mantissa([N,N1|ML],H,T) :- true |
+        Cod:=N+ #"0",
+        write_mantissa([N1|ML],H,[Cod|T]).
+write_mantissa([N],H,T) :- true |
+        Cod:=N+ #"0",
+        H=[Cod,#"."|T].
+
+:- end_switch.
+
+
+:- switch(extended_floating_point).
+:- case(yes).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% get_extended_floating_point_type(+XFloat,-Sign,-FloatType)
+
+get_extended_floating_point_type(XFloat,Sign,Type) :- extended_floating_point(XFloat,Type0) |
+        Sign := (Type0/\16#"80")>>7,
+        Kind := Type0/\16#"1f",
+        get_float_type1(Kind,Type).
+
+get_float_type1(2#"10000",Type) :- true | Type=nan.
+get_float_type1(2#"01000",Type) :- true | Type=infinity.
+get_float_type1(2#"00100",Type) :- true | Type=denormalized.
+get_float_type1(2#"00010",Type) :- true | Type=zero.
+get_float_type1(2#"00001",Type) :- true | Type=normalized.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% extended_floating_point_to_string(XFloat,-Str)
+
+extended_floating_point_to_string(XFloat,Str) :- extended_floating_point(XFloat,Type0) |
+        Sign := (Type0/\16#"80")>>7,
+        Kind := Type0/\16#"1f",
+        get_float_type1(Kind,Type),
+        xfloat_to_cod(XFloat,H,[],Sign,Type),
+        string_code_to_string(H,Str).
+otherwise.
+extended_floating_point_to_string(XFloat,Str) :- true |
+        raise_error(illegal_args,extended_floating_point_to_string(XFloat,Str)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% extended_floating_point_to_string_code(+XFloat,H,T)
+
+extended_floating_point_to_string_code(XFloat,H,T) :- extended_floating_point(XFloat,Type0) |
+        Sign := (Type0/\16#"80")>>7,
+        Kind := Type0/\16#"1f",
+        get_float_type1(Kind,Type),
+        xfloat_to_cod(XFloat,H,T,Sign,Type).
+otherwise.
+extended_floating_point_to_string_code(XFloat,H,T) :- true |
+        raise_error(illegal_args,floating_point_to_string_code(XFloat,H,T)).
+
+xfloat_to_cod(XFloat,H,T,0,Type) :- (Type=normalized ; Type=denormalized) |
+        xfloat_to_cod2(XFloat,H,T).
+xfloat_to_cod(XFloat,H,T,1,Type) :- (Type=normalized ; Type=denormalized) |
+        H=[#"-"|H1],
+        XFloat1 $$:= -XFloat,
+        xfloat_to_cod2(XFloat1,H1,T).
+xfloat_to_cod(XFloat,H,T,Sign,Type) :- Type\=normalized,Type\=denormalized |
+        get_special_xfloat_string_code(XFloat,H,T,Sign,Type).
+
+get_special_xfloat_string_code(XFloat,H,T,0,zero) :- true |
+        H=[putb(" 0.0X+0 ")|T].
+get_special_xfloat_string_code(XFloat,H,T,0,infinity) :- true |
+        H=[putb(" xfloat#(+infinity) ")|T].
+get_special_xfloat_string_code(XFloat,H,T,0,nan) :- true |
+        H=[putb(" xfloat#(+nan(")|H1],
+        get_nan_string_code(XFloat,H1,[putb(") ")|T]).
+get_special_xfloat_string_code(XFloat,H,T,1,zero) :- true |
+        H=[putb(" -0.0X+0 ")|T].
+get_special_xfloat_string_code(XFloat,H,T,1,infinity) :- true |
+        H=[putb(" xfloat#(-infinity) ")|T].
+get_special_xfloat_string_code(XFloat,H,T,1,nan) :- true |
+        H=[putb(" xfloat#(-nan(")|H1],
+        get_nan_string_code(XFloat,H1,[putb(") ")|T]).
+
+get_nan_string_code(XFloat,H,T) :- true |
+        extended_floating_point_to_binary(XFloat,_,Out,Out1),
+        X:=Out>>16,X1:=Out/\16#"ffff",
+        X2:=Out1>>16,X3:=Out1/\16#"ffff",
+        int_to_str_code(X,H,H1),
+        int_to_str_code(X1,H1,H2),
+        int_to_str_code(X2,H2,H3),
+        int_to_str_code(X3,H3,[putb(") ")|T]).
+
+int_to_str_code(X,H,T) :- X>=0 |
+        integer_to_string_code(X,16,4,#"0",H,T).
+int_to_str_code(X,H,T) :- X<0 |
+        integer_to_string_code(~(X>>28),16,1,#"0",H,H1),
+        integer_to_string_code(~(X/\16#"ffffff"),16,3,#"0",H1,T).
+
+xfloat_to_cod2(XFloat,H,T) :- integer_to_extended_floating_point(10,Ten),XFloat $$>= Ten |
+        write_xexp_divide(XFloat,H,T,0).
+xfloat_to_cod2(XFloat,H,T) :- integer_to_extended_floating_point(1,One),XFloat $$< One |
+        write_xexp_multiply(XFloat,H,T,0).
+xfloat_to_cod2(XFloat,H,T) :- integer_to_extended_floating_point(10,Ten),
+    integer_to_extended_floating_point(1,One),
+    One $$=< XFloat,XFloat $$< Ten |
+        xfloat_to_cod3(XFloat,H,T,#"+",0).
+
+write_xexp_divide(XFloat,H,T,Fig) :- integer_to_extended_floating_point(10,Ten),XFloat $$>= Ten |
+        XFloat0 $$:= XFloat / Ten,
+        write_xexp_divide(XFloat0,H,T,~(Fig+1)).
+write_xexp_divide(XFloat,H,T,Fig) :- integer_to_extended_floating_point(10,Ten),XFloat $$< Ten |
+        xfloat_to_cod3(XFloat,H,T,#"+",Fig).
+
+write_xexp_multiply(XFloat,H,T,Fig) :- integer_to_extended_floating_point(1,One),XFloat $$< One |
+        integer_to_extended_floating_point(10,Ten),
+        XFloat0 $$:= XFloat * Ten,
+        write_xexp_multiply(XFloat0,H,T,~(Fig+1)).
+write_xexp_multiply(XFloat,H,T,Fig) :- integer_to_extended_floating_point(1,One),XFloat $$>= One |
+        xfloat_to_cod3(XFloat,H,T,#"-",Fig).
+
+xfloat_to_cod3(XFloat,H,T,S,Fig) :- true |
+%        get_xmantissa(XFloat,[],MantL,B,20),
+        get_xmantissa(XFloat,[],MantL,B,18),
+        float_to_cod4(MantL,H,T,#"X",S,Fig,B).
+
+get_xmantissa(XFloat,L,MantL,B,I) :- I>0 |
+        extended_floating_point_to_integer(XFloat,Int),
+        integer_to_extended_floating_point(Int,XFloatM),
+        integer_to_extended_floating_point(10,Ten),
+        XFloat1 $$:= (XFloat-XFloatM) * Ten,
+        get_xmantissa(XFloat1,[Int|L],MantL,B,~(I-1)).
+get_xmantissa(XFloat,L,MantL,B,0) :- true |
+        extended_floating_point_to_integer(XFloat,Int),
+        if_round(Int,L,MantL,B).
+
+:- end_switch.
+
+
+string_code_to_string(H,Str) :- true |
+        count_string_length(H,H1,0,Cnt),
+        string_code_to_string(H1,Cnt,Str).
+
+count_string_length([C|H],H1,I,Cnt) :- integer(C) |
+        H1=[C|H2],
+        count_string_length(H,H2,~(I+1),Cnt).
+count_string_length([Msg|H],H1,I,Cnt) :- Msg=putb(Str),string(Str,Size,_) |
+        H1=[Msg|H2],
+        count_string_length(H,H2,~(I+Size),Cnt).
+count_string_length([],H,I,Cnt) :- true | H=[],I=Cnt.
+
+string_code_to_string(H,Cnt,Str) :- wait(Cnt) |
+        new_string(Str0,Cnt,16),
+        cod_to_str(H,Str0,Str,0).
+
+cod_to_str([C|H],Str,Str1,I) :- integer(C) |
+        set_string_element(Str,I,C,Str0),
+        cod_to_str(H,Str0,Str1,~(I+1)).
+cod_to_str([putb(S)|H],Str,Str1,I) :- string(S,Size,_) |
+        binary_string_operation(string_operation#s2,Str,I,Size,S,0,Str0,_),
+        cod_to_str(H,Str0,Str1,~(I+Size)).
+cod_to_str([],Str,Str1,_) :- true | Str=Str1.
+

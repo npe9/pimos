@@ -1,0 +1,837 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_task_monitor.
+:- public create/15, monitor/14.
+:- with_macro pimos.
+
+% Monitor/21 Check Start Time
+create([resource_low|Rpt],Ctr,Status,SW,De,IN,RSC,GM,Aly,STD,StdID,Num,GStr,LFT,RGT) :- true|
+    RSC=[timer(get_date_time(Start)),
+         abort_line(Kill), 
+         variable(TF,VAR),
+         get(tracer,TrID),
+         get(resource,{Hi,Low})|{RSC1,RSC2}],
+    IN=[variable_pool(VP)|{IN1,MWIN}],
+    Ctr=[add_resource(Hi,Low)|{Ctr1,Ctr2}],
+    GM={GM1,GM2},
+    merge({MM1,MM2},MM),
+    listener_inspector:create_monitor_manager(Kill,TF,MM,VAR,Mon,Num),
+    listener_tracer_manager:create(Rpt,Mon,TrID,Aly,Ctr2,GM2,MM2,VP,RSC2,Ab,GStr,Start,Rpt1,Mon1),
+    monitor(Rpt1,Ctr1,Status,SW,De,IN1,RSC1,
+        GM1,0,Ab,{Num,Start,_Can,TrID,StdID,GStr,MWIN,MM1,STD,TF},Mon1,LFT,RGT). % 0 is counter.
+
+%%%%%%%%%%%%%%
+% monitor/14 %
+%%%%%%%%%%%%%%
+% TASK CONTROL MESSAGE (fore, back, stop, kill)
+monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- wait(LFT) |
+    handler(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+alternatively.
+% STANDARD IO ERROR -> Abort the task.
+monitor(Rpt,Ctr,_Status,SW,error,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    Ctr=[abort(_)|Ctr1],
+    monitor(Rpt,Ctr1,aborted,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+% STANDARD IO ABNORMAL
+monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  ( De=non_existent; De=deserted; De=closed ) |
+    monitor(Rpt,Ctr,Status,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+% STATNDARD IO DETACHED
+% fore| aborted| ignore| query| noquery
+monitor(Rpt,Ctr,Status,SW,disconnected,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    set_vector_element(EVec,4,StdID,StdID,EVec1),
+    SW=[attach(StdID,_,De)|SW1],
+    monitor(Rpt,Ctr,Status,SW1,De,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+
+% ATTENTION
+% fore| aborted| ignore| query| noquery
+monitor(Rpt,Ctr,_Status,SW,detected,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    set_vector_element(EVec, 0,Num,  Num,  EVec1),
+    set_vector_element(EVec1,1,Start,Start,EVec2),
+    set_vector_element(EVec2,7,MM,MM2,EVec3),
+    SW=[detach(Detach)|SW1],
+    RSC=[timer(get_date_time(Now))|RSC1],
+    Ctr=[stop|{Ctr1,Ctr2}],
+    GM={GM1,GM2},
+    MM={MM1,MM2},
+    time(Now,Start,Time),
+    listener_interrupter:
+        query(Detach,Ctr1,RSC1,RSC2,IN,IN1,GM1,MM1,Num,NewStatus,Time),
+    % Status = fore | back | stopped | aborted
+    wait_status(Rpt,Ctr2,NewStatus,SW1,disconnected,IN1,RSC2,GM2,CNT,AB,EVec3,Mon,LFT,RGT).
+
+alternatively.
+% MONITOR REQUEST
+monitor(Rpt,Ctr,fore,SW,_De,IN,RSC,GM,CNT,AB,EVec,[monitor(Req)|Mon],LFT,RGT) :- true|
+    set_vector_element(EVec,6,MWIN,MWIN1,EVec1),
+    SW=[detach(Detach)|SW1],
+    Req=normal(IO,At,At1),
+    listener_utility:wait_unify(Detach,MWIN,[next_attention(normal(At)),do(IO)|MWIN1]),
+    wait_attention(Rpt,Ctr,At1,SW1,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+
+alternatively.
+monitor([X|Rpt],Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    mon([X|Rpt],Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+mon([terminated|Rpt],Ctr,Status,SW,_De,IN,RSC,GM,_Cnt,_Ab,Evec,_Mon,LFT,RGT) :- true|
+    set_vector_element(Evec, 1,Start,Time,Evec1),
+    set_vector_element(Evec1,2,Can,  _,   Evec2),
+    set_vector_element(Evec2,6,MWIN, _,   Evec3),
+    set_vector_element(Evec3,8,MES,  _,   Evec4),
+    Can=cancel,
+    GM=[], MWIN=[], 
+    statistics(Status,RSC,RSC1,Ctr,Start,Time),
+    close_std_mes(MES),
+    terminate(Rpt,Status,SW,IN,RSC1,Evec4,off,LFT,RGT).
+
+mon([resource_low|Rpt],Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    RSC=[get(resource,{Red1,Red2})|RSC1],
+    Ctr=[add_resource(Red1,Red2)|Ctr1],
+    monitor(Rpt,Ctr1,Status,SW,De,IN,RSC1,GM,CNT,AB,EVec,Mon,LFT,RGT).
+mon([resource_added|Rpt],Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    Ctr=[allow_resource_report|Ctr1],
+    monitor(Rpt,Ctr1,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+% For Multi Tracer
+% Status = ignore | noquery | query | aborted
+mon([aborted|Rpt],Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  Status \= fore,
+  Status \= back,
+  Status \= stopped |
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+% Status = fore | back | stopped | aborted
+mon([aborted|Rpt],Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- 
+  Status \= ignore,
+  Status \= query,
+  Status \= noquery |
+    monitor(Rpt,Ctr,aborted,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+
+% Status = stopped
+mon([stopped(Reason,Cancel)|Rpt],Ctr,stopped,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    set_vector_element(EVec,2,cancel,Cancel,EVec1), % Cancel old "Cancel Var".
+    Reason=[stopped],
+    monitor(Rpt,Ctr,stopped,SW,De,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+mon([stopped(Reason,Cancel)|Rpt],Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- 
+  Status \= stopped |
+    Reason=[Status], Cancel=cancel,
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+% Status= fore
+mon([trace(Mode,Info)|Rpt],Ctr,fore,SW,De,IN,RSC,GM,Cnt,Ab,EVec,Mon,LFT,RGT) :- true|
+    set_vector_element(EVec,0,Num,Num,EVec1),
+    set_vector_element(EVec1,7,MM,MM2,EVec2),
+    MM={MM1,MM2},
+    listener_tracer:trace(Mode,{IN,IN1,RSC,RSC1,SW,SW1,GM,GM1,MM1,Cnt,Num,St},Info),
+    status(St,Ab,Cnt,NewCnt,Status),
+    wait_status(Rpt,Ctr,Status,SW1,De,IN1,RSC1,GM1,NewCnt,Ab,EVec2,Mon,LFT,RGT).
+% Status= back | stopped
+mon([trace(Mode,Info)|Rpt],Ctr,BaSt,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  BaSt\=fore,
+  BaSt\=aborted,
+  BaSt\=query,
+  BaSt\=noquery,
+  BaSt\=ignore |
+    stopped([trace(Mode,Info)|Rpt],Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+% Status = ignore | noquery | query | aborted
+mon([trace(_,Info)|Rpt],Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  Status\=fore, Status\=back, Status\=stopped |
+    vector_element(Info,0,NewArg,_),
+    NewArg={[]},
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+
+mon([exception(raised,{_,list_errors(Type),_},NewCde,NewArg)|Rpt],
+            Ctr,fore,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    set_vector_element(EVec,4,StdID,StdID,EVec1),
+    set_vector_element(EVec1,7,MM,MM2,EVec2),
+    SW=[detach(Detach)|SW1],
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={list_errors},
+    RSC=[error(errors(List))|RSC1],
+    listener_utility:wait_unify(Detach,IN,[next_attention(normal(At))|IN1]),
+    MM={MM1,MM2},
+    listener_error_manager:list(Type,List,IN1,IN2,RSC1,RSC2,MM1,At,At1),
+    wait_attention(Rpt,Ctr,At1,SW1,IN2,RSC2,GM,CNT,AB,EVec2,Mon,LFT,RGT).
+
+mon([exception(raised,{_,list_variables,_},NewCde,NewArg)|Rpt],
+            Ctr,fore,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    set_vector_element(EVec,0,Num,Num,EVec1),
+    set_vector_element(EVec1,4,StdID,StdID,EVec2),
+    set_vector_element(EVec2,7,MM,MM2,EVec3),
+    SW=[detach(Detach)|SW1],
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={list_variables},
+    listener_utility:wait_unify(Detach,IN,IN1),
+    MM={MM1,MM2},
+    listener_execution_query:query(Num,IN1,IN2,RSC,RSC1,MM1,At),
+    wait_attention(Rpt,Ctr,At,SW1,IN2,RSC1,GM,CNT,AB,EVec3,Mon,LFT,RGT).
+
+
+mon([exception(raised,{_,inspect(TrID),Term},NewCde,NewArg)|Rpt],
+            Ctr,fore,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    set_vector_element(EVec,4,StdID,StdID,EVec1),
+    set_vector_element(EVec1,7,MM,MM2,EVec2),
+    set_vector_element(EVec2,9,TF,TF,EVec3),
+    SW=[detach(Detach)|SW1],
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={inspect},
+    RSC=[abort_line(Kill), variable(TF,VAR)|RSC1],
+    MM={MM1,MM2},
+    listener_utility:wait_unify(Detach,IN,[next_attention(normal(At)),do(IN1)|IN2]),
+    listener_inspector:create(Kill,TrID,Term,VAR,IN1,At,At1,MM1),
+    wait_attention(Rpt,Ctr,At1,SW1,IN2,RSC1,GM,CNT,AB,EVec3,Mon,LFT,RGT).
+
+mon([exception(raised,{_,monitor(TrID,Name),Term},NewCde,NewArg)|Rpt],
+            Ctr,FoBaSt,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- 
+  string(Name,_,_),
+  FoBaSt\=aborted, 
+  FoBaSt\=query, 
+  FoBaSt\=noquery,
+  FoBaSt\=ignore |
+    set_vector_element(EVec,7,MM,MM1,EVec1),
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={monitor},
+    MM=[monitor(TrID,Term,Name)|MM1],
+    monitor(Rpt,Ctr,FoBaSt,SW,De,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+
+mon([exception(raised,{_,monitor_and_fork(TrID,Name),Term},NewCde,NewArg)|Rpt],
+            Ctr,FoBaSt,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  string(Name,_,_),
+  FoBaSt\=aborted, 
+  FoBaSt\=query, 
+  FoBaSt\=noquery,
+  FoBaSt\=ignore |
+    set_vector_element(EVec,7,MM,MM1,EVec1),
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={monitor},
+    MM=[monitor_and_fork(TrID,Term,Name)|MM1],
+    monitor(Rpt,Ctr,FoBaSt,SW,De,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+
+mon([exception(raised,{_,'$PROFILE_INFO$'(N,WT,U,L,Time),_},NewCde,NewArg)|Rpt],
+            Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  integer(N), vector(WT,_), integer(U), integer(L), integer(Time) |
+    listener_utility:half(U,L,U1,L1),
+    listener_utility:integer_to_string(U1,L1,Red),
+    shoen:raise(pimos_tag#shell,get_std_mes,MES),
+    buffer:output_filter(OUT,MES),
+    OUT=[putf(" ~t: ",[N]), putwt(WT,10000,10000),
+         putf("~n  ~s reductions~n  ~t msec~n",[Red,Time])],
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={dummy},
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+mon([exception(raised,{_,get_std_in,USER},NewCde,NewArg)|Rpt],
+            Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true |
+    predicate_to_code(module#shoen,raise,3,NewCde),
+    NewArg={pimos_tag#task,get_std(in),USER},
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+mon([exception(raised,{_,get_std_out,USER},NewCde,NewArg)|Rpt],
+            Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true |
+    predicate_to_code(module#shoen,raise,3,NewCde),
+    NewArg={pimos_tag#task,get_std(out),USER},
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+mon([exception(raised,{_,get_std_inter,USER},NewCde,NewArg)|Rpt],
+            Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true |
+    predicate_to_code(module#shoen,raise,3,NewCde),
+    NewArg={pimos_tag#task,get_std(inter),USER},
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+mon([exception(raised,{_,get_std_io,USER},NewCde,NewArg)|Rpt],
+            Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true |
+    predicate_to_code(module#shoen,raise,3,NewCde),
+    NewArg={pimos_tag#task,get_std(io),USER},
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+mon([exception(raised,{_,close_std_io,_},NewCde,NewArg)|Rpt],
+            Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true |
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={dummy},
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+mon([exception(raised,{_,get_std_mes,USER},NewCde,NewArg)|Rpt],
+        Ctr,FoBaSt,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- 
+  FoBaSt \= aborted,
+  FoBaSt \= ignore,
+  FoBaSt \= query,
+  FoBaSt \= noquery |
+    set_vector_element(EVec,8,MesDev,NewMesDev,EVec1),
+    set_vector_element(EVec1,9,TF,TF,EVec2),
+    RSC=[atom(TF,ATM),
+         getenv(stdio:print_depth,Pd),
+         getenv(stdio:print_length,Pl),
+         getenv(stdio:print_atom_length,Pal),
+         getenv(stdio:print_string_length,Psl)|RSC1],
+    predicate_to_code(module#listener_stdio_manager,std_mes,3,NewCde),
+    NewArg={USER1,MESo,ATM},
+    set_stdio_param([print_depth(Pd),
+                     print_length(Pl),
+                     print_atom_length(Pal),
+                     print_string_length(Psl)],USER1,USER),
+    get_mes_dev(MesDev,MES,NewMesDev),
+    listener_utility:valve(TF,MESo,MES),
+    monitor(Rpt,Ctr,FoBaSt,SW,De,IN,RSC1,GM,CNT,AB,EVec2,Mon,LFT,RGT).
+mon([exception(raised,{_,get_std_mes_dev,USER},NewCde,NewArg)|Rpt],
+        Ctr,FoBaSt,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  FoBaSt \= aborted,
+  FoBaSt \= ignore,
+  FoBaSt \= query,
+  FoBaSt \= noquery |
+    set_vector_element(EVec,8,MesDev,NewMesDev,EVec1),
+    set_vector_element(EVec1,9,TF,TF,EVec2),
+    predicate_to_code(module#std_io_filter,std_io_filter,2,NewCde),
+    NewArg={USER,MESo},
+    get_mes_dev(MesDev,MES,NewMesDev),
+    listener_utility:valve(TF,MESo,MES),
+    monitor(Rpt,Ctr,FoBaSt,SW,De,IN,RSC,GM,CNT,AB,EVec2,Mon,LFT,RGT).
+
+mon([exception(raised,{_,resource,USER},NewCde,NewArg)|Rpt],
+        Ctr,FoBaSt,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  FoBaSt\=aborted, 
+  FoBaSt\=query, 
+  FoBaSt\=noquery,
+  FoBaSt\=ignore |
+    set_vector_element(EVec,9,TF,TF,EVec1),
+    RSC={DEV,RSC1},
+    predicate_to_code(module#listener_rsc_manager,filter,3,NewCde),
+    listener_utility:valve(TF,OUT,DEV),
+    NewArg={TF,USER,OUT},
+    monitor(Rpt,Ctr,FoBaSt,SW,De,IN,RSC1,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+
+mon([exception(raised,{_,buffer,USER},NewCde,NewArg)|Rpt],
+       Ctr,FoBaSt,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  FoBaSt\=aborted, 
+  FoBaSt\=query, 
+  FoBaSt\=noquery,
+  FoBaSt\=ignore |
+    set_vector_element(EVec,9,TF,TF,EVec1),
+    predicate_to_code(module#listener_buffer,filter,2,NewCde),
+    NewArg={USER,BUFo},
+    IN={DEV,IN1},
+    listener_utility:valve(TF,BUFo,DEV),
+    monitor(Rpt,Ctr,FoBaSt,SW,De,IN1,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+
+otherwise.
+mon([exception(raised,{_,Info,_},NewCde,NewArg)|Rpt],
+        Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+ (Info=inspect(_);
+  Info=monitor(_);
+  Info=monitor_and_fork(_);
+  Info=get_std_mes;
+  Info=get_std_mes_dev;
+  Info=resource;
+  Info=buffer;
+  Info=list_errors(_);
+  Info=list_variables   )|
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={aborted},
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+otherwise.
+
+% Status = fore
+mon([exception(Kind,Info,NewCde,NewArg)|Rpt],
+        Ctr,fore,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    set_vector_element(EVec, 0,Num,  Num,  EVec1),
+    set_vector_element(EVec1,1,Start,Start,EVec2),
+    set_vector_element(EVec2,7,MM,MM2,EVec3),
+    SW=[detach(Detach)|SW1],
+    RSC=[getenv(listener:exception,ExStatus),
+         timer(get_date_time(Now))|RSC1],
+    Ctr=[stop|Ctr1],
+    MM={MM1,MM2},
+    time(Now,Start,Time),
+    exception_param(ExStatus,ExStatus1),
+    listener_exception_handler:exception(Kind,Info,NewCde,NewArg,
+        ExStatus1,Status,IN,IN1,SW1,SW2,RSC1,RSC2,MM1,Time,Num,Detach),
+    % Status = fore | query | noquery | ignore | aborted
+    wait_status(Rpt,Ctr1,Status,SW2,disconnected,IN1,RSC2,GM,CNT,AB,EVec3,Mon,LFT,RGT).
+% query
+mon([exception(Kind,Info,NewCde,NewArg)|Rpt],
+        Ctr,query,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    set_vector_element(EVec, 0,Num,  Num,  EVec1),
+    set_vector_element(EVec1,1,Start,Start,EVec2),
+    set_vector_element(EVec2,7,MM,MM2,EVec3),
+    SW=[detach(Detach)|SW1],
+    RSC=[timer(get_date_time(Now))|RSC1],
+    MM={MM1,MM2},
+    time(Now,Start,Time),
+    listener_exception_handler:exception(Kind,Info,NewCde,NewArg,
+        query,Status,IN,IN1,SW1,SW2,RSC1,RSC2,MM1,Time,Num,Detach),
+    % Status = query | noquery | aborted
+    wait_status(Rpt,Ctr,Status,SW2,disconnected,IN1,RSC2,GM,CNT,AB,EVec3,Mon,LFT,RGT).
+
+% Status = back | stopped
+mon([exception(Kind,Info,NewCde,NewArg)|Rpt],
+        Ctr,BaSt,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- 
+  BaSt \= fore,
+  BaSt \= aborted, 
+  BaSt \= query, 
+  BaSt \= noquery,
+  BaSt \= ignore |
+    Ctr=[stop|Ctr1],
+    set_vector_element(EVec,0,Num,Num,EVec1),
+    shoen:raise(pimos_tag#shell,get_std_mes,MES),
+    buffer:output_filter(OUT,MES),
+    OUT=[print_atom_length(1000),
+         putf("!! Task ~t: ~t occurred !!~n",[Num,Kind])],
+    stopped([exception(Kind,Info,NewCde,NewArg)|Rpt],
+        Ctr1,Kind,SW,_,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+
+% noquery, ignore
+mon([exception(Kind,Info,NewCde,NewArg)|Rpt],
+      Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- 
+  Status \= fore,
+  Status \= back,
+  Status \= stopped,
+  Status \= query,
+  Status \= aborted |
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={aborted},
+    set_vector_element(EVec,0,Num,Num,EVec1),
+    RSC=[error(put({Num,Kind,Info}))|RSC1],
+    listener_exception_handler:exception_msg(Kind,Info,IN,IN1),
+    monitor(Rpt,Ctr,Status,SW,De,IN1,RSC1,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+
+mon([exception(_,_,NewCde,NewArg)|Rpt],
+      Ctr,aborted,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={aborted},
+    monitor(Rpt,Ctr,aborted,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+otherwise.
+mon([_|Rpt],Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+
+% Fore
+wait_status(Rpt,Ctr,fore,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    monitor(Rpt,Ctr,fore,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+% Notrace (only tracer)
+wait_status(Rpt,Ctr,notrace,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    notrace(Rpt,Rpt1),
+    monitor(Rpt1,Ctr,fore,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+% Break in tracer.
+wait_status(Rpt,Ctr,trace(Mode,Info),SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    SW=[detach(Detach)|SW1],
+    Ctr=[stop|Ctr1],
+    IN=[back(Detach)|IN1],
+    stopped([trace(Mode,Info)|Rpt],Ctr1,stopped,SW1,_,IN1,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+% Break in exception_handler
+wait_status(Rpt,Ctr,exception(K,I,NC,NA),SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- true|
+    IN=[back(normal)|IN1],
+    stopped([exception(K,I,NC,NA)|Rpt],Ctr,K,SW,_,IN1,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+% Back | stopped (interrupter)
+wait_status(Rpt,Ctr,Status,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  atom(Status),
+  Status \= fore,
+  Status \= query,
+  Status \= noquery,
+  Status \= ignore,
+  Status \= aborted |
+    IN=[back(normal)|IN1],
+    monitor(Rpt,Ctr,Status,SW,_,IN1,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+% Abort
+wait_status(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :-
+  atom(Status),
+  Status \= fore,
+  Status \= back,
+  Status \= stopped |
+    Ctr=[abort(_)|Ctr1],
+    monitor(Rpt,Ctr1,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT).
+
+
+wait_attention(Rpt,Ctr,Att,SW,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT) :- wait(Att) |
+    set_vector_element(EVec,4,StdID,StdID,EVec1),
+    SW=[attach(StdID,_,De)|SW1],
+    monitor(Rpt,Ctr,fore,SW1,De,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT).
+
+
+statistics(FoBaSt,RSC,RSC1,Ctr,Start,Time) :- 
+  FoBaSt\=aborted,
+  FoBaSt\=query, 
+  FoBaSt\=noquery |
+    RSC=[timer(get_date_time(End)), get(statistics,ST)|RSC1],
+    stat(ST,Ctr,Start,End,Time).
+otherwise.
+statistics(_,RSC,RSC1,Ctr,_,Time) :- true| RSC1=RSC, Ctr=[], Time= "unknown".
+
+stat(on, Ctr,Start,End,Time) :- true | Ctr=[statistics], time(End,Start,Time).
+stat(off,Ctr,_,    _,  Time) :- true | Ctr=[], Time= "unknown".
+
+
+terminate([aborted|Rpt],ignore,SW,IN,RSC,EVec,Stat,LFT,RGT) :- true|
+    terminate(Rpt,ignore,SW,IN,RSC,EVec,Stat,LFT,RGT).
+terminate([aborted|Rpt],Status,SW,IN,RSC,EVec,Stat,LFT,RGT) :- 
+  Status \= ignore |
+    terminate(Rpt,aborted,SW,IN,RSC,EVec,Stat,LFT,RGT).
+terminate([stopped(Reason,Cancel)|Rpt],Status,SW,IN,RSC,EVec,Stat,LFT,RGT) :- true|
+    Reason=[terminated], Cancel=cancel,
+    terminate(Rpt,Status,SW,IN,RSC,EVec,Stat,LFT,RGT).
+
+terminate([statistics(U,L)|Rpt],Status,SW,IN,RSC,EVec,_,LFT,RGT) :- true|
+    terminate(Rpt,Status,SW,IN,RSC,EVec,{U,L},LFT,RGT).
+
+terminate([],Status,SW,IN,RSC,   % Listener main.
+  {Num,Time,_Can,TrID,StdID,_GStr,_MWIN,MM,_STD,TF},Stat,LFT,RGT) :- 
+  integer(TrID),
+  Status\=back, 
+  Status\=stopped, 
+  Status\=aborted,
+  Status\=query,
+  Status\=noquery |
+    SW=[detach(StdID,TF)],
+    RGT=LFT,
+    RSC=[get(display_variables,Prt),
+         get(query,Query),
+         variable(reset(Num,Old,Used,New))|RSC1],
+    display_variables(Prt,Old,Used,New,IN,IN1),
+    display_statistics(Stat,Time,IN1,IN2),
+    listener_execution_query:query(Query,Old,Used,New,IN2,IN3,RSC1,[flush(Done)],MM),
+    listener_utility:wait_unify(TF,Done,Done1),
+    listener_utility:wait_unify(Done1,IN3,[]).
+terminate([],Status,SW,IN,RSC,{Num,_,_,TrID,StdID,_,_,MM,_,TF},_,LFT,RGT) :-
+  integer(TrID),
+  Status\=fore,
+  Status\=back,
+  Status\=stopped,
+  Status\=ignore |
+    SW=[detach(StdID,TF)],
+    MM=[], RGT=LFT,
+    RSC=[command(reset_command(_)),variable(abort(Num,Done))],
+    listener_utility:wait_unify(TF,Done,Done1),
+    listener_utility:wait_unify(Done1,IN,[]).
+terminate([],Status,SW,IN,RSC,   % Child listener.
+  {Num,_Time,_Can,child,_StdID,_GStr,_MWIN,MM,_STD,TF},_Stat,LFT,RGT) :-
+  Status\=back,
+  Status\=stopped |
+    SW=[], RGT=LFT, IN=[exit(TF)],
+    MM=[], RSC=[variable(reset(Num,TF,_,_))].
+otherwise.
+% back| stopped
+terminate([],_,SW,IN,RSC,EVec,Stat,LFT,RGT) :- true|
+    terminate(SW,IN,RSC,EVec,Stat,LFT,RGT).
+terminate([_|Rpt],Status,SW,IN,RSC,EVec,Stat,LFT,RGT) :- true|
+    terminate(Rpt,Status,SW,IN,RSC,EVec,Stat,LFT,RGT).
+
+
+display_variables(all, Old,_,   New,IN,IN1) :- 
+    listener_utility:prepend(Old,New,All),
+    sorter:sort(All,All1),
+    listener_execution_query:display_var(All1,IN,IN1).
+display_variables(used,_,  Used,_,  IN,IN1) :- 
+    sorter:sort(Used,Used1),
+    listener_execution_query:display_var(Used1,IN,IN1).
+display_variables(new, _,  _,   New,IN,IN1) :- 
+    sorter:sort(New,New1),
+    listener_execution_query:display_var(New1,IN,IN1).
+otherwise.
+display_variables(_,   _,  _,   _,  IN,IN1) :- IN1=IN.
+
+display_statistics({U,L},Time,IN,IN1) :- true|
+    listener_utility:half(U,L,U1,L1),
+    listener_utility:integer_to_string(U1,L1,Reductions),
+    IN=[putf(" ~s reductions~n ~s msec~n",[Reductions,Time])|IN1].
+otherwise.
+display_statistics(_,    _,   IN,IN1) :- true| IN1=IN.
+
+
+exception_param(normal(ignore),Status) :- true| Status=ignore.
+otherwise.
+exception_param(_,             Status) :- true| Status=fore.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Task Status: fore | back | stopped | aborted | ignore | query | noquery %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Message for task_manager
+handler(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,[answer(Msg)|LFT],RGT) :- true|
+    RGT=[answer(Msg)|RGT1],
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT1).
+
+% Status
+handler(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,[status(Inf)|LFT],RGT) :- true|
+    set_vector_element(EVec, 0,Num, Num, EVec1),
+    set_vector_element(EVec1,5,GStr,GStr,EVec2),
+    RGT=[status([{Num,GStr,Status}|Inf])|RGT1],
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec2,Mon,LFT,RGT1).
+
+% Task number is not equal to Num.
+% fore(Num), back(Num), stop(Num), kill(Num)
+handler(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,[{Msg,ID}|LFT],RGT) :- 
+  Msg \= answer, Msg \= status,
+  vector_element(EVec,0,Num),
+  ID =\= Num |
+    RGT=[{Msg,ID}|RGT1],
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT1).
+
+handler(Rpt,Ctr,_Status,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,[],RGT) :- true|
+    RGT=[], Ctr=[abort(_)|Ctr1],
+    monitor(Rpt,Ctr1,aborted,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,_,_).
+
+
+% fore, fore(Num) COMMAND
+% BACK -> FORE
+handler(Rpt,Ctr,back,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :-
+  vector_element(EVec,0,Num),
+ ( Msg=fore; Msg=fore(Num) ) |
+    set_vector_element(EVec,5,GStr,GStr,EVec1),
+    RGT=[answer(fore(Num,GStr,Done))|RGT1],
+    listener_utility:wait_unify(Done,Status,fore),
+    monitor(Rpt,Ctr,Status,SW,disconnected,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT1).
+% STOPPED -> FORE
+handler(Rpt,Ctr,stopped,SW,_De,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :-
+  vector_element(EVec,0,Num),
+ ( Msg=fore; Msg=fore(Num) ) |
+    set_vector_element(EVec, 2,Can,_,EVec1),
+    set_vector_element(EVec1,5,GStr,GStr,EVec2),
+    Can=cancel,
+    RGT=[answer(fore(Num,GStr,Done))|RGT1],
+    listener_utility:wait_unify(Done,Status,fore),
+    monitor(Rpt,Ctr,Status,SW,disconnected,IN,RSC,GM,CNT,AB,EVec2,Mon,LFT,RGT1).
+% OTHER STATUS
+handler(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :- 
+  Status \= back,
+  Status \= stopped,
+  vector_element(EVec,0,Num),
+ ( Msg=fore; Msg=fore(Num) ) |
+    set_vector_element(EVec,4,StdID,StdID,EVec1),
+    set_vector_element(EVec1,5,GStr,GStr,EVec2),
+    RGT=[answer(fore(Num,GStr,_Done))|RGT1],
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec2,Mon,LFT,RGT1).
+
+
+% back, back(Num) COMMAND
+% STOPPED -> BACK
+ handler(Rpt,Ctr,stopped,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :-
+  vector_element(EVec,0,Num),
+ ( Msg=back; Msg=back(Num) ) |
+    set_vector_element(EVec,2,Can,_,EVec1),
+    Can=cancel,
+    RGT=[answer(toplevel)|RGT1],
+    monitor(Rpt,Ctr,back,SW,De,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT1).
+
+% stop, stop(Num) COMMAND
+% BACK -> STOPPED
+% FORE -> STOPPED --- (For break command in TRACER) ???
+handler(Rpt,Ctr,FoBa,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :-
+  FoBa\=stopped,
+  FoBa\=ignore,
+  FoBa\=aborted,
+  FoBa\=noquery,
+  FoBa\=query,
+  vector_element(EVec,0,Num),
+ ( Msg=stop; Msg=stop(Num) ) |
+    Ctr=[stop|Ctr1],
+    RGT=[answer(toplevel)|RGT1],
+    monitor(Rpt,Ctr1,stopped,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT1).
+
+% kill COMMAND
+% BACK -> ABORTED
+% STOPPED -> ABORTED
+handler(Rpt,Ctr,BaSt,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :- 
+  BaSt \= query,
+  BaSt \= noquery,
+  BaSt \= ignore,
+  BaSt \= aborted,
+  vector_element(EVec,0,Num),
+ ( Msg=kill; Msg=kill(Num) ) |
+    set_vector_element(EVec, 2,Can,_,EVec1), % For profiler
+    Can=cancel,                              % When profiler task aborted.
+    AB=aborted,
+    set_vector_element(EVec1,5,GStr,GStr,EVec2),
+    set_vector_element(EVec2,9,TF,TF,EVec3),
+    Ctr=[abort(_)|Ctr1],
+    RGT=[answer(kill(Num,GStr,TF))|RGT1],
+    monitor(Rpt,Ctr1,aborted,SW,De,IN,RSC,GM,CNT,AB,EVec3,Mon,LFT,RGT1).
+% OTHER STATUS
+handler(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :- 
+  Status \= back,
+  Status \= stopped,
+  vector_element(EVec,0,Num),
+  (Msg = kill; Msg = kill(Num)) |
+    AB=aborted,
+    set_vector_element(EVec, 5,GStr,GStr,EVec1),
+    set_vector_element(EVec1,9,TF,TF,EVec2),
+    RGT=[answer(kill(Num,GStr,TF))|RGT1],
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec2,Mon,LFT,RGT1).
+
+otherwise.
+% Task number is equal to Num or atom message
+% back, back(Num), stop, stop(Num)
+handler(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,[_|LFT],RGT) :- true|
+    RGT=[answer(toplevel)|RGT1],
+    monitor(Rpt,Ctr,Status,SW,De,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT1).
+
+
+
+% answer
+stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,[answer(Msg)|LFT],RGT) :- true|
+    RGT=[answer(Msg)|RGT1],
+    stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT1).
+% status
+stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,[status(Inf)|LFT],RGT) :- true|
+    set_vector_element(EVec,0,Num,Num,EVec1),
+    set_vector_element(EVec1,5,GStr,GStr,EVec2),
+    RGT=[status([{Num,GStr,BaSt}|Inf])|RGT1],
+    stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec2,Mon,LFT,RGT1).
+% Message for other monitor
+stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,[{Msg,ID}|LFT],RGT) :- 
+  Msg \= answer, 
+  Msg \= status,
+  vector_element(EVec,0,Num),
+  ID =\= Num |
+    RGT=[{Msg,ID}|RGT1],
+    stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT1).
+
+stopped(Rpt,Ctr,_BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,[],RGT) :- true|
+    RGT=[], Ctr=[abort(_)|Ctr1],
+    monitor(Rpt,Ctr1,aborted,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,_,_).
+
+% fore
+stopped(Rpt,Ctr,_BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :- 
+  vector_element(EVec,0,Num),
+  (Msg=fore; Msg=fore(Num)) |
+    set_vector_element(EVec,5,GStr,GStr,EVec1),
+    RGT=[answer(fore(Num,GStr,Done))|RGT1],
+    listener_utility:wait_unify(Done,Status,fore),
+    monitor(Rpt,Ctr,Status,SW,disconnected,IN,RSC,GM,CNT,AB,EVec1,Mon,LFT,RGT1).
+% kill
+stopped(Rpt,Ctr,_BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :- 
+  vector_element(EVec,0,Num),
+  (Msg=kill; Msg=kill(Num)) |
+    set_vector_element(EVec, 2,Can,_,EVec1), % For profiler
+    Can=cancel,                              % When profiler task aborted after stopped.
+    AB=aborted,
+    set_vector_element(EVec1,5,GStr,GStr,EVec2),
+    set_vector_element(EVec2,9,TF,TF,EVec3),
+    RGT=[answer(kill(Num,GStr,TF))|RGT1],
+    Ctr=[abort(_)|Ctr1],
+    monitor(Rpt,Ctr1,aborted,SW,_,IN,RSC,GM,CNT,AB,EVec3,Mon,LFT,RGT1).
+% stop
+stopped(Rpt,Ctr,back,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :- 
+  vector_element(EVec,0,Num),
+  (Msg=stop; Msg=stop(Num)) |
+    Ctr=[stop|Ctr1],
+    RGT=[answer(toplevel)|RGT1],
+    stopped(Rpt,Ctr1,stopped,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT1).
+stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :- 
+  BaSt\=back,
+  vector_element(EVec,0,Num),
+  (Msg=stop; Msg=stop(Num)) |
+    RGT=[answer(toplevel)|RGT1],
+    stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT1).
+% back
+stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,[Msg|LFT],RGT) :- 
+  vector_element(EVec,0,Num),
+  (Msg=back; Msg=back(Num)) |
+    RGT=[answer(toplevel)|RGT1],
+    stopped(Rpt,Ctr,BaSt,SW,_,IN,RSC,GM,CNT,AB,EVec,Mon,LFT,RGT1).
+
+
+
+% Message for task_manager
+terminate(SW,IN,RSC,EVec,Stat,[answer(Msg)|LFT],RGT) :- true|
+    RGT=[answer(Msg)|RGT1],
+    terminate(SW,IN,RSC,EVec,Stat,LFT,RGT1).
+
+% Status
+terminate(SW,IN,RSC,EVec,Stat,[status(Inf)|LFT],RGT) :- true|
+    set_vector_element(EVec, 0,Num, Num, EVec1),
+    set_vector_element(EVec1,5,GStr,GStr,EVec2),
+    RGT=[status([{Num,GStr,terminate}|Inf])|RGT1],
+    terminate(SW,IN,RSC,EVec2,Stat,LFT,RGT1).
+
+% Task number is not equal to Num.
+% fore(Num), back(Num), stop(Num), kill(Num)
+terminate(SW,IN,RSC,EVec,Stat,[{Msg,ID}|LFT],RGT) :-
+  Msg \= answer,
+  Msg \= status,
+  vector_element(EVec,0,Num),
+  ID =\= Num |
+    RGT=[{Msg,ID}|RGT1],
+    terminate(SW,IN,RSC,EVec,Stat,LFT,RGT1).
+
+terminate(SW,IN,RSC,EVec,Stat,[],RGT) :- true|
+    terminate([],aborted,SW,IN,RSC,EVec,Stat,[],RGT).
+
+% fore
+terminate(SW,IN,RSC,EVec,Stat,[Msg|LFT],RGT) :-
+  vector_element(EVec,0,Num),
+ ( Msg=fore; Msg=fore(Num) ) |
+    set_vector_element(EVec,5,GStr,GStr,EVec1),
+    RGT=[answer(fore(Num,GStr,_Done))|RGT1],   
+    terminate([],fore,SW,IN,RSC,EVec1,Stat,LFT,RGT1).
+% kill
+terminate(SW,IN,RSC,EVec,Stat,[Msg|LFT],RGT) :-
+  vector_element(EVec,0,Num),
+ ( Msg=kill; Msg=kill(Num) ) |
+    set_vector_element(EVec, 5,GStr,GStr,EVec1),
+    set_vector_element(EVec1,9,TF,TF,EVec2),
+    RGT=[answer(kill(Num,GStr,TF))|RGT1],
+    terminate([],aborted,SW,IN,RSC,EVec2,Stat,LFT,RGT1).
+
+otherwise.
+% back, back(Num), stop, stop(Num)
+terminate(SW,IN,RSC,EVec,Stat,[_|LFT],RGT) :- true|
+    RGT=[answer(toplevel)|RGT1],
+    terminate(SW,IN,RSC,EVec,Stat,LFT,RGT1).
+
+
+status(_,      aborted,_,  St,Status) :- true| St=aborted, Status=aborted.
+alternatively.
+status(fore,   _,      Cnt,St,Status) :- Cnt>0 | St := Cnt-1, Status=fore.
+status(fore,   _,      0,  St,Status) :- true  | St := 0,     Status=fore.
+status(fore,   _,      Cnt,St,Status) :- Cnt<0 | St := Cnt+1, Status=fore.
+status(Cnt,    _,      _,  St,Status) :- integer(Cnt) | St=Cnt, Status=fore.
+status(notrace,_,      _,  St,Status) :- true  | St=notrace, Status=notrace.
+status(aborted,Abort,  _,  St,Status) :- true  |
+    Abort=aborted, St=aborted, Status=aborted.
+status(stopped(Goals,Arg),_,Cnt,St,Status) :- true |
+    St=Cnt, Status=trace(resume,{Arg,Goals,_,_,_,_}).
+
+
+get_mes_dev(listener,MES1,MesDev) :- true|
+    MesDev=mes(MES2),
+    shoen:raise(pimos_tag#shell,get_std_mes,{MES1,MES2}).
+get_mes_dev(mes(MES),MES1,MesDev) :- true|
+    MES={MES1,MES2}, MesDev=mes(MES2).
+
+close_std_mes(listener) :- true | true.
+close_std_mes(mes(MES)) :- true | MES=[].
+
+time(normal(Date1,Time1),normal(Date2,Time2),Time) :- true|
+    timer_utility:subtract_date_time(Date1,Time1,Date2,Time2,Date3,Time3),
+    time_string(Date3,Time3,Time).
+
+time_string(0,   Time,Str) :- true| buffer_utility:integer_to_string(Time,10,Str).
+time_string(Date,Time,Str) :- Date>0 |
+    buffer_utility:integer_to_string(Date,10,Ds),
+    buffer_utility:integer_to_string(Time,10,Ts),
+    builtin#append_string([Ds," days ",Ts],Str).
+
+notrace([trace(Mode,Info)|Rpt],Rpt1) :- true|
+    listener_tracer:trace(Mode,{_,_,_,_,_,_,_,_,_,notrace,_,_},Info),
+    notrace(Rpt,Rpt1).
+notrace([],Rpt) :- true| Rpt=[].
+otherwise.
+notrace([Msg|Rpt],Rpt1) :- true| Rpt1=[Msg|Rpt2], notrace(Rpt,Rpt2).
+
+set_stdio_param([{Msg,normal(P)}|Param],USER,USER2) :- P>=0 |
+    USER=[{Msg,P}|USER1],
+    set_stdio_param(Param,USER1,USER2).
+set_stdio_param([],USER,USER1) :- true| USER1=USER.
+otherwise.
+set_stdio_param([_|Param],USER,USER1) :- true| set_stdio_param(Param,USER,USER1).
+

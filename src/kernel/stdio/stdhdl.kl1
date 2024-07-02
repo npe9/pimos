@@ -1,0 +1,455 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module task_std_handler.
+:- with_macro pimos.
+:- public inOutInter/5,
+          inOut_inter/8,
+          inInter_out/8,
+          in_outInter/8,
+          in_out_inter/11.
+
+%inOutInter(User,Dev,FCode,ID,SShut):-
+
+inOutInter([request(Type,Node,Str,FInfo,UFCode)|User],Dev,FCode,ID,SShut):-
+    true|
+    Dev= [request(Type,Node,Str,FInfo)|DevN],
+    FCode = UFCode,
+    inOutInter(User,DevN,FCode,ID,SShut).
+inOutInter([make_branch(Type,Shut,Node,CInfo,Status,SShut0)|User],Dev,FCode,ID,SShut):-
+    ID1 := ID + 1|
+    SShut0 = SShut,
+    Status = normal({Type,"inOutInter",Cont,FCode},ID),
+    Dev = [make_branch(Cont,Shut,ID,CInfo)|DevN],
+    inOutInter(User,DevN,FCode,ID1,SShut).
+inOutInter([],Dev,_,_,_):-
+    true|
+    Dev = [].
+
+%inOut_inter(User,IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+
+inOut_inter([request(in,Node,Str,FInfo,UFCode)|User],
+                            IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    true|
+    IODev= [request(in,Node,Str,FInfo)|IODevN],
+    UFCode = IOFCode,
+    inOut_inter(User,IODevN,IOFCode,ITDev,ITFCode,ID,SShut,SShut1).
+inOut_inter([request(out,Node,Str,FInfo,UFCode)|User],
+                            IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    true|
+    IODev= [request(out,Node,Str,FInfo)|IODevN],
+    UFCode = IOFCode,
+    inOut_inter(User,IODevN,IOFCode,ITDev,ITFCode,ID,SShut,SShut1).
+inOut_inter([request(inter,Node,Str,FInfo,UFCode)|User],
+                            IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    true|
+    ITDev= [request(inter,Node,Str,FInfo)|ITDevN],
+    UFCode = ITFCode,
+    inOut_inter(User,IODev,IOFCode,ITDevN,ITFCode,ID,SShut,SShut1).
+inOut_inter([request(io,Node,Str,FInfo,UFCode)|User],
+                            IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    true|
+    IODev= [request(io,Node,StrIO,FInfoIO)|IODevN],
+    ITDev= [request(io,Node,StrIT,FInfoIT)|ITDevN],
+    get_io_info(inOut_inter,{StrIO,StrIT},Str,{FInfoIO,FInfoIT},FInfo,
+                                {IOFCode,ITFCode},UFCode),
+    inOut_inter(User,IODevN,IOFCode,ITDevN,ITFCode,ID,SShut,SShut1).
+inOut_inter([request(switch,Node,Str,FInfo,UFCode)|User],
+                            IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    true|
+    IODev= [request(switch,Node,StrIO,FInfoIO)|IODevN],
+    ITDev= [request(switch,Node,StrIT,FInfoIT)|ITDevN],
+    get_switch_info(inOut_inter,{StrIO,StrIT},Str,{FInfoIO,FInfoIT},FInfo,
+                                {IOFCode,ITFCode},UFCode),
+    inOut_inter(User,IODevN,IOFCode,ITDevN,ITFCode,ID,SShut,SShut1).
+inOut_inter([make_branch(in,Shut,Node,CInfo,Status,SShut0)|User],
+                                IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut,
+    Status = normal(in("inOut_inter",ContIO,IOFCode),ID),
+    IODev = [make_branch(ContIO,Shut,ID,CInfo)|IODevN],
+    inOut_inter(User,IODevN,IOFCode,ITDev,ITFCode,ID1,SShut,SShut1).
+inOut_inter([make_branch(out,Shut,Node,CInfo,Status,SShut0)|User],
+                                IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut,
+    Status = normal(out("inOut_inter",ContIO,IOFCode),ID),
+    IODev = [make_branch(ContIO,Shut,ID,CInfo)|IODevN],
+    inOut_inter(User,IODevN,IOFCode,ITDev,ITFCode,ID1,SShut,SShut1).
+inOut_inter([make_branch(inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut1,
+    Status = normal(inter("inOut_inter",ContIT,ITFCode),ID),
+    ITDev = [make_branch(ContIT,Shut,ID,CInfo)|ITDevN],
+    inOut_inter(User,IODev,IOFCode,ITDevN,ITFCode,ID1,Shut,Shut1).
+inOut_inter([make_branch(in_out,Shut,Node,CInfo,Status,SShut0)|User],
+                                IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut,
+    Status = normal(in_out("inOut_inter",ContIO,IOFCode),ID),
+    IODev = [make_branch(ContIO,Shut,ID,CInfo)|IODevN],
+    inOut_inter(User,IODevN,IOFCode,ITDev,ITFCode,ID1,SShut,SShut1).
+inOut_inter([make_branch(in_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(in("inOut_inter",ContIO,IOFCode),
+                    inter("inOut_inter",ContIT,ITFCode),ID),
+    IODev = [make_branch(ContIO,Shut,ID,CInfo)|IODevN],
+    ITDev = [make_branch(ContIT,Shut,ID,CInfo)|ITDevN],
+    inOut_inter(User,IODevN,IOFCode,ITDevN,ITFCode,ID1,SShut,SShut1).
+inOut_inter([make_branch(out_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(out("inOut_inter",ContIO,IOFCode),
+                    inter("inOut_inter",ContIT,ITFCode),ID),
+    IODev = [make_branch(ContIO,Shut,ID,CInfo)|IODevN],
+    ITDev = [make_branch(ContIT,Shut,ID,CInfo)|ITDevN],
+    inOut_inter(User,IODevN,IOFCode,ITDevN,ITFCode,ID1,SShut,SShut1).
+inOut_inter([make_branch(in_out_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IODev,IOFCode,ITDev,ITFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(in_out("inOut_inter",ContIO,IOFCode),
+                    inter("inOut_inter",ContIT,ITFCode),ID),
+    IODev = [make_branch(ContIO,Shut,ID,CInfo)|IODevN],
+    ITDev = [make_branch(ContIT,Shut,ID,CInfo)|ITDevN],
+    inOut_inter(User,IODevN,IOFCode,ITDevN,ITFCode,ID1,SShut,SShut1).
+inOut_inter([],IODev,_,ITDev,_,_,_,_):-
+    true|
+    IODev = [],
+    ITDev = [].
+
+%inInter_out(User,IIDev,IIFCode,OutDev,OutFCode,ID):-
+
+inInter_out([request(in,Node,Str,FInfo,UFCode)|User],
+                            IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    true|
+    IIDev= [request(in,Node,Str,FInfo)|IIDevN],
+    UFCode = IIFCode,
+    inInter_out(User,IIDevN,IIFCode,ODev,OFCode,ID,SShut,SShut1).
+inInter_out([request(out,Node,Str,FInfo,UFCode)|User],
+                            IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    true|
+    ODev= [request(out,Node,Str,FInfo)|ODevN],
+    UFCode = OFCode,
+    inInter_out(User,IIDev,IIFCode,ODevN,OFCode,ID,SShut,SShut1).
+inInter_out([request(inter,Node,Str,FInfo,UFCode)|User],
+                            IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    true|
+    IIDev= [request(inter,Node,Str,FInfo)|IIDevN],
+    UFCode = IIFCode,
+    inInter_out(User,IIDevN,IIFCode,ODev,OFCode,ID,SShut,SShut1).
+inInter_out([request(io,Node,Str,FInfo,UFCode)|User],
+                            IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    true|
+    IIDev= [request(io,Node,StrII,FInfoII)|IIDevN],
+    ODev= [request(io,Node,StrO,FInfoO)|ODevN],
+    get_io_info(inInter_out,{StrII,StrO},Str,{FInfoII,FInfoO},FInfo,
+                                {IIFCode,OFCode},UFCode),
+    inInter_out(User,IIDevN,IIFCode,ODevN,OFCode,ID,SShut,SShut1).
+inInter_out([request(switch,Node,Str,FInfo,UFCode)|User],
+                            IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    true|
+    IIDev= [request(switch,Node,StrII,FInfoII)|IIDevN],
+    ODev= [request(switch,Node,StrO,FInfoO)|ODevN],
+    get_switch_info(inInter_out,{StrII,StrO},Str,{FInfoII,FInfoO},FInfo,
+                                {IIFCode,OFCode},UFCode),
+    inInter_out(User,IIDevN,IIFCode,ODevN,OFCode,ID,SShut,SShut1).
+inInter_out([make_branch(in,Shut,Node,CInfo,Status,SShut0)|User],
+                                IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut,
+    Status = normal(in("inInter_out",ContII,IIFCode),ID),
+    IIDev = [make_branch(ContII,Shut,ID,CInfo)|IIDevN],
+    inInter_out(User,IIDevN,IIFCode,ODev,OFCode,ID1,SShut,SShut1).
+inInter_out([make_branch(out,Shut,Node,CInfo,Status,SShut0)|User],
+                                IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut1,
+    Status = normal(out("inInter_out",ContII,IIFCode),ID),
+    ODev = [make_branch(ContII,Shut,ID,CInfo)|ODevN],
+    inInter_out(User,IIDev,IIFCode,ODevN,OFCode,ID1,SShut,SShut1).
+inInter_out([make_branch(inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut,
+    Status = normal(inter("inInter_out",ContII,IIFCode),ID),
+    IIDev = [make_branch(ContII,Shut,ID,CInfo)|IIDevN],
+    inInter_out(User,IIDevN,IIFCode,ODev,OFCode,ID1,SShut,SShut1).
+inInter_out([make_branch(in_out,Shut,Node,CInfo,Status,SShut0)|User],
+                                IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(in("inInter_out",ContII,IIFCode),
+                    out("inInter_out",ContO,OFCode),ID),
+    IIDev = [make_branch(ContII,Shut,ID,CInfo)|IIDevN],
+    ODev = [make_branch(ContO,Shut,ID,CInfo)|ODevN],
+    inInter_out(User,IIDevN,IIFCode,ODevN,OFCode,ID1,SShut,SShut1).
+inInter_out([make_branch(in_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut,
+    Status = normal(in_inter("inInter_out",ContII,IIFCode),ID),
+    IIDev = [make_branch(ContII,Shut,ID,CInfo)|IIDevN],
+    inInter_out(User,IIDevN,IIFCode,ODev,OFCode,ID1,SShut,SShut1).
+inInter_out([make_branch(out_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(out("inInter_out",ContO,OFCode),
+                    inter("inInter_out",ContII,IIFCode),ID),
+    IIDev = [make_branch(ContII,Shut,ID,CInfo)|IIDevN],
+    ODev = [make_branch(ContO,Shut,ID,CInfo)|ODevN],
+    inInter_out(User,IIDevN,IIFCode,ODevN,OFCode,ID1,SShut,SShut1).
+inInter_out([make_branch(in_out_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IIDev,IIFCode,ODev,OFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(in_inter("inInter_out",ContII,IIFCode),
+                    out("inInter_out",ContO,OFCode),ID),
+    IIDev = [make_branch(ContII,Shut,ID,CInfo)|IIDevN],
+    ODev = [make_branch(ContO,Shut,ID,CInfo)|ODevN],
+    inInter_out(User,IIDevN,IIFCode,ODevN,OFCode,ID1,SShut,SShut1).
+inInter_out([],IIDev,_,ODev,_,_,_,_):-
+    true|
+    IIDev = [],
+    ODev = [].
+
+%in_outInter(User,IDev,IFCode,OIDev,OIFCode,ID):-
+
+in_outInter([request(in,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    true|
+    IDev= [request(in,Node,Str,FInfo)|IDevN],
+    UFCode = IFCode,
+    in_outInter(User,IDevN,IFCode,OIDev,OIFCode,ID,SShut,SShut1).
+in_outInter([request(out,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    true|
+    OIDev= [request(out,Node,Str,FInfo)|OIDevN],
+    UFCode = OIFCode,
+    in_outInter(User,IDev,IFCode,OIDevN,OIFCode,ID,SShut,SShut1).
+in_outInter([request(inter,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    true|
+    OIDev= [request(inter,Node,Str,FInfo)|OIDevN],
+    UFCode = OIFCode,
+    in_outInter(User,IDev,IFCode,OIDevN,OIFCode,ID,SShut,SShut1).
+in_outInter([request(io,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    true|
+    IDev= [request(io,Node,StrI,FInfoI)|IDevN],
+    OIDev= [request(io,Node,StrOI,FInfoOI)|OIDevN],
+    get_io_info(in_outInter,{StrI,StrOI},Str,{FInfoI,FInfoOI},FInfo,
+                                {IFCode,OIFCode},UFCode),
+    in_outInter(User,IDevN,IFCode,OIDevN,OIFCode,ID,SShut,SShut1).
+in_outInter([request(switch,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    true|
+    IDev= [request(switch,Node,StrI,FInfoI)|IDevN],
+    OIDev= [request(switch,Node,StrOI,FInfoOI)|OIDevN],
+    get_switch_info(in_outInter,{StrI,StrOI},Str,{FInfoI,FInfoOI},FInfo,
+                                {IFCode,OIFCode},UFCode),
+    in_outInter(User,IDevN,IFCode,OIDevN,OIFCode,ID,SShut,SShut1).
+in_outInter([make_branch(in,Shut,Node,CInfo,Status,SShut0)|User],
+                                IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut,
+    Status = normal(in("in_outInter",ContI,IFCode),ID),
+    IDev = [make_branch(ContI,Shut,ID,CInfo)|IDevN],
+    in_outInter(User,IDevN,IFCode,OIDev,OIFCode,ID1,SShut,SShut1).
+in_outInter([make_branch(out,Shut,Node,CInfo,Status,SShut0)|User],
+                                IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut1,
+    Status = normal(out("in_outInter",ContOI,OIFCode),ID),
+    OIDev = [make_branch(ContOI,Shut,ID,CInfo)|OIDevN],
+    in_outInter(User,IDev,IFCode,OIDevN,OIFCode,ID1,SShut,SShut1).
+in_outInter([make_branch(inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut1,
+    Status = normal(inter("in_outInter",ContOI,OIFCode),ID),
+    OIDev = [make_branch(ContOI,Shut,ID,CInfo)|OIDevN],
+    in_outInter(User,IDev,IFCode,OIDevN,OIFCode,ID1,SShut,SShut1).
+in_outInter([make_branch(in_out,Shut,Node,CInfo,Status,SShut0)|User],
+                                IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(in("in_outInter",ContI,IFCode),
+                    out("in_outInter",ContIO,OIFCode),ID),
+    IDev = [make_branch(ContI,Shut,ID,CInfo)|IDevN],
+    OIDev = [make_branch(ContIO,Shut,ID,CInfo)|OIDevN],
+    in_outInter(User,IDevN,IFCode,OIDevN,OIFCode,ID1,SShut,SShut1).
+in_outInter([make_branch(in_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(in("in_outInter",ContI,IFCode),
+                    inter("in_outInter",ContOI,OIFCode),ID),
+    IDev = [make_branch(ContI,Shut,ID,CInfo)|IDevN],
+    OIDev = [make_branch(ContOI,Shut,ID,CInfo)|OIDevN],
+    in_outInter(User,IDevN,IFCode,OIDevN,OIFCode,ID1,SShut,SShut1).
+in_outInter([make_branch(out_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    SShut0 = SShut1,
+    Status = normal(out("in_outInter",ContOI,OIFCode),ID),
+    OIDev = [make_branch(ContOI,Shut,ID,CInfo)|OIDevN],
+    in_outInter(User,IDev,IFCode,OIDevN,OIFCode,ID1,SShut,SShut1).
+in_outInter([make_branch(in_out_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                                IDev,IFCode,OIDev,OIFCode,ID,SShut,SShut1):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(in("in_outInter",ContI,IFCode),
+                    out_inter("in_outInter",ContOI,OIFCode),ID),
+    IDev = [make_branch(ContI,Shut,ID,CInfo)|IDevN],
+    OIDev = [make_branch(ContOI,Shut,ID,CInfo)|OIDevN],
+    in_outInter(User,IDevN,IFCode,OIDevN,OIFCode,ID1,SShut,SShut1).
+in_outInter([],IDev,_,OIDev,_,_,_,_):-
+    true|
+    IDev = [],
+    OIDev = [].
+
+%in_out_inter(User,IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID):-
+
+in_out_inter([request(in,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    true|
+    IDev= [request(in,Node,Str,FInfo)|IDevN],
+    UFCode = IFCode,
+    in_out_inter(User,IDevN,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2).
+in_out_inter([request(out,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    true|
+    ODev= [request(out,Node,Str,FInfo)|ODevN],
+    UFCode = OFCode,
+    in_out_inter(User,IDev,IFCode,ODevN,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2).
+in_out_inter([request(inter,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    true|
+    ITDev= [request(inter,Node,Str,FInfo)|ITDevN],
+    UFCode = ITFCode,
+    in_out_inter(User,IDev,IFCode,ODev,OFCode,ITDevN,ITFCode,ID,SShut,SShut1,SShut2).
+in_out_inter([request(io,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    true|
+    IDev= [request(io,Node,StrI,FInfoI)|IDevN],
+    ODev= [request(io,Node,StrO,FInfoO)|ODevN],
+    ITDev= [request(io,Node,StrIT,FInfoIT)|ITDevN],
+    get_io_info(in_out_inter,{StrI,StrO,StrIT},Str,
+                                 {FInfoI,FInfoO,FInfoIT},FInfo,
+                                 {IFCode,OFCode,ITFCode},UFCode),
+    in_out_inter(User,IDevN,IFCode,ODevN,OFCode,ITDevN,ITFCode,ID,SShut,SShut1,SShut2).
+in_out_inter([request(switch,Node,Str,FInfo,UFCode)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    true|
+    IDev= [request(switch,Node,StrI,FInfoI)|IDevN],
+    ODev= [request(switch,Node,StrO,FInfoO)|ODevN],
+    ITDev= [request(switch,Node,StrIT,FInfoIT)|ITDevN],
+    get_switch_info(in_out_inter,{StrI,StrO,StrIT},Str,
+                                 {FInfoI,FInfoO,FInfoIT},FInfo,
+                                 {IFCode,OFCode,ITFCode},UFCode),
+    in_out_inter(User,IDevN,IFCode,ODevN,OFCode,ITDevN,ITFCode,ID,SShut,SShut1,SShut2).
+in_out_inter([make_branch(in,Shut,Node,CInfo,Status,SShut0)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    ID1 := ID + 1|
+    SShut0 = SShut,
+    Status = normal(in("in_out_inter",ContI,IFCode),ID),
+    IDev = [make_branch(ContI,Shut,ID,CInfo)|IDevN],
+    in_out_inter(User,IDevN,IFCode,ODev,OFCode,ITDev,ITFCode,ID1,SShut,SShut1,SShut2).
+in_out_inter([make_branch(out,Shut,Node,CInfo,Status,SShut0)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    ID1 := ID + 1|
+    SShut0 = SShut1,
+    Status = normal(out("in_out_inter",ContO,OFCode),ID),
+    ODev = [make_branch(ContO,Shut,ID,CInfo)|ODevN],
+    in_out_inter(User,IDev,IFCode,ODevN,OFCode,ITDev,ITFCode,ID1,SShut,SShut1,SShut2).
+in_out_inter([make_branch(inter,Shut,Node,CInfo,Status,SShut0)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    ID1 := ID + 1|
+    SShut0 = SShut2,
+    Status = normal(inter("in_out_inter",ContIT,ITFCode),ID),
+    ITDev = [make_branch(ContIT,Shut,ID,CInfo)|ITDevN],
+    in_out_inter(User,IDev,IFCode,ODev,OFCode,ITDevN,ITFCode,ID1,SShut,SShut1,SShut2).
+in_out_inter([make_branch(in_out,Shut,Node,CInfo,Status,SShut0)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut0),
+    Status = normal(in("in_out_inter",ContI,IFCode),
+                    out("in_out_inter",ContO,OFCode),ID),
+    IDev = [make_branch(ContI,Shut,ID,CInfo)|IDevN],
+    ODev = [make_branch(ContO,Shut,ID,CInfo)|ODevN],
+    in_out_inter(User,IDevN,IFCode,ODevN,OFCode,ITDev,ITFCode,ID1,SShut,SShut1,SShut2).
+in_out_inter([make_branch(in_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut2,SShut0),
+    Status = normal(in("in_out_inter",ContI,IFCode),
+                    inter("in_out_inter",ContIT,ITFCode),ID),
+    IDev = [make_branch(ContI,Shut,ID,CInfo)|IDevN],
+    ITDev = [make_branch(ContIT,Shut,ID,CInfo)|ITDevN],
+    in_out_inter(User,IDevN,IFCode,ODev,OFCode,ITDevN,ITFCode,ID1,SShut,SShut1,SShut2).
+in_out_inter([make_branch(out_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    ID1 := ID + 1|
+    and_shut(SShut1,SShut2,SShut0),
+    Status = normal(out("in_out_inter",ContO,OFCode),
+                    inter("in_out_inter",ContIT,ITFCode),ID),
+    ODev = [make_branch(ContO,Shut,ID,CInfo)|ODevN],
+    ITDev = [make_branch(ContIT,Shut,ID,CInfo)|ITDevN],
+    in_out_inter(User,IDev,IFCode,ODevN,OFCode,ITDevN,ITFCode,ID1,SShut,SShut1,SShut2).
+in_out_inter([make_branch(in_out_inter,Shut,Node,CInfo,Status,SShut0)|User],
+                            IDev,IFCode,ODev,OFCode,ITDev,ITFCode,ID,SShut,SShut1,SShut2):-
+    ID1 := ID + 1|
+    and_shut(SShut,SShut1,SShut2,SShut0),
+    Status = normal(in("in_out_inter",ContI,IFCode),
+                    out("in_out_inter",ContO,OFCode),
+                    inter("in_out_inter",ContIT,ITFCode),ID),
+    IDev = [make_branch(ContI,Shut,ID,CInfo)|IDevN],
+    ODev = [make_branch(ContO,Shut,ID,CInfo)|ODevN],
+    ITDev = [make_branch(ContIT,Shut,ID,CInfo)|ITDevN],
+    in_out_inter(User,IDevN,IFCode,ODevN,OFCode,ITDevN,ITFCode,ID1,SShut,SShut1,SShut2).
+in_out_inter([],IDev,_,ODev,_,ITDev,_,_,_,_,_):-
+    true|
+    IDev = [],
+    ODev = [],  
+    ITDev = [].
+
+%get_io_info(in_out_inter,{StrI,StrO,StrIT},Str,
+%                             {FInfoI,FInfoO,FInfoIT},FInfo,
+%                             {IFCode,OFCode,ITFCode},UFCode):-
+get_io_info(Type,Strs,Str,FInfos,FInfo,FCodes,FCode):-
+    true|
+    predicate_to_code(module#task_std_filter,dist,3,FCode),
+    Strs = Str,
+    FInfo = {Type,FInfos,FCodes}.
+get_switch_info(Type,Strs,Str,FInfos,FInfo,FCodes,FCode):-
+    true|
+    predicate_to_code(module#task_std_filter,dist,3,FCode),
+    Strs = Str,
+    FInfo = {switch,FInfos,FCodes}.
+
+and_shut(S1,S2,S3,S):-
+    wait(S1)|
+    and_shut(S2,S3,S).
+and_shut(S1,S2,S3,S):-
+    wait(S2)|
+    and_shut(S1,S3,S).
+and_shut(S1,S2,S3,S):-
+    wait(S3)|
+    and_shut(S1,S2,S).
+
+and_shut(S1,S2,S):-
+    wait(S1)|
+    S2 = S.
+and_shut(S1,S2,S):-
+    wait(S2)|
+    S1 = S.
+

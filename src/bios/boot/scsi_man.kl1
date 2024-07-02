@@ -1,0 +1,687 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi542::>sys>user>yashiro>V35>boot>scsi_man.kl1.3, 08-Feb-93 16:05:55, Edit by yashiro
+:- module scsi_manager.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public create/1.
+
+%
+%   scsi_where(Info)
+%    Info ::= '[]' | '['SCSI_Info '|' Info ']'
+%    SCSI_Info ::= '{' Cluster ',' Processor ',' SCSI_PORT ',' MY_UNIT'}'
+%
+%
+%                              Table 1. 
+%
+%   POOL NAME   |            key                 |        value
+%---------------+--------------------------------+---------------------------------------------
+%   LPID_POOL   | LPID(SCSI_Descriptor)          | {Cluster,Processor,SCSI_PORT,MY_Unit,SCSIReq}
+%   CONF_POOL   | {Cluster,Processor,SCSI_PORT}  | {LPID,MY_Unit,SCSIReq}
+%   UNIT_POOL   | {LPID,Unit,LUN}                | {Device,DeviceType,Cluster,Processor}
+%
+% NOTE: This table describes key and value of each pool.  In this program, the relations of
+%       informationi in the each pools are too complicated.  Because the information of the 
+%       SCSI configuration should be provided at this level.
+%            However, the structure of this program may be more simple by the fusion of this 
+%       module and "SCSI KL1 handler" module.  Those implementation should be taken in the next
+%       release.
+%
+
+
+%
+% create(SCSI_manager)
+%       SCSI_manager: INPUT STREAM from OS.
+%
+% NOTE: (1)This predicate create all pools used at this program module.
+%          The size of pool, which is initial parameter, can be small.
+%       (2) This predicate forks a builtin predicate scsi_where/1. It returns available SCSI ports
+%          in this system.
+
+create(SCSI_manager) :-
+    true |
+        scsi_conf:scsi_where(Info),
+        keyed_bag:keyed_set(default,LPID_POOL,100),
+        keyed_bag:keyed_set(default,CONF_POOL,100),
+        keyed_bag:keyed_set(default,UNIT_POOL,100),  % 
+        initiate_scsi_manager(Info,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager).
+
+initiate_scsi_manager(Info,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager) :-
+    true |
+        % logical SCSI number starts from 0.
+        register_scsi_info(Info,0,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager). 
+
+register_scsi_info([{Cluster,Processor,SCSI_PORT,MY_UNIT}|Ninfo],LPID,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager) :-
+    integer(Cluster),integer(Processor),
+    integer(SCSI_PORT), integer(MY_UNIT) |
+        throw_manager([{Cluster,Processor,SCSI_PORT,MY_UNIT}|Ninfo],
+                        LPID,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager)@node(Cluster).
+register_scsi_info([],LPID,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager) :-
+    true |
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,LPID).
+
+
+:- switch( virtual_machine_interface ).
+:- case( yes ).
+throw_manager([{Cluster,Processor,SCSI_PORT,MY_UNIT}|Ninfo],LPID,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager) :-
+    integer(Cluster),integer(Processor),
+    integer(SCSI_PORT), integer(MY_UNIT) ,
+    LPID1 := LPID + 1|
+        scsi_simulator:create(normal(SCSI)),
+        scsi_port_initialize(LPID,Cluster,Processor,MY_UNIT,SCSI1,UNIT_POOL,UNIT_POOL1),
+        scsi_filter(SCSI0,SCSI,Cluster,Processor),
+        merge({SCSI1,SCSI2,SCSI3},SCSI0),
+        LPID_POOL=[put(LPID,{Cluster,Processor,SCSI_PORT,MY_UNIT,SCSI2},_)|LPID_POOL1],
+        CONF_POOL=[put({Cluster,Processor,SCSI_PORT},{LPID,MY_UNIT,SCSI3},_ )| CONF_POOL1],
+        register_scsi_info(Ninfo,LPID1,LPID_POOL1,CONF_POOL1,UNIT_POOL1,SCSI_manager).
+:- case(no).
+:- switch(fep_interface).
+:- case(kl1_network).
+throw_manager([{Cluster,Processor,SCSI_PORT,MY_UNIT}|Ninfo],LPID,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager) :-
+    integer(Cluster),integer(Processor),
+    integer(SCSI_PORT), integer(MY_UNIT) ,
+    LPID1 := LPID + 1|
+        scsi_string_io:create(LPID,normal(SCSI)),
+        scsi_port_initialize(LPID,Cluster,Processor,MY_UNIT,SCSI1,UNIT_POOL,UNIT_POOL1),
+        scsi_filter(SCSI0,SCSI,Cluster,Processor),
+        merge({SCSI1,SCSI2,SCSI3},SCSI0),
+        LPID_POOL=[put(LPID,{Cluster,Processor,SCSI_PORT,MY_UNIT,SCSI2},_)|LPID_POOL1],
+        CONF_POOL=[put({Cluster,Processor,SCSI_PORT},{LPID,MY_UNIT,SCSI3},_ )| CONF_POOL1],
+        register_scsi_info(Ninfo,LPID1,LPID_POOL1,CONF_POOL1,UNIT_POOL1,SCSI_manager).
+:- default.
+:- switch(machine_type).
+:- case(vpim).
+throw_manager([{Cluster,Processor,SCSI_PORT,MY_UNIT}|Ninfo],LPID,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager) :-
+    integer(Cluster),integer(Processor),
+    integer(SCSI_PORT), integer(MY_UNIT) ,
+    LPID1 := LPID + 1|
+        scsi:create(SCSI_PORT,normal(SCSI))@resident_to_processor(Processor),
+        scsi_port_initialize(LPID,Cluster,Processor,MY_UNIT,SCSI1,UNIT_POOL,UNIT_POOL1),
+        scsi_filter(SCSI0,SCSI,Cluster,Processor),
+        merge({SCSI1,SCSI2,SCSI3},SCSI0),
+        LPID_POOL=[put(LPID,{Cluster,Processor,SCSI_PORT,MY_UNIT,SCSI2},_)|LPID_POOL1],
+        CONF_POOL=[put({Cluster,Processor,SCSI_PORT},{LPID,MY_UNIT,SCSI3},_ )| CONF_POOL1],
+        register_scsi_info(Ninfo,LPID1,LPID_POOL1,CONF_POOL1,UNIT_POOL1,SCSI_manager).
+:- default. 
+% for PIM/m
+throw_manager([{Cluster,Processor,SCSI_PORT,MY_UNIT}|Ninfo],LPID,LPID_POOL,CONF_POOL,UNIT_POOL,SCSI_manager) :-
+    integer(Cluster),integer(Processor),
+    integer(SCSI_PORT), integer(MY_UNIT) ,
+    LPID1 := LPID + 1|
+        scsi:create(SCSI_PORT,normal(SCSI)),
+        scsi_port_initialize(LPID,Cluster,Processor,MY_UNIT,SCSI1,UNIT_POOL,UNIT_POOL1),
+        scsi_filter(SCSI0,SCSI,Cluster,Processor),
+        merge({SCSI1,SCSI2,SCSI3},SCSI0),
+        LPID_POOL=[put(LPID,{Cluster,Processor,SCSI_PORT,MY_UNIT,SCSI2},_)|LPID_POOL1],
+        CONF_POOL=[put({Cluster,Processor,SCSI_PORT},{LPID,MY_UNIT,SCSI3},_ )| CONF_POOL1],
+        register_scsi_info(Ninfo,LPID1,LPID_POOL1,CONF_POOL1,UNIT_POOL1,SCSI_manager).
+% machine_type
+:- end_switch.
+% fep_interface
+:- end_switch. 
+% virtual_machine_interface
+:- end_switch. 
+
+scsi_manager([get_id(Cluster,Processor,SCSI_PORT,Result)|SCSI_manager],LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    integer(Cluster),integer(Processor),integer(SCSI_PORT) |
+        CONF_POOL= [empty({Cluster,Processor,SCSI_PORT},YorN)|CONF_POOL1],
+        check_id(YorN,Result,SCSI_manager,Cluster,Processor,SCSI_PORT,LPID_POOL,CONF_POOL1,UNIT_POOL,MAX_PORT_ID).
+        
+scsi_manager([],LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        close_all_streams(LPID_POOL,CONF_POOL,UNIT_POOL).
+scsi_manager([get_info(Result)|SCSI_manager],LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        Result = normal(8,16384),
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+scsi_manager([number_of_port(Result)|SCSI_manager],LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        Result = normal(MAX_PORT_ID),
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+scsi_manager([configuration(Result)|SCSI_manager],LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        scsi_configuration(Result,UNIT_POOL,UNIT_POOL1,LPID_POOL,LPID_POOL1),
+        scsi_manager(SCSI_manager,LPID_POOL1,CONF_POOL,UNIT_POOL1,MAX_PORT_ID).
+otherwise.
+scsi_manager([{Type,LPID,Unit,LUN,Result}|SCSI_manager],LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    atom(Type), integer(LPID), integer(Unit), integer(LUN) |
+        UNIT_POOL=[empty({LPID,Unit,LUN},YorN)|UNIT_POOL1],
+        search_unit_pool(YorN,{Type,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL1,MAX_PORT_ID).
+scsi_manager([{Type,_,LPID,Unit,LUN,Result}|SCSI_manager],LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    atom(Type), integer(LPID), integer(Unit), integer(LUN) |
+        UNIT_POOL=[empty({LPID,Unit,LUN},YorN)|UNIT_POOL1],
+        search_unit_pool(YorN,{Type,os,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL1,MAX_PORT_ID).
+scsi_manager([{Type,{Cluster,Processor,SCSI_PORT},Unit,LUN,Result}|SCSI_manager],LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    atom(Type), integer(Cluster),integer(Processor),integer(SCSI_PORT), integer(Unit), integer(LUN) |
+        CONF_POOL=[empty({Cluster,Processor,SCSI_PORT},YorN)|CONF_POOL1],
+        search_unit_pool0(YorN,{Type,{Cluster,Processor,SCSI_PORT},Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL1,UNIT_POOL,MAX_PORT_ID).
+scsi_manager([{Type,_,{Cluster,Processor,SCSI_PORT},Unit,LUN,Result}|SCSI_manager],LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    atom(Type), integer(Cluster),integer(Processor),integer(SCSI_PORT), integer(Unit), integer(LUN) |
+        CONF_POOL=[empty({Cluster,Processor,SCSI_PORT},YorN)|CONF_POOL1],
+        search_unit_pool0(YorN,{Type,{Cluster,Processor,SCSI_PORT},Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL1,UNIT_POOL,MAX_PORT_ID).
+
+check_id(yes,Result,SCSI_manager,Cluster,Processor,SCSI_PORT,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        Result = abnormal,
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+check_id(no,Result,SCSI_manager,Cluster,Processor,SCSI_PORT,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        CONF_POOL =[get({Cluster,Processor,SCSI_PORT},{LPID,SCSIIN,MY_UNIT}),
+                    put({Cluster,Processor,SCSI_PORT},{LPID,SCSIIN,MY_UNIT},_)|CONF_POOL1],
+        Result=normal(LPID),
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL1,UNIT_POOL,MAX_PORT_ID).
+
+scsi_port_initialize(LPID,Cluster,Processor,MY_UNIT,SCSI,UNIT_POOL,NUNIT_POOL) :-
+    true |
+        check_unit_without_myself(0,MY_UNIT,{LPID,Cluster,Processor,MY_UNIT},
+                                   UNIT_POOL,NUNIT_POOL,SCSI).
+
+:- switch(virtual_machine_interface).
+:- case(yes).
+check_unit_without_myself(UNIT_ID,MYSELF,PORT_INFO,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    UNIT_ID < 8,   % Maximum Unit number is 7
+    UNIT_ID =\= MYSELF,
+    UNIT_ID1 := UNIT_ID + 1 |
+        shoen:raise(pimos_tag#task,general_request,[getenv(vm:scsi_conf,Env)]),
+        current_node(CurrentNode,Nodes),
+        check_configuration(Env,CurrentNode,UNIT_ID,0,Result),
+        merge({SCSI11,SCSI12},SCSI),
+        copy:copy(PORT_INFO,PORT_INFO1,PORT_INFO2),
+        test_unit_ready(Result,PORT_INFO1,UNIT_ID,0,UNIT_POOL,UNIT_POOL1,SCSI11),
+        check_unit_without_myself(UNIT_ID1,MYSELF,PORT_INFO2,UNIT_POOL1,NUNIT_POOL,SCSI12).
+:- default.
+check_unit_without_myself(UNIT_ID,MYSELF,PORT_INFO,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    UNIT_ID < 8,   % Maximum Unit number is 7
+    UNIT_ID =\= MYSELF,
+    UNIT_ID1 := UNIT_ID + 1 |
+        LUN := 0,  % All the SCSI device, even embeded-type device, should provide LUN 0.
+        SCSI = [processor(UNIT_ID,LUN,Result)|SCSI1],
+        merge({SCSI11,SCSI12},SCSI1),
+        copy:copy(PORT_INFO,PORT_INFO1,PORT_INFO2),
+        test_unit_ready(Result,PORT_INFO1,UNIT_ID,LUN,UNIT_POOL,UNIT_POOL1,SCSI11),
+        check_unit_without_myself(UNIT_ID1,MYSELF,PORT_INFO2,UNIT_POOL1,NUNIT_POOL,SCSI12).
+:- end_switch.
+check_unit_without_myself(UNIT_ID,MYSELF,PORT_INFO,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    UNIT_ID =:= MYSELF,
+    UNIT_ID1 := UNIT_ID + 1 |
+        check_unit_without_myself(UNIT_ID1,MYSELF,PORT_INFO,UNIT_POOL,NUNIT_POOL,SCSI).
+check_unit_without_myself(UNIT_ID,MYSELF,PORT_INFO,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    UNIT_ID >= 8 |
+        SCSI=[],
+        UNIT_POOL = NUNIT_POOL.
+
+:- switch(fep_interface).
+:- case(scsi).
+test_unit_ready(normal(SCSI_Device),PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    LUN =:= 0 |
+        SCSI_Device = [test_unit_ready(Result)|NSCSI_Device],
+        inquiry(Result,NSCSI_Device,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI).
+:- case(kl1_network).
+test_unit_ready(normal(SCSI_Device),PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    Unit =:= 7, LUN =:= 0  |
+        SCSI_Device = [test_unit_ready(Result)|NSCSI_Device],
+        inquiry(Result,NSCSI_Device,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI).
+:- end_switch.
+otherwise.
+test_unit_ready(normal(SCSI_Device),PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+   display_console(ascii#"Internal error :: SCSI manager (scsi_manager:test_unit_ready)") |
+        SCSI_Device =[],
+        SCSI = [],
+        UNIT_POOL = NUNIT_POOL.
+otherwise.
+test_unit_ready(_,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    true |
+        SCSI = [],
+        UNIT_POOL = NUNIT_POOL.
+
+:- switch(virtual_machine_interface).
+:- case(yes).
+inquiry(normal,SCSI_Device,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    true |
+        SCSI_Device = [inquiry(Result)],
+        check_inquiry(Result,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI).
+:- case(no).
+:- switch(fep_interface).
+:- case(kl1_network).
+inquiry(normal,SCSI_Device,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+%    display_console(ascii#"SCSI UNIT FOUND"), display_console(Unit), display_console(LUN) |
+    true |
+        SCSI_Device = [],
+        check_inquiry(normal(scsi#processor,0,7,string#""),PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI).
+:- default.
+inquiry(normal,SCSI_Device,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    true |
+        SCSI_Device = [inquiry(Result)],
+        check_inquiry(Result,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI).
+inquiry(abnormal(check_condition(CompletionCode,Detail,SenseData)),SCSI_Device,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    true |
+        SCSI_Device = [inquiry(Result)],
+        check_inquiry(Result,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI).
+:-end_switch.
+:-end_switch.
+otherwise.
+inquiry(_,SCSI_Device,PORT_INFO,Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    true |
+        SCSI = [],
+        SCSI_Device = [],
+        UNIT_POOL = NUNIT_POOL.
+
+check_inquiry(normal(DeviceType,Removable,Standards,VUParameter),PORT_INFO,
+                        Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    true |
+% If VUParameter will return more useful information, that information should be used.
+        device_type(DeviceType,DeviceType1),
+        create_scsi_device(DeviceType1,os,PORT_INFO,Unit,LUN,SCSI,UNIT_POOL,NUNIT_POOL,Result),
+        close(Result).
+check_inquiry(abnormal(check_condition(CompletionCode,Detail,SenseData)),{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    display_console(ascii#"SCSI ERROR: inquiry command failed (check condition)"),
+    display_console(ascii#"  SCSI_descriptor:"),    display_console(LPID),
+    display_console(ascii#"  Unit:"),               display_console(Unit),
+    display_console(ascii#"  LUN:"),                display_console(LUN),
+    display_console(ascii#"  Completion code:"),    display_console(CompletionCode),
+    display_console(ascii#"  Detail:"),             display_console(Detail),
+    display_console(ascii#"  Sense Data:"),         display_console(SenseData) |
+        UNIT_POOL = NUNIT_POOL,
+        SCSI = [].
+check_inquiry(abnormal(condition_met(CompletionCode,Detail)),{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    display_console(ascii#"SCSI ERROR: inquiry command failed (condition met)"),
+    display_console(ascii#"  SCSI_descriptor:"),    display_console(LPID),
+    display_console(ascii#"  Unit:"),               display_console(Unit),
+    display_console(ascii#"  LUN:"),                display_console(LUN),
+    display_console(ascii#"  Completion code:"),    display_console(CompletionCode),
+    display_console(ascii#"  Detail:"),             display_console(Detail) |
+        UNIT_POOL = NUNIT_POOL,
+        SCSI = [].
+check_inquiry(abnormal(busy(CompletionCode,Detail)),{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    display_console(ascii#"SCSI ERROR: inquiry command failed (busy)"),
+    display_console(ascii#"  SCSI_descriptor:"),    display_console(LPID),
+    display_console(ascii#"  Unit:"),               display_console(Unit),
+    display_console(ascii#"  LUN:"),                display_console(LUN),
+    display_console(ascii#"  Completion code:"),    display_console(CompletionCode),
+    display_console(ascii#"  Detail:"),             display_console(Detail) |
+        UNIT_POOL = NUNIT_POOL,
+        SCSI = [].
+check_inquiry(abnormal(intermediate(CompletionCode,Detail)),{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    display_console(ascii#"SCSI ERROR: inquiry command failed (intermediate)"),
+    display_console(ascii#"  SCSI_descriptor:"),    display_console(LPID),
+    display_console(ascii#"  Unit:"),               display_console(Unit),
+    display_console(ascii#"  LUN:"),                display_console(LUN),
+    display_console(ascii#"  Completion code:"),    display_console(CompletionCode),
+    display_console(ascii#"  Detail:"),             display_console(Detail) |
+        UNIT_POOL = NUNIT_POOL,
+        SCSI = [].
+check_inquiry(abnormal(intermediate_and_condition_met(CompletionCode,Detail)),{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    display_console(ascii#"SCSI ERROR: inquiry command failed (intermediate_and_condition_met)"),
+    display_console(ascii#"  SCSI_descriptor:"),    display_console(LPID),
+    display_console(ascii#"  Unit:"),               display_console(Unit),
+    display_console(ascii#"  LUN:"),                display_console(LUN),
+    display_console(ascii#"  Completion code:"),    display_console(CompletionCode),
+    display_console(ascii#"  Detail:"),             display_console(Detail) |
+        UNIT_POOL = NUNIT_POOL,
+        SCSI = [].
+check_inquiry(abnormal(reservation_conflict(CompletionCode,Detail)),{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    display_console(ascii#"SCSI ERROR: inquiry command failed (reservation conflict)"),
+    display_console(ascii#"  SCSI_descriptor:"),    display_console(LPID),
+    display_console(ascii#"  Unit:"),               display_console(Unit),
+    display_console(ascii#"  LUN:"),                display_console(LUN),
+    display_console(ascii#"  Completion code:"),    display_console(CompletionCode),
+    display_console(ascii#"  Detail:"),             display_console(Detail) |
+        UNIT_POOL = NUNIT_POOL,
+        SCSI = [].
+check_inquiry(abnormal(others(StatusByte,CompletionCode,Detail)),{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    display_console(ascii#"SCSI ERROR: inquiry command failed (Others)"),
+    display_console(ascii#"  SCSI_descriptor:"),    display_console(LPID),
+    display_console(ascii#"  Unit:"),               display_console(Unit),
+    display_console(ascii#"  LUN:"),                display_console(LUN),
+    display_console(ascii#"  Status byte:"),        display_console(StatusByte),
+    display_console(ascii#"  Completion code:"),    display_console(CompletionCode),
+    display_console(ascii#"  Detail:"),             display_console(Detail) |
+        UNIT_POOL = NUNIT_POOL,
+        SCSI = [].
+otherwise.
+check_inquiry(abnormal(Reason),{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,UNIT_POOL,NUNIT_POOL,SCSI) :-
+    display_console(ascii#"SCSI ERROR: inquiry command failed (Unknown)"),
+    display_console(ascii#"  SCSI_descriptor:"),    display_console(LPID),
+    display_console(ascii#"  Unit:"),               display_console(Unit),
+    display_console(ascii#"  LUN:"),                display_console(LUN),
+    display_console(ascii#"  Reason:"),             display_console(Reason) |
+        UNIT_POOL = NUNIT_POOL,
+        SCSI = [].
+
+close(abnormal) :-
+    true |
+        true.
+close(normal(Device)) :-
+    true |
+        Device = [].
+otherwise.
+close(_) :-
+    true |
+        true.
+
+:- switch(virtual_machine_interface).
+:- case(yes).
+create_scsi_device(Type,_,PORT_INFO,Unit,LUN,SCSI,UNIT_POOL,NUNIT_POOL,Result) :-
+    atom(Type), Type \= non_existent, integer(Unit),integer(LUN) |
+        shoen:raise(pimos_tag#task,general_request,[getenv(vm:scsi_conf,Env)]),
+        current_node(CurrentNode,Nodes),
+        get_virtual_device(Env,CurrentNode,Unit,LUN,SCSI,DeviceResult),
+        create_scsi_device1(DeviceResult,os,PORT_INFO,Type,Unit,LUN,UNIT_POOL,NUNIT_POOL,Result).
+:- default.
+create_scsi_device(Type,_,PORT_INFO,Unit,LUN,SCSI,UNIT_POOL,NUNIT_POOL,Result) :-
+    atom(Type), Type \= non_existent, integer(Unit),integer(LUN) |
+        SCSI = [{Type,Unit,LUN,DeviceResult}],
+        create_scsi_device1(DeviceResult,os,PORT_INFO,Type,Unit,LUN,UNIT_POOL,NUNIT_POOL,Result).
+:- end_switch.
+otherwise.
+create_scsi_device(Type,_,PORT_INFO,Unit,LUN,SCSI,UNIT_POOL,NUNIT_POOL,Result) :-
+    true |
+        SCSI = [],
+        Result = abnormal,
+        UNIT_POOL = NUNIT_POOL.
+
+create_scsi_device1(normal(Device),_,{LPID,Cluster,Processor,MY_UNIT},Type,Unit,LUN,UNIT_POOL,NUNIT_POOL,Result) :-
+    true |
+        merge({Device1,Device2},Device),
+        UNIT_POOL = [put({LPID,Unit,LUN},
+                         {Device1,Type,Cluster,Processor},_)|NUNIT_POOL],
+        Result = normal(Device2).
+otherwise.
+create_scsi_device1(Result0,_,{LPID,Cluster,Processor,MY_UNIT},Type,Unit,LUN,UNIT_POOL,NUNIT_POOL,Result) :-
+    true |
+        Result = Result0,
+        UNIT_POOL = NUNIT_POOL.
+
+device_type(scsi#direct_access,DeviceType) :-
+    true |
+        DeviceType = direct_access.
+device_type(scsi#sequential_access,DeviceType) :-
+    true |
+        DeviceType = sequential_access.
+device_type(scsi#printer,DeviceType) :-
+    true |
+        DeviceType = printer.
+device_type(scsi#processor,DeviceType) :-
+    true |
+        DeviceType = processor.
+device_type(scsi#write_once_multiple_read,DeviceType) :-
+    true |
+        DeviceType = write_once_multiple_read.
+device_type(scsi#read_only_direct_access,DeviceType) :-
+    true |
+        DeviceType = read_only_direct_access.
+device_type(scsi#non_existent,DeviceType) :-
+    true |
+        DeviceType = non_existent.
+otherwise.
+device_type(_,DeviceType) :-
+    true |
+        DeviceType = unknown.
+
+scsi_configuration(Result,UNIT_POOL,NUNIT_POOL,LPID_POOL,NLPID_POOL) :-
+    true |
+        keyed_sorted_bag:sorted_bag(ascending,SORTER),
+        Result = normal(CONFIG),
+        UNIT_POOL =  [get_all(ALL)|UNIT_POOL1],
+        scsi_configuration0(ALL,SORTER,CONFIG,UNIT_POOL1,NUNIT_POOL,LPID_POOL,NLPID_POOL).
+
+scsi_configuration0([{{LPID,Unit,LUN},{SCSI_DeviceIn,DevType,Cluster,Processor}}|Tail],
+                     SORTER,CONFIG,UNIT_POOL,NUNIT_POOL,LPID_POOL,NLPID_POOL) :-
+    LUN =:= 0 |
+        UNIT_POOL = [put({LPID,Unit,LUN},{SCSI_DeviceIn,DevType,Cluster,Processor},_)|UNIT_POOL1],
+        LPID_POOL = [get_and_put(LPID,{Cluster,Processor,SCSI_PORT,MY_Unit,SCSIReq},{Cluster,Processor,SCSI_PORT,MY_Unit,SCSIReq})|LPID_POOL1],
+        SORTER = [put({DevType,{Cluster,Processor,SCSI_PORT},Unit,""})|SORTER1],
+        scsi_configuration0(Tail,SORTER1,CONFIG,UNIT_POOL1,NUNIT_POOL,LPID_POOL1,NLPID_POOL).
+scsi_configuration0([],SORTER,CONFIG,UNIT_POOL,NUNIT_POOL,LPID_POOL,NLPID_POOL) :-
+    true |
+        SORTER=[get_all(CONFIG)],
+        LPID_POOL=NLPID_POOL,
+        UNIT_POOL=NUNIT_POOL.
+otherwise.
+scsi_configuration0([{{LPID,Unit,LUN},{SCSI_DeviceIn,DevType,Cluster,Processor}}|Tail],
+                     SORTER,CONFIG,UNIT_POOL,NUNIT_POOL,LPID_POOL,NLPID_POOL) :-
+    true |
+        UNIT_POOL = [put({LPID,Unit,LUN},{SCSI_DeviceIn,DevType,Cluster,Processor},_)|UNIT_POOL1],
+        scsi_configuration0(Tail,SORTER,CONFIG,UNIT_POOL1,NUNIT_POOL,LPID_POOL,NLPID_POOL).
+
+
+search_unit_pool0(no,{Type,{Cluster,Processor,SCSI_PORT},Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID):-
+        CONF_POOL=[get_and_put({Cluster,Processor,SCSI_PORT},
+                                {LPID,MY_Unit,SCSIReq},
+                                {LPID,MY_Unit,SCSIReq})|CONF_POOL1],
+        UNIT_POOL=[empty({LPID,Unit,LUN},YorN)|UNIT_POOL1],
+        search_unit_pool(YorN,{Type,os,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL1,UNIT_POOL1,MAX_PORT_ID).
+search_unit_pool0(yes,{Type,{Cluster,Processor,SCSI_PORT},Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID):-
+        Result = abnormal,
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+
+search_unit_pool(yes,{Type,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        LPID_POOL = [empty(LPID,YorN)|LPID_POOL1],
+        check_lpid_pool(YorN,{Type,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL1,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+search_unit_pool(yes,{Type,_,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        LPID_POOL = [empty(LPID,YorN)|LPID_POOL1],
+        check_lpid_pool(YorN,{Type,os,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL1,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+search_unit_pool(no,{Type,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        SCSI_DeviceIn = {SCSI_DeviceIn1,SCSI_DeviceIn2},
+        UNIT_POOL =[get({LPID,Unit,LUN},{SCSI_DeviceIn,DeviceType,Cluster,Processor}),
+                    put({LPID,Unit,LUN},{SCSI_DeviceIn1,DeviceType,Cluster,Processor},_)|UNIT_POOL1],
+        Result = normal(SCSI_DeviceIn2),
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL1,MAX_PORT_ID).
+search_unit_pool(no,{Type,_,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        SCSI_DeviceIn = {SCSI_DeviceIn1,SCSI_DeviceIn2},
+        UNIT_POOL =[get({LPID,Unit,LUN},{SCSI_DeviceIn,DeviceType,Cluster,Processor}),
+                    put({LPID,Unit,LUN},{SCSI_DeviceIn1,DeviceType,Cluster,Processor},_)|UNIT_POOL1],
+        Result = normal(SCSI_DeviceIn2),
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL1,MAX_PORT_ID).
+
+check_lpid_pool(yes,{Type,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        Result = abnormal,
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+check_lpid_pool(yes,{Type,_,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        Result = abnormal,
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+check_lpid_pool(no,{Type,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        LPID_POOL = [get(LPID,{Cluster,Processor,SCSI_PORT,MY_UNIT,SCSI}),
+                     put(LPID,{Cluster,Processor,SCSI_PORT,MY_UNIT,SCSI1},_)|LPID_POOL1],
+        SCSI = {SCSI1,SCSI2},
+        create_scsi_device(Type,user,{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,SCSI2,UNIT_POOL,UNIT_POOL1,Result0)@node(Cluster),
+        check_scsi_device_result(Result0,Result,SCSI_manager,LPID_POOL1,CONF_POOL,UNIT_POOL1,MAX_PORT_ID).
+check_lpid_pool(no,{Type,_,LPID,Unit,LUN,Result},SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        LPID_POOL = [get(LPID,{Cluster,Processor,SCSI_PORT,MY_UNIT,SCSI}),
+                     put(LPID,{Cluster,Processor,SCSI_PORT,MY_UNIT,SCSI1},_)|LPID_POOL1],
+        SCSI = {SCSI1,SCSI2},
+        create_scsi_device(Type,os,{LPID,Cluster,Processor,MY_UNIT},Unit,LUN,SCSI2,UNIT_POOL,UNIT_POOL1,Result0)@node(Cluster),
+        check_scsi_device_result(Result0,Result,SCSI_manager,LPID_POOL1,CONF_POOL,UNIT_POOL1,MAX_PORT_ID).
+
+check_scsi_device_result(normal(Device),Result,SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        Result = normal(Device),
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+check_scsi_device_result(abnormal,Result,SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID) :-
+    true |
+        Result = abnormal,
+        scsi_manager(SCSI_manager,LPID_POOL,CONF_POOL,UNIT_POOL,MAX_PORT_ID).
+
+
+scsi_filter([],SCSI,Cluster,Processor) :-
+    true |
+        SCSI = [].
+scsi_filter([current_processor(Result)|SCSIIN],SCSI,Cluster,Processor) :-
+    true |
+        Result = normal({Cluster,Processor}),
+        scsi_filter(SCSIIN,SCSI,Cluster,Processor).
+otherwise.
+scsi_filter([A|SCSIIN],SCSI,Cluster,Processor) :-
+    true |
+        SCSI=[A|NSCSI],
+        scsi_filter(SCSIIN,NSCSI,Cluster,Processor).
+
+close_all_streams(LPID_POOL,CONF_POOL,UNIT_POOL) :-
+    true |
+        LPID_POOL=[get_all(LPID_LIST)],
+        CONF_POOL=[get_all(CONF_LIST)],
+        UNIT_POOL=[get_all(UNIT_LIST)],
+        close_lpid_list(LPID_LIST),
+        close_conf_list(CONF_LIST),
+        close_unit_list(UNIT_LIST).
+
+close_lpid_list([{_,{_,_,_,_,SCSIReq}}|Next]):-
+    true |
+        SCSIReq = [],
+        close_lpid_list(Next).
+close_lpid_list([]) :-
+    true |
+        true.
+
+close_conf_list([{_,{_,_,SCSIReq}}|Next]):-
+    true |
+        SCSIReq = [],
+        close_conf_list(Next).
+close_conf_list([]) :-
+    true |
+        true .
+
+close_unit_list([{_,{Device,_,_,_}}|Next]) :-
+    true |
+        Device = [],
+        close_unit_list(Next).
+close_unit_list([]) :-
+    true |
+        true.
+
+append([Elem|A1],A2,A3) :-
+    true |
+        A3=[Elem|NA3],
+        append(A1,A2,NA3).
+append([],A2,A3) :-
+    true |
+        A3=A2.
+
+
+:-switch(virtual_machine_interface).
+:- case(yes).
+get_virtual_device(normal(Env),CurrentNode,UNIT_ID,LUN,SCSI,Result) :-
+    true |
+        get_virtual_device1(Env,CurrentNode,UNIT_ID,LUN,SCSI,Result).
+otherwise.
+get_virtual_device(_,CurrentNode,UNIT_ID,LUN,SCSI,Result) :-
+    true |
+        scsi_conf:scsi_where(Env),
+        get_virtual_device2(Env,CurrentNode,UNIT_ID,LUN,SCSI,Result).
+
+get_virtual_device1([processor({CurrentNode,_,_},UNIT_ID,_)|Env],
+                    CurrentNode,UNIT_ID,LUN,SCSI,Result) :-
+    true  |
+        SCSI = [processor(UNIT_ID,LUN,Result)].
+get_virtual_device1([direct_access({CurrentNode,_,_},UNIT_ID,VirtualDisk)|Env],
+                    CurrentNode,UNIT_ID,LUN,SCSI,Result) :-
+    string(VirtualDisk,_,16) |
+        SCSI = [direct_access(UNIT_ID,LUN,VirtualDisk,Result)].
+get_virtual_device1([],CurrentNode,UNIT_ID,LUN,SCSI,Result) :-
+    true |
+        Result = abnormal,
+        SCSI = [].
+otherwise.
+get_virtual_device1([_|Env],CurrentNode,UNIT_ID,LUN,SCSI,Result) :-
+    true |
+        get_virtual_device1(Env,CurrentNode,UNIT_ID,LUN,SCSI,Result).
+
+nonexistent_device([test_unit_ready(Status)|Dummy]) :-
+    true |
+        Status = abnormal(no_existent),
+        nonexistent_device(Dummy).
+nonexistent_device([]) :-
+    true |
+        true.
+
+get_virtual_device2([],CurrentNode,UNIT_ID,LUN,SCSI,Result) :-
+    true |
+        nonexistent_device(Dummy),
+        Result = normal(Dummy),
+        SCSI=[].
+get_virtual_device2([{CurrentNode,_,_,_}|Tail],CurrentNode,UNIT_ID,LUN,SCSI,Result) :-
+    UNIT_ID =:= 7 |
+        SCSI = [processor(UNIT_ID,LUN,Result)].
+otherwise.
+get_virtual_device2([_|Tail],CurrentNode,UNIT_ID,LUN,SCSI,Result) :-
+    true |
+        get_virtual_device2(Tail,CurrentNode,UNIT_ID,LUN,SCSI,Result).
+
+check_configuration(normal(Env),CurrentNode,UNIT_ID,LUN,Result) :-
+    true |
+        check_configuration1(Env,CurrentNode,UNIT_ID,LUN,Result).
+otherwise.
+check_configuration(_,CurrentNode,UNIT_ID,LUN,Result) :-
+    true |
+        scsi_conf:scsi_where(Env),
+        check_configuration2(Env,CurrentNode,UNIT_ID,LUN,Result).
+
+check_configuration1([processor({CurrentNode,_,_},UNIT_ID,_)|Env],
+                    CurrentNode,UNIT_ID,_,Result) :-
+    true |
+        Result = normal(Dummy),
+        existent_device(Dummy,processor).
+check_configuration1([direct_access({CurrentNode,_,_},UNIT_ID,VirtualDisk)|Env],
+                    CurrentNode,UNIT_ID,_,Result) :-
+    string(VirtualDisk,_,16) |
+        Result = normal(Dummy),
+        existent_device(Dummy,direct_access).
+check_configuration1([],CurrentNode,UNIT_ID,LUN,Result) :-
+    true |
+        nonexistent_device(Dummy),
+        Result = normal(Dummy).
+otherwise.
+check_configuration1([_|Env],CurrentNode,UNIT_ID,LUN,Result) :-
+    true |
+        check_configuration1(Env,CurrentNode,UNIT_ID,LUN,Result).
+
+check_configuration2([{CurrentNode,_,_,_}|Tail],CurrentNode,UNIT_ID,LUN,Result) :-
+    UNIT_ID =:= 7 |
+        Result = normal(Dummy),
+        existent_device(Dummy,processor).
+check_configuration2([],CurrentNode,UNIT_ID,LUN,Result) :-
+    true |
+        Result = normal(Dummy),
+        nonexistent_device(Dummy).
+otherwise.
+check_configuration2([_|Tail],CurrentNode,UNIT_ID,LUN,Result) :-
+    true |
+        check_configuration2(Tail,CurrentNode,UNIT_ID,LUN,Result).
+
+
+existent_device([test_unit_ready(Result)|In],Type) :-
+    true |
+        Result = normal,
+        existent_device(In,Type).
+existent_device([inquiry(Result)|In],direct_access) :-
+    true |
+        new_string(VUParameter,0,8),
+        Result = normal(scsi#direct_access,scsi#removable,0,VUParameter),
+        existent_device(In,direct_access).
+existent_device([inquiry(Result)|In],processor) :-
+    true |
+        new_string(VUParameter,0,8),
+        Result = normal(scsi#processor,scsi#removable,0,VUParameter),
+        existent_device(In,processor).
+existent_device([],_) :-
+    true |
+        true.
+otherwise.
+existent_device([_|In],Type) :-
+    true |
+        existent_device(In,Type).
+:- end_switch.
+

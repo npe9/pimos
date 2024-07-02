@@ -1,0 +1,234 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module su_body.
+:- with_macro pimos.
+:- public go/0 .
+
+go:- true|
+    shoen:raise(pimos_tag#shell,get_std_out,Out),
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [user(UR)|GRN],
+    wait_go1(UR,Out,GRN).
+
+wait_go1(normal(UR,_,_),Out,GR):-
+    UR = [create(user(U))],
+    wait_go2(U,Out,GR).
+otherwise.
+wait_go1(_,Out,GR):-
+    true|
+    Out = [putl(string#"Sorry")],
+    GR = [].
+
+
+wait_go2(normal(User,_,_),Out,GR):-
+    true|
+    GR = [getenv(task:make_window,Res)|GRN],
+    wait_go20(Res,User,Out,GRN).
+otherwise.
+wait_go2(_,Out,GR):-
+    true|
+    Out = [putl(string#"Sorry")],
+    GR = [].
+
+wait_go20(normal(no),User,Out,GR):-
+    true|
+    shoen:raise(pimos_tag#task,get_std(inter),IO),
+    IO = [putb(string#"user: "),getl(UN),
+          putb(string#"password: "),getl(Pass)],
+    wait_go23(ok,{normal(UN),normal(Pass)},User,Out,GR).
+otherwise.
+wait_go20(_,User,Out,GR):-
+    true|
+    GR = [string_io(STR)|GRN],
+    wait_go21(STR,User,Out,GRN).
+
+wait_go21(normal(STR,_,_),User,Out,GR):-
+    true|
+    STR = [create("pimos_standard_io_window",Win)],
+    wait_go22(Win,User,Out,GR).
+otherwise.
+wait_go21(_,User,Out,GR):-
+    true|
+    User = [],
+    Out = [putl(string#"Sorry")],
+    GR = [].
+
+
+wait_go22(normal(Win,_,_),User,Out,GR):-
+    true|
+    new_string(ST0,4,16),
+    set_string_element(ST0,0,324,ST1),
+    set_string_element(ST1,1,328,ST2),
+    set_string_element(ST2,2,40,ST3),
+    set_string_element(ST3,3,6,ST),
+    Win = [io(104,ST,normal(Wait)),
+           io(130,"su",normal(Wait2)),
+           io(141,"",normal(Wait3)),
+           io(111,string#"user: ",_),
+           io(110,"",UN),
+           io(111,string#"password: ",Wait0),
+           io(112,"",Pass)],
+    wait_go23(Wait0,{UN,Pass},User,Out,GR).
+otherwise.
+wait_go22(_,User,Out,GR):-
+    true|
+    User = [],
+    Out = [putl(string#"Sorry")],
+    GR = [].
+
+
+wait_go23(Wait,{normal(UN),normal(Pass)},User,Out,GR):-
+    wait(Wait)|
+    User = [get_uid(UN,UID)|UserN],
+    wait_go3(UID,UN,UserN,Pass,Out,GR).
+otherwise.
+wait_go23(_,_,User,Out,GR):-
+    true|
+    User = [],
+    Out = [putl(string#"Sorry")],
+    GR = [].
+
+
+wait_go3(normal(Uid),UN,User,Pass,Out,GR):-
+    true|
+    User = [authenticate(UN,Pass,Status)],
+    wait_go4(Status,Uid,Info,Out,GR).
+otherwise.
+wait_go3(_,_,User,_,Out,GR):-
+    true|
+    User = [],
+    Out = [putl(string#"Unknown User")],
+    GR = [].
+
+
+wait_go4(normal,Uid,_,Out,GR):-
+    true|
+    predicate_to_code(module#shell,shell,0,Code),
+    GR = [execute_user(Code,{},"su",0,4095,0,Uid,Task)],
+    Out = [],
+    wait_go5(Task).
+otherwise.
+wait_go4(_,_,_,Out,GR):-
+    true|
+    GR = [],
+    Out = [putl(string#"Sorry!!")].
+
+wait_go5(normal(C,R)):-
+    true|
+    task_monitor(R,C,{10000,10000},_).
+otherwise.
+wait_go5(_):-
+    true|
+    true.
+
+task_monitor([terminated|R],C,Inc,Shut):- true|
+        C = [],
+        task_monitor(R,_,Inc,Shut).
+
+task_monitor([started|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([aborted|R],C,Inc,Shut):-
+        true|
+        C = [],
+        task_monitor(R,_,Inc,Shut).
+
+task_monitor([resource_low|R],C,{IncH,IncL},Shut):-
+        IncL \= 0|
+        C = [add_resource(IncH,IncL),allow_resource_report|CN],
+        task_monitor(R,CN,{IncH,IncL},Shut).
+
+task_monitor([resource_low|R],C,{IncH,IncL},Shut):-
+        IncL = 0,
+        IncH \= 0|
+        C = [add_resource(IncH,IncL),allow_resource_report|CN],
+        task_monitor(R,CN,{IncH,IncL},Shut).
+
+task_monitor([resource_low|R],C,{IncH,IncL},Shut):-
+        IncL = 0,
+        IncH = 0|
+        C = [abort],
+        Shut = shut.
+
+task_monitor([resource_added|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([return_resource(_,_)|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([resource_report_allowed|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([statistics_started|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([statistics(ResH,ResL)|R],C,Inc,Shut):-
+        true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([exception(Code,Info,NewCode,NewArgv)|R],C,Inc,Shut):-
+        true|
+        predicate_to_code(module#privilege,error,0,NewCode),
+        NewArgv = {},
+        shoen:raise(pimos_tag#error,privilege_usage,[]),
+        C = [],
+        task_monitor(R,_,Inc,Shut).
+
+
+task_monitor([],C,Inc,Shut):-
+        true|
+        Shut = shut,
+        C = [].
+
+otherwise.
+task_monitor([R|Rest],C,Inc,Shut):-
+        true|
+        task_monitor(Rest,C,Inc,Shut).
+
+get_user_info(UN,UName,Pass,RInfo,RUser,RPass):-
+    string(UN,N,_)|
+    new_string(R0,6,16),
+    set_string_element(R0,0,2,R1),
+    set_string_element(R1,1,2,R2),
+    set_string_element(R2,2,#"m",R3),
+    set_string_element(R3,3,#"e",R4),
+    set_string_element(R4,4,#"m",R5),
+    set_string_element(R5,5,#"e",RInfo),
+    RUser = "me",
+    RPass = "me",
+    spilit_pass(0,N,UN,UName,Pass).
+
+spilit_pass(N,N,UN,UName,Pass):-
+    true|
+    UName = UN,
+    new_string(Pass,0,16).
+otherwise.
+spilit_pass(M,N,UN,UName,Pass):-
+    string_element(UN,M,#":"),
+    NM1 := N - M - 1,
+    M1 := M + 1|
+    new_string(UName0,M,16),
+    new_string(Pass0,NM1,16),
+    copy_strings(0,M,0,UN,UName0,UName,UN1),
+    copy_strings(M1,N,0,UN1,Pass0,Pass,_).
+otherwise.
+spilit_pass(M,N,UN,UName,Pass):-
+    M1 := M + 1|
+    spilit_pass(M1,N,UN,UName,Pass).
+
+copy_strings(N,N,_,Old,New0,New,NewOld):-
+    true|
+    Old = NewOld,
+    New0 = New.
+otherwise.
+copy_strings(M,N,L,Old,New0,New,NewOld):-
+    M1 := M + 1,
+    L1 := L + 1|
+    string_element(Old,M,E,Old0),
+    set_string_element(New0,L,E,New00),
+    copy_strings(M1,N,L1,Old0,New00,New,NewOld).
+

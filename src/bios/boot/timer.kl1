@@ -1,0 +1,105 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module timer.
+:- with_macro pimos.
+:- public create/3.
+
+create(Timer,FEP,NewFEP) :- 
+    true |
+        FEP = {fep#timer,FepTimerReq,TimerReqStatus,NewFEP1},
+        wait_status(TimerReqStatus,FepTimerReq,NewFEP1,NewFEP,Timer).
+
+wait_status(fep#normal,TimerReq,Out0,Out,Timer):-
+    true|
+        Out0 = Out,
+        initiate_stream(TimerReq,NewTimerReq,STATUS),
+        wait_status0(STATUS,NewTimerReq,Timer).
+otherwise.
+wait_status(_,Fep,Out0,Out,Timer):-
+    true|
+        Out0 = Out,
+        abort_command(Timer,ascii#"timer_request"),
+        Fep = fep#nil.
+
+wait_status0(fep#normal,TimerReq,Timer) :-
+    true |
+        TimerReq = {fep#create,0,0,TimerDevice,Status,TimerReq1},
+        wait_status01(Status,TimerReq1,TimerDevice,Timer).
+otherwise.
+wait_status0(_,TimerReq,Timer) :-
+    true |
+        abort_command(Timer,ascii#"timer request"),
+        TimerReq = fep#nil.
+
+wait_status01(fep#normal,TimerReq,TimerDevice,Timer) :-
+    true |
+        TimerReq = fep#nil,
+        initiate_stream(TimerDevice,TimerDevice1,Status),
+        wait_status1(Status,TimerDevice1,Timer).
+otherwise.
+wait_status01(_,TimerReq,TimerDevice,Timer) :-
+    true |
+        abort_command(Timer,ascii#"timer create"),
+        TimerReq = fep#nil.
+
+wait_status1(fep#normal,TimerDevice,Timer) :-
+    true |
+        Timer = normal(NTimer),
+        merge(NTimer,NTimer1),
+        request_handler0(NTimer1,TimerDevice).
+otherwise.
+wait_status1(_,TimerDevice,Timer) :-
+    true |
+        abort_command(Timer,ascii#"timer"),
+        TimerDevice = fep#nil.
+
+request_handler0([on_after(Count,Result)|Timer],Device) :-
+    true |
+        Device={fep#on_after,Count,Now,Status,Device1},
+        wait_command_status1(Status,Now,Result,Timer,Device1).
+request_handler0([],Device) :-
+    true |
+        Device = fep#nil.
+otherwise.
+request_handler0([A|Timer],Device) :-
+    display_console(ascii#"llegal message to timer device"),
+    display_console(A) |
+        request_handler0(Timer,Device).
+
+wait_command_status1(fep#normal,Now,Result,Timer,Device) :-
+    true |
+        Result = normal(Now),
+        request_handler0(Timer,Device).
+wait_command_status1(fep#abnormal,Now,Result,Timer,Device) :-
+    true |
+        Result = abnormal,
+        Now = fep#aborted,  % This variable is unified from FEP ?
+        request_handler0(Timer,Device).
+
+initiate_stream(Stream,NewStream,STATUS) :-
+    true |
+        Stream = {fep#reset,ABORT,ATTENTION,STATUS,NewStream},
+        wait_and_unify_nil(ATTENTION,ABORT).
+
+wait_and_unify_nil(ATTENTION,ABORT) :-
+    wait(ATTENTION) |
+        ABORT = fep#nil.
+
+abort_command(Timer,Reason) :-
+    display_console(ascii#"Timer ERROR: reason"),
+    display_console(Reason) |
+        abort_command(Timer).
+
+abort_command([on_after(Result)|Timer]) :-
+    true |
+        Result = abnormal,
+        abort_command(Timer).
+otherwise.
+abort_command([A|Timer]) :-
+    display_console(ascii#"llegal message to timer device"),
+    display_console(A) |
+        abort_command(Timer).

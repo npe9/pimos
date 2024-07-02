@@ -1,0 +1,172 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module mpsifep.
+:- with_macro pimos.
+:- public fep_manager/6.
+
+fep_manager(FEP,N,FEP1,FEP2,FEP3,FEP4) :-
+    true |
+        initiate_fep(N,{FEP1,FEP2,FEP3,FEP4},FepStream),
+        fep_manager(FEP,FepStream,N).
+
+initiate_fep(N,Feps,FepDevices):- true|
+        new_vector(FepDev1,N),
+        initiate_fep(N,Feps,FepDev1,FepDevices).
+
+initiate_fep(0,_,FepDev1,FepDevices):- true|
+        FepDev1 = FepDevices.
+otherwise.
+initiate_fep(N,Feps,FepDev1,FepDevices):-
+        N1 := N - 1|
+        set_vector_element(Feps,N1,FEP,0,NewFeps),
+        initiate_fep(FEP,NewFEP),
+        set_vector_element(FepDev1,N1,0,NewFEP,NewFepDev1),
+        initiate_fep(N1,NewFeps,NewFepDev1,FepDevices).
+
+initiate_fep(Fep,NewFep):-
+        true|
+        Fep = {fep#reset,ABORT,ATTENTION,STATUS,CDR},
+        wait_and_unify_nil(ATTENTION,ABORT),
+        wait_status(STATUS,CDR,NewFep).
+
+wait_and_unify_nil(ATTENTION,ABORT):-
+        wait(ATTENTION)|
+        ABORT = fep#nil.
+
+wait_status(Status,Fep,NFep):- wait(Status)|
+        Fep = NFep.
+
+fep_manager([],FepStream,NoFEP) :-
+    true|
+        close_feps(NoFEP,FepStream).
+fep_manager([general_request(FEP,GR)|FepReq],FepStream,NoFEP) :-
+    FEP >= 0, FEP < NoFEP  |
+        set_vector_element(FepStream,FEP,FepVar,NFepVar,FepStream1),
+        general_request_filter(GR,GR1,NoFEP),
+        general_request_device(GR1,FepVar,NFepVar),
+        fep_manager(FepReq,FepStream1,NoFEP).
+otherwise.
+fep_manager([A|FepReq],FepStream,NoFEP) :-
+    display_console(ascii#"illegal_message to FEP manager"),
+    display_console(A) |
+        fep_manager(FepReq,FepStream,NoFEP).
+
+general_request_device([string_io(Result)|GR],FepVar,NFepVar) :-
+    true |
+        FepVar = {fep#string_io,FepStrIo,StrIoStatus,FepVar0},
+        initiate_string_io_request(StrIoStatus,FepStrIo,FepVar0,FepVar1,Result),
+        general_request_device(GR,FepVar1,NFepVar).
+general_request_device([],FepVar,NFepVar) :-
+    true |
+        FepVar = NFepVar.
+otherwise.
+general_request_device([A|GR],FepVar,NFepVar) :-
+    true |
+        general_request_device(GR,FepVar,NFepVar).
+
+initiate_string_io_request(fep#normal,FepStrIo,FepVar,NFepVar,Result) :-
+    true |
+        FepStrIo = {fep#reset,ABORT,ATTENTION,STATUS,FepStrIo0},
+        initiate_string_io_request0(STATUS,ABORT,ATTENTION,FepStrIo0,FepVar,NFepVar,Result).
+otherwise.
+initiate_string_io_request(_,FepStrIo,FepVar0,NFepVar,Result) :-
+    true |
+        Result = abnormal,
+        FepVar0 = NFepVar,
+        FepStrIo = fep#nil.
+
+initiate_string_io_request0(fep#normal,ABORT,ATTENTION,FepStrIo,FepVar,NFepVar,Result) :-
+    true |
+        FepVar = NFepVar,
+        wait_and_unify_nil(ATTENTION,ABORT),
+        Result = normal(StrIOReq,_,_),
+        string_io_request_device(StrIOReq,FepStrIo).
+otherwise.
+initiate_string_io_request0(fep#abnormal,_,_,FepStrIo,FepVar,NFepVar,Result) :-
+    true |
+        FepVar = NFepVar,
+        FepStrIo = fep#nil,
+        Result = abnormal.
+
+string_io_request_device([create(DevName,Result)|STRIOREQ],FEPDev) :-
+    string(DevName,_,_) |
+        FEPDev = {fep#create,0,0,DevName,Device,Status,FEPDev0},
+        initiate_string_io_device(Status,Device,FEPDev0,NFEPDev,Result),
+        string_io_request_device(STRIOREQ,NFEPDev).
+string_io_request_device([], FEPDev) :- 
+    true |
+        FEPDev = fep#nil.
+otherwise.
+string_io_request_device([A|STRIOREQ],FEPDev) :-
+    display_console(ascii#"illegal message to strig_io request"),
+    display_console(A) |
+        string_io_request_device(STRIOREQ,FEPDev).
+
+initiate_string_io_device(fep#normal,Device,FEPDev0,NFEPDev,Result) :-
+    true |
+        Device = {fep#reset,ABORT,ATTENTION,STATUS,Device0},
+        initiate_string_io_device0(STATUS,ABORT,ATTENTION,Device0,FEPDev0,NFEPDev,Result).
+otherwise.
+initiate_string_io_device(_,Device,FEPDev0,NFEPDev,Result) :-
+    true |
+        Result = abnormal,
+        Device = fep#nil,
+        FEPDev0 = NFEPDev.
+
+initiate_string_io_device0(fep#normal,ABORT,ATTENTION,Device0,FEPDev0,NFEPDev,Result) :-
+    true |
+        FEPDev0 = NFEPDev,
+        wait_and_unify_nil(ATTENTION,ABORT),
+        Result = normal(StrIO,_,_),
+        string_io_device(StrIO,Device0).
+otherwise.
+initiate_string_io_device0(_,ABORT,ATTENTION,Device0,FEPDev0,NFEPDev,Result) :-
+    true |
+        FEPDev0 = NFEPDev,
+        wait_and_unify_nil(ATTENTION,ABORT),
+        Result = abnormal,
+        Device0 = fep#nil.
+
+string_io_device([io(Command,ToFep,Result)|StrIO],Device) :-
+    integer(Command),
+    string(ToFep,_,_) |
+        Device={fep#io,Command,ToFep,From,S,Device1},
+        wait_result(S,From,Result),
+        string_io_device(StrIO,Device1).
+string_io_device([],Device) :-
+    true |
+        Device = fep#nil.
+
+wait_result(fep#normal,From,Result) :-
+    string(From,_,_) |
+        Result = normal(From).
+otherwise.
+wait_result(_,_,Result) :-
+    true |
+        Result = abnormal.
+
+general_request_filter([number_of_feps(Result)|GR],GR1,NoFEP) :-
+    true |
+        Result = normal(NoFEP),
+        general_request_filter(GR,GR1,NoFEP).
+general_request_filter([],GR1,NoFEP) :-
+    true |
+        GR1=[].
+otherwise.
+general_request_filter([A|GR],GR1,NoFEP) :-
+    true |
+        GR1 = [A|NGR1],
+        general_request_filter(GR,NGR1,NoFEP).
+
+close_feps(0,FepStream):-
+    true|
+        true.
+otherwise.
+close_feps(N,FepStream):-
+    N1 := N - 1|
+    set_vector_element(FepStream,N1,fep#nil,0,NFepStream),
+    close_feps(N1,NFepStream).

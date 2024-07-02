@@ -1,0 +1,112 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener.
+:- public   go/0, go/1, go/2, go/3, go/4, go/5.
+:- public   login/0, login/1, login/2, login/3, login/4, login/5.
+:- public   listener/0, listener/1.
+:- public   message/3, main/3.
+:- public   usage/1.
+:- with_macro pimos.
+
+go :-                           true| go([], [],  [],  [],[]  ).
+go(                    File) :- true| go([], [],  [],  [],File).
+go(Pos,Size                ) :- true| go(Pos,Size,[],  [],[]  ).
+go(Pos,Size,Font           ) :- true| go(Pos,Size,Font,[],[]  ).
+go(Pos,Size,Font,      File) :- true| go(Pos,Size,Font,[],File).
+go(Pos,Size,Font,Title,File) :- true|
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:make_window,Win)]),
+    go1(Win,Pos,Size,Font,Title,File).
+
+
+go1(normal(no),_,_,_,_,File) :- true| listener(File).
+otherwise.
+go1(_,         Pos,Size,Font,Title,File) :- true| go2(Pos,Size,Font,Title,File).
+
+go2(Pos,Size,Font,Title,File) :- true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    param(Title," KL1 Listener",Tit1,  listener:title,   GR, GR1),
+    param(Pos,   mouse,         Pos1,  listener:position,GR1,GR2),
+    param(Size,  mouse,         Size1, listener:size,    GR2,GR3),
+    param(Font, "",             Font1, listener:font,    GR3,GR4),
+    param(File, "listener.com", File1, listener:file,    GR4,GR5),
+    param([],    pimos,         Macro1,listener:macro,   GR5,GR6),
+    message(GR6,[],Mes),
+    listener_invoker:create(Pos1,Size1,Font1,Tit1,File1,Macro1,Mes).
+
+login                           :- true| login(mouse,mouse,""," KL1 Listener","listener.com").
+login(                    File) :- true| login(mouse,mouse,""," KL1 Listener",File).
+login(Pos,Size                ) :- true| login(Pos,Size,"",   " KL1 Listener","listener.com").
+login(Pos,Size,Font           ) :- true| login(Pos,Size,Font, " KL1 Listener","listener.com").
+login(Pos,Size,Font,      File) :- true| login(Pos,Size,Font, " KL1 Listener",File).
+login(Pos,Size,Font,Title,File) :- true|
+    listener_invoker:create(Pos,Size,Font,Title,[File,"pimos.com"],pimos,[]).
+
+listener :-       true| listener([]).
+listener(File) :- true| 
+    shoen:raise(pimos_tag#task,general_request,GR),
+    param(File, "listener.com",File1, listener:file, GR, GR1),
+    param([],    pimos,        Macro1,listener:macro,GR1,GR2),
+    message(GR2,[],Mes),
+    main(File1,Macro1,Mes).
+
+param(normal(Pos0),_,   Pos,_,   GR,GR1) :- true| Pos=Pos0, GR1=GR.
+param(abnormal,    Pos0,Pos,_,   GR,GR1) :- true| Pos=Pos0, GR1=GR.
+param(abnormal(_), Pos0,Pos,_,   GR,GR1) :- true| Pos=Pos0, GR1=GR.
+param([],          Pos0,Pos,Name,GR,GR2) :- true|
+    GR=[getenv(Name,S)|GR1],
+    param(S,Pos0,Pos,Name,GR1,GR2).
+otherwise.
+param(Pos0,        _,   Pos,_,   GR,GR1) :- true| Pos=Pos0, GR1=GR.
+
+message(GR5,GR8,Mes1) :- true|
+    Mes=[
+        {"*** KL1 LISTENER (~s) ***~n",[Ver]},
+        {"DEFAULT PACKAGE   : ~t~n",   [Pac1]},
+        {"CURRENT DIRECTORY : ~s~n",   [Dir1]}
+        ],
+    pimos_version:console_title(Ver),
+    param([],  Mes,            Mes1, listener:message, GR5,GR6),
+    param([],  work,           Pac1, task:package,     GR6,GR7),
+    param([],  "???",          Dir1, task:directory,   GR7,GR8).
+
+%%%%%%%
+% MAIN
+main(File,Macro,Mes) :- true|
+    merge(LIS,IO),
+    merge(SW1,SW),
+    shoen:raise(pimos_tag#task,get_std(io),IO),
+    shoen:raise(pimos_tag#task,get_std(switch),[detach(Detach)|SW]),
+    msg(Mes,MSG),
+    % 0 is Tracer ID, pimos is macro-module.
+    listener_rsc_manager:create(main,0,Macro,ATM,Pac,RSC),
+    listener_buffer:interaction_filter(ATM,[do(MSG)|IN],LIS,Pac),
+    listener_io_switch:create(CTR,IN),
+    listener_task_manager:create(Detach,File,RSC,CTR,SW1)@relative_priority(-96).
+
+msg([{S,A}|L],MSG) :- true| MSG=[putf(S,A)|MSG1], msg(L,MSG1).
+otherwise.
+msg(_,        MSG) :- true| MSG=[].
+
+%%%%%%%%
+% USAGE
+usage(X) :- true |
+    X=[ {"[CREATE LISTENER WITH NEW WINDOW]~n",[]},
+        {" listener(Position,Size,Font,Title,File)~n",[]},
+        {" listener(Position,Size,Font,File)~n",[]},
+        {" listener(Position,Size,Font)~n",[]},
+        {" listener(Position,Size)~n",[]},
+        {" listener~2n",[]},
+        {"[CREATE LISTENER ON SHELL WINDOW]~n",[]},
+        {" listener:listener(File)~n",[]},
+        {" listener:listener~2n",[]},
+        {"  Position := mouse | at(X,Y)~n",[]},
+        {"  Size     := mouse | char(Chars,Lines)~n",[]},
+        {"  Font     := FontFilePathnameString~n",[]},
+        {"  Title    := TitleString~n",[]},
+        {"  File     := CommandFilePathnameString",[]}
+    ].

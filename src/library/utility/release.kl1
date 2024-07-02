@@ -1,0 +1,179 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v30>Util>release.kl1.10, 12-Mar-92 15:34:41, Edit by hori
+
+:- module make_ipl_files.
+:- with_macro pimos.
+:- public pim/1.
+:- public mpsi/1.
+
+pim(DLMs) :- true |
+    pool:bag(KP),
+    shoen:raise(pimos_tag#task,general_request,[file(St)]),
+    check_FR_status(St,FR),
+    FR = [open("unload.com",write(normal(FUC,_,_))),
+         open("autoload.tbl",write(normal(FAL,_,_)))],
+    SETUP = [print_length(10000),print_depth(10000),
+             print_atom_length(100),print_string_length(500),
+             nl,putb("% "),putt(DLMs),nl],
+    buffer:output_filter([do(SETUP)|OUT1],FUC),
+    buffer:output_filter([do(SETUP)|OUT2],FAL),
+    kl1_library_message:null(MESG),
+    module_table:cache_table([get_all_modules(privilege,normal(AllMods1))]),
+    privilege(AllMods1,PrivilegeMods),
+    relink:search_program_modules([pim|PrivilegeMods],MESG,[],KernelMods,_),
+    kernel(KernelMods,KP,List,DLMs),
+    unload_command(List,OUT1,[]),
+    autoload_table(List,OUT2).
+
+mpsi(DLMs) :- true |
+    pool:bag(KP),
+    shoen:raise(pimos_tag#task,general_request,[file(St)]),
+    check_FR_status(St,FR),
+    FR = [open("unload.com",write(normal(FUC,_,_))),
+         open("autoload.tbl",write(normal(FAL,_,_)))],
+    SETUP = [print_length(10000),print_depth(10000),
+             print_atom_length(100),print_string_length(500),
+             putb("% "),putt(DLMs),nl],
+    buffer:output_filter([do(SETUP)|OUT1],FUC),
+    buffer:output_filter([do(SETUP)|OUT2],FAL),
+    kl1_library_message:null(MESG),
+    module_table:cache_table([get_all_modules(privilege,normal(AllMods1))]),
+    privilege(AllMods1,PrivilegeMods),
+    relink:search_program_modules([mpsi|PrivilegeMods],MESG,[],KernelMods,_),
+    kernel(KernelMods,KP,List,DLMs),
+    unload_command(List,OUT1,[]),
+    autoload_table(List,OUT2).
+
+unload_command(List,OUT0,OUT) :- true |
+    OUT0 = [putb("% Unload Command"),nl|OUT1],
+    unl_com(List,OUT1,OUT).
+
+unl_com([{List,File}|Rest],OUT0,OUT) :- list(List) |
+    OUT0 = [putb("unload( "),putt(List),putb(" , """),putb(File),putb(".sav"" ). "),nl,nl|OUT1],
+    unl_com(Rest,OUT1,OUT).
+unl_com([{[],File}|Rest],OUT0,OUT) :- true |
+    unl_com(Rest,OUT0,OUT).
+unl_com([],OUT0,OUT) :- true | OUT0 = OUT.
+
+autoload_table(List,OUT0) :- list(List) |
+    OUT0 = [nl,putb("% autoload.tbl"),nl,putb("["),nl|OUT1],
+    al_tbl_0(List,OUT1).
+autoload_table([],OUT0) :- true |
+    OUT0 = [].
+
+al_tbl_0([{List,"kernel"}|Rest],OUT0) :- true |
+    al_tbl_0(Rest,OUT0).
+otherwise.
+al_tbl_0([{List,File}|Rest],OUT0) :- list(List) |
+    OUT0 = [putb("{ "),putt(File),putb(" ,"),nl,putb("   [")|OUT1],
+    al_tbl_1(List,OUT1,OUT2),
+    al_tbl_2(Rest,OUT2).
+otherwise.
+al_tbl_0([{[],File}|Rest],OUT0) :- true |
+    al_tbl_2(Rest,OUT0).
+
+al_tbl_1([Module|Rest],OUT0,OUT) :- list(Rest) |
+    OUT0 = [putt(Module),putb(" ,"),nl,putb("    ")|OUT1],
+    al_tbl_1(Rest,OUT1,OUT).
+al_tbl_1([Module],OUT0,OUT) :- true |
+    OUT0 = [putt(Module),putb("]},"),nl|OUT].
+
+al_tbl_2(List,OUT0) :- list(List) |
+    al_tbl_0(List,OUT0).
+al_tbl_2([],OUT0) :- true |
+    OUT0 = [putb(" ]. ")].
+
+kernel([Module|Rest],KP0,OUT0,DLMs) :- true |
+    module:get_module_name(Module,_,Name),
+    KP0 = [put(Name)|KP1],
+    kernel(Rest,KP1,OUT0,DLMs).
+kernel([],KP0,OUT0,DLMs) :- true |
+    KP0 = [get_all(KernelMods)],
+    pool:keyed_set(KP1),
+    pool:keyed_set(MP0),
+    module_table:cache_table([get_all_modules(pimos,normal(AllMods0))]),
+    all_modules(AllMods0,MP0,MP1),
+    OUT0 = [{KernelMods,"kernel"}|OUT1],
+    kernel_0(KernelMods,KP1,KP2,MP1,MP2),
+    demand_load(DLMs,KP2,MP2,OUT1).
+
+all_modules([{Module,_,_}|Rest],MP0,MP) :- true |
+    MP0 = [put(Module,pimos,_)|MP1],
+    all_modules(Rest,MP1,MP).
+all_modules([],MP0,MP) :- true | MP0 = MP.
+
+privilege([{Module,_,_}|Rest],All0) :- true |
+    All0 = [Module|All1],
+    privilege(Rest,All1).
+privilege([],All0) :- true | All0 = [].
+
+kernel_0([Module|Rest],KP0,KP,MP0,MP) :- true |
+    KP0 = [put(Module,kernel,_)|KP1],
+    MP0 = [get_if_any(Module,_)|MP1],
+    kernel_0(Rest,KP1,KP,MP1,MP).
+kernel_0([],KP0,KP,MP0,MP) :- true | KP0 = KP, MP0 = MP.
+
+demand_load([TopMods|Rest],KP0,MP0,OUT0) :- TopMods = [Top|_], atom(Top) |
+    atom_table:get_atom_name(Top,normal(TopName)),
+    OUT0 = [{Modules,TopName}|OUT1],
+    kl1_library_message:null(MESG),
+    relink:search_program_modules(TopMods,MESG,[],Modules0,_),
+    dl_mods(Modules0,KP0,KP1,MP0,MP1,Modules),
+    demand_load(Rest,KP1,MP1,OUT1).
+demand_load([TopMods0|Rest],KP0,MP0,OUT0) :-
+    TopMods0 = [FileName|TopMods], string(FileName,_,16) |
+    OUT0 = [{Modules,FileName}|OUT1],
+    kl1_library_message:null(MESG),
+    relink:search_program_modules(TopMods,MESG,[],Modules0,_),
+    dl_mods(Modules0,KP0,KP1,MP0,MP1,Modules),
+    demand_load(Rest,KP1,MP1,OUT1).
+demand_load([],KP0,MP0,OUT0) :- true |
+    MP0 = [get_all(Rest)],
+    etc(Rest,TopMods),
+    kl1_library_message:null(MESG),
+    relink:search_program_modules(TopMods,MESG,[],Modules0,_),
+    conv(Modules0,KP0,Modules),
+    OUT0 = [{Modules,"etc"}].
+
+conv([Module|Rest],KP0,Modules0) :- true |
+    module:get_module_name(Module,_,Name),
+    KP0 = [empty(Name,YorN)|KP1],
+    conv_0(YorN,Name,Modules0,Modules1),
+    conv(Rest,KP1,Modules1).
+conv([],KP0,Modules0) :- true | Modules0 = [], KP0 = [].
+
+conv_0(yes,Name,Modules0,Modules) :- true | Modules0 = [Name|Modules].
+conv_0(no,Name,Modules0,Modules) :- true | Modules0 = Modules.
+
+dl_mods([Module|Rest],KP0,KP,MP0,MP,Modules) :- true |
+    module:get_module_name(Module,_,Name),
+    KP0 = [empty(Name,YorN)|KP1],
+    dl_mods(YorN,Name,Rest,KP1,KP,MP0,MP,Modules).
+dl_mods([],KP0,KP,MP0,MP,Modules) :- true |
+    KP0 = KP,
+    MP0 = MP,
+    Modules = [].
+
+dl_mods(yes,Module,Rest,KP0,KP,MP0,MP,Modules) :- true |
+    Modules = [Module|Modules0],
+    MP0 = [get_if_any(Module,_)|MP1],
+    dl_mods(Rest,KP0,KP,MP1,MP,Modules0).
+dl_mods(no,Module,Rest,KP0,KP,MP0,MP,Modules) :- true |
+    dl_mods(Rest,KP0,KP,MP0,MP,Modules).
+
+etc([{Module,_}|Rest],Modules) :- true |
+    Modules = [Module|Modules0],
+    etc(Rest,Modules0).
+etc([],Modules) :- true | Modules = [].
+
+check_FR_status(normal(FR0,_,_),FR) :- true |
+    merge(FR,FR0).
+otherwise.
+check_FR_status(Status,FR) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(compiler_error,string#"Unable to get file request device"),Status).

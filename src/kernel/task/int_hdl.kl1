@@ -1,0 +1,604 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module internal_handler.
+:- with_macro pimos.
+:- public handler/6, get_relative_node/2 .
+%  for general_requests
+% handler(Msg,In,Outs,Tools,Info,Env)
+%
+handler(execute(Param,US,Node,Status),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Tools,2,User,UserN,ToolN),
+    param_check(Param,US,Result,Env,EnvN,User,UserN),
+    get_task_name(Result,Name,ResultN),
+    wait_param(ResultN,{Name,Status},Node,In,Outs,ToolN,Info,EnvN).
+handler(execute_super(Co,Param,US,Node,Status),In,Outs,Tools,Info,Env):-
+    vector(Co,3)|
+    set_vector_element(Tools,2,User,UserN,ToolN),
+    param_check(Param,US,Result,Env,EnvN,User,UserN),
+    get_super_task_name(Result,Co,CoN,ResultN),
+    wait_super_param(ResultN,{CoN,Status},Node,In,Outs,ToolN,Info,EnvN).
+
+handler(execute(Name,Param,US,Node,Status),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Tools,2,User,UserN,ToolN),
+    param_check(Param,US,Result,Env,EnvN,User,UserN),
+    wait_param(Result,{Name,Status},Node,In,Outs,ToolN,Info,EnvN).
+handler(execute_super(Co,Param,US,Node,Status),In,Outs,Tools,Info,Env):-
+    vector(Co,4)|
+    set_vector_element(Tools,2,User,UserN,ToolN),
+    param_check(Param,US,Result,Env,EnvN,User,UserN),
+    wait_super_param(Result,{Co,Status},Node,In,Outs,ToolN,Info,EnvN).
+
+handler(status(*,Type,detail,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Tools,3,[on_after(10000,Wait0)|TNext],TNext,ToolsN),
+    wait_wait(Wait0,Wait),
+    set_vector_element(Outs,2,[status_own(*,Type,detail(Wait),Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,ToolsN,Info,Env).
+handler(status([*|List],Type,detail,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Tools,3,[on_after(10000,Wait0)|TNext],TNext,ToolsN),
+    wait_wait(Wait0,Wait),
+    set_vector_element(Outs,2,[status_own([*|List],Type,detail(Wait),Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,ToolsN,Info,Env).
+handler(status([N|List],Type,detail,Result),In,Outs,Tools,Info,Env):-
+    N < -1,
+    N1 := N + 1|
+    set_vector_element(Tools,3,[on_after(10000,Wait0)|TNext],TNext,ToolsN),
+    wait_wait(Wait0,Wait),
+    set_vector_element(Outs,2,[status_up([N1|List],Type,detail(Wait),Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,ToolsN,Info,Env).
+handler(status([0|List],Type,detail,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Tools,3,[on_after(10000,Wait0)|TNext],TNext,ToolsN),
+    wait_wait(Wait0,Wait),
+    set_vector_element(Outs,2,[status_top(List,Type,detail(Wait),Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,ToolsN,Info,Env).
+handler(status([-1|List],Type,detail,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Tools,3,[on_after(10000,Wait0)|TNext],TNext,ToolsN),
+    wait_wait(Wait0,Wait),
+    set_vector_element(Outs,2,[status_own(List,Type,detail(Wait),Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,ToolsN,Info,Env).
+handler(status([],Type,detail,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Tools,3,[on_after(10000,Wait0)|TNext],TNext,ToolsN),
+    wait_wait(Wait0,Wait),
+    set_vector_element(Outs,2,[status_own([],Type,detail(Wait),Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,ToolsN,Info,Env).
+handler(status([N|List],Type,detail,Result),In,Outs,Tools,Info,Env):-
+    N > 0|
+    set_vector_element(Tools,3,[on_after(10000,Wait0)|TNext],TNext,ToolsN),
+    wait_wait(Wait0,Wait),
+    set_vector_element(Outs,3,[status([N|List],Type,detail(Wait),Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,ToolsN,Info,Env).
+handler(status(*,Type,brief,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[status_own(*,Type,brief,Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(status([*|List],Type,brief,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,3,[status([*|List],Type,brief,Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(status([N|List],Type,brief,Result),In,Outs,Tools,Info,Env):-
+    N < -1,
+    N1 := N + 1|
+    set_vector_element(Outs,2,[status_up([N1|List],Type,brief,Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(status([0|List],Type,brief,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[status_top(List,Type,brief,Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(status([-1|List],Type,brief,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[status_own(List,Type,brief,Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(status([],Type,brief,Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[status_own([],Type,brief,Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(status([N|List],Type,brief,Result),In,Outs,Tools,Info,Env):-
+    N > 0|
+    set_vector_element(Outs,3,[status([N|List],Type,brief,Result0)|Next],Next,OutN),
+    task_status:filter(Result0,Result1),
+    Result = normal(Result1),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+
+handler(abort([],Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[abort|Next],Next,OutN),
+    Result = normal,
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(abort(*,Result),In,Outs,Tools,Info,Env):-
+    true|
+%    set_vector_element(Info,4,Remote,RemoteN,InfoN),
+%    set_vector_element(Remote,0,Uid,Uid,RemoteN),
+%    set_vector_element(Outs,4,[abort_all(*,Uid)|Next],Next,OutN),
+    set_vector_element(Outs,1,[abort|Next],Next,OutN),
+    Result = normal,
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(abort([*|List],Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,4,Remote,RemoteN,InfoN),
+    set_vector_element(Remote,0,Uid,Uid,RemoteN),
+    set_vector_element(Outs,3,[abort([*|List],Uid)|Next],Next,OutN),
+    Result = normal,
+    task_handler:ohandler(In,OutN,Tools,InfoN,Env).
+handler(abort([N|List],Result),In,Outs,Tools,Info,Env):-
+    N < 0|
+    set_vector_element(Info,4,Remote,RemoteN,InfoN),
+    set_vector_element(Remote,0,Uid,Uid,RemoteN),
+    set_vector_element(Outs,2,[abort_up([N|List],Uid)|Next],Next,OutN),
+    Result = normal,
+    task_handler:ohandler(In,OutN,Tools,InfoN,Env).
+handler(abort([0|List],Result),In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,4,Remote,RemoteN,InfoN),
+    set_vector_element(Remote,0,Uid,Uid,RemoteN),
+    set_vector_element(Outs,2,[abort_top(List,Uid)|Next],Next,OutN),
+    Result = normal,
+    task_handler:ohandler(In,OutN,Tools,InfoN,Env).
+handler(abort([N|List],Result),In,Outs,Tools,Info,Env):-
+    N > 0|
+    set_vector_element(Info,4,Remote,RemoteN,InfoN),
+    set_vector_element(Remote,0,Uid,Uid,RemoteN),
+    set_vector_element(Outs,3,[abort([N|List],Uid)|Next],Next,OutN),
+    Result = normal,
+    task_handler:ohandler(In,OutN,Tools,InfoN,Env).
+handler(set_gids(GIDS,St),In,Outs,Tools,Info,Env):-
+    true|
+    St = normal,
+    set_vector_element(Info,4,Remote,RemoteN,InfoN),
+    set_vector_element(Remote,1,_,GIDS,RemoteN),
+    task_handler:ohandler(In,Outs,Tools,InfoN,Env).
+
+param_check(Param,Info,Result,Env,EnvN,U,UN):-
+    true|
+%     {Resouce,Uid,Fep,IONode,RUser,STDIO,Prio,Tag,Name,Node}
+    U = [user(U1,U2)|UN0],
+    user_table_device:driver(User,U1,U2,{0,0,0,0,0,[0]}),
+    param_check0(Param,{{0,0},*,*,*,*,{0,4096},-1,"",*},Status,User,Info,InfoN),
+    param_check2(Status,InfoN,Result,Env,EnvN,UN0,UN).
+
+param_check0(Param,P,P2,normal(User,_,_),Info,InfoN):-
+    true|
+    param_check00(Param,P,P2,User,Info,InfoN).
+
+param_check00([],P,P2,U,I,IN):-
+    true|
+    I = IN,
+    U = [],
+    P = P2.
+param_check00([resource(H,L)|Next],P,P2,U,I,IN):-
+    true|
+    set_vector_element(P,0,_,{H,L},P1),
+    param_check00(Next,P1,P2,U,I,IN).
+param_check00([uid(Uid)|Next],P,P2,U,I,IN):-
+    vector_element(I,0,0)|
+    set_vector_element(I,0,_,Uid,I1),
+    set_vector_element(P,1,_,Uid,P1),
+    param_check00(Next,P1,P2,U,I1,IN).
+param_check00([user(UName,Password)|Next],P,P2,U,I,IN):-
+    true|
+    copy:copy(UName,UName1,UName2),
+    U = [authenticate(UName1,Password,Status)|UN],
+    user_param_check(Status,Next,P,P2,UName2,UN,I,IN).
+param_check00([ionode(IONode)|Next],P,P2,U,I,IN):-
+    true|
+    set_vector_element(P,2,_,IONode,P1),
+    param_check00(Next,P1,P2,U,I,IN).
+param_check00([io_node(IONode)|Next],P,P2,U,I,IN):-
+    true|
+    set_vector_element(P,2,_,IONode,P1),
+    param_check00(Next,P1,P2,U,I,IN).
+param_check00([remote(RUser,RPass)|Next],P,P2,U,I,IN):-
+    true|
+    set_vector_element(P,3,_,{RUser,RPass},P1),
+    param_check00(Next,P1,P2,U,I,IN).
+param_check00([stdio(STDIO,Status)|Next],P,P2,U,I,IN):-
+    true|
+    set_vector_element(P,4,_,{STDIO,Status},P1),
+    param_check00(Next,P1,P2,U,I,IN).
+param_check00([prio(Min,Max)|Next],P,P2,U,I,IN):-
+    true|
+    set_vector_element(P,5,_,{Min,Max},P1),
+    param_check00(Next,P1,P2,U,I,IN).
+param_check00([tag(Tag)|Next],P,P2,U,I,IN):-
+    true|
+    set_vector_element(P,6,_,Tag,P1),
+    param_check00(Next,P1,P2,U,I,IN).
+param_check00([name(Name)|Next],P,P2,U,I,IN):-
+    true|
+    set_vector_element(P,7,_,Name,P1),
+    param_check00(Next,P1,P2,U,I,IN).
+param_check00([node(Start,End)|Next],P,P2,U,I,IN):-
+    true|
+    set_vector_element(P,8,_,{Start,End},P1),
+    param_check00(Next,P1,P2,U,I,IN).
+otherwise.
+param_check00(Param,P,P2,U,I,IN):-
+    true|
+    U = [],
+    I = IN,
+    P2 = abnormal,
+    param_close(Param,P).
+
+user_param_check(normal,Param,P,P2,UName,U,I,IN):-
+    true|
+    U = [get_uid(UName,Result)|UN],
+    user_param_check2(Result,Param,P,P2,UN,I,IN).
+otherwise.
+user_param_check(_,Param,P,P2,_,U,I,IN):-
+    true|
+    I = IN,
+    param_close(Param,P),
+    U = [],
+    P2 = abnormal.
+
+user_param_check2(normal(Uid),Param,P,P2,U,I,IN):-
+    true|
+    set_vector_element(I,0,_,Uid,I1),
+    set_vector_element(P,1,_,Uid,P1),
+    param_check00(Param,P1,P2,U,I1,IN).
+otherwise.
+user_param_check2(_,Param,P,P2,U,I,IN):-
+    true|
+    I = IN,
+    param_close(Param,P),
+    U = [],
+    P2 = abnormal.
+
+param_close(Param,P):-
+    vector_element(P,4,{STDIO,Status})|
+    Status = abnormal,
+    param_close_stdio(STDIO),
+    param_close(Param).
+otherwise.
+param_close(Param,P):-
+    true|
+    param_close(Param).
+
+param_close_stdio([]):-
+    true|
+    true.
+param_close_stdio([{_,{_,_,Out}}|Next]):-
+    true|
+    Out = [],
+    param_close_stdio(Next).
+
+param_close([]):-
+    true|
+    true.
+otherwise.
+param_close([stdio(Param,Status)|_]):-
+    true|
+    Status = abnormal,
+    param_close_stdio(Param).
+otherwise.
+param_close([_|Next]):-
+    true|
+    param_close(Next).
+
+param_check2(Param,Info,Result,Env,EnvN,U,UN):-
+    atom(Param)|
+    Result = abnormal,
+    Env = EnvN,
+    U = UN.
+otherwise.
+param_check2(Param,Info,Result,Env,EnvN,U,UN):-
+    vector_element(Param,1,A),
+    integer(A)|
+    set_vector_element(Info,0,M,M,Info1),
+%%%%%%%%%%%%%
+%%   U = [create(group(Group))|UN], %%
+    U = [group(G1,G2)|UN],
+    group_table_device:driver(Group,G1,G2,{0,0,0,0,0,[0]}),
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    group_check(Group,M,Info1,InfoN),
+    param_check3(Param,InfoN,Result,Env,EnvN).
+otherwise.
+param_check2(Param,Info,Result,Env,EnvN,U,UN):-
+   true|
+   U = UN,
+   param_check3(Param,Info,Result,Env,EnvN).
+
+param_check3(Param,Info,Result,Env,EnvN):-
+   vector_element(Param,2,*)|
+   Env = [get_and_put_if_any(task:io_node,X,X1,_)|EnvN],
+   node_check(X,X1,Info,InfoN),
+   param_check4(Param,InfoN,Result).
+otherwise.
+param_check3(Param,Info,Result,Env,EnvN):-
+   true|
+   set_vector_element(Param,2,IONode,0,ParamN),
+   set_vector_element(Info,3,_,IONode,InfoN),
+   Env = EnvN,
+   param_check4(ParamN,InfoN,Result).
+
+param_check4(Param,Info,Result):-
+   vector_element(Param,3,*)|
+   param_check5(Param,Info,Result).
+otherwise.
+param_check4(Param,Info,Result):-
+   true|
+   set_vector_element(Param,3,R,RN,ParamN),
+   set_vector_element(R,0,RU,RU,R1),
+   set_vector_element(R1,1,RP,RP,RN),
+   set_vector_element(Info,4,_,RU,Info1),
+   set_vector_element(Info1,5,_,RP,InfoN),
+   param_check5(ParamN,InfoN,Result).
+
+param_check5(Param,Info,Result):-
+   vector_element(Param,4,*)|
+   set_vector_element(Param,0,Rsc,0,ParamN),
+   Result = {{Rsc,none,Info},Rest},
+   param_check6(ParamN,Rest).
+otherwise.
+param_check5(Param,Info,Result):-
+   true|
+   set_vector_element(Param,0,Rsc,0,Param1),
+   set_vector_element(Param1,4,Std,0,ParamN),
+   Result = {{Rsc,stdio(Std),Info},Rest},
+   param_check6(ParamN,Rest).
+
+param_check6(Param,Rest):-
+    vector_element(Param,8,*)|
+    set_vector_element(Param,5,Prio,0,P2),
+    set_vector_element(P2,6,Tag,0,P3),
+    set_vector_element(P3,7,Name,0,_),
+    Rest = {Prio,Tag,Name}.
+otherwise.
+param_check6(Param,Rest):-
+    true|
+    set_vector_element(Param,5,Prio,0,P2),
+    set_vector_element(P2,6,Tag,0,P3),
+    set_vector_element(P3,7,Name,0,P4),
+    set_vector_element(P4,8,Node,0,_),
+    Rest = {Prio,Tag,Name,Node}.
+   
+group_check(normal(Group,_,_),M,Info,InfoN):-
+    true|
+    Group = [get_gids(M,GIDS)],
+    group_check(GIDS,Info,InfoN).
+otherwise.
+group_check(_,_,Info,InfoN):-
+    true|
+    set_vector_element(Info,1,_,[],InfoN).
+
+group_check(normal(Gids),Info,InfoN):-
+    true|
+    set_vector_element(Info,1,_,Gids,InfoN).
+otherwise.
+group_check(_,Info,InfoN):-
+    true|
+    set_vector_element(Info,1,_,[],InfoN).
+
+node_check(X,X1,Info,InfoN):-
+    vector_element(X,0,E),
+    string(E,_,16)|
+    X1 = E,
+    set_vector_element(Info,3,_,E,InfoN).
+otherwise.
+node_check(X,X1,Info,InfoN):-
+    true|
+    X1 = 0,
+    Info = InfoN.
+
+wait_param(abnormal,{Name,Status},_,In,Outs,Tools,Info,Env):-
+    true|
+    Status = abnormal,
+    task_handler:ohandler(In,Outs,Tools,Info,Env).
+otherwise.
+wait_param({Rsc,ETC},{Name,Status},Node,In,Outs,Tools,Info,Env):-
+    true|
+    Status = normal(St,NewStatus,ETC),
+    set_vector_element(Outs,4,[add_monitor(task,Name,St)|Out0],Out0,Out1),
+    set_vector_element(Out1,5,Shut,Shut,OutN),
+    copy_tools(Tools,Tool1,ToolN),
+    Env = [copy(Env1)|EnvN],
+    merge(Env2,Env1),
+    task_handler:ohandler(In,OutN,ToolN,Info,EnvN),
+    get_relative_node(Node,Node0),
+    exec_task(NewStatus,Shut,Rsc,Node,Name,Tool1,Env2)@node(Node0).
+
+wait_super_param(abnormal,{Co,Status},_,In,Outs,Tools,Info,Env):-
+    true|
+    Status = abnormal,
+    task_handler:ohandler(In,Outs,Tools,Info,Env).
+otherwise.
+wait_super_param(Rscs,{Co,Status},Node,In,Outs,Tools,Info,Env):-
+    true|
+    Co = {Mod,Pred,Ari,Name},
+    set_vector_element(Tools,1,[{get_code(privilege,Mod,Pred,Ari,Code),{0,[0]}}|Modu],
+                               Modu,ToolN),
+    wait_super(Code,Rscs,{Name,Status},Node,In,Outs,ToolN,Info,Env).
+
+wait_super(normal(Code),{Rsc,ETC},{Name,Status},Node,In,Outs,Tools,
+                                                          Info,Env):-
+    true|
+    Status = normal(St,NewStatus,Code,ETC),
+    set_vector_element(Outs,4,[add_monitor(task,Name,St)|Out0],Out0,Out1),
+    set_vector_element(Out1,5,Shut,Shut,OutN),
+    copy_tools(Tools,Tool1,ToolN),
+    Env = [copy(Env1)|EnvN],
+    merge(Env2,Env1),
+    task_handler:ohandler(In,OutN,ToolN,Info,EnvN),
+    get_relative_node(Node,Node0),
+    set_vector_element(Rsc,2,SInfo,SInfoN,RscN),
+    set_vector_element(SInfo,0,_,0,SInfo1),
+    set_vector_element(SInfo1,1,_,[0],SInfoN),
+    exec_task(NewStatus,Shut,RscN,Node,Name,Tool1,Env2)@node(Node0).
+otherwise.
+wait_super(_,Rsc,{Name,Status},Node,In,Outs,Tools,Info,Env):-
+    true|
+    Status = abnormal,
+    task_handler:ohandler(In,Outs,Tools,Info,Env).
+
+
+exec_task(normal(Cont,Rep,SCont,SRep,MIn,MOut),
+                 PShut,{{HRsc,LRsc},STD,Info},Node,Name,Tools,Env):-
+    true|
+    set_vector_element(Tools,2,US,USN,Tool1),
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    US = [create(user(US1))|USN],%%
+    US = [user(U1,U2)|USN],
+    user_table_device:driver(US1,U1,U2,{0,0,0,0,0,[0]}),
+%%%%%%%%%%%%
+    zero_check(HRsc,LRsc,SCont,SContN),
+    copy:copy(Info,Info0,InfoN),
+    copy:copy(Info0,Info1,Info2),
+    env_check(Info1,US1,Dir,Env,EnvN),
+    MOut = [simple_id(ID)|MOutN],
+    stdio_check(STD,Info2,Node,Shut,Tool1,ToolN,App,Dir,EnvN,EnvNN),
+    rep_filter(SRep,SRep0,Shut),
+    task_handler:handler(ID,{Cont,Rep},{SContN,SRep0},{MIn,MOutN},
+                   PShut,Shut,ToolN,InfoN,{HRsc,LRsc},EnvNN,App).
+otherwise.
+exec_task(_,PShut,{{HRsc,LRsc},STD,Info},Node,Name,Tools,Env):-
+    true|
+    general_request_handler:close_tools(Tools),
+    Env = [].
+
+env_check(Info,normal(U,_,_),Dir,Env,EnvN):-
+    true|
+    set_vector_element(Info,0,Uid,_,Info1),
+    set_vector_element(Info1,3,IONode,IONode,_),
+    Env = [put(task:io_node,IONode,_)|Env1],
+    U = [get_info(Uid,UInfo)],
+    env_check(UInfo,Dir,Env1,EnvN).
+otherwise.
+env_check(Info,_,Dir,Env,EnvN):-
+    vector_element(Info,3,IONode)|
+    Env = [put(task:io_node,IONode,_),
+           get_if_any(task:directory,DIR)|Env1],
+    env_check2(DIR,Dir,Env1,EnvN).
+
+env_check(normal(V),Dir,Env,EnvN):-
+    vector_element(V,0,UN)|
+    Env = [put(task:user,UN,_),get_if_any(task:directory,DIR)|Env1],
+    env_check2(DIR,Dir,Env1,EnvN).
+otherwise.
+env_check(_,Dir,Env,EnvN):-
+    true|
+    Env = [get_if_any(task:directory,DIR)|Env1],
+    env_check2(DIR,Dir,Env1,EnvN).
+
+env_check2(DIR,Dir,Env,EnvN):-
+    vector(DIR,0)|
+    Dir = "",
+    Env = EnvN.
+otherwise.
+env_check2(DIR,Dir,Env,EnvN):-
+    vector_element(DIR,0,Dir0)|
+    Dir = Dir0,
+    Env = [put(task:directory,Dir0,_)|EnvN].
+
+stdio_check(none,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN):-
+    true|
+    task_stdio:check([],_,Info,Node,Shut,Tools,ToolN,App,Dir,Env,EnvN).
+otherwise.
+stdio_check(stdio({Std,Status}),Info,Node,Shut,Tools,ToolN,App,Dir,
+                    Env,EnvN):-
+    true|
+    task_stdio:check(Std,Status,Info,Node,Shut,Tools,ToolN,App,Dir,
+                         Env,EnvN).
+
+
+get_relative_node(Node,Node0):-
+    true|
+%    current_processor(ANode,_,_),
+    mdlib#current_cluster(ANode,_),
+    current_node(CNode,_),
+    Node0 := Node - (ANode-CNode).
+
+rep_filter(SRep,SRep0,Shut):-
+    wait(Shut)|
+    SRep = SRep0.
+rep_filter([started|SRep],SRep0,Shut):-
+    true|
+    SRep = SRep0.
+rep_filter([resource_added|SRep],SRep0,Shut):-
+    true|
+    SRep = SRep0.
+rep_filter([Msg|SRep],SRep0,Shut):-
+    Msg \= started,
+    Msg \= resource_added|
+    SRep0 = [Msg|SRep0N],
+    rep_filter(SRep,SRep0N,Shut).
+
+zero_check(0,0,SC,SCN):-
+    true|
+    SC = [start|SCN].
+otherwise.
+zero_check(H,L,SC,SCN):-
+    true|
+    SC = [add_resource(H,L),start|SCN].
+
+copy_tools(V,V1,V2):-
+    vector(V,N)|
+    new_vector(V11,N),
+    copy_tools(N,V,V11,V1,V2).
+copy_tools(0,V,V11,V1,V2):-
+    true|
+    V11 = V1,
+    V   = V2.
+otherwise.
+copy_tools(N,V,V11,V1,V2):-
+    N1 := N - 1|
+    set_vector_element(V,N1,{E1,E2},E2,VN),
+    set_vector_element(V11,N1,_,E1,V11N),
+    copy_tools(N1,VN,V11N,V1,V2).
+
+wait_wait(normal(Wait),Wait1):-
+    true|
+    Wait = Wait1.
+otherwise.
+wait_wait(Wait0,Wait1):-
+    true|
+    Wait0 = Wait1.
+
+get_task_name(Result,Name,ResultN):-
+    vector(Result)|
+    set_vector_element(Result,1,Vec,VecN,ResultN),
+    set_vector_element(Vec,2,Name0,Name2,VecN),
+    copy:copy(Name0,Name,Name2).
+otherwise.
+get_task_name(_,Name,ResultN):-
+    true|
+    ResultN = abnormal.
+
+get_super_task_name(Result,{Mod,Pred,Arity},CoN,ResultN):-
+    true|
+    get_task_name(Result,Name,ResultN),
+    CoN = {Mod,Pred,Arity,Name}.

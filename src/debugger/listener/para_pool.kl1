@@ -1,0 +1,97 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module listener_profile_data_pool.
+:- public create/1, filter/2.
+:- with_macro pimos.
+
+create(DAT) :-
+    merge(DAT,DAT1),
+    pool:keyed_sorted_bag(POOL),
+    manager(DAT1,1,POOL).
+
+manager([new_id(ID)|DAT],N,POOL) :-
+    ID=N,
+    manager(DAT,~(N+1),POOL).
+otherwise.
+manager([Msg|DAT],N,POOL) :-
+    POOL=[Msg|POOL1],
+    manager(DAT,N,POOL1).
+manager([],_,POOL) :- POOL=[].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PROTECTION FILTER FOR KEYED_SORTED_BAG
+filter([new_id(X)|U],O) :- 
+    O=[new_id(Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+
+filter([empty(X)|U],O) :- 
+    O=[empty(Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+filter([empty(K,X)|U],O) :- wait(K) |
+    O=[empty(K,Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+filter([put(K,X)|U],O) :- wait(K) |
+    O=[put(K,X)|O1],
+    filter(U,O1).
+filter([get(K,X)|U],O) :- wait(K) |
+    O=[get_if_any(K,Y)|O1],
+    get(Y,X),
+    filter(U,O1).
+filter([get_if_any(K,X)|U],O) :- wait(K) |
+    O=[get_if_any(K,Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+filter([get_all(X)|U],O) :- 
+    O=[get_all(Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+filter([get_all(K,X)|U],O) :- wait(K) |
+    O=[get_all(K,Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+filter([carbon_copy(X)|U],O) :- 
+    O=[carbon_copy(Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+filter([carbon_copy(K,X)|U],O) :- wait(K) |
+    O=[carbon_copy(K,Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+filter([get_and_put(K,X,Y)|U],O) :- wait(K) |
+    O=[get_if_any(K,Z)|O1],
+    get_and_put(Z,X,K,Y,O1,O2),
+    filter(U,O2).
+filter([get_if_any_and_put(K,X,Y)|U],O) :- wait(K) |
+    O=[get_if_any_and_put(K,Z,Y)|O1],
+    listener_utility:wait_unify(Z,X),
+    filter(U,O1).
+filter([get_and_put_if_any(K,X,Y,Y1)|U],O) :- wait(K) |
+    O=[get_and_put_if_any(K,Z,Y,Y2)|O1],
+    listener_utility:wait_unify(Z,X),
+    listener_utility:wait_unify(Y2,Y1),
+    filter(U,O1).
+filter([do(Do)|U],O) :- 
+    merge(Do,Do1),
+    listener_utility:prepend(Do1,U,U1),
+    filter(U1,O).
+filter([get_max_if_any(X)|U],O) :-
+    O=[get_max_if_any(Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+filter([get_min_if_any(X)|U],O) :-
+    O=[get_min_if_any(Y)|O1],
+    listener_utility:wait_unify(Y,X),
+    filter(U,O1).
+filter([],O) :- O=[].
+
+get({Y},X) :- X=Y.
+get_and_put({Z},X,K,Y,O1,O2) :- X=Z, O1=[put(K,Y)|O2].
+

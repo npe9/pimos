@@ -1,0 +1,422 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%(C)1992 Institute for New Generation Computer Technology         %%%
+%%%   配布その他はCOPYRIGHTファイルを参照して下さい                 %%%
+%%%	(Read COPYRIGHT for detailed information.)                  %%%
+%%%-----------------------------------------------------------------%%%
+%%% July 1, 1992: ICOT Free Software の公開準備の為に、プログラム   %%%
+%%% 全体に渡りrefinmentを行なった                                   %%%
+%%% 1992.7 Check and refine every program for IFS (ICOT Free        %%%
+%%% Software) release.                                              %%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% PIMOS UTILITY (Stack splitting dynamic load balancer: STB)      %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Author:         MasaFuruichi                      %%%
+%%% Organization:   Mitsubishi Electric               %%%
+%%% Date  :         1992/7/10                         %%%
+%%% Revision history:                                 %%%
+%%% Copyright:      ICOT                              %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module stb.                                % Try again
+:- with_macro pimos.
+:- public create/2,create/3.
+
+create(BL,ResultStream):- true |
+        current_node(_,TotalNode),
+        create(TotalNode,BL,ResultStream).
+
+create(NofNodes,BL,ResultStream) :- true |
+        shoen:raise(pimos_tag#task,general_request,GRS),
+        GRS=[timer(normal(TimerRequest,_,_))],
+        TimerRequest=[create(normal(Timer,_,_))],
+        Timer=[set_time_unit(msec,_)|NTimer],    
+        merge(ResultIn,ResultStream),
+        top(NofNodes,ResultIn,NetGenTime,MasterStream,Start,Stop,NTimer), 
+        query(BL,NetGenTime,MasterStream,Start,Stop).
+
+query([netgen_time(NetGenTime)|BL],Time,MS,Start,Stop):- true |
+        NetGenTime=Time,
+        query(BL,NewTime,MS,Start,Stop).
+query([start(InitData)|BL],Time,MS,Start,Stop):- true |
+        InitNodeData={InitData,stop,Stop},
+        MS=[puts(1,[InitNodeData])|NewMS],
+        Start=start,
+        query(BL,Time,NewMS,Start,Stop).
+query([],_,MS,Start,Stop):- true | MS=[]. %,Stop=end.
+
+
+top(NofNode,AnsIn,NetGenTime,MasterStream,Start,Stop,Timer):- true |
+%       system_timer(_,StartTime) |
+        Timer=[get_count(normal(StartTime))|NTimer],
+        gen(NofNode,AnsIn,StartTime,NetGenTime,MasterStream,Start,Stop,NTimer)
+                                                        @priority(*,4000).
+
+gen(NofNode,Ans,StartTime,NetGenTime,MasterStream,StartU,Stop,Timer):- true | 
+        Ans = {Ans0,Ans1},
+        create_process(0,NofNode,[],MstStr,{ready,Sync0},StartSol,Stop,Ans0),
+        MstStr={Str0,MasterStream,Str2},
+        create_processes(1,NofNode,NofNode,
+                        [Str0],Streams,{Sync0,Sync1},StartSol,Stop,Ans1),
+        ready_check(Sync1,Streams,NetGenReady),
+        netgen_time(NetGenReady,StartU,StartSol,StartTime,NetGenTime,Timer),
+        terminate(Stop,Str2).
+
+netgen_time(ready,StartU,StartSol,StartTime,NetGenTime,Timer):- true |
+%       system_timer(_,NetGenEndTime) |
+        Timer=[get_count(normal(NetGenEndTime))],
+        start_solver(StartU,StartSol),
+        NetGenTime:=  NetGenEndTime-StartTime.
+%       NetGenTime:= (NetGenEndTime-StartTime)/16.
+
+start_solver(start,StartSol):- true | StartSol=start.
+terminate(stop,MasterStream):- true | MasterStream=[terminate].
+
+create_processes(P,P,NofNode,Streams,Strs,{Sy0,Sy1},Start,Stop,Ans):- true | 
+        Sy0=Sy1,Streams=Strs, Ans = [].
+create_processes(P,NofP,NofNode,Streams,Strs,{Sy0,Sy1},Start,Stop,Ans):- 
+        NofP>P,P1:=P+1,PeNo:=(P mod NofNode) |
+        current_node(MyNode,TotalNodes),Adj:=((MyNode+1) mod TotalNodes),
+        Ans = {Ans0,Ans1},
+        copy_streams(Streams,Streams0,Streams1),
+        create_process(P,NofP,Streams0,Stream,{Sy0,Sy2},Start,Stop,Ans0)
+                                                             @node(Adj),
+        create_processes(P1,NofP,NofNode,
+            [Stream|Streams1],Strs,{Sy2,Sy1},Start,Stop,Ans1)@node(Adj). 
+
+ready_check(ready,Streams,NetGenReady):- true |
+        checker(WeAreReady,NetGenReady),
+        merge(AreYouReady,WeAreReady),
+        ready_check(Streams,AreYouReady).
+
+ready_check([],Ready):- true | Ready=[].
+ready_check([Str|T],Ready):- true |
+        Ready={Ready0,Ready1},
+% Check ready 
+%       Str=[ready_check(Ready0)],
+% Do not check ready
+        Str=[],Ready0=[],  
+        ready_check(T,Ready1).
+
+checker([],NetGenReady):- true | NetGenReady=ready.
+
+copy_streams([],Streams0,Streams1):- true |
+        Streams0=[],Streams1=[].
+copy_streams([Str|T],Streams0,Streams1):- true |
+        Str={Str0,Str1},
+        Streams0=[Str0|NewStreams0],
+        Streams1=[Str1|NewStreams1],
+        copy_streams(T,NewStreams0,NewStreams1).
+
+create_process(P,NofP,Streams,In0,{Sync0,Sync1},Start,Stop,Ans) :- 
+        P1:=P-1|
+        merge({In0,In1,In2,FromUserStr},Out),
+        process(Out,StrCont,P,UserStr),
+        new_vector(OrigStrCont,NofP),
+        set_vector_element(OrigStrCont,P,_,In1,StrCont0),
+        init_stream_container(Streams,P1,StrCont0,StrCont1),
+        propagate_my_stream(P,In2,StrCont1,StrCont,{Sync0,Sync1}),
+        create_solver_process(UserStr,FromUserStr,NofP,Start,Stop,Ans).
+
+create_solver_process(UserStr,ToSysStr,NofP,Start,Stop,Ans):- true |
+        merge({ToQMan,UserStr},QMan),
+        merge(Solutions,SolutionsOut),
+        current_node(MyPE,_),
+%       pool:queue(Q),
+        pool:stack(Q),
+        qMan(Stop,QMan,Q,ToSysStr,NofP,MyPE,0,~(MyPE+1))@priority(*,3500),
+        stop_to_end(Stop,End),
+        stb_solver:combine(SolutionsOut,Ans),
+        solver(Start,End,[],ToQMan,Solutions)@priority(*,3000).
+stop_to_end(stop,End):-true|End=end.
+
+
+
+solver(_,end,_,QM,Ans):- true | QM=[],Ans=[].
+alternatively.
+solver(start,End,[],QM,Ans):- true |
+        QM=[get(Data)|QM0],
+        syncSolve(Data,End,QM0,Ans).
+solver(start,End,[Data],QM,Ans):- true |
+        syncSolve(Data,End,QM,Ans).
+
+syncSolve(_, end,QM,Ans):- true | QM=[],Ans=[]. 
+alternatively.
+syncSolve([],End,QM,Ans):- true |
+        solver(start,End,[],QM,Ans).
+syncSolve({Data,S0,S1},End,QM,Ans):- true |
+        merge(SubProblemsIn,SubProblems),
+        Ans={Ans0,Ans1},
+        stb_solver:expand(Data,SubProblemsIn,Ans0),
+        put_back(End,SubProblems,QM,QM1,NextData,NextStep,S0,S1),
+        solver(NextStep,End,NextData,QM1,Ans1).
+
+put_back(end,_ , QM,QM1,NextData,NextStep,S0,S1):- true |
+        NextData=[],QM=QM1,NextStep=start,S0=S1.
+alternatively.
+put_back(_,[]   ,QM,QM1,NextData,NextStep,S0,S1):- true | 
+        NextData=[],QM=QM1,NextStep=start,S0=S1.
+put_back(End,[H|T],QM,QM1,NextData,NextStep,S0,S1):- true | 
+        NextData=[{H,S0,S2}],
+        count(End,T,NT,0,No,NextStep,S2,S1),
+        QM=[puts(No,NT)|QM1].
+
+count(end,_,NT,C,No,NextStep,S0,S1):- true | 
+        No=C,NT=[],NextStep=start,S0=S1.
+alternatively.
+count(End,[],NT,C,No,NextStep,S0,S1):- true | 
+        No=C,NT=[],NextStep=start,S0=S1.
+count(End,[H|T],NT,C,No,NextStep,S0,S1):- C1:=C+1 |
+        NT=[{H,S0,S2}|NNT],
+        count(End,T,NNT,C1,No,NextStep,S2,S1).
+
+propagate_my_stream(0,MyStr,StrCont1,StrCont,{Sync0,Sync1}):- true |
+        MyStr=[],StrCont1=StrCont,Sync0=Sync1.
+propagate_my_stream(Pno,MyStr,StrCont1,StrCont,{Sync0,Sync1}):- 
+        Pno>0,Pno1:=Pno-1 |
+        set_vector_element(StrCont1,Pno1,NeiStr,NeiStr1,StrCont),
+        NeiStr=[add_stream(Pno,MyStr,{Sync0,Sync1})|NeiStr1]. 
+        % Propagate My Stream
+
+init_stream_container([],_,StrCont0,StrCont):- true | 
+        StrCont0=StrCont.
+init_stream_container([Stream|T],PE,StrCont0,StrCont):- PE1 := PE-1 |
+        merge(PeStream,Stream),
+        set_vector_element(StrCont0,PE,_,PeStream,StrCont1),
+%       set_vector_element(StrCont0,PE,_,Stream,StrCont1),
+        init_stream_container(T,PE1,StrCont1,StrCont).
+
+process([],_,Pno,UserStr):- true | true.
+process([terminate|T],StrCont,Pno,UserStr):- integer(StrCont) |
+        process(T,~(StrCont+1),Pno,~(UserStr+1)).
+process([terminate|T],StrCont,Pno,UserStr):- vector(StrCont,Size)|
+        UserStr=[],
+        terminate_all_processes(Size,StrCont),
+        process(T,0,Pno,0).
+process([add_stream(ProcNo,Str,{InF,OutF})|T],StrCont,Pno,UserStr):- 
+        Pno=0 |
+        InF=OutF,            % Short circuitFlag
+        merge(PeStream,Str),
+        set_vector_element(StrCont,ProcNo,_,PeStream,NewStrCont),
+%       set_vector_element(StrCont,ProcNo,_,Str,NewStrCont),
+        process(T,NewStrCont,Pno,UserStr).
+process([add_stream(ProcNo,Str,{InF,OutF})|T],StrCont,Pno,UserStr):- 
+        Pno>=1,Pno1:=Pno-1|
+        merge({Str0,Str1},Str),
+%       Str={Str0,Str1},
+        set_vector_element(StrCont, ProcNo, _,Str0,StrCont0),
+        set_vector_element(StrCont0,Pno1,NeiStr,NeiStr0,StrCont1),
+        NeiStr=[add_stream(ProcNo,Str1,{InF,OutF})|NeiStr0],
+        process(T,StrCont1,Pno,UserStr).
+process([ready(Ready)|T],StrCont,Pno,UserStr):- true |
+        Ready=[],
+        process(T,StrCont,Pno,UserStr).
+process([ready_check(IamReady)|T],StrCont,Pno,UserStr):- vector(StrCont,Size) |
+        merge(AreYouReady,IamReady),
+        are_you_ready(0,Size,AreYouReady,StrCont,NewStrCont),
+        process(T,NewStrCont,Pno,UserStr).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Process messages from user process
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+process([get_stream(ProcNo,ToStr0)|T],StrCont,Pno,UserStr):- 
+        vector(StrCont,_) |
+        set_vector_element(StrCont,ProcNo,ToStr,ToStr1,NewStrCont),
+        ToStr={ToStr0,ToStr1},
+        process(T,NewStrCont,Pno,UserStr).
+process([get_stream(ProcNo,ToStr)|T],StrCont,Pno,UserStr):- 
+        integer(StrCont) |
+        ToStr= [],
+        process(T,~(StrCont+1),Pno,~(UserStr+1)).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Pass messages to user process
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+otherwise.
+process([H|T],StrCont,Pno,UserProc):- integer(UserProc) |
+        process(T,StrCont,Pno,UserProc).
+alternatively.
+process([H|T],StrCont,Pno,UserProc):- true |
+        UserProc=[H|NewUserProc],
+        process(T,StrCont,Pno,NewUserProc).
+
+terminate_all_processes( 0,StrCont):- true | true.
+terminate_all_processes(Pno,StrCont):- Pno>0,Pno1:=Pno-1 |
+        set_vector_element(StrCont,Pno1,Str,0,NewStrCont),
+        Str=[terminate],
+        terminate_all_processes(Pno1,NewStrCont).
+
+are_you_ready(EndProc,EndProc,Ready,StrCont,NewStrCont):- true | 
+        StrCont=NewStrCont,Ready=[].
+are_you_ready(TargetProc,EndProc,Ready,StrCont,NewStrCont):- 
+        EndProc>TargetProc |
+        Ready={Ready0,Ready1},
+        set_vector_element(StrCont,TargetProc,Str,NewStr,StrCont1),
+        Str=[ready(Ready0)|NewStr],
+        are_you_ready(~(TargetProc+1),EndProc,Ready1,StrCont1,NewStrCont).
+
+qMan(stop, _ ,Q,ToSys,NofPE,MyPE,NofStack,ReqPE):- true | Q=[], ToSys=[].
+alternatively.
+qMan(End,  [],Q,ToSys,NofPE,MyPE,NofStack,ReqPE):- true | Q=[], ToSys=[].
+
+% Put new data message from SOLVER process on same PE.
+qMan(End,[puts(No,V)|T],Q,ToSys,NofPE,MyPE,NofStack,ReqPE):- true |
+        enterQ(V,Q,NQ), %@priority($,-100),           
+        qMan(End,T,NQ,ToSys,NofPE,MyPE,~(NofStack+No),ReqPE).
+qMan(End,[puts(No,V,NReqPE)|T],Q,ToSys,NofPE,MyPE,NofStack,ReqPE):- true |
+        enterQ(V,Q,NQ), %@priority($,-100),           
+        qMan(End,T,NQ,ToSys,NofPE,MyPE,~(NofStack+No),NReqPE).
+% Request message from qMan process on another PE.  (No entry in a stack)
+qMan(End,[supply_me(Data)|T],Q,ToSys,NofPE,MyPE,NofStack,ReqPE):- 
+        NofStack<2 |
+%       NofStack<3 |
+        Data=[],
+        qMan(End,T,Q,ToSys,NofPE,MyPE,NofStack,ReqPE).
+%                                                    (Some entry in a stack)
+qMan(End,[supply_me(Data)|T],Q,ToSys,NofPE,MyPE,NofStack,ReqPE):- 
+        NofStack>=2,
+%       NofStack>=3,
+%       NofStackToGive:=(NofStack/3)*2, NofStackLeft:=NofStack-NofStackToGive |
+        NofStackToGive:=(NofStack/2)*1, NofStackLeft:=NofStack-NofStackToGive |
+        supply(NofStackToGive,Data,Q,NQ),
+        qMan(End,T,NQ,ToSys,NofPE,MyPE,NofStackLeft,ReqPE).
+
+% Request message from SOLVER process on same PE.   (No entry in a stack)
+qMan(End,[get(Data)|T],Q,ToSys,NofPE,MyPE,NofStack,ReqPE):- 
+        NofStack<1| %,         system_timer(_,Random)|
+        ToSys={ToSys0,ToSys1},
+        requests(End,MyPE,ReqPE,Data,ToSys0,NofPE),
+%       requests(End,MyPE,Random,Data,ToSys0,NofPE),
+        qMan(End,T,Q,ToSys1,NofPE,MyPE,NofStack,ReqPE).
+%qMan(End,[get(Data)|T],Q,ToSys,NofPE,MyPE,NofStack,ReqPE):- 
+%   NofStack<1 |
+%     requests(End,MyPE,ReqPE,NReqPE,Data,Q,NQ,ToSys,NToSys,NofPE,NNofStack),
+%     qMan(End,T,NQ,NToSys,NofPE,MyPE,NNofStack,NReqPE).
+%                                                    (Some entry in a stack)
+qMan(End,[get(Data)|T],Q,ToSys,NofPE,MyPE,NofStack,ReqPE):- NofStack>=1 |
+        Q=[get_if_any({X})|NQ],Data=X,
+        qMan(End,T,NQ,ToSys,NofPE,MyPE,~(NofStack-1),ReqPE).
+
+enterQ([],Q,NQ):- true | Q=NQ.
+enterQ([H|T],Q,NQ):- true | 
+        Q=[put(H)|QQ],
+        enterQ(T,QQ,NQ).
+
+%close_local_stream_container( 0,StrCont):- true | true.
+%close_local_stream_container(PE,StrCont):- 
+%   PE>0,vector(StrCont,_),PNo:=PE-1|
+%    set_vector_element(StrCont,PNo,QMan,[],NStrCont),
+%    QMan=[],
+%    close_local_stream_container(PNo,NStrCont).
+
+% Supply data to another processor. 
+supply(0,Data,Q,NQ):- true | Data=[],Q=NQ.
+supply(C,Data,Q,NQ):- C>0,NC:=C-1 |
+        Data=[X|NData],
+        Q=[get_if_any({X})|QQ],
+        supply(NC,NData,QQ,NQ).
+
+%requests(stop,MyPE,ReqPE,Data,ToSys,NofPE):- true |
+%   Data=[],ToSys=[].
+%alternatively.
+requests(End,MyPE,ReqPE,Data,ToSys,NofPE):-
+        PE:=(ReqPE mod NofPE),MyPE=:=PE,NextPE:=ReqPE+1|
+        requests(End,MyPE,NextPE,Data,ToSys,NofPE).
+requests(End,MyPE,ReqPE,Data,ToSys,NofPE):-
+        PE:=(ReqPE mod NofPE),MyPE=\=PE,NextPE:=ReqPE+1 | 
+        ToSys=[get_stream(PE,QMan)|NToSys],
+        requests_sub(End,QMan,Data,NToSys,NextPE).
+
+requests_sub(stop,QMan,Data,ToSys,NextPE):- true | QMan=[],Data=[],ToSys=[].
+alternatively.
+requests_sub(End, QMan,Data,ToSys,NextPE):- true |
+        QMan=[supply_me(Xs)],
+        more_requests(End,Xs,Data,ToSys,NextPE).
+
+more_requests(stop,_,Data,ToSys,NextPE):- true |Data=[],ToSys=[].
+alternatively.
+more_requests(End,[],Data,ToSys,NextPE):- true |
+        Data=[],
+        ToSys=[puts(0,[],NextPE)].
+more_requests(End,[X|Xs],Data,ToSys,NextPE):- true |
+        Data=X,
+%       NReqPE:= NextPE-1,        % ask same pe again
+        NReqPE = NextPE,        % ask next pe
+        count(End,Xs,NXs,0,No),
+        ToSys=[puts(No,NXs,NReqPE)].
+%       keepInQ(End,Xs,Q,NQ,0,NofStack).
+
+count(stop,_,NT,C,No):- true | No=C,NT=[].
+alternatively.
+count(End,[],NT,C,No):- true | No=C,NT=[].
+count(End,[H|T],NT,C,No):- C1:=C+1 |
+        NT=[H|NNT],
+        count(End,T,NNT,C1,No).
+
+%keepInQ(stop, _,    Q,NQ,C,NofStack):- true | Q=NQ,C=NofStack.
+%alternatively.
+%keepInQ(End,[],    Q,NQ,C,NofStack):- true | Q=NQ,C=NofStack.
+%keepInQ(End,[X|Xs],Q,NQ,C,NofStack):- C1:=C+1 |
+%    Q=[put(X)|QQ],
+%    keepInQ(End,Xs,QQ,NQ,C1,NofStack).
+
+% If the contests of Queue is empty {}, steal from other processor.
+%get({X},Data,Q,NQ,StrCont,NStrCont,NofPE):- true | 
+%    Data=X, 
+%    Q=NQ,StrCont=NStrCont.  % Without cash version.
+%    Q=[empty(YesNo)|Q0],
+%    cache(YesNo,Q0,NQ,StrCont,NStrCont,NofPE).
+%get({ },Data,Q,NQ,StrCont,NStrCont,NofPE):- true | 
+%    requests(0,NofPE,StrCont,NStrCont,Data,Q,NQ).
+
+%cache(no, Q,NQ,StrCont,NStrCont,NofPE):- true | Q=NQ,StrCont=NStrCont.
+%cache(yes,Q,NQ,StrCont,NStrCont,NofPE):- true |
+%    requests(0,NofPE,StrCont,NStrCont,Data,Q,QQ),
+%    QQ=[put(Data)|NQ].
+
+
+%requests(PE,NofPE,StrCont,NStrCont,Data,Q,NQ):- PE=\=NofPE | 
+%    StrCont=[get_and_put(PE,QMan,QMan1)|StrCont0],
+%    QMan={QMan1,QMan2},
+%    QMan2=[supply_me(Xs)],
+%    more_request(Xs,PE,NofPE,StrCont0,NStrCont,Data,Q,NQ).
+
+
+solve(_,end,_,QM):- true | QM=[close].
+alternatively.
+solve(start,End,[],QM):- true |
+    QM=[get(Data)|QM0],
+    syncSolve(Data,End,QM0).
+solve(start,End,[Data],QM):- true |
+    syncSolve(Data,End,QM).
+syncSolve(_,end,QM):- true | QM=[close].
+alternatively.
+syncSolve([],End,QM):- true |
+    solve(start,End,[],QM).
+syncSolve(Data,End,QM):- wait(Data) |
+    gen(Data,NewData,No),
+    put_back(NewData,No,QM,QM1,NextData,NextStep),
+    solve(NextStep,End,NextData,QM1).
+
+%gen([],NewData):- true | NewData=[].
+%gen({Data,S0,S1},NewData):- Data > 5 | NewData=[],S0=S1.
+%gen({Data,S0,S1},NewData):- Data =<5 |
+%    D1:=Data+1,D2:=Data+2,D3:=Data+3,
+%    NewData=[{D1,S0,S01},{D2,S01,S02},{D3,S02,S1}].
+
+gen({L,From,To,S0,S1},NewData,No):- L >= 4 | NewData=[],S0=S1,No=0.
+gen({L,From,To,S0,S1},NewData,No):- L <4,NL:=L+1 |
+    By:=(To-From+1)/10,
+    split(From,To,By,NL,S0,S1,NewData,0,No).
+
+split(From,To,By,L,S0,S1,Data,C,No):- From>=To | S0=S1,Data=[],No=C.
+split(From,To,By,L,S0,S1,Data,C,No):- From< To, 
+  NFrom:=From+By,NTo:=NFrom-1,C1:=C+1 |
+    Data=[{L,From,NTo,S0,NS0}|NewData],
+    split(NFrom,To,By,L,NS0,S1,NewData,C1,No).
+
+put_back([]   ,No,QM,QM1,NextData,NextStep):- true | 
+    NextData=[],QM=QM1,NextStep=start.
+put_back([H],        1,QM,QM1,NextData,NextStep):- true | 
+    NextData=[H],QM=QM1,NextStep=start.
+put_back([H|T],No,QM,QM1,NextData,NextStep):- No1:=No-1 | 
+    NextData=[H],
+    QM=[puts(No1,T)|QM1],NextStep=start.
+
+

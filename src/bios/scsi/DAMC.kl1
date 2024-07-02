@@ -1,0 +1,811 @@
+% icpsi606::>sys>user>yashiro>V35>scsi>DAMC.kl1.4, 08-Sep-92 22:24:09, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>user>yashiro>V33>scsi>DAMC.kl1.6, 06-May-92 11:40:56, Edit by yashiro
+:- module   scsi_direct_access_message.
+
+:- with_macro   pimos.
+:- include("pimos.h").
+:- switch(fep_interface).
+:- case(kl1_network).
+:- public dummy/0.
+dummy:- true.
+:-default.
+:- public
+        check/3.
+
+%============================%
+% check/3(send_diagnostic/5) %
+%============================%
+check(Message, MaxBufferSize,  MessageStatus):-
+    Message = send_diagnostic(SelfTest, DeviceOffLine, UnitOffLine, Modification, Status) |
+        self_test(SelfTest, StatusList, StatusList1),
+        device_off_line(DeviceOffLine, StatusList1, StatusList2),
+        unit_off_line(UnitOffLine, StatusList2, StatusList3),
+        send_diagnostic_modification(Modification, MaxBufferSize, StatusList3, []),
+        status(StatusList, Message, {},  Status, MessageStatus).
+
+%========================%
+% check/3(format_unit/6) %
+%========================%
+check(Message, MaxBufferSize,  MessageStatus):-
+    Message = format_unit(FmtData, DefectList, Designation, Completeness, Interleave, Modification,
+                                                                                        Status) |
+        fmtdata(FmtData, StatusList, StatusList1),
+        defect_list_and_designation(DefectList, Designation, MaxBufferSize, Info, StatusList1,
+                                                                                        StatusList2),
+        completeness(Completeness, StatusList2, StatusList3),
+        interleave(Interleave, StatusList3, StatusList4),
+        format_unit_modification(Modification, StatusList4, []),
+        status(StatusList, Message, Info,  Status, MessageStatus).
+
+%=================%
+% check/3(read/4) %
+%=================%
+check(Message, MaxBufferSize,  MessageStatus):-
+    Message = read(Block, Length, Buffer, Status) |
+%        block0(Block, StatusList, StatusList1),
+%        length0(Length, NewLength, StatusList1, StatusList2),
+        block1(Block, StatusList, StatusList1),
+        length1(Length, MaxBufferSize, StatusList1, StatusList2),
+%        buffer(Buffer, MaxBufferSize, BufferSize, StatusList2, []),
+        buffer(Buffer, MaxBufferSize, BufferSize, StatusList2, Buffer1, []),
+%        status(StatusList, Message, {NewLength, BufferSize},  Status, MessageStatus).
+%        status(StatusList, read(Block, Length, Buffer1, Status),
+%                         {NewLength, BufferSize},  Status, MessageStatus).
+        rw_status(StatusList, read(Block, Length, Buffer1),
+                         {Length, BufferSize},  Status, MessageStatus).
+
+%==================%
+% check/3(write/4) %
+%==================%
+check(Message, MaxBufferSize,  MessageStatus):-
+    Message = write(Block, Length, Buffer, Status) |
+%        block0(Block, StatusList, StatusList1),
+%        length0(Length, NewLength, StatusList1, StatusList2),
+        block1(Block, StatusList, StatusList1),
+        length1(Length, MaxBufferSize, StatusList1, StatusList2),
+%        buffer(Buffer, MaxBufferSize, BufferSize, StatusList2, []),
+        buffer(Buffer, MaxBufferSize, BufferSize, StatusList2, Buffer1, []),
+%        status(StatusList, Message, {NewLength, BufferSize}, Status, MessageStatus).
+%        status(StatusList, write(Block, Length, Buffer1, Status),
+%                         {NewLength, BufferSize}, Status, MessageStatus).
+        rw_status(StatusList, write(Block, Length, Buffer1),
+                         {Length, BufferSize}, Status, MessageStatus).
+
+%========================%
+% check/3(mode_select/4) %
+%========================%
+check(Message, MaxBufferSize,  MessageStatus):-
+    Message = mode_select(MediumType, BlockDescriptor, Modification, Status) |
+        medium_type(MediumType, StatusList, StatusList1),
+        block_descriptor_and_modification(BlockDescriptor, Modification, MaxBufferSize, StatusList1,
+                                                                                                []),
+        status(StatusList, Message, {},  Status, MessageStatus).
+
+%============================%
+% check/3(reassign_blocks/2) %
+%============================%
+check(Message, MaxBufferSize,  MessageStatus):-
+    Message = reassign_blocks(Blocks, Status) |
+        blocks(Blocks, MaxBufferSize, Blocks, BlocksStatus),
+        status(BlocksStatus, Message,  Status, MessageStatus).
+
+%============================%
+% check/3(start_stop_unit/3) %
+%============================%
+check(Message, _,  MessageStatus):-
+    Message = start_stop_unit(MotorSwitch, ReportTiming, Status) |
+        motor_switch(MotorSwitch, StatusList, StatusList1),
+        report_timing(ReportTiming, StatusList1, []),
+        status(StatusList, Message, {},  Status, MessageStatus).
+
+%=========================================%
+% check/3(prevent_allow_medium_removal/3) %
+%=========================================%
+check(Message, _,  MessageStatus):-
+    Message = prevent_allow_medium_removal(Lock, Status) |
+        lock(Lock, StatusList),
+        status(StatusList, Message, {},  Status, MessageStatus).
+
+%==========================%
+% check/3(read_capacity/3) %
+%==========================%
+check(Message, _,  MessageStatus):-
+    Message = read_capacity(Scope, Block, Modification, Status) |
+        scope_and_block(Scope, Block,StatusList, StatusList1),
+        read_capacity_modification(Modification, StatusList1, []),
+        status(StatusList, Message, {},  Status, MessageStatus).
+
+%=============================%
+% check/3(write_and_verify/5) %
+%=============================%
+check(Message, MaxBufferSize,  MessageStatus):-
+    Message = write_and_verify(Block, Length, Buffer, ByteCheck, Status) |
+        block1(Block, StatusList, StatusList1),
+        length1(Length, MaxBufferSize, StatusList1, StatusList2),
+%        buffer(Buffer, MaxBufferSize, BufferSize, StatusList2, StatusList3),
+        buffer(Buffer, MaxBufferSize, BufferSize, StatusList2, Buffer1, StatusList3),
+        byte_check(ByteCheck, StatusList3, []),
+%        status(StatusList, Message, {BufferSize},  Status, MessageStatus).
+%        status(StatusList, write_and_verify(Block, Length, Buffer1, ByteCheck, Status),
+%                            {BufferSize},  Status, MessageStatus).
+        rw_status(StatusList, write_and_verify(Block, Length, Buffer1, ByteCheck),
+                            {BufferSize},  Status, MessageStatus).
+
+%=================%
+% check/3(others) %
+%=================%
+check(Message, _, MessageStatus):-
+    Message = inquiry(_) |
+        MessageStatus = normal(Message, {}).
+check(Message, _, MessageStatus):-
+    Message = test_unit_ready(_) |
+        MessageStatus = normal(Message, {}).
+check(Message, _, MessageStatus):-
+    Message = receive_diagnostic_results(_) |
+        MessageStatus = normal(Message, {}).
+check(Message, _, MessageStatus):-
+    Message = mode_sense(_) |
+        MessageStatus = normal(Message, {}).
+
+%otherwise, fails.
+%================%
+% check/3(other) %
+%================%
+%check(Message, _, MessageStatus):-
+%    true |
+%        MessageStatus = normal(Message, {}).
+
+%------------------------------
+
+%===================%
+% send_diagnostic/5 %
+%===================%
+%-------------%
+% self_test/3 %
+%-------------%
+self_test(0, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+self_test(1, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+otherwise.
+self_test(SelfTest, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(self_test(SelfTest)))|Tail].
+
+%-------------------%
+% device_off_line/3 %
+%-------------------%
+device_off_line(0, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+device_off_line(1, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+otherwise.
+device_off_line(DevOffLine, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(device_off_line(DevOffLine)))|Tail].
+
+%-----------------%
+% unit_off_line/3 %
+%-----------------%
+unit_off_line(0, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+unit_off_line(1, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+otherwise.
+unit_off_line(UnitOffLine, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(unit_off_line(UnitOffLine)))|Tail].
+
+%--------------------------------%
+% send_diagnostic_modification/4 %
+%--------------------------------%
+send_diagnostic_modification(Modification, MaxBufferSize, StatusList, Tail):-
+    string(Modification, Length, 8) |
+        smaller(MaxBufferSize, 16#"FFFF", MaxLength),
+        modification_length(Length, MaxLength, Modification, StatusList, Tail).
+otherwise.
+send_diagnostic_modification(Modification, _, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(modification(Modification)))|Tail].
+
+%-----------------------%
+% modification_length/5 %
+%-----------------------%
+modification_length(Length, MaxLength, _, StatusList, Tail):-
+    Length =< MaxLength |
+        StatusList = Tail.
+otherwise.
+modification_length(_, _, Modification, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(modification(Modification)))|Tail].
+
+%===============%
+% format_unit/6 %
+%===============%
+%-----------%
+% fmtdata/3 %
+%-----------%
+fmtdata(0, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+fmtdata(1, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+otherwise.
+fmtdata(FmtData, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(fmtdata(FmtData)))|Tail].
+    
+%-------------------------------%
+% defect_list_and_designation/6 %
+%-------------------------------%
+defect_list_and_designation([], _, _, Info, StatusList, Tail):-
+    true |
+        Info = 0,
+        StatusList = Tail.
+defect_list_and_designation(DefectList, Designation, MaxBufferSize, Info, StatusList, Tail):-
+    DefectList = [_|_] |
+        designation_and_defect_list(Designation, DefectList, MaxBufferSize, Info, StatusList, Tail).
+otherwise.
+defect_list_and_designation(DefectList, _, _, Info, StatusList, Tail):-
+    true |
+        Info = {},
+        StatusList = [abnormal(illegal_parameter(defect_list(DefectList)))|Tail].
+
+%-------------------------------%
+% designation_and_defect_list/5 %
+%-------------------------------%
+designation_and_defect_list(Designation, DefectList, MaxBufferSize, Info, StatusList, Tail):-
+    integer(Designation),
+    Designation >= 0,
+    Designation =< 3 |
+        Max := (MaxBufferSize - 4) >> 2,
+        smaller(Max, 16#"3FFF", MaxDefects),
+        block_designation(DefectList, 0, MaxDefects, Status),
+        defect_list_status(Status, DefectList, Info, StatusList, Tail).
+designation_and_defect_list(4, DefectList, MaxBufferSize, Info, StatusList, Tail):-
+    true |
+        Max := (MaxBufferSize - 4) >> 3,
+        smaller(Max, 16#"1FFF", MaxDefects),
+        byte_offset_designation(DefectList, 0, MaxDefects, Status),
+        defect_list_status(Status, DefectList, Info, StatusList, Tail).
+designation_and_defect_list(5, DefectList, MaxBufferSize, Info, StatusList, Tail):-
+    true |
+        Max := (MaxBufferSize - 4) >> 3,
+        smaller(Max, 16#"1FFF", MaxDefects),
+        sector_designation(DefectList, 0, MaxDefects, Status),
+        defect_list_status(Status, DefectList, Info, StatusList, Tail).
+otherwise.
+designation_and_defect_list(Designation, _, _, Info, StatusList, Tail):-
+    true |
+        Info = {},
+        StatusList = [abnormal(illegal_parameter(designation(Designation)))|Tail].
+
+%---------------------%
+% block_designation/4 %
+%---------------------%
+block_designation([Block|DefectList], Count, Max, Status):-
+    integer(Block),
+    Block >= 16#"80000000",
+    Block =< 16#"7FFFFFFF" |
+        NextCount := Count + 1,
+        block_designation(DefectList, NextCount, Max, Status).
+block_designation([], Count, Max, Status):-
+    Count =< Max |
+        Status = normal(Count).
+otherwise.
+block_designation(_, _, _, Status):-
+    true |
+        Status = abnormal.
+
+%---------------------------%
+% byte_offset_designation/4 %
+%---------------------------%
+byte_offset_designation([{Cylinder, Head, Offset}|DefectList], Count, Max, Status):-
+    integer(Cylinder),
+    integer(Head),
+    integer(Offset),
+    Cylinder >= 0,
+    Cylinder =< 16#"FFFFFF",
+    Head >= 0,
+    Head =< 16#"FF" |
+        byte_offset_designation1(Offset, DefectList, Count, Max, Status).
+byte_offset_designation([], Count, Max, Status):-
+    Count =< Max |
+        Status = normal(Count).
+otherwise.
+byte_offset_designation(_, _, _, Status):-
+    true |
+        Status = abnormal.
+
+%----------------------------%
+% byte_offset_designation1/5 %
+%----------------------------%
+byte_offset_designation1(Offset, DefectList, Count, Max, Status):-
+    Offset >= 16#"80000000",
+    Offset =< 16#"7FFFFFFF" |
+        NextCount := Count + 1,
+        byte_offset_designation(DefectList, NextCount, Max, Status).
+otherwise.
+byte_offset_designation1(_, _, _, _, Status):-
+    true |
+        Status = abnormal.
+
+%----------------------%
+% sector_designation/4 %
+%----------------------%
+sector_designation(DefectList, Count, Max, Status):-
+    true |
+        byte_offset_designation(DefectList, Count, Max, Status).
+
+%----------------------%
+% defect_list_status/5 %
+%----------------------%
+defect_list_status(normal(Count), _, Info, StatusList, Tail):-
+    true |
+        Info = Count,
+        StatusList = Tail.
+defect_list_status(abnormal, DefectList, Info, StatusList, Tail):-
+    true |
+        Info = {},
+        StatusList = [abnormal(illegal_parameter(defect_list(DefectList)))|Tail].
+
+%----------------%
+% completeness/3 %
+%----------------%
+completeness(0, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+completeness(1, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+otherwise.
+completeness(Completeness, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(completeness(Completeness)))|Tail].
+
+%--------------%
+% interleave/3 %
+%--------------%
+interleave(Interleave, StatusList, Tail):-
+    integer(Interleave),
+    Interleave >= 0,
+    Interleave =< 16#"FFFF" |
+        StatusList = Tail.
+otherwise.
+interleave(Interleave, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(interleave(Interleave)))|Tail].
+
+%----------------------------%
+% format_unit_modification/3 %
+%----------------------------%
+format_unit_modification(Modification, StatusList, Tail):-
+    integer(Modification),
+    Modification >= 0,
+    Modification =< 16#"FF" |
+        StatusList = Tail.
+otherwise.
+format_unit_modification(Modification, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(modification(Modification)))|Tail].
+
+%=================%
+% read/4, write/4 %
+%=================%
+%----------%
+% block0/3 %
+%----------%
+block0(Block, StatusList, Tail):-
+    integer(Block),
+    Block >= 0,
+    Block =< 16#"1FFFFF" |
+        StatusList = Tail.
+otherwise.
+block0(Block, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(block(Block)))|Tail].
+
+%-----------%
+% length0/4 %
+%-----------%
+length0(Length, NewLength, StatusList, Tail):-
+    integer(Length),
+    Length >= 1,
+    Length =< 256 |
+        convert(Length, NewLength),
+        StatusList = Tail.
+otherwise.
+length0(Length, NewLength, StatusList, Tail):-
+    true |
+        NewLength = Length,
+        StatusList = [abnormal(illegal_parameter(length(Length)))|Tail].
+
+%-----------%
+% convert/2 %
+%-----------%
+convert(256, NewLength):-
+    true |
+        NewLength = 0.
+otherwise.
+convert(Length, NewLength):-
+    true |
+        NewLength = Length.
+
+%----------%
+% buffer/4 %
+%----------%
+buffer(Buffer, MaxBufferSize, StatusList, Tail):-
+    string(Buffer, Length, 8),
+    Length =< MaxBufferSize |
+        StatusList = Tail.
+otherwise.
+buffer(Buffer, _, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(buffer(Buffer)))|Tail].
+
+%----------%
+% buffer/5 %
+%----------%
+%buffer(Buffer, MaxBufferSize,  BufferSize, StatusList, Tail):-
+%    string(Buffer, BS, 8),
+%    BS =< MaxBufferSize |
+%        BufferSize = BS,
+%        StatusList = Tail.
+%otherwise.
+%buffer(Buffer, _, _, StatusList, Tail):-
+%    true |
+%        StatusList = [abnormal(illegal_parameter(buffer(Buffer)))|Tail].
+
+%----------%
+% buffer/6 %
+%----------%
+buffer(Buffer, MaxBufferSize,  BufferSize, StatusList, NBuffer, Tail):-
+    string(Buffer, BS, 8),
+    BS =< MaxBufferSize |
+        Buffer=NBuffer,
+        BufferSize = BS,
+        StatusList = Tail.
+otherwise.
+buffer(Buffer, _, _, StatusList, NBuffer, Tail):-
+    true |
+        NBuffer=nil,
+        StatusList = [abnormal(illegal_parameter(buffer(Buffer)))|Tail].
+
+%===============%
+% mode_select/4 %
+%===============%
+%---------------%
+% medium_type/3 %
+%---------------%
+medium_type(0, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+medium_type(1, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+medium_type(2, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+otherwise.
+medium_type(MediumType, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(medium_type(MediumType)))|Tail].
+
+%-------------------------------------%
+% block_descriptor_and_modification/5 %
+%-------------------------------------%
+block_descriptor_and_modification({}, Modification, MaxBufferSize, StatusList, Tail):-
+    true |
+        smaller(MaxBufferSize, 16#"FF", MaxSize),
+        mode_select_modification1(Modification, MaxSize, StatusList, Tail).
+block_descriptor_and_modification(BlockDescriptor, Modification, MaxBufferSize, StatusList, Tail):-
+    BlockDescriptor = {Density, BlockSize, TotalBlocks} |
+        density(Density, BlockDescriptor, StatusList, StatusList1),
+        block_size(BlockSize, BlockDescriptor, StatusList1, StatusList2),
+        total_blocks(TotalBlocks, BlockDescriptor, StatusList2, StatusList3),        
+        smaller(MaxBufferSize, 16#"FF", MaxSize),
+        mode_select_modification2(Modification, MaxSize, StatusList3, Tail).
+otherwise.
+block_descriptor_and_modification(BlockDescriptor, _, _, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(block_descriptor(BlockDescriptor)))|Tail].
+
+%-----------%
+% density/4 %
+%-----------%
+density(Density, _, StatusList, Tail):-
+    integer(Density),
+    Density >= 0,
+    Density =< 16#"FF" |
+        StatusList = Tail.
+otherwise.
+density(_, BlockDescriptor, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(block_descriptor(BlockDescriptor)))|Tail].
+
+%--------------%
+% block_size/4 %
+%--------------%
+block_size(BlockSize, _, StatusList, Tail):-
+    integer(BlockSize),
+    BlockSize >= 0,
+    BlockSize =< 16#"FFFFFF" |
+        StatusList = Tail.
+otherwise.
+block_size(_, BlockDescriptor, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(block_descriptor(BlockDescriptor)))|Tail].
+
+%----------------%
+% total_blocks/4 %
+%----------------%
+total_blocks(TotalBlocks, _, StatusList, Tail):-
+    integer(TotalBlocks),
+    TotalBlocks >= 0,
+    TotalBlocks =< 16#"FFFFFF" |
+        StatusList = Tail.
+otherwise.
+total_blocks(_, BlockDescriptor, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(block_descriptor(BlockDescriptor)))|Tail].
+
+%-----------------------------%
+% mode_select_modification1/4 %
+%-----------------------------%
+mode_select_modification1(Modification, MaxBufferSize, StatusList, Tail):-
+    string(Modification, Length, 8),
+    Length =< MaxBufferSize - 4 |
+        StatusList = Tail.
+otherwise.
+mode_select_modification1(Modification, _, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(modification(Modification)))|Tail].
+
+%-----------------------------%
+% mode_select_modification2/4 %
+%-----------------------------%
+mode_select_modification2(Modification, MaxBufferSize, StatusList, Tail):-
+    string(Modification, Length, 8),
+    Length =< MaxBufferSize - 12 |
+        StatusList = Tail.
+otherwise.
+mode_select_modification2(Modification, _, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(modification(Modification)))|Tail].
+
+%===================%
+% reassign_blocks/2 %
+%===================%
+%----------%
+% blocks/4 %
+%----------%
+blocks([], _, _, Status):-
+    true |
+        Status = normal(0).
+blocks(Blocks, MaxBufferSize, WholeBlocks, Status):-
+    Blocks = [_|_] |
+        Max := (MaxBufferSize - 4) >> 2,
+        smaller(Max, 16#"FFFF", MaxCount),
+        count_blocks(Blocks, 0, MaxCount, WholeBlocks, Status).
+otherwise.
+blocks(_, _, WholeBlocks, Status):-
+    true |
+        Status = abnormal(illegal_parameter(blocks(WholeBlocks))).
+
+%----------------%
+% count_blocks/5 %
+%----------------%
+count_blocks([Block|Blocks], Count, MaxCount, WholeBlocks, Status):-
+    integer(Block),
+    Block >= 16#"80000000",
+    Block =< 16#"7FFFFFFF" |
+        NextCount := Count + 1,
+        count_blocks(Blocks, NextCount, MaxCount, WholeBlocks, Status).
+count_blocks([], Count, MaxCount, _, Status):-
+    Count =< MaxCount |
+        Status = normal(Count).
+otherwise.
+count_blocks(_, _, _, WholeBlocks, Status):-
+    true |
+        Status = abnormal(illegal_parameter(blocks(WholeBlocks))).
+
+%===================%
+% start_stop_unit/3 %
+%===================%
+%----------------%
+% motor_switch/3 %
+%----------------%
+motor_switch(0, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+motor_switch(1, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+otherwise.
+motor_switch(MotorSwitch, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(motor_switch(MotorSwitch)))|Tail].
+
+%-----------------%
+% report_timing/3 %
+%-----------------%
+report_timing(0, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+report_timing(1, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+otherwise.
+report_timing(ReportTiming, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(report_timing(ReportTiming)))|Tail].
+
+%================================%
+% prevent_allow_medium_removal/3 %
+%================================%
+%--------%
+% lock/2 %
+%--------%
+lock(0, StatusList):-
+    true |
+        StatusList = [].
+lock(1, StatusList):-
+    true |
+        StatusList = [].
+otherwise.
+lock(Lock, StatusList):-
+    true |
+        StatusList = [abnormal(illegal_parameter(lock(Lock)))].
+
+%=================%
+% read_capacity/3 %
+%=================%
+%---------%
+% scope/3 %
+%---------%
+scope_and_block(0, _, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+scope_and_block(1, Block, StatusList, Tail):-
+    true |
+        block1(Block, StatusList, Tail).
+otherwise.
+scope_and_block(Scope, _, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(scope(Scope)))|Tail].
+
+%---------%
+% block/3 %
+%---------%
+%block(Block, StatusList, Tail):-
+%    integer(Block),
+%    Block >= 0,
+%    Block =< 16#"7FFFFFFF" |
+%        StatusList = Tail.
+%otherwise.
+%block(Block, StatusList, Tail):-
+%    true |
+%        StatusList = [abnormal(illegal_parameter(block(Block)))|Tail].
+
+%------------------------------%
+% read_capacity_modification/3 %
+%------------------------------%
+read_capacity_modification(Modification, StatusList, Tail):-
+    integer(Modification),
+    Modification >= 0,
+    Modification =< 3 |
+        StatusList = Tail.
+otherwise.
+read_capacity_modification(Modification, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(modification(Modification)))|Tail].
+
+%====================%
+% write_and_verify/5 %
+%====================%
+%----------%
+% block1/3 %
+%----------%
+block1(Block, StatusList, Tail):-
+    integer(Block),
+    Block >= 16#"80000000",
+    Block =< 16#"7FFFFFFF" |
+        StatusList = Tail.
+otherwise.
+block1(Block, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(block(Block)))|Tail].
+
+%-----------%
+% length1/4 %
+%-----------%
+length1(Length, MaxBufferSize, StatusList, Tail):-
+    integer(Length),
+    Length >= 0,
+    Length=< MaxBufferSize |
+        StatusList = Tail.
+otherwise.
+length1(Length, MaxBufferSize, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(length(Length)))|Tail].
+
+%--------------%
+% byte_check/3 %
+%--------------%
+byte_check(0, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+byte_check(1, StatusList, Tail):-
+    true |
+        StatusList = Tail.
+otherwise.
+byte_check(ByteCheck, StatusList, Tail):-
+    true |
+        StatusList = [abnormal(illegal_parameter(byte_check(ByteCheck)))|Tail].
+
+%-------------------------
+
+%----------%
+% status/5 %
+%----------%
+status([],  Message, Info,  _, MessageStatus):-
+    true |
+        MessageStatus = normal(Message, Info).
+status([Abnormal|_], _, _,  Status, MessageStatus):-
+    true |
+        Status = Abnormal,
+        MessageStatus = abnormal.
+
+%-------------%
+% rw_status/5 %
+%-------------%
+rw_status([],  read(Block, Length, Buffer), Info,  Status, MessageStatus):-
+    true |
+        MessageStatus = normal(read(Block,Length,Buffer,Status), Info).
+rw_status([],  write(Block, Length, Buffer), Info,  Status, MessageStatus):-
+    true |
+        MessageStatus = normal(write(Block, Length, Buffer,Status), Info).
+rw_status([],  write_and_verify(Block, Length, Buffer, ByteCheck), Info,  Status, MessageStatus):-
+    true |
+        MessageStatus = normal(write_and_verify(Block,Length,Buffer,Status), Info).
+rw_status([Abnormal|_], _, _,  Status, MessageStatus):-
+    true |
+        Status = Abnormal,
+        MessageStatus = abnormal.
+
+%----------%
+% status/4 %
+%----------%
+status(normal(Info), Message,  _, MessageStatus):-
+    true |
+        MessageStatus = normal(Message, Info).
+otherwise.
+status(Abnormal, _,  Status, MessageStatus):-
+    true |
+        Status = Abnormal,
+        MessageStatus = abnormal.
+
+%-----------%
+% smaller/3 %
+%-----------%
+smaller(MaxBufferSize, CDBMax, BufferSize):-
+    MaxBufferSize < CDBMax |
+        BufferSize = MaxBufferSize.
+otherwise.
+smaller(_, CDBMax, BufferSize):-
+    true |
+        BufferSize = CDBMax.
+:-end_switch.

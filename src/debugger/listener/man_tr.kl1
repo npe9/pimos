@@ -1,0 +1,231 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module listener_tracer_manager.
+:- public create/14.
+:- with_macro pimos.
+
+create(Rpt,Mon,TrID,Aly,Ctr,GM,MM,VP,RSC,Ab,GStr,Start,RptL,MonL) :- true|
+    pool:keyed_bag(DBG,8),
+    pool:keyed_bag(MON,8),
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RptL,DBG,MonL,MON,{Ctr,RSC,MM,VP,Ab,GStr,Start}).
+
+dispatcher(Rpt,[monitor(TrID,Req)|Mon],TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- true| 
+    MON1=[monitor(Req)|MON11],
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT,DBG,MON11,MON2,VEC).
+dispatcher(Rpt,[monitor(TrID1,Req)|Mon],TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- 
+  TrID1=\=TrID |
+    MON2=[get_and_put(TrID1,S,S1)|MON22],
+    S=[monitor(Req)|S1],
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT,DBG,MON1,MON22,VEC).
+dispatcher(Rpt,[fork(Fork)|Mon],TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- true| 
+    Fork=normal,
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC).
+
+alternatively.
+dispatcher([Msg|Rpt],Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- true| 
+    dispatcher1([Msg|Rpt],Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC).
+
+dispatcher1([terminated|Rpt],_,_,_,GM,RPT,DBG,_,MON,{Ctr,RSC,MM,VP,_Ab,_GStr,_Start}) :- true| 
+    RPT=[terminated|Rpt], GM=[], DBG=[get_all(All)], MON=[], Ctr=[], RSC=[], MM=[], VP=[],
+    close(All).
+dispatcher1([aborted|Rpt],Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- true| 
+    set_vector_element(VEC,4,Ab,Ab,VEC1),
+    Ab=aborted,
+    RPT=[aborted|RPT1],
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT1,DBG,MON1,MON2,VEC1).
+
+% Without clause-number
+dispatcher1([exception(trace,{Node,ID,SubG},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- true|
+    dispatcher1([exception(trace,{Node,ID,SubG,0},NewCde,NewArg)|Rpt],
+        Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC).
+
+% SPY EXCEPTION (spy_fork | spy_reduction)
+dispatcher1([Msg|Rpt],Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- 
+    Msg=exception(spy,{_NodeV,{GID,Spy},SubGoal,_Caller},NewCde,NewArg) |
+    listener_tracer:translate_spy_goal(SubGoal,NewSubGoal,Pac,Mname,Pname,Arity),
+    listener_spy_manager:spied_check(Spy,Pac,Mname,Pname,Arity,YorN),
+    (
+    % Different package or Unknown exception
+    YorN=no -> 
+        NewCde=Aly, NewArg={[NewSubGoal]},
+        dispatcher(Rpt,Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC);
+    YorN=yes ->
+        GM=[get_ancestor(GID,Anc)|GM1],
+        dispatcher3([Msg|Rpt],Mon,TrID,Aly,GM1,RPT,DBG,MON1,MON2,VEC,
+            Anc,{Pac,Mname,Pname,Arity},NewSubGoal)
+    ).
+
+% SPY REDUCTION | TASK TRACE
+dispatcher1([exception(trace,{NodeV,[ID|_],SubGoals,CN},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- 
+  ID={GID,Inf}, 
+  vector(Inf,8), 
+  vector_element(NodeV,0,Node) |
+    NewCde=Aly,
+    vector_element(Inf,1,TrID1,Inf1),
+    Msg=trace(trace,{NewArg,SubGoals,Node,GID,Inf1,CN}),
+    send_msg(TrID1,TrID,Msg,RPT,RPT1,DBG,DBG1,MON2,MON3,GM,GM1,VEC,VEC1),
+    dispatcher(Rpt,Mon,TrID,Aly,GM1,RPT1,DBG1,MON1,MON3,VEC1).
+
+% SPY REDUCTION -> TRACE
+dispatcher1([exception(trace,{NodeV,[ID|_],SubGoals,CN},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- 
+  ID={GID,Code,ArgV,Pri,Min,Max},
+  vector_element(NodeV,0,Node) |
+    NewCde=Aly,
+    GM=[get_ancestor(GID,{_,TrID1,Lvl,_,_})|GM1],
+    Inf={{TrID1,Lvl,Code,ArgV,Pri,Min,Max}},
+    Msg=trace(trace,{NewArg,SubGoals,Node,GID,Inf,CN}),
+    send_msg(TrID1,TrID,Msg,RPT,RPT1,DBG,DBG1,MON2,MON3,GM1,GM2,VEC,VEC1),
+    dispatcher(Rpt,Mon,TrID,Aly,GM2,RPT1,DBG1,MON1,MON3,VEC1).
+
+% SHOEN:RAISE(pimos_tag#task,general_request,GR)
+dispatcher1([exception(trace,{NodeV,[ID|_],_,_},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- 
+  ID={GID,Inf}, 
+  vector(Inf,10), 
+  vector_element(NodeV,0,Node) |
+    NewCde=Aly,
+    vector_element(Inf, 0,GR,    Inf1),
+    vector_element(Inf1,1,TrID1, Inf2),
+    vector_element(Inf2,9,GrType,Inf3),
+    predicate_to_code(module#shoen,raise,3,Code),
+    SubGoals=[{enqueue_external,Code,{pimos_tag#task,GrType,GR}}],
+    CN=0,
+    Msg=trace(trace,{NewArg,SubGoals,Node,GID,Inf3,CN}),
+    send_msg(TrID1,TrID,Msg,RPT,RPT1,DBG,DBG1,MON2,MON3,GM,GM1,VEC,VEC1),
+    dispatcher(Rpt,Mon,TrID,Aly,GM1,RPT1,DBG1,MON1,MON3,VEC1).
+
+dispatcher1([exception(trace,{NodeV,[ID|CDR],SubGoals,CN},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- integer(ID) |
+    GM=[get_if_any(ID,Inf)|GM1],
+    dispatcher2([exception(trace,{NodeV,[ID|CDR],SubGoals,CN},NewCde,NewArg)|Rpt],
+        Mon,TrID,Aly,GM1,RPT,DBG,MON1,MON2,VEC,Inf).
+
+otherwise.
+dispatcher1([Msg|Rpt],Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC) :- true|
+    RPT=[Msg|RPT1],
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT1,DBG,MON1,MON2,VEC).
+
+% UNKNOWN EXCEPTION
+dispatcher2([Trace|Rpt],Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC,{}) :- true|
+    RPT=[Trace|RPT1],
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT1,DBG,MON1,MON2,VEC).
+dispatcher2([exception(trace,{NodeV,[GID|_],SubGoals,CN},NewCde,NewArg)|Rpt],
+        Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC,{Inf}) :- vector_element(NodeV,0,Node) |
+    NewCde=Aly,
+    vector_element(Inf,0,TrID1,Inf1),
+    Msg=trace(trace,{NewArg,SubGoals,Node,GID,{Inf1},CN}),
+    send_msg(TrID1,TrID,Msg,RPT,RPT1,DBG,DBG1,MON2,MON3,GM,GM1,VEC,VEC1),
+    dispatcher(Rpt,Mon,TrID,Aly,GM1,RPT1,DBG1,MON1,MON3,VEC1).
+
+% UNKNOWN EXCEPTION
+dispatcher3([Spy|Rpt],Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC,non_existent,_,_) :- true|
+    RPT=[Spy|RPT1],
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT1,DBG,MON1,MON2,VEC).
+otherwise.
+% PIMOS::SHOEN:RAISE/3
+dispatcher3([exception(_,{_,{GID,_},_,{Mod,Offs}},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC,
+  {_,TrID1,Lvl,_,_},{pimos,shoen,raise,3},{_,_,Arg}) :- true|
+    NewCde=Aly,
+    module:get_predicate_info(Mod,Offs,_,Ppac,Pm,Pp,Pa),
+    predicate_to_code(module#listener_trace_driver,general_request,7,Code),
+    NewArg={[{external,Code,{Arg,GID,TrID1,Lvl,Ppac::Pm,Pp,Pa}}]},
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC).
+dispatcher3([exception(_,{_,{GID,_},_,{Mod,Offs}},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC,
+  {_,TrID1,Lvl,_,_},{pimos,shoen,raise,3},{apply,{_,Arg}}) :- true|
+    NewCde=Aly,
+    module:get_predicate_info(Mod,Offs,_,Ppac,Pm,Pp,Pa),
+    predicate_to_code(module#listener_trace_driver,general_request,7,Code),
+    NewArg={[{external,Code,{Arg,GID,TrID1,Lvl,Ppac::Pm,Pp,Pa}}]},
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC).
+
+% PIMOS::SHOEN:EXECUTE/7 | PIMOS::SHOEN:PROFILE/7
+dispatcher3([exception(_,{NodeV,{GID,_},_,Caller},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC,Anc,{pimos,shoen,execute,7},SubGoal) :- 
+  vector_element(NodeV,0,Node) |
+    NewCde=Aly,
+    vector_element(Anc,1,TrID1,Anc1),
+    Msg=trace(spy,{NewArg,[SubGoal],Node,GID,Anc1,Caller}),
+    send_msg(TrID1,TrID,Msg,RPT,RPT1,DBG,DBG1,MON2,MON3,GM,GM1,VEC,VEC1),
+    dispatcher(Rpt,Mon,TrID,Aly,GM1,RPT1,DBG1,MON1,MON3,VEC1).
+dispatcher3([exception(_,{NodeV,{GID,_},_,Caller},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC,Anc,{pimos,shoen,profile,7},SubGoal) :- 
+  vector_element(NodeV,0,Node) |
+    NewCde=Aly,
+    vector_element(Anc,1,TrID1,Anc1),
+    Msg=trace(spy,{NewArg,[SubGoal],Node,GID,Anc1,Caller}),
+    send_msg(TrID1,TrID,Msg,RPT,RPT1,DBG,DBG1,MON2,MON3,GM,GM1,VEC,VEC1),
+    dispatcher(Rpt,Mon,TrID,Aly,GM1,RPT1,DBG1,MON1,MON3,VEC1).
+otherwise.
+% SPY REDUCTION
+dispatcher3([exception(_,{_,{GID,_},_,_},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC,{spyr,TrID1,Lvl,_,_},_,SubGoal) :- true|
+    NewCde=Aly,
+    spy_reduction(TrID1,Lvl,GID,SubGoal,NewArg),
+    dispatcher(Rpt,Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC).
+otherwise.
+% SPY FORK
+dispatcher3([exception(_,{NodeV,{GID,_},_,Caller},NewCde,NewArg)|Rpt],
+  Mon,TrID,Aly,GM,RPT,DBG,MON1,MON2,VEC,Anc,_,SubGoal) :- 
+  vector_element(NodeV,0,Node) |
+    NewCde=Aly,
+    vector_element(Anc,1,TrID1,Anc1),
+    Msg=trace(spy,{NewArg,[SubGoal],Node,GID,Anc1,Caller}),
+    send_msg(TrID1,TrID,Msg,RPT,RPT1,DBG,DBG1,MON2,MON3,GM,GM1,VEC,VEC1),
+    dispatcher(Rpt,Mon,TrID,Aly,GM1,RPT1,DBG1,MON1,MON3,VEC1).
+
+
+send_msg(TrID,TrID,Msg,RPT,RPT1,DBG,DBG1,MON,MON1,GM,GM1,VEC,VEC1) :- true| 
+    RPT=[Msg|RPT1], DBG1=DBG, MON1=MON, GM1=GM, VEC1=VEC.
+otherwise.
+send_msg(TrID,   _,Msg,RPT,RPT1,DBG,DBG1,MON,MON1,GM,GM1,VEC,VEC1) :- true| 
+    RPT1=RPT, DBG=[get_if_any_and_put(TrID,X,Y)|DBG1],
+    send_msg1(TrID,X,Y,Msg,MON,MON1,GM,GM1,VEC,VEC1).
+
+send_msg1(_,{Rpt},Rpt1,Msg,MON,MON1,GM,GM1,VEC,VEC1) :- true| 
+    Rpt=[Msg|Rpt1], MON1=MON, GM1=GM, VEC1=VEC.
+send_msg1(TrID,{},Rpt, Msg,MON,MON1,GM,GM1,{Ctr,RSC,MM,VP,Ab,GStr,Start},VEC) :- true|
+    MON=[put(TrID,Mon)|MON1],
+    GM={GM1,GM2},
+    MM={MM1,MM2},
+    VP={VP1,VP2},
+    Ctr={Ctr1,Ctr2},
+    RSC=[spy(traced_list(Tracing)),
+         spy(spied_list(Spying)),
+         getenv(listener:tracer_position,Pos),
+         getenv(listener:tracer_size,Size),
+         getenv(listener:font,Font),
+         macro(current_macro(Mac)),
+         copy(ENV)|RSC1],
+    VEC={Ctr1,RSC1,MM1,VP1,Ab,GStr,Start},
+    listener_child_tracer:
+        create(TrID,Msg,Rpt,GM2,MM2,Mon,VP2,ENV,
+            Mac,Tracing,Spying,Pos,Size,Font,Ab,Ctr2,GStr,Start).
+
+close([{_,S}|T]) :- true| S=[terminated], close(T).
+close([]) :- true| true.
+
+
+spy_reduction(W,Lvl,PID,{priority,Code,ArgV,{Pri,Min,Max}},NewArg) :- 
+    NewArg={[{trace,{PID,{spyr,W,Lvl,Code,ArgV,Pri,Min,Max}},
+                    priority,Code,ArgV,{Pri,Min,Max}}]}.
+spy_reduction(W,Lvl,PID,{processor,Code,ArgV,Pe},NewArg) :- 
+    NewArg={[{trace,{PID,{spyr,W,Lvl,Code,ArgV,Pri,Min,Max}},
+                    processor,Code,ArgV,Pri,Min,Max,Pe}]}.
+spy_reduction(W,Lvl,PID,{Type,Code,ArgV},NewArg) :- 
+    NewArg={[{trace,{PID,{spyr,W,Lvl,Code,ArgV,Pri,Min,Max}},Type,Code,ArgV,Pri,Min,Max}]}.
+% apply 5/16
+spy_reduction(W,Lvl,PID,{apply,{Code,ArgV}},NewArg) :- 
+    NewArg={[{trace,{PID,{spyr,W,Lvl,Code,ArgV,Pri,Min,Max}},apply,Code,ArgV,Pri,Min,Max}]}.
+%
+otherwise. % ?
+spy_reduction(_,_,_,{Name,ArgV},NewArg) :-   
+    NewArg={[{Name,ArgV}]}.

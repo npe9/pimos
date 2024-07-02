@@ -1,0 +1,46 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module mkdir.
+:- public go/1.
+:- with_macro pimos.
+
+
+go(Pathname) :- string(Pathname,_,_)|
+    shoen:raise(pimos_tag#task,general_request,[file(FRS)]),
+    fileReq_status(FRS,Pathname).
+otherwise.
+go(Pathname) :- true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[getenv(task:directory,CWD), 
+        getenv(task:home,HD),
+        file(FRS)],
+    atom_table:cache_table(ATM),
+    shellUtils:file_type(DLM),
+    shellUtils:expand_pathname(Pathname,NewPathname,ATM,[],CWD,HD,DLM),
+    fileReq_status(FRS,NewPathname).
+
+fileReq_status(normal(FR,_,_),Pathname) :- true|
+    FR=[make_directory(Pathname,Result)],
+    mkdir_status(Result,Pathname).
+otherwise.
+fileReq_status(_,_) :- true|
+    shoen:raise(pimos_tag#shell,get_std_mes,MES),
+    MES=[putf("mkdir: Cannot create file_request_device~n",[])].
+
+mkdir_status(normal(Dir,_,_),_) :- true| Dir=[].
+otherwise.
+mkdir_status(_,Pathname) :- true|
+    pathname:expandPathname(Pathname,List),
+    shoen:raise(pimos_tag#shell,get_std_mes,MES),
+    print_files(List,MES).
+
+print_files([{_,File}|L],MES) :- true|
+    MES=[putf("mkdir: ~s: File exists~n",[File])|MES1],
+    print_files(L,MES1).
+print_files([],MES) :- true| MES=[].
+    

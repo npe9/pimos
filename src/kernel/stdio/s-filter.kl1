@@ -1,0 +1,139 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% stdio filter %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- module stdio_filter.
+:- public go/3.
+
+%go(general(Code), In, Comm) :- true | apply(Code, {[], In, Comm}).
+go(general(Code,EE), In, Comm) :- true | apply(Code, {EE, In, Comm}).
+go(switch, In, Comm) :- true |
+    std_switch_filter:std_switch_filter(In, X),
+    sw_monitor(X, Comm).
+go(in, In, Comm) :- true |
+    setup_buffer_param(In,In1,Init,in),
+    buffer:input_filter(Init, In1, X),
+    std_in_filter:std_in_filter(X, Y),
+    io_monitor(Y, Comm).
+go(out, In, Comm) :- true |
+    setup_buffer_param(In,In1,Init,out),
+    buffer:output_filter(Init, In1, X),
+    std_out_filter:std_out_filter(X, Y),
+    io_monitor(Y, Comm).
+go(inter, In, Comm) :- true |
+%    stdio_converter:mesConv1(In, X1),
+    setup_buffer_param(In,In1,Init,inter),
+    buffer:interaction_filter(Init, In1, X2),
+    stdio_converter:mesConv2(X2, X3),
+    std_inter_filter:std_inter_filter(X3, Y),
+    io_monitor(Y, Comm).
+go(io, In, Comm) :- true |
+    std_io_filter:std_io_filter(In, X),
+    io_monitor(X, Comm).
+otherwise.
+go(_, In, Comm) :- true | In = Comm.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+io_monitor(I,O) :- true | io_monitor(I,O,_).
+io_monitor([],O,END) :- true | O=[], END=end.
+io_monitor([Mes|I],O,END) :- true | vector_element(Mes,0,V0,NMes),
+    ( V0 = getb -> NNMes = NMes ;
+      V0 = getb_noecho -> NNMes = NMes ;
+      V0 = prompt -> NNMes = NMes ;
+      V0 = ungetb -> NNMes = NMes ;
+      V0 = putb -> NNMes = NMes ;
+      V0 = flush -> NNMes = NMes ;
+      NMes = reset(U_Stat) -> NNMes=reset(O_Stat),
+        check_reset(U_Stat,O_Stat,END) ; %%%%%
+      NMes = next_attention(U_Stat) -> NNMes=next_attention(O_Stat),
+        check_next_attention(U_Stat,O_Stat,END) ; %%%%%
+      V0 = resend -> NNMes = NMes ;
+      V0 = cancel -> NNMes = NMes ;
+      V0 = igetb -> NNMes = NMes ;
+      V0 = igetb_noecho -> NNMes = NMes ;
+      V0 = iprompt -> NNMes = NMes ;
+      V0 = iungetb -> NNMes = NMes ;
+      V0 = iputb -> NNMes = NMes ;
+      V0 = iflush -> NNMes = NMes ;
+      V0 = switch -> NNMes = NMes ;
+      V0 = get_attributes -> NNMes = NMes ;
+      V0 = am_I_there -> NNMes = NMes ;
+     otherwise ;
+      true -> error_raise(NMes,string#"io_monitor: ~w~n"), NNMes = NMes ),
+    O = [NNMes|NO], io_monitor(I,NO,END).
+
+check_reset(U_Stat,O_Stat,END) :- true |
+    ( O_Stat=normal(ABT,O_ATT,ID) -> U_Stat=normal(ABT,U_ATT,ID),
+        close_monitor(END,O_ATT,U_ATT) ;
+     otherwise ;
+      true -> U_Stat=O_Stat ).
+
+check_next_attention(U_Stat,O_Stat,END) :- true |
+    ( O_Stat=normal(O_ATT) -> U_Stat=normal(U_ATT),
+        close_monitor(END,O_ATT,U_ATT) ;
+     otherwise ;
+      true -> U_Stat=O_Stat ).
+
+close_monitor(END,O_ATT,U_ATT) :- wait(END) | U_ATT=[].
+close_monitor(END,O_ATT,U_ATT) :- wait(O_ATT) | U_ATT=O_ATT.
+
+sw_monitor(I,O) :- true | sw_monitor(I,O,_).
+sw_monitor([],O,END) :- true | O=[], END=end.
+sw_monitor([Mes|I],O,END) :- true |
+    ( Mes = attach(ID,U_Stat,U_DTCT) -> NMes = attach(ID,O_Stat,O_DTCT),
+        status_monitor(END,O_Stat,U_Stat),
+        detect_monitor(END,O_DTCT,U_DTCT) ;
+      Mes = attach(U_Stat,U_DTCT) -> NMes = attach(O_Stat,O_DTCT),
+        status_monitor(END,O_Stat,U_Stat),
+        detect_monitor(END,O_DTCT,U_DTCT) ;
+      Mes = detach(ID,Stat) -> NMes = Mes ;
+      Mes = detach(Stat) -> NMes = Mes ;
+      Mes = kill(ID,Stat) -> NMes = Mes ;
+      Mes = kill(Stat) -> NMes = Mes ;
+     otherwise ;
+      true -> error_raise(Mes,string#"sw_monitor: ~w~n"), NMes = Mes ),
+    O = [NMes|NO], sw_monitor(I,NO,END).
+
+detect_monitor(END,O_DTCT,U_DTCT) :- wait(END) | U_DTCT=closed.
+detect_monitor(END,O_DTCT,U_DTCT) :- wait(O_DTCT) | U_DTCT=O_DTCT.
+
+status_monitor(END,O_Stat,U_Stat) :- wait(END) | U_Stat=aborted.
+status_monitor(END,O_Stat,U_Stat) :- wait(O_Stat) | U_Stat=O_Stat.
+
+error_raise(Data, FString) :- true |
+    Type = illegal_message_to_StdIO_close_monitor,
+    variable:wrap(Data, {_, WData}, 100, 100),
+    shoen:raise(pimos_tag#error, '$PIMOS$'(Type, FString), WData).
+
+setup_buffer_param(User,Pimos,Init,Mode) :- true |
+    ( Mode = in -> Param1 = [] ;
+     otherwise ;
+      true -> Param1 = [print_depth,print_length,
+                        print_string_length,print_atom_length] ),
+    shoen:raise(pimos_tag#task,general_request,GEN),
+    Param2 = [size],
+    make_buffer_param(GEN,GEN1,Param1,[],Init1),
+    make_buffer_param(GEN1,[],Param2,[],Init),
+    append(Init1,User,Pimos).
+
+make_buffer_param(G,NG,[],Tmp,Init) :- true | NG=G, Init=Tmp.
+make_buffer_param(G,NG,[P|Param],Tmp,Init) :- true |
+    G = [getenv({':',stdio,P},Env)|G1],
+    check_buffer_param(G1,NG,Param,Tmp,Init,P,Env).
+
+check_buffer_param(G,NG,Param,Tmp,Init,P,Env) :- true |
+    ( Env = normal(Value) ->
+        make_buffer_param(G,NG,Param,[{P,Value}|Tmp],Init) ;
+     otherwise;
+      true ->
+        make_buffer_param(G,NG,Param,Tmp,Init) ).
+
+append([],Z,W) :- true | W=Z.
+append([X|Y],Z,W) :- true | W=[X|NW], append(Y,Z,NW).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% End %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

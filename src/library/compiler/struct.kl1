@@ -1,0 +1,460 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%%    Pre-processor
+%%          for
+%%'put_structure_constant' instruction
+%%
+
+:- module kl1cmp_struct.
+:- public struct_processor/6.
+:- public convert_guard_unify/8.
+:- with_macro pimos. 
+
+:- local_implicit err:oldnew, up:oldnew, struct:shared.
+struct_processor([read_predicate(Clauses, Dir)|Cdr]) --> true |
+   &up <<=[read_predicate(Clauses0, Dir)],
+ {{convert_clauses(&err, Dir, &struct, Clauses0, Clauses)}},
+   struct_processor(Cdr).
+struct_processor([]) --> true | true.
+
+:- local_implicit err:oldnew.
+convert_clauses(directive, _, Clauses0, Clauses) --> true |
+   Clauses0=Clauses.
+convert_clauses(message, _, Clauses0, Clauses) --> true |
+   Clauses0=Clauses.
+convert_clauses(end_of_file, _, end_of_file, Clauses) --> true |
+   Clauses=end_of_file.
+otherwise.
+convert_clauses(_, Struct, Clauses0, Clauses) --> true |
+   convert_clauses(Struct, Clauses0, Clauses).
+
+%%%%%%%%%% Convert Clause %%%%%%%%%%
+convert_clauses(Struct, [Block|Rest], NewCLS) --> true |
+   convert_one_block(Struct, Block, NewBlock),
+   NewCLS=[NewBlock|NewRest],
+   convert_clauses(Struct, Rest, NewRest).
+convert_clauses(_, [], NewCLS) --> true |
+   NewCLS=[].
+
+
+%convert_one_block([vector({atom((':-')), H, vecter({atom(('|')), G, B})})|Rest], NewBlock) :- true | 
+convert_one_block(no_const,[vector({atom((':-')),H,GB})-Info0|Rest], NewBlock) --> true |
+%% {{kl1cmp_error_filter:addErrorInfo(&err, Err0, Info0, Info1),
+%% 92/04/22
+ {{Info0=Info1,
+   GB=vector({atom(('|')),G,B}),
+   kl1cmp_variable_name:string_to_integer(vector({H,G,B}), vector({H0,G0,B0}),VTbl),
+   NewBlock=[vector({atom((':-')), H3, vector({atom(('|')), G3, B3})})-Info1|NewBlockCdr],
+%% 92/04/22
+%%   convert_guard_unify(Err0, [], H0, H1, G0, G1, B0, B1),
+   %convert_string(vector({H1,H2,G1}),vector({G2,B1,B2})),
+%%   convert_string(vector({H1,G1,B1}), vector({H2,G2,B2})),
+   convert_string(vector({H0,G0,B0}), vector({H2,G2,B2})),
+   kl1cmp_variable_name:integer_to_string(vector({H2,G2,B2}), VTbl,
+                vector({H3,G3,B3}))}},
+   convert_one_block(no_const, Rest, NewBlockCdr).
+otherwise.
+convert_one_block(Struct,[vector({atom((':-')),H,GB})-Info0|Rest], NewBlock) --> true |
+ {{GB=vector({atom(('|')),G,B}),
+   convert_one_term(passive, H0, H1),
+   convert_terms(passive, G0, G1),
+   convert_terms(active, B0, B1),
+   kl1cmp_variable_name:string_to_integer(vector({H,G,B}), vector({H0,G0,B0}),VTbl),
+   NewBlock=[vector({atom((':-')), H3, vector({atom(('|')), G3, B3})})-Info0|NewBlockCdr],
+%% 92/04/22
+%%   kl1cmp_error_filter:addErrorInfo(&err, Err0, Info0, Info),
+%%   convert_guard_unify(Err0, [], H1, H2, G1, G2, B1, B2),
+   Info0=Info,
+%%   kl1cmp_variable_name:integer_to_string(vector({H2,G2,B2}), VTbl,
+%%                vector({H3,G3,B3}))}},
+   kl1cmp_variable_name:integer_to_string(vector({H1,G1,B1}), VTbl,
+                vector({H3,G3,B3}))}},
+   convert_one_block(Struct, Rest, NewBlockCdr).
+convert_one_block(Struct, [atom(otherwise)-Info|Rest], NewBlock) --> true |
+   NewBlock=[atom(otherwise)-Info|NewBlockCdr],
+   convert_one_block(Struct, Rest, NewBlockCdr).
+convert_one_block(Struct, [atom(alternatively)-Info|Rest], NewBlock) --> true |
+   NewBlock=[atom(alternatively)-Info|NewBlockCdr],
+   convert_one_block(Struct, Rest, NewBlockCdr).
+convert_one_block(_, [], New) --> true | New=[].
+
+convert_string(vector({atom((#)),atom(module),atom(Mod)}), WMod) :- true |
+    WMod = '$MODULE'(Mod).
+convert_string(list([Car0|Cdr0]), WList) :- true |
+   convert_string(Car0, Car),
+   convert_string(Cdr0, Cdr),
+   WList=list([Car|Cdr]).
+convert_string(string(Str), WStr) :- true |
+   WStr='$SCNST'(Str).
+% for extended floating point
+convert_string(extended_floating_point(EFloat), WStr) :- true |
+   WStr='$SCNST'(EFloat).
+otherwise.
+convert_string(vector(Vect0), WVect) :- vector(Vect0, N) |
+   convert_string(0, N, Vect0, Vect),
+   WVect=vector(Vect).
+otherwise.
+convert_string(W0, W) :- true | W0=W.
+
+convert_string(A, N, Vect0, Vect) :- A<N |
+   set_vector_element(Vect0, A, Elm0, Elm, Vect1),
+   convert_string(Elm0, Elm),
+   A1 := A+1,
+   convert_string(A1, N, Vect1, Vect).
+convert_string(N, N, Vect0, Vect) :- true | Vect0=Vect.
+
+:- local_implicit err:oldnew.
+convert_guard_unify(H0, H, G0, G, B0, B) --> true |
+ {{pool:keyed_bag(Pool0), pool:keyed_bag(Vars0),
+   registrate_variables(Pool0, Pool1, H0, H1)}},
+   extract_struct_unify(Lists, [], Pool1, [], Vars0, Vars1, G0, G1, atom(true)),
+ {{convert_arg_to_list(Vars1, [], Lists, H1, H, G1, G, B0, B)}}.
+%%convert_guard_unify(H0, H, G0, G, B0, B) --> true |
+%%    H0=H, G0=G, B0=B.
+
+:- local_implicit pool:oldnew.
+registrate_variables(vector(Vect0), WVect) --> vector(Vect0, N) |
+    registrate_variables(0, N, Vect0, Vect),
+    WVect=vector(Vect).
+registrate_variables(list([Car0|Cdr0]), WList) --> true |
+    registrate_variables(Car0, Car),
+    registrate_variables(Cdr0, Cdr),
+    WList=list([Car|Cdr]).
+registrate_variables(variable(N), Var) --> true |
+    &pool <<= [put(N, [])],
+    Var=variable(N).
+otherwise.
+registrate_variables(Var0, Var) --> true | Var0=Var.
+
+registrate_variables(A, N, Vect0, Vect) --> A<N |
+  {{set_vector_element(Vect0, A, Elm0, Elm, Vect1),
+    A1 := A+1}},
+    registrate_variables(Elm0, Elm),
+    registrate_variables(A1, N, Vect1, Vect).
+registrate_variables(N, N, Vect0, Vect) --> true | Vect0=Vect.
+
+:- local_implicit err:oldnew, struct:oldnew, pool:oldnew, vars:oldnew.
+extract_struct_unify(vector({atom((',')), X, Y}), G0, G) --> true |
+   extract_struct_unify(X, G0, G1),
+   extract_struct_unify(Y, G1, G).
+otherwise.
+%% commented out for structures
+%%extract_struct_unify(vector({atom(('=')), X0, list([Car0|Cdr0])}), G0, G) --> true |
+%%  {{registrate_variables(&pool, X0, X),
+%%    registrate_variables(&pool, list([Car0|Cdr0]), List)}},
+%%    &struct <<= [vector({atom(('=')), X, List})],
+%%  {{G0=G}}.
+%%extract_struct_unify(vector({atom(('=')), list([Car0|Cdr0]), X0}), G0, G) --> true |
+%%  {{registrate_variables(&pool, X0, X),
+%%    registrate_variables(&pool, list([Car0|Cdr0]), List)}},
+%%   &struct <<= [vector({atom(('=')), X, List})],
+%%  {{G0=G}}.
+extract_struct_unify(vector({atom(('=')), variable(N0), variable(N1)}), G0, G) --> 
+   &pool <<= [empty(N0, A0), empty(N1,A1)],
+   check_appearances(A0, N0, A1, N1, G0, G).
+otherwise.
+%%extract_struct_unify(vector({atom(('=')), vector(Vect0), variable(N1)}), G0, G) --> true |
+%%  {{registrate_variables(&pool, vector(Vect0), WVect),
+%%    registrate_variables(&pool, variable(N1), Var)}},
+%%    check_vector_element(Var, WVect, G0, G).
+%%%%   &struct <<= [vector({atom(('=')), variable(N1), vector(Vect)})],
+%%%% {{G0=G}}.
+%%extract_struct_unify(vector({atom(('=')), variable(N0), vector(Vect)}), G0, G) --> true |
+%%  {{registrate_variables(&pool, variable(N0), Var),
+%%    registrate_variables(&pool, vector(Vect), WVect)}},
+%%    check_vector_element(Var, WVect, G0, G).
+%%%%   &struct <<= [vector({atom(('=')), variable(N0), vector(Vect)})],
+%%%% {{G0=G}}.
+%%otherwise.
+extract_struct_unify(X0, G0, G) --> true |
+  {{registrate_variables(&pool, X0, X1),
+    G0=vector({atom((',')), X1, G})}}.
+
+check_appearances(yes, N0, yes, N1, G0, G) --> true |
+    &pool <<= [put(N0, []), put(N1, [])],
+    G0=vector({atom((',')), vector({atom((=)), variable(N0), variable(N1)}), G}).
+check_appearances(no, N0, no, N1, G0, G) --> true |
+    G0=vector({atom((',')), vector({atom((=)), variable(N0), variable(N1)}), G}).
+check_appearances(yes, N0, no, N1, G0, G) --> true |
+    G0=G,
+%    &struct <<= [vector({atom((=)), variable(N0), variable(N1)})],
+    &vars <<= [put(N0, N1)],
+    &pool <<= [put(N0, [])].
+check_appearances(no, N0, yes, N1, G0, G) --> true |
+    G0=G,
+%    &struct <<= [vector({atom((=)), variable(N1), variable(N0)})],
+    &vars <<= [put(N1, N0)],
+    &pool <<= [put(N1, [])].
+
+check_vector_element(X, vector(Vect), G0, G) --> vector(Vect, N) |
+    check_vector_element_(0, N, X, Vect, no, Ans),
+    output_or_not(Ans, X, vector(Vect), G0, G).
+
+check_vector_element_(A, N, X, Vect0, Ans0, Ans) --> A<N |
+    {{set_vector_element(Vect0, A, E0, E, Vect1)}},
+    check(A, N, X, E0, E, Vect1, Ans0, Ans).
+check_vector_element_(N, N, _, _, Ans0, Ans) --> true | Ans0 = Ans.
+
+check(_, _, X, X, E, _, _, Ans) --> true |
+    X=E, Ans=yes.
+otherwise.
+check(A, N, X, vector(NewVect0), E, Vect0, Ans0, Ans) --> vector(NewVect0, NewN) |
+    check_vector_element_(0, NewN, X, NewVect0, Ans0, Ans1),
+  {{A1 := A+1}},
+    E=vector(NewVect0),
+    check_vector_element_(A1, N, X, Vect0, Ans1, Ans).
+otherwise.
+check(A, N, X, E0, E, Vect0, Ans0, Ans) --> true |
+  {{A1 := A+1}},
+    E=E0,
+    check_vector_element_(A1, N, X, Vect0, Ans0, Ans).
+
+output_or_not(yes, X, Vect, G0, G) --> true |
+    &err <<= [warning("eternal suspension found : ~t", [wrap#{'=', X, Vect}])],
+    G0=vector({atom((',')), vector({atom(('=')), X, Vect}), G}).
+output_or_not(no, X, Vect, G0, G) --> true |
+    &struct <<= [vector({atom(('=')), X, Vect})],
+    {{G0=G}}.
+
+:- local_implicit vars:oldnew.
+convert_arg_to_list([vector({atom((=)), X, Str})|Cdr], vector(H0),
+            WH, G0, G, B0, B) --> vector(H0, N) |
+   convert_arg_to_list_one_goal(0, N, X, Str, H0, H1),
+   convert_arg_to_list_one_part(X, Str, G0, G1, atom(true)),
+   convert_arg_to_list_one_part(X, Str, B0, B1, atom(true)),
+   convert_arg_to_list(Cdr, vector(H1), WH, G1, G, B1, B).
+convert_arg_to_list([vector({atom((=)), X, Str})|Cdr], atom(H0), WH, G0, G, B0, B) --> true |
+   convert_arg_to_list_one_part(X, Str, G0, G1, atom(true)),
+   convert_arg_to_list_one_part(X, Str, B0, B1, atom(true)),
+   convert_arg_to_list(Cdr, atom(H0), WH, G1, G, B1, B).
+convert_arg_to_list([], H0, H, G0, G, B0, B) --> true |
+%    H0=H,
+    convert_variables(H0, H),
+    convert_variables(G0, G),
+    convert_variables(B0, B).
+
+convert_arg_to_list_one_part(X, Str, vector({atom((',')), Goal0, Goal1}), G0, G) --> true |
+   convert_arg_to_list_one_part(X, Str, Goal0, G0, G1),
+   convert_arg_to_list_one_part(X, Str, Goal1, G1, G).
+otherwise.
+convert_arg_to_list_one_part(X, Str, vector(Goal0), G0, G) --> vector(Goal0, N) |
+   convert_arg_to_list_one_goal(0, N, X, Str, Goal0, Goal1),
+   G0=vector({atom((',')), vector(Goal1), G}).
+otherwise.
+convert_arg_to_list_one_part(_, _, Goal0, G0, G) --> true |
+   G0=vector({atom((',')), Goal0, G}).
+
+convert_arg_to_list_one_goal(A, N, X, Str, Goal0, Goal) --> A<N |
+ {{set_vector_element(Goal0, A, Arg, NewArg, Goal1)}},
+   convert_one_arg_to_list(X, Str, Arg, NewArg),
+ {{A1 := A+1}},
+   convert_arg_to_list_one_goal(A1, N, X, Str, Goal1, Goal).
+convert_arg_to_list_one_goal(N, N, _, _, Goal0, Goal) --> true |
+   Goal0=Goal.
+
+convert_one_arg_to_list(X, Str, X, NewArg) --> true |
+   NewArg=Str.
+otherwise.
+convert_one_arg_to_list(_, _, variable(N0), NewArg) --> true |
+    NewArg=variable(N0).
+convert_one_arg_to_list(X, Str, list([Car|Cdr]), NewArg) --> true |
+   convert_one_arg_to_list(X, Str, Car, NewCar),
+   convert_one_arg_to_list(X, Str, Cdr, NewCdr),
+   NewArg=list([NewCar|NewCdr]).
+otherwise.
+convert_one_arg_to_list(X, Str, vector(Vect), NewArg) --> vector(Vect, N) |
+   convert_one_vect_arg_to_list(0, N, X, Str, Vect, NewVect),
+    NewArg=vector(NewVect).
+otherwise.
+convert_one_arg_to_list(_, _, X, NewArg) --> true |
+   X=NewArg.
+
+convert_variables(vector(Vect0), WVect) --> vector(Vect0, N) |
+    convert_variables(0, N, Vect0, Vect),
+    WVect=vector(Vect).
+convert_variables(list([Car0|Cdr0]), List) --> true |
+    convert_variables(Car0, Car),
+    convert_variables(Cdr0, Cdr),
+    List=list([Car|Cdr]).
+convert_variables(variable(N0), Var) --> true |
+    convert_variable(N0, N),
+    Var=variable(N).
+otherwise.
+convert_variables(Arg0, Arg) --> true | Arg0=Arg.
+
+convert_variables(A, N, Arg0, Arg) --> A<N |
+  {{set_vector_element(Arg0, A, Elm0, Elm, Arg1), 
+    A1 :=A+1}},
+    convert_variables(Elm0, Elm),
+    convert_variables(A1, N, Arg1, Arg).
+convert_variables(N, N, Arg0, Arg) --> true | Arg0=Arg.
+
+convert_variable(N0, N) --> true |
+    &vars <<= [empty(N0, YorN)],
+    convert_variable(YorN, N0, N).
+
+convert_variable(yes, N0, N) --> true | N0=N.
+convert_variable(no, N0, N) --> true |
+    &vars <<= [get_and_put(N0, N1, N1)],
+    convert_variable(N1, N).
+
+convert_one_vect_arg_to_list(A, N, X, Str, Vect, NewVect) --> A<N |
+ {{A1 := A+1,
+   set_vector_element(Vect, A, Arg, NewArg, Vect1)}},
+   convert_one_arg_to_list(X, Str, Arg, NewArg),
+   convert_one_vect_arg_to_list(A1, N, X, Str, Vect1, NewVect).
+convert_one_vect_arg_to_list(N, N, _, _, Vect, NewVect) --> true |
+   Vect=NewVect.
+
+:- local_implicit sw:shared.
+convert_terms(vector({atom((',')), Goal, Rest}), NewTerm) --> true |
+   convert_terms(Goal, NewGoal), 
+ {{NewTerm=vector({atom((',')), NewGoal, NewGoalRest})}},
+   convert_terms(Rest, NewGoalRest).
+otherwise.
+convert_terms(Goal, NewGoal) --> true |
+   convert_one_term(Goal, NewGoal).
+
+convert_one_term(vector({atom((':')), Module, Goal}), NewModuleGoal) --> true |
+   convert_one_term(Goal, NewGoal),
+ {{NewModuleGoal=vector({atom((':')), Module, NewGoal})}}.
+convert_one_term(vector({atom(('::')), Package,
+        vector({atom((':')), Module, Goal})}), NewModuleGoal) --> true |
+   convert_one_term(Goal, NewGoal),
+ {{NewModuleGoal=vector({atom(('::')), Package,
+        vector({atom((':')), Module, NewGoal})})}}.
+convert_one_term(vector({atom(('@')), Goal, Pri}), NewGoalPri) --> true |
+   convert_one_term(Goal, NewGoal),
+ {{NewGoalPri=vector({atom(('@')), NewGoal, Pri})}}.
+% added 881017
+otherwise.
+convert_one_term(vector(Goal), NewGoal) --> vector(Goal, N) |
+ {{convert_args(&sw, 0, N, vector(Goal), NewGoal)}}.
+convert_one_term(atom(Goal), NewGoal) --> true | {{atom(Goal)=NewGoal}}.
+otherwise.
+convert_one_term(Goal, NewGoal) --> true |
+  Goal=NewGoal.
+
+:- local_implicit sw:shared.
+convert_args(A, N, vector(Old), New) --> A<N |
+ {{set_vector_element(Old, A, OldArg, NewArg, Old1)}},
+   convert_one_arg(1, _, OldArg, NewArg0),
+ {{strip_SCNST(NewArg0, NewArg),
+   A1 := A+1}},
+   convert_args(A1, N, vector(Old1), New).
+convert_args(N, N, vector(Old), New) --> true | vector(Old)=New.
+
+:- local_implicit sw:shared, this:oldnew.
+
+convert_one_arg(variable(N), New) --> true |
+ {{New=variable(N)}},
+   &this <= 0.
+convert_one_arg(vector({atom((#)), atom(module), atom(Mod)}), New) --> true |
+ {{New={'$MODULE',Mod}}},
+   &this <= 0.
+convert_one_arg(vector({atom((#)), atom(module),
+        vector({atom('::'), atom(Package), atom(Mod)})}), New) --> true |
+ {{New='$MODULE'(Package, Mod)}},
+   &this <= 0.
+convert_one_arg({'$MODULE',atom(Module)}, New) --> true |
+ {{New='$MODULE'(Module)}},                           
+   &this <= 0.
+convert_one_arg({'$MODULE',atom(Package), atom(Module)}, New) --> true |
+ {{New='$MODULE'(Package, Module)}},                           
+   &this <= 0.
+convert_one_arg(string(Old), New) --> true |
+ {{New= '$SCNST'(Str), Str=string(Old)}}.
+convert_one_arg(extended_floating_point(Old), New) --> true |
+ {{New= '$SCNST'(Str), Str=extended_floating_point(Old)}}.
+convert_one_arg(list([Car|Cdr]), New) --> true |
+ {{convert_one_arg(&sw, 1, AnsCar, Car, NewCar),
+   convert_one_arg(&sw, 1, AnsCdr, Cdr, NewCdr),
+   Ans0 := AnsCar /\ AnsCdr,
+   check_list_constant_or_not(&sw, Ans0, Ans, list([NewCar|NewCdr]), New)}},
+   &this <= Ans.
+otherwise.
+convert_one_arg(vector(Vect), New) --> vector(Vect, N) |
+ {{convert_vect_args(&sw, 1, AnsVect, 0, N, vector(Vect), New0),
+   check_vect_constant_or_not(&sw, AnsVect, Ans, New0, New)}},
+   &this <= Ans.
+otherwise.
+convert_one_arg(Old, New) --> true |
+ {{New=Old}}.
+
+:- local_implicit sw:shared, this:oldnew.
+convert_vect_args(A, N, vector(Old), New) --> A<N |
+ {{set_vector_element(Old, A, OldElm, NewElm, Mid),
+   A1 := A+1,
+   convert_one_arg(&sw, 1, Ans, OldElm, NewElm),
+   &this <= &this /\ Ans}},
+   convert_vect_args(A1, N, vector(Mid), New).
+convert_vect_args(N, N, Old, New) --> true | {{Old=New}}.
+
+:- local_implicit sw:shared.
+check_list_constant_or_not(0, Ans, Old, New) --> true |
+ {{New=Old,
+   Ans=0}}.
+check_list_constant_or_not(1, Ans, Old, New) --> &sw=passive |
+ {{New=Old, Ans=0}}.
+check_list_constant_or_not(1, Ans, list([Car|Cdr]), New) --> &sw=active |
+ {{New='$SCNST'(Str), Str=list([Car|Cdr]),
+   Ans=1}}.
+
+check_vect_constant_or_not(0, Ans, Old, New) --> true |
+ {{New=Old,
+   Ans=0}}.
+check_vect_constant_or_not(1, Ans, Old, New) --> &sw=passive |
+ {{New=Old, Ans=0}}.
+check_vect_constant_or_not(1, Ans, Old, New) --> &sw=active |
+ {{New='$SCNST'(Old),
+   Ans=1}}.
+
+strip_SCNST(variable(N), New) :- true |
+   New=variable(N).
+strip_SCNST(list([Car|Cdr]), New) :- true |
+   strip_SCNST(Car, NewCar),
+   strip_SCNST(Cdr, NewCdr),
+   New=list([NewCar|NewCdr]).
+strip_SCNST(vector(Vect), WNew) :- vector(Vect, N) |
+   strip_SCNST_vect(0, N, Vect, New),
+   WNew=vector(New).
+strip_SCNST('$SCNST'(vector({})), New) :- true |
+   New=vector({}).
+otherwise.
+strip_SCNST('$SCNST'(Arg), New) :- true |
+   strip(Arg, NewArg),
+   New='$SCNST'(NewArg).
+otherwise.
+strip_SCNST(Arg, New) :- true | Arg = New.
+
+strip_SCNST_vect(A, N, Vect0, New) :- A<N |
+   set_vector_element(Vect0, A, OldEle, NewEle, Vect1),
+   strip_SCNST(OldEle, NewEle),
+   A1 := A+1,
+   strip_SCNST_vect(A1, N, Vect1, New).
+strip_SCNST_vect(N, N, Vect0, New) :- true | Vect0=New.
+
+strip('$SCNST'(Arg), New) :- true |
+   strip(Arg, New).
+strip(list([Car|Cdr]), New) :- true |
+   strip(Car, NewCar),
+   strip(Cdr, NewCdr),
+   New=list([NewCar|NewCdr]).
+strip(vector(Vect), WNew) :- vector(Vect, N) |
+   strip_vect(0, N, Vect, New),
+   WNew=vector(New).
+otherwise.
+strip(Arg, New) :- true | Arg=New.
+
+strip_vect(A, N, Vect0, New) :- A<N |
+   set_vector_element(Vect0, A, OldEle, NewEle, Vect1),
+   A1 := A+1,
+   strip(OldEle, NewEle),
+   strip_vect(A1, N, Vect1, New).
+strip_vect(N, N, Vect0, Vect) :- true | Vect0=Vect.
+

@@ -1,0 +1,41 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% ?- pgconv:go("LogfileName").
+:- with_macro pimos.
+:- module pgconv.
+:- public go/1.
+
+
+ go(FileName):- string(FileName,_,_) |
+        shoen:raise(pimos_tag#task,general_request,[file(normal(File,_,_))]),
+        File=[open(FileName,read(Result))],
+        read(Result,Dp),
+        conv(Dp).
+
+    conv({}):- true | true.
+otherwise.
+    conv(In):- wait(In)|
+        shoen:raise(pimos_tag#task,get_std(out),Std_Out),
+        Std_Out =[putt("Sending Log data to pg server")],
+        x_profile_tcpip:go(In).
+
+   read(abnormal,Dp):- true | Dp = {}.
+
+   read(normal(File,_,_),Dp):- true |
+        buffer:input_filter([gett(Log)],File),
+        put_data(Log,Dp).
+
+   
+
+   put_data({What,PeNum,Base,{ViewMode,Int,Max,ExecTime,Ph}},Dp):- 
+        integer(PeNum)|
+        Dp={ViewMode,Int,ExecTime,PeNum,Base,Max,What,Ph}.
+otherwise.
+    put_data(_,Dp):- true | Dp ={}.
+        
+

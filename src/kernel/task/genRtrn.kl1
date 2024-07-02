@@ -1,0 +1,502 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module general_request_translator.
+:- with_macro pimos.
+
+:- public trans0/2.
+
+% trans(In,Out).
+
+trans0(In,Out):- true|
+    mdlib#current_cluster(CL,_),
+    trans1(CL,In,Out).
+
+trans1(CL,In,Out):-
+    wait(CL)|
+    Out = [change_processor(CL)|OutN],
+    trans(In,OutN).
+
+wait_trans(Close,Out):- wait(Close)| Out = [].
+
+trans([],Out):-
+    true|
+    Out = [close(Close)|OutN],
+    wait_trans(Close,OutN).
+trans([request(Name,UAbort,Result)|In],Out):-
+    true|
+    Out = [request(Name,UAbort,Result0)|OutN],
+    go_filter(Result0,Result),
+    trans(In,OutN).
+trans([request_anyway(Name,UAbort,Result)|In],Out):-
+    true|
+    Out = [request_anyway(Name,UAbort,Result0)|OutN],
+    go_filter(Result0,Result),
+    trans(In,OutN).
+trans([atom(Atom)|In],Out):-
+    true|
+    Out = [request_anyway(atom_request,_,Result)|OutN],
+    go_filter1(Result,Atom),
+    trans(In,OutN).
+trans([{(module),Module}|In],Out):-
+    true|
+    Out = [request_anyway(module_request,_,Result)|OutN],
+    go_filter1(Result,Module),
+    trans(In,OutN).
+trans([user(User)|In],Out):-
+    true|
+    Out = [request_anyway(user_request,_,Result)|OutN],
+    go_filter1(Result,User),
+    trans(In,OutN).
+trans([window(Window)|In],Out):-
+    true|
+    Out = [request_anyway(window_request,_,Result)|OutN],
+    go_filter1(Result,Window),
+    trans(In,OutN).
+trans([file(File)|In],Out):-
+    true|
+    Out = [request_anyway(file_request,_,Result)|OutN],
+    go_filter1(Result,File),
+    trans(In,OutN).
+trans([timer(Timer)|In],Out):-
+    true|
+    Out = [request_anyway(timer_request,_,Result)|OutN],
+    go_filter1(Result,Timer),
+    trans(In,OutN).
+trans([string_io(StrIO)|In],Out):-
+    true|
+    Out = [request_anyway(string_io_request,_,Result)|OutN],
+    go_filter1(Result,StrIO),
+    trans(In,OutN).
+trans([socket(Socket)|In],Out):-
+    true|
+    Out = [request_anyway(socket_request,_,Result)|OutN],
+    go_filter1(Result,Socket),
+    trans(In,OutN).
+
+trans([execute(Code,Argv,List,Task)|In],Out):-
+    list(List)|
+    Out = [execute(List,Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([profile(Code,Argv,List,Task)|In],Out):-
+    list(List)|
+    Out = [execute(List,Status)|OutN],
+    profile_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute(Code,Argv,[],Task)|In],Out):-
+    true|
+    Out = [execute("",[],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([profile(Code,Argv,[],Task)|In],Out):-
+    true|
+    Out = [execute("",[],Status)|OutN],
+    profile_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+
+
+trans([execute(Code,Argv,Name,MinP,MaxP,Tag,Task)|In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([profile(Code,Argv,Name,MinP,MaxP,Tag,{Rsc1,Rsc2},Task)|In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name),resource(Rsc1,Rsc2)],Status)|OutN],
+    profile_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([profile(Code,Argv,Name,MinP,MaxP,Tag,Task)|In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name)],Status)|OutN],
+    profile_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute(Code,Argv,Name,MinP,MaxP,Tag,[],Task)|In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute(Code,Argv,Name,MinP,MaxP,Tag,List,Task)|In],Out):-
+    list(List)|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name)|List],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute(Code,Argv,Name,MinP,MaxP,Tag,{R1,R2},Task)|In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name),resource(R1,R2)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute_remote(Code,Argv,Name,MinP,MaxP,Tag,IONode,RUser,RPass,Task)|
+            In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name),io_node(IONode),remote(RUser,RPass)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute_remote(Code,Argv,Name,MinP,MaxP,Tag,{R1,R2},
+                                IONode,RUser,RPass,Task)|In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name),resource(R1,R2),io_node(IONode),remote(RUser,RPass)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute_user(Code,Argv,Name,MinP,MaxP,Tag,User,Task)|In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name),uid(User)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute_user(Code,Argv,Name,MinP,MaxP,Tag,{R1,R2},User,Task)|In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name),resource(R1,R2),uid(User)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute_user(Code,Argv,Name,MinP,MaxP,Tag,User,IONode,RUser,RPass,Task)|
+            In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name),io_node(IONode),remote(RUser,RPass),uid(User)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+trans([execute_user(Code,Argv,Name,MinP,MaxP,Tag,{R1,R2},
+                                User,IONode,RUser,RPass,Task)|In],Out):-
+    true|
+    Out = [execute(Name,[prio(MinP,MaxP),tag(Tag),name(Name),resource(R1,R2),io_node(IONode),remote(RUser,RPass),uid(User)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+
+trans([execute_super(Module,Pred,Arity,Argv,List,Task)|In],Out):-
+    list(List)|
+    Out = [execute_super({Module,Pred,Arity},[prio(MinP,MaxP),tag(Tag)|List],Status)|OutN],
+    super_task_status(Status,Argv,Task),
+    trans(In,OutN).
+trans([execute_super(Module,Pred,Arity,Argv,[],Task)|In],Out):-
+    true|
+    Out = [execute_super({Module,Pred,Arity},[prio(MinP,MaxP),tag(Tag)],Status)|OutN],
+    super_task_status(Status,Argv,Task),
+    trans(In,OutN).
+
+trans([execute_super(Module,Pred,Arity,Argv,Name,MinP,MaxP,Tag,Task)|In],Out):-
+    true|
+    Out = [execute_super({Module,Pred,Arity,Name},[prio(MinP,MaxP),tag(Tag),name(Name)],Status)|OutN],
+    super_task_status(Status,Argv,Task),
+    trans(In,OutN).
+trans([execute_super(Module,Pred,Arity,Argv,Name,MinP,MaxP,Tag,{R1,R2},Task)|In],Out):-
+    true|
+    Out = [execute_super({Module,Pred,Arity,Name},[prio(MinP,MaxP),tag(Tag),name(Name),resource(R1,R2)],Status)|OutN],
+    super_task_status(Status,Argv,Task),
+    trans(In,OutN).
+trans([execute_user_with_proc(Code,Argv,Name,MinP,MaxP,
+                              SPE,EPE,Tag,{R1,R2},User,Task)|In],Out):-
+    true|
+    Out = [execute(Name,[node(SPE,EPE),prio(MinP,MaxP),tag(Tag),name(Name),resource(R1,R2),uid(User)],Status)|OutN],
+    task_status(Status,Code,Argv,Task),
+    trans(In,OutN).
+
+%trans([request_anyway(Name,UAbort,Result)|In],Out):-
+%%
+trans([number_of_feps(Result)|In],Out):-
+    true|
+    Out = [request_anyway(fep_info,_,Status)|OutN],
+    go_filter1(Status,number_of_feps(Result)),
+    trans(In,OutN).
+trans([connection(Result)|In],Out):-
+    true|
+    Out = [request_anyway(fep_info,_,Status)|OutN],
+    go_filter1(Status,connection(Result)),
+    trans(In,OutN).
+%%%
+trans([ipl_versions(Result)|In],Out):-
+    true|
+    Out = [request_anyway(fep_info,_,Status)|OutN],
+    go_filter1(Status,ipl_versions(Result)),
+    trans(In,OutN).
+%%
+trans([fep_attributes(Result)|In],Out):-
+    true|
+    Out = [request_anyway(fep_info,_,Status)|OutN],
+    go_filter1(Status,fep_attributes(Result)),
+    trans(In,OutN).
+%%
+trans([setenv(Name,Value,Result)|In],Out):-
+    true|
+    env_trans(Name,Value,Result,In,Out).
+trans([unsetenv(Name,Result)|In],Out):-
+    true|
+    env_trans(Name,Result,In,Out).
+otherwise.
+trans([Msg|In],Out):-
+    true|
+    Out = [Msg|OutN],
+    trans(In,OutN).
+
+task_status(normal(HCont,HRep,SCont0,SRep,Vec),Code,Argv,Task):-
+        vector(Vec,3)|
+        set_vector_element(Vec,0,{MinP,MaxP},0,V2),
+        set_vector_element(V2,1,Tag,0,_),
+        Tag0 := Tag \/ pimos_tag#task,
+        vector(Argv,N,Argv0),
+        task_check(Code,N,MinP,MaxP,
+                        {Argv0,Tag0,SCont0,SRep,HCont,HRep,Task}).
+task_status(normal(HCont,HRep,SCont0,SRep,Vec),Code,Argv,Task):-
+        vector(Vec,4)|
+        set_vector_element(Vec,0,{MinP,MaxP},0,V2),
+        set_vector_element(V2,1,Tag,0,V3),
+        set_vector_element(V3,3,{S,E},0,_),
+        Tag0 := Tag \/ pimos_tag#task,
+        vector(Argv,N,Argv0),
+        current_node(_,Nodes),
+        task_check(Code,N,MinP,MaxP,S,E,Nodes,
+                        {Argv0,Tag0,SCont0,SRep,HCont,HRep,Task}).
+otherwise.
+task_status(_,Code,Argv,Task):-
+        true |
+        Task = abnormal.
+
+task_check(Code,N,MinP,MaxP,Info):-
+    code(Code,_,_,_)|
+        code_to_predicate(Code,_,_,Ari,_),
+        task_check(Ari,N,MinP,MaxP,Code,Info).
+otherwise.
+task_check(_,_,_,_,{_,_,SCont0,SRep,HCont,HRep,Task}):-
+    true|
+    task_abnormal(SCont0,SRep,HCont,HRep),
+    Task = abnormal.
+
+task_check(N,N,MinP,MaxP,Code,Info):-
+    MinP >= 0,
+    MinP =< 4096,
+    MaxP >= 0,
+    MaxP =< 4096,
+    MinP =< MaxP|
+        Info = {Argv,Tag,SCont,SRep,HCont,HRep,Task},
+        shoen:execute(Code,Argv,MinP,MaxP,Tag,SCont,SRep),
+        Task = normal(HCont,HRep).
+otherwise.
+task_check(_,_,_,_,_,{_,_,SCont0,SRep,HCont,HRep,Task}):-
+    true|
+    task_abnormal(SCont0,SRep,HCont,HRep),
+    Task = abnormal.
+
+task_check(Code,N,MinP,MaxP,S,E,E0,Info):-
+    code(Code,_,_,_)|
+    code_to_predicate(Code,_,_,Ari,_),
+    task_check(Ari,N,MinP,MaxP,S,E,E0,Code,Info).
+otherwise.
+task_check(_,_,_,_,_,_,_,{_,_,SCont0,SRep,HCont,HRep,Task}):-
+    true|
+    task_abnormal(SCont0,SRep,HCont,HRep),
+    Task = abnormal.
+
+task_check(N,N,MinP,MaxP,S,E,E0,Code,Info):-
+    MinP >= 0,
+    MinP =< 4096,
+    MaxP >= 0,
+    MaxP =< 4096,
+    MinP =< MaxP,
+    S >= 0,
+    E > 0,
+    S + E - 1 < E0|
+        Info = {Argv,Tag,SCont,SRep,HCont,HRep,Task},
+        shoen:execute(Code,Argv,MinP,MaxP,S,E,Tag,SCont,SRep),
+        Task = normal(HCont,HRep).
+otherwise.
+task_check(_,_,_,_,_,_,_,_,{_,_,SCont0,SRep,HCont,HRep,Task}):-
+    true|
+    task_abnormal(SCont0,SRep,HCont,HRep),
+    Task = abnormal.
+
+profile_status(normal(HCont,HRep,SCont0,SRep,Vec),Code,Argv,Task):-
+        vector(Vec,3)|
+        set_vector_element(Vec,0,{MinP,MaxP},0,V2),
+        set_vector_element(V2,1,Tag,0,_),
+        Tag0 := Tag \/ pimos_tag#task,
+        vector(Argv,N,Argv0),
+        profile_check(Code,N,MinP,MaxP,
+                        {Argv0,Tag0,SCont0,SRep,HCont,HRep,Task}).
+profile_status(normal(HCont,HRep,SCont0,SRep,Vec),Code,Argv,Task):-
+        vector(Vec,4)|
+        set_vector_element(Vec,0,{MinP,MaxP},0,V2),
+        set_vector_element(V2,1,Tag,0,V3),
+        set_vector_element(V3,3,{S,E},0,_),
+        Tag0 := Tag \/ pimos_tag#task,
+        vector(Argv,N,Argv0),
+        current_node(_,Nodes),
+        profile_check(Code,N,MinP,MaxP,S,E,Nodes,
+                        {Argv0,Tag0,SCont0,SRep,HCont,HRep,Task}).
+otherwise.
+profile_status(_,Code,Argv,Task):-
+        true |
+        Task = abnormal.
+
+profile_check(Code,N,MinP,MaxP,Info):-
+    code(Code,_,_,_)|
+        code_to_predicate(Code,_,_,Ari,_),
+        profile_check(Ari,N,MinP,MaxP,Code,Info).
+otherwise.
+profile_check(_,_,_,_,{_,_,SCont0,SRep,HCont,HRep,Task}):-
+    true|
+    task_abnormal(SCont0,SRep,HCont,HRep),
+    Task = abnormal.
+
+profile_check(N,N,MinP,MaxP,Code,Info):-
+    MinP >= 0,
+    MinP =< 4096,
+    MaxP >= 0,
+    MaxP =< 4096,
+    MinP =< MaxP|
+        Info = {Argv,Tag,SCont,SRep,HCont,HRep,Task},
+        shoen:profile(Code,Argv,MinP,MaxP,Tag,SCont,SRep),
+        Task = normal(HCont,HRep).
+otherwise.
+profile_check(_,_,_,_,_,{_,_,SCont0,SRep,HCont,HRep,Task}):-
+    true|
+    task_abnormal(SCont0,SRep,HCont,HRep),
+    Task = abnormal.
+
+profile_check(Code,N,MinP,MaxP,S,E,E0,Info):-
+    code(Code,_,_,_)|
+    code_to_predicate(Code,_,_,Ari,_),
+    profile_check(Ari,N,MinP,MaxP,S,E,E0,Code,Info).
+otherwise.
+profile_check(_,_,_,_,_,_,_,{_,_,SCont0,SRep,HCont,HRep,Task}):-
+    true|
+    task_abnormal(SCont0,SRep,HCont,HRep),
+    Task = abnormal.
+
+profile_check(N,N,MinP,MaxP,S,E,E0,Code,Info):-
+    MinP >= 0,
+    MinP =< 4096,
+    MaxP >= 0,
+    MaxP =< 4096,
+    MinP =< MaxP,
+    S >= 0,
+    E > 0,
+    S + E - 1 < E0|
+        Info = {Argv,Tag,SCont,SRep,HCont,HRep,Task},
+        shoen:profile(Code,Argv,MinP,MaxP,S,E,Tag,SCont,SRep),
+        Task = normal(HCont,HRep).
+otherwise.
+profile_check(_,_,_,_,_,_,_,_,{_,_,SCont0,SRep,HCont,HRep,Task}):-
+    true|
+    task_abnormal(SCont0,SRep,HCont,HRep),
+    Task = abnormal.
+
+
+super_task_status(normal(HCont,HRep,Cont,Rep,Code,Vec),Argv,Task):-
+        vector(Vec,3)|
+        set_vector_element(Vec,0,{MinP,MaxP},0,V2),
+        set_vector_element(V2,1,Tag,0,V3),
+        Tag0 := Tag \/ pimos_tag#task,
+        shoen:execute(Code,Argv,MinP,MaxP,Tag0,Cont,Rep),
+        Task = normal(HCont,HRep).
+super_task_status(normal(HCont,HRep,Cont,Rep,Code,Vec),Argv,Task):-
+        vector(Vec,4)|
+        set_vector_element(Vec,0,{MinP,MaxP},0,V2),
+        set_vector_element(V2,1,Tag,0,V3),
+        set_vector_element(V3,3,{S,E},0,_),
+        Tag0 := Tag \/ pimos_tag#task,
+        shoen:execute(Code,Argv,MinP,MaxP,S,E,Tag0,Cont,Rep),
+        Task = normal(HCont,HRep).
+otherwise.
+super_task_status(_,Argv,Task):-
+        true |
+        Task = abnormal.
+
+
+go_filter1(normal(Code,Stream,FInfo),Result):-
+    true|
+    apply(Code,{FInfo,Result,Stream}).
+otherwise.
+go_filter1(Status,Result):-
+    true|
+    Status = Result.
+
+go_filter(normal(Code,SVar,FInfo),Result):-
+    true|
+    Result = normal(UVar),
+    apply(Code,{FInfo,UVar,SVar}).
+otherwise.
+go_filter(Status,Result):-
+    true|
+    Status = Result.
+
+env_trans(task:directory,Value,Result,In,Out):-
+    string(Value,_,16)|
+    Out = [setenv(task:directory,Value,Result)|OutN],
+    trans(In,OutN).
+env_trans(task:io_node,Value,Result,In,Out):-
+    string(Value,_,16)|
+    Out = [setenv(task:io_node,Value,Result)|OutN],
+    trans(In,OutN).
+env_trans(task:io_node,Value,Result,In,Out):-
+    integer(Value)|
+    Out = [setenv(task:io_node,Value,Result)|OutN],
+    trans(In,OutN).
+otherwise.
+env_trans(task:directory,Value,Result,In,Out):-
+    true|
+    Result = abnormal,
+    trans(In,Out).
+env_trans(task:io_node,Value,Result,In,Out):-
+    true|
+    Result = abnormal,
+    trans(In,Out).
+otherwise.
+env_trans(Name,Value,Result,In,Out):-
+    true|
+    Out = [setenv(Name,Value,Result)|OutN],
+    trans(In,OutN).
+
+env_trans(task:directory,Result,In,Out):-
+    true|
+    Result = abnormal,
+    trans(In,Out).
+env_trans(task:io_node,Result,In,Out):-
+    true|
+    Result = abnormal,
+    trans(In,Out).
+otherwise.
+env_trans(Name,Result,In,Out):-
+    true|
+    Out = [unsetenv(Name,Result)|OutN],
+    trans(In,OutN).
+
+%wait_creation(normal(Stream),Result):-
+%    true|
+%    Stream = [reset(Status)|Next],
+%    wait_creation2(Status,Next,Result).
+%otherwise.
+%wait_creation(Status,Result):-
+%    true|
+%    Status = Result.
+
+%wait_creation2(normal(Ab,At,_),Stream,Result):-
+%    true|
+%    Result = normal(Stream,Ab,At).
+%otherwise.
+%wait_creation2(Status,Stream,Result):-
+%    true|
+%    Status = Result,
+%    Stream = [].
+
+task_abnormal(SCont,SRep,HCont,HRep):-
+    true|
+    SRep = [aborted,terminated|SRepE],
+    HCont = [],
+    task_abnormal(SCont,SRepE).
+
+task_abnormal([],SRep):-
+    true|
+    SRep = [].
+task_abnormal([add_resource(_,_)|SCont],SRep):-
+    true|
+    SRep = [resource_added|SRepN],
+    task_abnormal(SCont,SRepN).
+task_abnormal([allow_resource_report|SCont],SRep):-
+    true|
+    SRep = [resource_report_allowed|SRepN],
+    task_abnormal(SCont,SRepN).
+otherwise.
+task_abnormal([_|SCont],SRep):-
+    true|
+    task_abnormal(SCont,SRep).

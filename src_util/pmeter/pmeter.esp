@@ -1,0 +1,302 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class p_meter has
+
+
+:create(C, PEx, PEy, Interval, O) :-
+    :new(C, O),
+    Sx = PEx*30+6,
+    Sy = PEy*30+6+24+30,
+    :create(#standard_io_window,
+            [size(Sx,Sy),
+             position(20,20),
+             label_font(#font_13),
+             permission(out),
+             title("Performance Meter")], W),
+    :set_inside_units(W,1,1),
+    :erase_cursor(W),
+    :activate(W),
+    O!window := W,
+    O!pex := PEx,
+    O!pey := PEy,
+    O!interval := Interval,
+    :create(#hidden_window, _, HW),
+    O!hidden_window := HW,
+    init_hash_table(PEx*PEy, Hash),
+    O!pe_pool := Hash,
+    init(W, PEx, PEy) ;
+
+instance
+
+attribute
+    window,
+    hidden_window,
+    pe_pool,
+    interval,
+    pex,
+    pey,
+    reset_p := 0 ;
+
+
+:init(O, PEx, PEy) :-
+    Sx = PEx*30+6,
+    Sy = PEy*30+6+24+30,
+    :create(#standard_io_window,
+            [size(Sx,Sy),
+             position(20,20),
+             label_font(#font_13),
+             permission(out),
+             title("Performance Meter")], W),
+    :set_inside_units(W,1,1),
+    :erase_cursor(W),
+    :activate(W),
+    O!window := W,
+    :create(#hidden_window, _, HW),
+    O!hidden_window := HW,
+    init_hash_table(PEx*PEy, Hash),
+    O!pe_pool := Hash,
+    init(W, PEx, PEy) ;
+
+:draw(O,String):-!,
+    draw(String,O);
+   
+:kill(O) :- 
+    :kill(O!window),
+    :kill(O!hidden_window!window) ;
+
+local
+
+init_hash_table(PEs, Hash) :-
+    :create(#monogyny_hash_index, Hash, PEs),
+    init_hash(PEs, Hash) ;
+
+init_hash(0, _) :- ! ;
+init_hash(N, Hash) :-
+    N1 = N-1,
+    :put_at(Hash, 0, N1), !,
+    init_hash(N1, Hash) ;
+
+init(W, PEx, PEy) :-
+    draw_init_pe_y(PEy-1, PEy, PEx, W),
+    draw_move_sign(0, PEx, (PEy*30)+15, W) ;
+
+draw_move_sign(X, X, Y, _) :- ! ;
+draw_move_sign(X, PEx, Y, W) :-
+    :draw_filled_circle(W,15+(30*X),Y,15,1,fix,exclusive_or),
+    draw_move_sign(X+1, PEx, Y, W), ! ;
+
+draw_init_pe_y(_, 0, _, _) :- ! ;
+draw_init_pe_y(Y, PEy, PEx, W) :-
+    draw_init_pe_x(0, PEx, Y, W),
+    draw_init_pe_y(Y-1, PEy-1, PEx, W), ! ;
+
+draw_init_pe_x(N, N, _, _) :- ! ;
+draw_init_pe_x(N, PEx, Y, W) :-
+    :draw_filled_rectangle(W, N*30, Y*30, 30, 30, exclusive_or),
+    draw_init_pe_x(N+1, PEx, Y, W), ! ;
+
+draw(String, O) :- !,
+    PEx = O!pex,
+    PEy = O!pey,
+    show_workrate_y(PEy-1, PEy, PEx, 0, String, O!interval, O!pe_pool, O!window, O!hidden_window!window),
+    reset_sign(O!reset_p, PEx, (PEy*30)+15, O!window, O) ;
+
+reset_sign(X, X, Y, W, O) :- ! ,
+%    O!reset_p := 0,
+    reset_sign(0, X, Y, W, O) ;
+reset_sign(X, PEx, Y, W, O) :-
+    :draw_filled_circle(W,15+(30*X),Y,15,0,fix,exclusive_or),
+    X1 = X + 1,
+    O!reset_p := X1, ! ;
+
+show_workrate_y(_, 0, _, _, _, _, _, _, _) :- ! ;
+show_workrate_y(Y, PEy, PEx, PS, String, Interval, Pool, W, HW) :-
+    show_workrate_x(0, PEx, Y, PS, NPS, String, Interval, Pool, W, HW),
+    show_workrate_y(Y-1, PEy-1, PEx, NPS, String, Interval, Pool, W, HW), ! ;
+
+show_workrate_x(N, N, _, PS, NPS, _, _, _, _, _) :- !, PS = NPS ;
+show_workrate_x(N, PEx, Y, PS, NPS, String, Interval, Pool, W, HW) :-
+    show_workrate(PS, String, N, Y, Interval, PEx, Pool, W, HW),
+    show_workrate_x(N+1, PEx, Y, PS+1, NPS, String, Interval, Pool, W, HW), ! ;
+
+show_workrate(N, S, X, Y, Interval, PEx, Pool, W, HW) :-
+    Po = 5 * N,
+    Po2 = Po + 1,
+    Po3 = Po + 2,
+    Po4 = Po + 3,
+    string_element(S, Po, Idling1),
+    string_element(S, Po2, Idling2),
+    string_element(S, Po3, Running1),
+    string_element(S, Po4, Running2),
+    Idling = 65536*Idling1 + Idling2,
+    Running = 65536*Running1 + Running2,
+    change_data_to_workrate(Idling, Running, Workrate),
+    PENo = Y*PEx+X,
+    show_workrate(Workrate, X, Y, PENo, Pool, W, HW) ;
+
+change_data_to_workrate(I,R,Workrate) :-
+    I = 0, R = 0, !, Workrate = 0 ;
+change_data_to_workrate(I,R,Workrate) :-
+    2147483647 - I =< R, !,
+    RWorkrate = (R * 100) / 2147483647,
+    set_digital_workrate(RWorkrate, Workrate) ;
+change_data_to_workrate(I,R,Workrate) :-
+    2147483647 - R =< I, !,
+    RWorkrate = (R * 100) / 2147483647,
+    set_digital_workrate(RWorkrate, Workrate) ;
+change_data_to_workrate(I,R,Workrate) :-
+    RWorkrate = (R * 100) / (I+R),
+    set_digital_workrate(RWorkrate, Workrate) ;
+
+show_workrate(Workrate, X, Y, PENo, Pool, W, HW) :-
+    :get_at(Pool, Before_rate, PENo),
+    Before_rate == Workrate, ! ;
+show_workrate(Workrate, X, Y, PENo, Pool, W, HW) :-
+    :get_at(Pool, Before_rate, PENo),
+    :copy(W, HW, Workrate, 0, X*30, Y*30, 30, 30, copy),
+    :put_at(Pool, Workrate, PENo) ;
+
+set_digital_workrate(RWorkrate, Workrate) :-
+    RWorkrate <10, !, Workrate = 0 ;
+set_digital_workrate(RWorkrate, Workrate) :-
+    RWorkrate <20, !, Workrate = 30 ;
+set_digital_workrate(RWorkrate, Workrate) :-
+    RWorkrate <30, !, Workrate = 90 ;
+set_digital_workrate(RWorkrate, Workrate) :-
+    RWorkrate <40, !, Workrate = 120 ;
+set_digital_workrate(RWorkrate, Workrate) :-
+    RWorkrate <50, !, Workrate = 150 ;
+set_digital_workrate(RWorkrate, Workrate) :-
+    RWorkrate <60, !, Workrate = 180 ;
+set_digital_workrate(RWorkrate, Workrate) :-
+    RWorkrate <70, !, Workrate = 210 ;
+set_digital_workrate(RWorkrate, Workrate) :-
+    RWorkrate <80, !, Workrate = 240 ;
+set_digital_workrate(RWorkrate, Workrate) :-
+    RWorkrate <90, !, Workrate = 270 ;
+set_digital_workrate(RWorkrate, Workrate) :-
+    Workrate = 300 ;
+
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 5, !, 
+    :copy(W, HW, 0, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 15, !, 
+    :copy(W, HW, 30, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 25, !, 
+    :copy(W, HW, 60, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 35, !, 
+    :copy(W, HW, 90, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 45, !, 
+    :copy(W, HW, 120, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 55, !, 
+    :copy(W, HW, 150, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 65, !, 
+    :copy(W, HW, 180, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 75, !, 
+    :copy(W, HW, 210, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 85, !, 
+    :copy(W, HW, 240, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :-
+    Workrate < 95, !, 
+    :copy(W, HW, 270, 0, X, Y, 30, 30, copy) ;
+show_workrate(Workrate, X, Y, W, HW) :- !,
+    :copy(W, HW, 300, 0, X, Y, 30, 30, copy) ;
+
+end.
+
+class hidden_window has
+
+:create(C, W, O) :-
+    :new(C, O),
+    :create(#standard_io_window,
+            [size(336,60),position(800,30)],W),
+    :set_inside_units(W, 1, 1),
+    O!window := W,
+    :erase_cursor(W),
+%    :activate(W),
+    :init(O) ;
+
+instance
+
+attribute
+    window ;
+
+:init(O) :-
+    W = O!window,
+    new_string(S, 256, 16),
+    make_pattern(11, S, W) ;
+
+local
+
+make_pattern(0, _, _) :- ! ;
+make_pattern(N, S, W) :-
+    N1 = N-1,
+    make_pattern_string1(N1, S),
+    :draw_filled_rectangle(W, N1*30, 0, 30, 30, 1, S, set),
+    new_string(S1,256,16),
+    make_pattern(N1, S1, W) ;
+
+make_pattern_string1(0, S) :-
+    set_pattern(0, S, 16#"FFFF", 16#"FFFF") ;
+make_pattern_string1(1, S) :- 
+    set_pattern(0, S, 16#"7777", 16#"FFFF") ;
+make_pattern_string1(2, S) :-
+    set_pattern(0, S, 16#"7777", 16#"BBBB") ;
+make_pattern_string1(3, S) :-
+    set_pattern(0, S, 16#"5555", 16#"BBBB") ;
+make_pattern_string1(4, S) :-
+    set_pattern(0, S, 16#"5555", 16#"AAAA", 16#"5555", 16#"BBBB") ;
+make_pattern_string1(5, S) :-
+    set_pattern(0, S, 16#"5555", 16#"AAAA") ;
+make_pattern_string1(6, S) :-
+    set_pattern(0, S, 16#"1111", 16#"AAAA", 16#"5555", 16#"AAAA") ;
+make_pattern_string1(7, S) :-
+    set_pattern(0, S, 16#"1111", 16#"AAAA") ;
+make_pattern_string1(8, S) :-
+    set_pattern(0, S, 16#"1111", 16#"2222") ;
+make_pattern_string1(9, S) :-
+    set_pattern(0, S, 16#"0000", 16#"2222") ;
+make_pattern_string1(10, S) :-
+    set_pattern(0, S, 16#"0000", 16#"0000") ;
+
+set_pattern(256, _, _, _) :- ! ;
+set_pattern(N, S, P1, P2) :-
+    set_string_element(S, N, P1),
+    set_string_element(S, N+1, P1),
+    set_string_element(S, N+2, P1),
+    set_string_element(S, N+3, P1),
+    set_string_element(S, N+4, P2),
+    set_string_element(S, N+5, P2),
+    set_string_element(S, N+6, P2),
+    set_string_element(S, N+7, P2),
+    set_pattern(N+8, S, P1, P2), ! ;
+
+set_pattern(256, _, _, _, _, _) :- ! ;
+set_pattern(N, S, P1, P2, P3, P4) :-
+    set_string_element(S, N, P1),
+    set_string_element(S, N+1, P1),
+    set_string_element(S, N+2, P1),
+    set_string_element(S, N+3, P1),
+    set_string_element(S, N+4, P2),
+    set_string_element(S, N+5, P2),
+    set_string_element(S, N+6, P2),
+    set_string_element(S, N+7, P2),
+    set_string_element(S, N+8, P3),
+    set_string_element(S, N+9, P3),
+    set_string_element(S, N+10, P3),
+    set_string_element(S, N+11, P3),
+    set_string_element(S, N+12, P4),
+    set_string_element(S, N+13, P4),
+    set_string_element(S, N+14, P4),
+    set_string_element(S, N+15, P4),
+    set_pattern(N+16, S, P1, P2, P3, P4) ;
+
+end.

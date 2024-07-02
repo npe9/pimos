@@ -1,0 +1,96 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v295>Atom>atom_dvc.kl1.3, 18-Sep-91 17:23:28, Edit by hori
+
+:- module atom_device.
+:- public driver/1.
+:- with_macro pimos.
+
+driver(Status):- true |
+    Status = In,
+    pool:keyed_set(AS0,15000),
+    pool:keyed_set(SA0,15000),
+    set_ipl_atoms(AS0,SA0,AS,SA),
+    atom_table(In,AS,SA,1).             % Initial Message-ID is 1
+
+set_ipl_atoms(AS0,SA0,AS,SA):- true |
+%    shoen:raise(pimos_tag#pimos, init, [ get_all_atoms( normal(IPLAtoms) )] ),
+    shoen:raise(pimos_tag#task, bios, [atom(ATOM)]),
+    wait_set_ipl_atoms(ATOM,AS0,SA0,AS,SA).
+
+wait_set_ipl_atoms(normal(ATOM),AS0,SA0,AS,SA) :- true |
+    ATOM = [ get_all_atoms(Result) ],
+    wait_set_ipl_atoms2(Result,AS0,SA0,AS,SA).
+
+wait_set_ipl_atoms2(normal(IPLAtoms),AS0,SA0,AS,SA) :- true |
+    table_set(IPLAtoms,AS0,SA0,AS,SA).
+
+table_set([{Name,Atom}|IPLAtoms],AS0,SA0,AS,SA) :- true |
+    AS0 = [put(Atom,Name,_)|AS1],
+    SA0 = [put(Name,Atom,_)|SA1],
+    table_set(IPLAtoms,AS1,SA1,AS,SA).
+table_set([],AS0,SA0,AS,SA) :- true |
+    AS0 = AS,
+    SA0 = SA.
+
+atom_table([reset(Status)|In],AS,SA,MsgID) :- true |
+    Status = normal(Abort,[],MsgID),
+    MsgID1 := MsgID + 1,
+    atom_table(In,AS,SA,MsgID1).
+atom_table([next_attention(Status)|In],AS,SA,MsgID) :- true |
+    Status = normal([]),
+    atom_table(In,AS,SA,MsgID).
+atom_table([resend(MsgID0,Status)|In],AS,SA,MsgID) :- true |
+    Status = normal,
+    atom_table(In,AS,SA,MsgID).
+atom_table([cancel(MsgID0,Status)|In],AS,SA,MsgID) :- true |
+    Status = normal,
+    atom_table(In,AS,SA,MsgID).
+atom_table([get_atom(Name,Status)|In],AS,SA,MsgID) :- string(Name,_,16) |
+    SA = [empty(Name,YorN)|SA1],
+    get_atom(YorN,Name,Status,In,AS,SA1,MsgID).
+atom_table([get_atom_name(Atom,Status)|In],AS,SA,MsgID) :- atom(Atom) |
+    AS = [empty(Atom,YorN)|AS1],
+    get_atom_name(YorN,Atom,Status,In,AS1,SA,MsgID).
+atom_table([intern(Name,Status)|In],AS,SA,MsgID) :-
+    string(Name,_,_) |
+    SA = [empty(Name,YorN)|SA1],
+    intern(YorN,Name,Status,In,AS,SA1,MsgID).
+atom_table([get_all_atoms(Status)|In],AS,SA,MsgID) :- true |
+    AS = [carbon_copy(Out)|AS1],
+    Status = normal(Out),
+    atom_table(In,AS1,SA,MsgID).
+atom_table([],AS,SA,_) :- true |
+    AS = [],
+    SA = [].
+
+get_atom(no,Name,Status,In,AS,SA,MsgID) :- true |
+    SA = [get_and_put(Name,Atom,Atom)|SA1],
+    Status = normal(Atom),
+    atom_table(In,AS,SA1,MsgID).
+get_atom(yes,Name,Status,In,AS,SA,MsgID) :- true |
+    Status = non_existent(Name),
+    atom_table(In,AS,SA,MsgID).
+
+get_atom_name(no,Atom,Status,In,AS,SA,MsgID) :- true |
+    AS = [get_and_put(Atom,Name,Name)|AS1],
+    Status = normal(Name),
+    atom_table(In,AS1,SA,MsgID).
+get_atom_name(yes,Atom,Status,In,AS,SA,MsgID) :- true |
+    Status = non_existent(Atom),
+    atom_table(In,AS,SA,MsgID).
+
+intern(no,Name,Status,In,AS,SA,MsgID) :- true |
+    SA = [get_and_put(Name,Atom,Atom)|SA1],
+    Status = normal(Atom),
+    atom_table(In,AS,SA1,MsgID).
+intern(yes,Name,Status,In,AS,SA,MsgID) :- true |
+    new_atom(Atom),
+    SA = [put(Name,Atom,_)|SA1],
+    AS = [put(Atom,Name,_)|AS1],
+    Status = normal(Atom),
+    atom_table(In,AS1,SA1,MsgID).

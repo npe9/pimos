@@ -1,0 +1,105 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_cmd_environment.
+:- with_macro pimos.
+:- public execute/8.
+
+execute(_,WS,WS1,B,B1,V,V1,print_depth(D)) :- true |
+        B=B1,V=V1,
+        set_printparam(WS,WS1,print_depth,D).
+execute(_,WS,WS1,B,B1,V,V1,print_length(L)) :- true |
+        B=B1,V=V1,
+        set_printparam(WS,WS1,print_length,L).
+execute(_,WS,WS1,B,B1,V,V1,print_string_length(PSL)) :- true |
+        B=B1,V=V1,
+        set_printparam(WS,WS1,print_string_length,PSL).
+execute(_,WS,WS1,B,B1,V,V1,print_atom_length(PAL)) :- true |
+        B=B1,V=V1,
+        set_printparam(WS,WS1,print_atom_length,PAL).
+
+execute(Abort,WS,WS1,B,B1,V,V1,print_depth) :- true |
+        printparam(Abort,WS,WS1,B,B1,V,V1,print_depth,string#" Print depth: ").
+execute(Abort,WS,WS1,B,B1,V,V1,print_length) :- true |
+        printparam(Abort,WS,WS1,B,B1,V,V1,print_length,string#" Print length: ").
+execute(Abort,WS,WS1,B,B1,V,V1,print_string_length) :- true |
+        printparam(Abort,WS,WS1,B,B1,V,V1,print_string_length,string#" Print string length: ").
+execute(Abort,WS,WS1,B,B1,V,V1,print_atom_length) :- true |
+        printparam(Abort,WS,WS1,B,B1,V,V1,print_atom_length,string#" Print atom length: ").
+
+execute(_,WS,WS1,B,B1,V,V1,print_string_mode) :- true |
+        B=B1,V=V1,
+        print_string_mode(WS,WS1).
+execute(_,WS,WS1,B,B1,V,V1,print_mode) :- true |
+        B=B1,V=V1,
+        print_mode(WS,WS1).
+
+execute(_,WS,WS1,B,B1,V,V1,environment) :- true |
+        B=B1,V=V1,
+        WS=[print_depth(PD,PD),print_length(PL,PL),
+            print_string_length(PSL,PSL),print_atom_length(PAL,PAL),
+            print_string_mode(PSM,PSM),print_mode(PM,PM),
+            putf(string#"~s~t~n",[string#" Print depth         : ",PD]),
+            putf(string#"~s~t~n",[string#" Print length        : ",PL]),
+            putf(string#"~s~t~n",[string#" Print string length : ",PSL]),
+            putf(string#"~s~t~n",[string#" Print atom length   : ",PAL]),
+            putf(string#"~s~t~n",[string#" Print string mode   : ",PSM]),
+            putf(string#"~s~t~n",[string#" Print mode          : ",PM])|WS1].
+
+printparam(Abort,WS,WS1,B,B1,V,V1,Param,Str) :- true |
+        WS=[cmd_env_getl(Abort,Param,Str,Line)|WS0],
+        inspector_command_analyser:get_printparam(Line,Cmd,Type,B,B1,V,V1),
+        wait_input(Abort,WS0,WS1,Type,Param,Cmd).
+
+wait_input(Abort,WS,WS1,_,_,_) :- wait(Abort) | WS=WS1.
+alternatively.
+wait_input(_,WS,WS1,Type,Param,Cmd) :- wait(Type) |
+        if_set_printparam(Type,WS,WS1,Cmd,Param).
+
+if_set_printparam(normal,WS,WS1,printparam(N),Param) :- true |
+        set_printparam(WS,WS1,Param,N).
+if_set_printparam([],WS,WS1,_,_) :- true | WS=WS1.
+otherwise.
+if_set_printparam(Type,WS,WS1,_,_) :- true |
+        WS=[error(Type)|WS1].
+
+set_printparam(WS,WS1,Param,N) :- N>0 |
+        WS=[{Param,N}|WS1].
+alternatively.
+set_printparam(WS,WS1,_,N) :- true |
+        WS=[error(unwrapped_illegal_param(N))|WS1].
+
+print_string_mode(WS,WS1) :- true |
+        get_new_string_mode(PSM,PSM1,Str,Str1),
+        WS=[without_interrupt([print_string_mode(PSM,PSM),
+            putf(string#"~s~s~s~s~n",
+                [string#" Print mode for string: ",Str,string#" => ",Str1]),
+            print_string_mode(PSM1)])|WS1].
+
+get_new_string_mode(character,T,S,S1) :- true |
+        T=code,
+        S=string#"character",
+        S1=string#"code".
+get_new_string_mode(code,T,S,S1) :- true |
+        T=character,
+        S=string#"code",
+        S1=string#"character".
+
+print_mode(WS,WS1) :- true |
+        get_new_mode(PM,PM1,Str,Str1),
+        WS=[without_interrupt([print_mode(PM,PM),
+            putf(string#"~s~s~s~s~n",
+                [string#" Print mode: ",Str,string#" => ",Str1]),
+            print_mode(PM1)])|WS1].
+
+get_new_mode(general,T,S,S1) :- true |
+        T=tag_and_value,
+        S=string#"general",
+        S1=string#"tag_and_value".
+get_new_mode(tag_and_value,T,S,S1) :- true |
+        T=general,
+        S=string#"tag_and_value",
+        S1=string#"general".

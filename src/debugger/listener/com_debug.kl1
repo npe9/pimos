@@ -1,0 +1,260 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_cmd_debug.
+:- public do_command/1.
+:- with_macro pimos.
+
+do_command(trace) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(debug,trace,_)].
+do_command(notrace) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(debug,notrace,_)].
+do_command(spy_reduction) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(debug,spyr,_)].
+do_command(spy_fork) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(debug,spyf,_)].
+
+do_command(spy(Pac::M,P,A)      ) :- true | do_command(spy(Pac,M,P,A)).
+do_command(spy((Pac::M:P/A))    ) :- true | do_command(spy(Pac,M,P,A)).
+do_command(spy((M:P/A))         ) :- atom(M) | do_command(spy(M,P,A)).
+do_command(spy((P/A))           ) :- true | do_command(spy(P,A)).
+do_command(nospy(Pac::M,P,A)    ) :- true | do_command(nospy(Pac,M,P,A)).
+do_command(nospy((Pac::M:P/A))  ) :- true | do_command(nospy(Pac,M,P,A)).
+do_command(nospy((M:P/A))       ) :- atom(M) | do_command(nospy(M,P,A)).
+do_command(nospy((P/A))         ) :- true | do_command(nospy(P,A)).
+
+do_command(spy(0,_,_)) :- true |
+    listener_utility:out(OUT),
+    OUT=[putf(" spy: default module not set.~n",[])].
+do_command(nospy(0,_,_)) :- true |
+    listener_utility:out(OUT),
+    OUT=[putf(" nospy: default module not set.~n",[])].
+
+do_command(spy(Pac,M,P,A)) :- atom(Pac), atom(M), atom(P), A>=0 |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[spy(Pac,M,P,A,Status)],
+    listener_utility:out( Msg),
+    listener_spy_manager:debug_msg(Status,Pac,M,P,A,spy,Msg).
+do_command(spy(Pac,M,P,'*')) :- atom(Pac), atom(M), atom(P) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[spy(Pac,M,P,'*',Status)],
+    listener_utility:out( Msg),
+    listener_spy_manager:debug_msg(Status,Pac,M,P,'*',spy,Msg).
+do_command(spy(M,P,A)) :- atom(M), atom(P), A>=0 |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[spy(M,P,A,Status)],
+    listener_utility:out( Msg),
+    listener_spy_manager:debug_msg(Status,0,M,P,A,spy,Msg).
+do_command(spy(M,P,'*')) :- atom(M), atom(P) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[spy(M,P,'*',Status)],
+    listener_utility:out( Msg),
+    listener_spy_manager:debug_msg(Status,0,M,P,'*',spy,Msg).
+
+do_command(spy(P,A)) :- atom(P), A>=0 |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(module,M)],
+    do_command(spy(M,P,A)).
+do_command(spy(P,'*')) :- atom(P) |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(module,M)],
+    do_command(spy(M,P,'*')).
+
+do_command(nospy(Pac,M,P,A)) :- atom(Pac), atom(M), atom(P), integer(A) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[nospy(Pac,M,P,A,Remove)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:debug_msg(Remove,Pac,M,P,A,nospy,Msg).
+do_command(nospy(Pac,M,P,'*')) :- atom(Pac), atom(M), atom(P) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[nospy(Pac,M,P,'*',Remove)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:debug_msg(Remove,Pac,M,P,'*',nospy,Msg).
+do_command(nospy(M,P,A)) :- atom(M), atom(P), integer(A) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[nospy(M,P,A,Remove)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:debug_msg(Remove,0,M,P,A,nospy,Msg).
+do_command(nospy(M,P,'*')) :- atom(M), atom(P) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[nospy(M,P,'*',Remove)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:debug_msg(Remove,0,M,P,'*',nospy,Msg).
+
+do_command(nospy(P,A)) :- atom(P), integer(A) |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(module,M)],
+    do_command(nospy(M,P,A)).
+do_command(nospy(P,'*')) :- atom(P) |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(module,M)],
+    do_command(nospy(M,P,'*')).
+
+do_command(nospy) :- true | do_command(nospy('*','*','*','*')).
+
+do_command(spying_patterns) :- true |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[spied_list(Spied)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:list_spied(Spied,Msg,[]).
+do_command(spying) :- true | do_command(spying('*','*')).
+do_command(spying(Pac::M)) :- true | do_command(spying(Pac,M)).
+do_command(spying(M)) :- atom(M) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[spying_list(M,Spied,Spying)],
+    listener_utility:inter( [do(Msg)]),
+    listener_spy_manager:list_spied(Spied,Msg,Msg1),
+    listener_spy_manager:list_spying(Spying,10,Msg1,[]).
+do_command(spying(Pac,M)) :- atom(Pac), atom(M) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[spying_list(Pac,M,Spied,Spying)],
+    listener_utility:inter( [do(Msg)]),
+    listener_spy_manager:list_spied(Spied,Msg,Msg1),
+    listener_spy_manager:list_spying(Spying,10,Msg1,[]).
+
+
+do_command(trace((Pac::M),P,A)) :- true | do_command(trace(Pac,M,P,A)).
+
+do_command(trace(Pac,M,P,A)) :- atom(Pac), atom(M), atom(P), integer(A) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[trace(Pac,M,P,A,Status)],
+    listener_utility:out( Msg),
+    listener_spy_manager:debug_msg(Status,Pac,M,P,A,trace,Msg).
+do_command(trace(Pac,M,P,'*')) :- atom(Pac), atom(M), atom(P) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[trace(Pac,M,P,*,Status)],
+    listener_utility:out( Msg),
+    listener_spy_manager:debug_msg(Status,Pac,M,P,*,trace,Msg).
+do_command(trace(M,P,A)) :- atom(M), atom(P), integer(A) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[trace(M,P,A,Status)],
+    listener_utility:out( Msg),
+    listener_spy_manager:debug_msg(Status,0,M,P,A,trace,Msg).
+do_command(trace(M,P,'*')) :- atom(M) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[trace(M,P,*,Status)],
+    listener_utility:out( Msg),
+    listener_spy_manager:debug_msg(Status,0,M,P,*,trace,Msg).
+
+
+do_command(notrace((Pac::M),P,A)) :- true | do_command(notrace(Pac,M,P,A)).
+
+do_command(notrace(Pac,M,P,A)) :- atom(Pac), atom(M), atom(P), integer(A) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[notrace(Pac,M,P,A,Remove)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:debug_msg(Remove,Pac,M,P,A,notrace,Msg).
+do_command(notrace(Pac,M,P,*)) :- atom(Pac), atom(M), atom(P) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[notrace(Pac,M,P,*,Remove)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:debug_msg(Remove,Pac,M,P,*,notrace,Msg).
+do_command(notrace(M,P,A)) :- atom(M), atom(P), integer(A) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[notrace(M,P,A,Remove)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:debug_msg(Remove,0,M,P,A,notrace,Msg).
+do_command(notrace(M,P,*)) :- atom(M), atom(P) |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[notrace(M,P,*,Remove)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:debug_msg(Remove,0,M,P,*,notrace,Msg).
+
+do_command(notrace_all) :- true | do_command(notrace('*','*','*','*')).
+
+do_command(tracing) :- true |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[traced_list(Spied)],
+    listener_utility:out( [do(Msg)]),
+    listener_spy_manager:list_tracing(Spied,Msg,[]).
+
+do_command(display_ancestor) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(display_ancestor,DV)|ENV1],
+    listener_utility:inter([do(IN)]),
+    IN=[putf(" Display ancestor: ~t => ",[DV]), getl(Line)|IN1],
+    listener_utility:string_to_term(Line,NDV),
+    (
+    NDV=end_of_file -> ENV1=[], IN1=[];
+    NDV=full        -> ENV1=[set(display_ancestor,full,_)], IN1=[];
+    NDV=abbr        -> ENV1=[set(display_ancestor,abbr,_)], IN1=[];
+    NDV=num         -> ENV1=[set(display_ancestor,num, _)], IN1=[];
+    NDV=no          -> ENV1=[set(display_ancestor,no,  _)], IN1=[];
+    otherwise;
+    true ->
+        ENV1=[],
+        IN1=[putf(" Unknown mode>> ~t~n",[NDV]),
+             putf(" Available modes are 'full','abbr','num' and 'no'.~n",[])]
+    ).
+do_command(display_ancestor(DV)) :- atom(DV) |
+    listener_utility:resource([environment(ENV)]),
+    (
+    DV=full -> ENV=[set(display_ancestor,full,_)];
+    DV=abbr -> ENV=[set(display_ancestor,abbr,_)];
+    DV=num  -> ENV=[set(display_ancestor,num, _)];
+    DV=no   -> ENV=[set(display_ancestor,no,  _)];
+    otherwise;
+    true ->
+        ENV=[],
+        listener_utility:out([do(
+            [putf(" Unknown mode>> ~t~n",[DV]),
+             putf(" Available modes are 'full','abbr','num' and 'no'.~n",[])])])
+    ).
+do_command(display_ancestor(OLD,NEW)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(display_ancestor,OLD)],
+    do_command(display_ancestor(NEW)).
+
+do_command(inspect(Term)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(tracer,TrID)],
+    shoen:raise(pimos_tag#listener,inspect(TrID),Term).
+
+do_command(monitor(Term,Name)) :- atom(Name) |
+    listener_utility:resource([atom(ATM),environment(ENV)]),
+    ATM=[get_atom_name(Name,normal(String))],
+    ENV=[get(tracer,TrID)],
+    shoen:raise(pimos_tag#listener,monitor(TrID,String),Term).
+do_command(monitor(Term,Name)) :- string(Name,_,_) |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(tracer,TrID)],
+    shoen:raise(pimos_tag#listener,monitor(TrID,Name),Term).
+do_command(monitor(Term)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(tracer,TrID)],
+    shoen:raise(pimos_tag#listener,monitor(TrID,""),Term).
+
+do_command(monitor_and_fork(Term,Name)) :- atom(Name) |
+    listener_utility:resource([atom(ATM),environment(ENV)]),
+    ATM=[get_atom_name(Name,normal(String))],
+    ENV=[get(tracer,TrID)],
+    shoen:raise(pimos_tag#listener,monitor_and_fork(TrID,String),Term).
+do_command(monitor_and_fork(Term,Name)) :- string(Name,_,_) |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(tracer,TrID)],
+    shoen:raise(pimos_tag#listener,monitor_and_fork(TrID,Name),Term).
+do_command(monitor_and_fork(Term)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(tracer,TrID)],
+    shoen:raise(pimos_tag#listener,monitor_and_fork(TrID,""),Term).
+
+do_command(trace_shoen) :- true |
+    listener_utility:resource([spy(SPY)]),
+    SPY=[trace_shoen].
+do_command(notrace_shoen) :- 
+    listener_utility:resource([spy(SPY)]),
+    SPY=[notrace_shoen].
+
+otherwise.
+do_command(Goal) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(macro#module_name,"Illegal argument"),Goal).
+

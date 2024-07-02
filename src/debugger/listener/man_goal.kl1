@@ -1,0 +1,166 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_goal_manager.
+:- public create/2.
+:- with_macro pimos.
+
+create(GM,ID) :- true |
+    merge(GM,GM1),
+    pool:keyed_sorted_bag(TRS),
+    pool:keyed_sorted_bag(KEEP),
+    pool:keyed_bag(ANC,32),
+    goal_manager(GM1,TRS,KEEP,ANC,0,ID).
+
+
+goal_manager([traced_goals(Goals)|IN],TRS,KEEP,ANC,C,ID) :- 
+    TRS=[carbon_copy(Goals)|TRS1],
+    goal_manager(IN,TRS1,KEEP,ANC,C,ID).
+
+goal_manager([keep(Goals)|IN],TRS,KEEP,ANC,C,ID) :- 
+    keep(Goals,KEEP,KEEP1),
+    goal_manager(IN,TRS,KEEP1,ANC,C,ID).
+goal_manager([keeping_goals(List)|IN],TRS,KEEP,ANC,C,ID) :- 
+    KEEP=[carbon_copy(List)|KEEP1],
+    goal_manager(IN,TRS,KEEP1,ANC,C,ID).
+goal_manager([empty_keeping(Key,YorN)|IN],TRS,KEEP,ANC,C,ID) :- 
+    KEEP=[empty(Key,YorN)|KEEP1],
+    goal_manager(IN,TRS,KEEP1,ANC,C,ID).
+goal_manager([get_and_put_keeping(Key,X,Y)|IN],TRS,KEEP,ANC,C,ID) :- 
+    KEEP=[get_and_put(Key,X,Y)|KEEP1],
+    goal_manager(IN,TRS,KEEP1,ANC,C,ID).
+goal_manager([execute(Mode,List,SpyCV)|IN],TRS,KEEP,ANC,C,ID) :- 
+    execute_goals(List,Mode,SpyCV,GM,KEEP,KEEP1),
+    goal_manager([do(GM)|IN],TRS,KEEP1,ANC,C,ID).
+
+goal_manager([fork(TrID)|IN],TRS,KEEP,ANC,C,ID) :- 
+    KEEP=[get_all(Goals)|KEEP1],
+    fork(TrID,Goals,KEEP1,KEEP2),
+    goal_manager(IN,TRS,KEEP2,ANC,C,ID).
+goal_manager([fork(TrID,L)|IN],TRS,KEEP,ANC,C,ID) :- 
+    fork(TrID,L,KEEP,KEEP1),
+    goal_manager(IN,TRS,KEEP1,ANC,C,ID).
+
+goal_manager([],TRS,KEEP,ANC,_,_) :-  
+    TRS=[], KEEP=[get_all(Goals)], ANC=[],
+    close_merger(Goals).
+
+goal_manager([put_goal(TID,Goal,St)|IN],TRS,KEEP,ANC,C,ID) :- 
+    St=done,
+    TRS=[put(TID,Goal)|TRS1],
+    goal_manager(IN,TRS1,KEEP,ANC,C,ID).
+
+goal_manager([put_ancestor(AID,Mde,W,Lvl,Code,ArgV,St)|IN],TRS,KEEP,ANC,C,ID) :- 
+    St=done,
+    make_ancestor(Code,ArgV,Ma,Ancestor),
+    ANC=[put(AID,{Mde,W,Lvl,Ma,Ancestor})|ANC1],
+    goal_manager(IN,TRS,KEEP,ANC1,C,ID).
+goal_manager([get_ancestor(AID,Ancestor)|IN],TRS,KEEP,ANC,C,ID) :- 
+    ANC=[carbon_copy(AID,Info)|ANC1],
+    ancestor_info(Info,Ancestor),
+    goal_manager(IN,TRS,KEEP,ANC1,C,ID).
+
+goal_manager([trace_id(TID,NewID)|IN],TRS,KEEP,ANC,C,ID) :- 
+    TID=ID,
+    goal_manager(IN,TRS,KEEP,ANC,C,NewID).
+
+goal_manager([do(List)|IN],TRS,KEEP,ANC,C,ID) :- 
+    merge(List,List1),
+    listener_utility:prepend(List1,IN,IN1),
+    goal_manager(IN1,TRS,KEEP,ANC,C,ID).
+otherwise.
+goal_manager([Msg|IN],TRS,KEEP,ANC,C,ID) :- 
+    TRS=[Msg|TRS1],
+    goal_manager(IN,TRS1,KEEP,ANC,C,ID).
+
+
+ancestor_info([Inf|_],Info) :- Info=Inf.
+otherwise.
+ancestor_info(_,      Info) :- Info=non_existent.
+
+close_merger([{_,Data}|L]) :- true |
+    vector_element(Data,0,[],_),
+    close_merger(L).
+close_merger([]) :- true | true.
+
+
+execute_goals([Key|L],Mode,SpyCV,GM,KEEP,KEEP2) :- 
+    KEEP=[get(Key,Goal)|KEEP1],
+    execute_goal(Goal,Mode,SpyCV,GM,GM1),
+    execute_goals(L,Mode,SpyCV,GM1,KEEP1,KEEP2).
+execute_goals([],_,_,GM,KEEP,KEEP1) :-  
+    GM=[], KEEP1=KEEP.
+
+execute_goal({ARGLIST,_,_,_,Type,Code,ArgV},notrace,_,GM,GM1) :-
+    ARGLIST=[{Type,Code,ArgV}], GM1=GM.
+execute_goal({ARGLIST,_,_,_,Pgm,Code,ArgV,ArgOfPgm},notrace,_,GM,GM1) :-
+    ARGLIST=[{Pgm,Code,ArgV,ArgOfPgm}], GM1=GM.
+% apply
+execute_goal({ARGLIST,_,_,_,apply,ArgV},notrace,_,GM,GM1) :- 
+    ARGLIST=[{apply,ArgV}], GM1=GM.
+
+otherwise.
+execute_goal({ARGLIST,ID,W,Lvl,apply,{Code,ArgV}},trace,_,GM,GM1) :-    % apply 6/16
+    GM=[put_goal(ID,{W,Lvl,apply,{Code,ArgV},Pri,Min,Max},St)|GM1],
+    listener_utility:wait_unify(St,ARGLIST,[{trace,ID,apply,Code,ArgV,Pri,Min,Max}]).
+execute_goal({ARGLIST,ID,W,Lvl,priority,Code,ArgV,{Pri,Min,Max}},trace,_,GM,GM1) :- 
+    GM=[put_goal(ID,{W,Lvl,Code,ArgV,Pri,Min,Max},St)|GM1],
+    listener_utility:wait_unify(St,ARGLIST,[{trace,ID,priority,Code,ArgV,{Pri,Min,Max}}]).
+
+execute_goal({ARGLIST,ID,W,Lvl,apply,{Code,ArgV}},spyr,{Spy,CV},GM,GM1) :-    % apply
+    GM=[put_ancestor(ID,spyr,W,Lvl,Code,ArgV,St)|GM1],
+    listener_utility:wait_unify(St,ARGLIST,[{spy,{ID,Spy},apply,Code,ArgV,CV}]).
+execute_goal({ARGLIST,ID,W,Lvl,priority,Code,ArgV,{Pri,Min,Max}},spyr,{Spy,CV},GM,GM1) :- 
+    GM=[put_ancestor(ID,spyr,W,Lvl,Code,ArgV,St)|GM1],
+    listener_utility:wait_unify(St,ARGLIST,[{spy,{ID,Spy},priority,Code,ArgV,{Pri,Min,Max},CV}]).
+
+execute_goal({ARGLIST,ID,W,Lvl,apply,{Code,ArgV}},spyf,{Spy,CV},GM,GM1) :-    % apply
+    GM=[put_ancestor(ID,spyf,W,Lvl,Code,ArgV,St)|GM1],
+    listener_utility:wait_unify(St,ARGLIST,[{spy,{ID,Spy},apply,Code,ArgV,CV}]).
+execute_goal({ARGLIST,ID,W,Lvl,priority,Code,ArgV,{Pri,Min,Max}},spyf,{Spy,CV},GM,GM1) :- 
+    GM=[put_ancestor(ID,spyf,W,Lvl,Code,ArgV,St)|GM1],
+    listener_utility:wait_unify(St,ARGLIST,[{spy,{ID,Spy},priority,Code,ArgV,{Pri,Min,Max},CV}]).
+
+otherwise.
+execute_goal({ARGLIST,ID,W,Lvl,Pgm,Code,ArgV,ArgOfPgm},trace,_,GM,GM1) :-
+    GM=[put_goal(ID,{W,Lvl,Code,ArgV,Pri,Min,Max},St)|GM1],
+    listener_utility:wait_unify(St,ARGLIST,[{trace,ID,Pgm,Code,ArgV,Pri,Min,Max,ArgOfPgm}]).
+execute_goal({ARGLIST,ID,W,Lvl,Pgm,Code,ArgV,ArgOfPgm},spyr,{Spy,CV},GM,GM1) :-
+    GM=[put_ancestor(ID,spyr,W,Lvl,Code,ArgV,St)|GM1],
+    listener_utility:wait_unify(St,ARGLIST,[{spy,{ID,Spy},Pgm,Code,ArgV,ArgOfPgm,CV}]).
+execute_goal({ARGLIST,ID,W,Lvl,Pgm,Code,ArgV,ArgOfPgm},spyf,{Spy,CV},GM,GM1) :-
+    GM=[put_ancestor(ID,spyf,W,Lvl,Code,ArgV,St)|GM1],
+    listener_utility:wait_unify(St,ARGLIST,[{spy,{ID,Spy},Pgm,Code,ArgV,ArgOfPgm,CV}]).
+
+otherwise. % FOR TASK TRACE
+execute_goal({ARGLIST,ID,W,Lvl,Type,Code,ArgV},Mode,SpyCV,GM,GM1) :-
+    code_to_predicate(Code,Mdl,P,A,_),
+    module:get_module_name(Mdl,Pac,M),
+    listener_trace_driver:protection(Pac,M,P,A,Mode,ID,W,Lvl,Type,Code,ArgV,GM,GM1,ARGLIST,[],SpyCV).
+
+
+make_ancestor(Code,ArgV,M,Goal) :-
+    code_to_predicate(Code,Mdl,Pred,_,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal).
+
+
+keep([{ID,G}|Goals],KEEP,KEEP2) :- 
+    KEEP=[put(ID,G)|KEEP1],
+    keep(Goals,KEEP1,KEEP2).
+keep([],KEEP,KEEP1) :- KEEP1=KEEP.
+
+fork(TrID,[N|L],KEEP,KEEP2) :- integer(N) |
+    KEEP=[get_and_put(N,X,Y)|KEEP1],
+    set_vector_element(X,2,_,TrID,Y),
+    fork(TrID,L,KEEP1,KEEP2).
+fork(TrID,[{ID,X}|L],KEEP,KEEP2) :- 
+    set_vector_element(X,2,_,TrID,Y),
+    KEEP=[put(ID,Y)|KEEP1],
+    fork(TrID,L,KEEP1,KEEP2).
+fork(_,   [],   KEEP,KEEP1) :- KEEP1=KEEP.
+    

@@ -1,0 +1,258 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module login_simple.
+:- with_macro pimos.
+:- public handler/6, login/5.
+
+%handler(Handler,Login,LOG,Timer,US,FR)
+%login(PART,Procs,Atom,Mod,Handler)
+login([],Procs,Atom,Mod,Handler):-
+   true|
+   Atom = [], Mod = [], Handler = [].
+login([log(Str)|Next],Procs,Atom,Mod,Handler):-
+   true|
+   Handler = [log(Str)|HandlerN],
+   login(Next,Procs,Atom,Mod,HandlerN).
+login([who(NInfo,Info)|Next],Procs,Atom,Mod,Handler):-
+   vector_element(NInfo,6,"telnet")|
+   Info = simple_start({Rep,V1,V2,V3,V4,V5}),
+   set_vector_element(NInfo,0,ID,ID,NInfo0),
+   set_vector_element(NInfo0,1,F,F,NInfo1),
+   set_vector_element(NInfo1,2,Node,Node2,NInfo2),
+   set_vector_element(NInfo2,4,RU,RU2,NInfo3),
+   set_vector_element(NInfo3,5,RP,RP2,NInfo4),
+   copy:copy(Node,Node1,Node2),
+   copy:copy(RU,RU1,RU2),
+   copy:copy(RP,RP1,RP2),
+   get_fep_node(F,Node1,FEPNode),
+   shoen:raise(pimos_tag#task,general_request(FEPNode,RU1,RP1),GR),
+   GR = [user(UR)|GRN],
+   Handler = {Handler1,Handler2},
+   Atom = {Atom1,Atom2},
+   Mod = {Mod1,Mod2},
+   login_int:make_message(string#"Wait...",ID,Mes),
+   Rep=[io(1,Mes,_)|REP],
+   RepN = {REP,V1,V2,V3,V4,V5},
+   wait_login(UR,GRN,NInfo4,Procs,Atom1,Mod1,Handler1,RepN),
+   login(Next,Procs,Atom2,Mod2,Handler2).
+otherwise.
+login([who(NInfo,Info)|Next],Procs,Atom,Mod,Handler):-
+   true|
+   Info = simple_start({REP}),
+   set_vector_element(NInfo,0,ID,ID,NInfo0),
+   set_vector_element(NInfo0,1,F,F,NInfo1),
+   set_vector_element(NInfo1,2,Node,Node2,NInfo2),
+   set_vector_element(NInfo2,4,RU,RU2,NInfo3),
+   set_vector_element(NInfo3,5,RP,RP2,NInfo4),
+   copy:copy(Node,Node1,Node2),
+   copy:copy(RU,RU1,RU2),
+   copy:copy(RP,RP1,RP2),
+   get_fep_node(F,Node1,FEPNode),
+   shoen:raise(pimos_tag#task,general_request(FEPNode,RU1,RP1),GR),
+   GR = [user(UR)|GRN],
+   Handler = {Handler1,Handler2},
+   Atom = {Atom1,Atom2},
+   Mod = {Mod1,Mod2},
+   login_int:make_message(string#"Wait...",ID,Mes),
+   REP = [io(1,Mes,_)|REPN],
+   wait_login(UR,GRN,NInfo4,Procs,Atom1,Mod1,Handler1,{REPN}),
+   login(Next,Procs,Atom2,Mod2,Handler2).
+
+wait_login(normal(UR,_,_),GR,NInfo,Procs,Atom,Mod,Handler,Rep):-
+   true|
+   UR = [create(user(UU))],
+   wait_login2(UU,GR,NInfo,Procs,Atom,Mod,Handler,Rep).
+otherwise.
+wait_login(_,GR,NInfo,Procs,Atom,Mod,Handler,Rep):-
+   true|
+   Atom = [], Mod = [], Handler = [], GR = [],
+   set_vector_element(NInfo,0,ID,ID,NInfo1),
+   login_error:m(login_simple,wait_login,1,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   set_vector_element(Rep,0,[io(1,Mes,_),
+                            io(1,Mes1,_),
+                            io(2,Mes2,_)],0,_).
+
+wait_login2(normal(U,_,_),GR,NInfo,Procs,Atom,Mod,Handler,Rep):-
+   true|
+   set_vector_element(NInfo,3,UN,UN2,NInfo2),
+   copy:copy(UN,UN1,UN2),
+   U = [get_uid(UN1,UID)|U2],
+   wait_login3(UID,U2,GR,NInfo2,Procs,Atom,Mod,Handler,Rep).
+otherwise.
+wait_login2(_,GR,NInfo,Procs,Atom,Mod,Handler,Rep):-
+   true|
+   Atom = [], Mod = [], Handler = [], GR = [],
+   set_vector_element(NInfo,0,ID,ID,NInfo1),
+   login_error:m(login_simple,wait_login2,1,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   set_vector_element(Rep,0,[io(1,Mes,_),
+                             io(1,Mes1,_),
+                             io(2,Mes2,_)],0,_).
+
+wait_login3(normal(UID),U,GR,NInfo,Procs,Atom,Mod,Handler,Rep):-
+   true|
+   U = [get_info(UID,Info)],
+   wait_login4(Info,GR,UID,NInfo,Procs,Atom,Mod,Handler,Rep).
+otherwise.
+wait_login3(_,U,GR,NInfo,Procs,Atom,Mod,Handler,Rep):-
+   true|
+   U = [],
+   Atom = [], Mod = [], Handler = [], GR = [],
+   set_vector_element(NInfo,0,ID,ID,NInfo1),
+   login_error:m(login_simple,wait_login3,1,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   set_vector_element(Rep,0,
+         [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],0,_).
+
+wait_login4(normal(Info),GR,UID,NInfo,Procs,Atom,Mod,Handler,Rep):-
+   true|
+   set_vector_element(Info,0,UN,UN2,Info2),
+   set_vector_element(Info2,2,Dir,Dir2,Info3),
+   set_vector_element(Info3,3,PE,PE2,Info4),
+   set_vector_element(Info4,4,Ent,NewEnt,Info5),
+   copy:copy(UN,UN1,UN2),
+   copy:copy(NInfo,NInfo1,NInfo2),
+   login_partition:get_dir(Dir,GR,GR2,Dir2,NInfo2),
+   login_partition:get_pe(PE,PE2),
+   login_partition:get_code(Ent,Mod,[],Stat),
+   wait_login41(Stat,Info5,NewEnt,UN1,GR2,UID,NInfo1,Procs,Atom,Handler,Rep).
+otherwise.
+wait_login4(_,GR,UID,NInfo,Procs,Atom,Mod,Handler,Rep):-
+   true|
+   Atom = [], Mod = [], Handler = [], GR = [],
+   set_vector_element(NInfo,0,ID,ID,NInfo1),
+%   login_error:m(login_simple,wait_login4,1,Mes0),
+   login_error:m(request,wait_who2_user,1,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   set_vector_element(Rep,0,
+           [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],0,_).
+
+wait_login41(normal(Code,Args),Info,Ent,UN,GR,UID,NInfo,Procs,Atom,Handler,Rep):-
+   true|
+   Ent = {Code,Args},
+   Atom = [intern(UN,St)],
+   wait_login42(St,Info,GR,UID,NInfo,Procs,Handler,Rep).
+otherwise.
+wait_login41(_,Info,Ent,UN,GR,UID,NInfo,Procs,Atom,Handler,Rep):-
+   true|
+   GR = [],
+   Atom = [],
+   Handler = [],
+%   login_error:m(login_simple,wait_login41,1,Mes0),
+   login_error:m(part,wait_login_login,1,Mes0),
+   set_vector_element(NInfo,0,ID,ID,NInfo1),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   set_vector_element(Rep,0,
+        [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],0,_).
+
+wait_login42(normal(At),Info,GR,UID,NInfo,Procs,Handler,Rep):-
+   true|
+   set_vector_element(Info,5,_,At,Info2),
+   copy:copy(NInfo,NInfo1,NInfo2),
+   Handler = [login({Info2,NInfo1,GR,[],UID,0,0,Procs,Status,0,0,0,0,0})],
+   wait_login43(Status,Rep,NInfo2).
+otherwise.
+wait_login42(_,Info,GR,UID,NInfo,Procs,Handler,Rep):-
+   true|
+   GR = [],
+   Handler = [],
+   set_vector_element(NInfo,0,ID,ID,NInfo1),
+   login_error:m(login_simple,wait_login42,1,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   set_vector_element(Rep,0,
+          [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],0,_).
+
+wait_login43(normal(Lid,TT,NInfo0,S,Proc,St),Rep,NInfo):-
+   true|
+   set_vector_element(NInfo,0,ID,ID,NInfo1),
+   login_error:m(request,login2,1,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   set_vector_element(Rep,0,
+        [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],0,Rep1),
+   set_vector_element(Rep1,1,TT,0,Rep2),
+   set_vector_element(Rep2,2,NInfo0,0,Rep3),
+   set_vector_element(Rep3,3,S,0,Rep4),
+   set_vector_element(Rep4,4,Proc,0,Rep5),
+   set_vector_element(Rep5,5,St,0,_).
+
+wait_login43(normal(Lid),Rep,NInfo):-
+   true|
+   set_vector_element(NInfo,0,ID,ID,NInfo1),
+   login_error:m(request,login2,1,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   set_vector_element(Rep,0,
+        [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],0,_).
+otherwise.
+wait_login43(_,Rep,NInfo):-
+   true|
+   set_vector_element(NInfo,0,ID,ID,NInfo1),
+   login_error:m(login_simple,wait_login43,1,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   set_vector_element(Rep,0,
+       [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],0,_).
+
+handler(In,Login,LOG,Timer,US,FR):-
+   true|
+   merge(In,IN),
+   lhandler(IN,Login,LOG,Timer,US,FR).
+lhandler([],Login,LOG,Timer,US,FR):-
+   true|
+   Login = [], LOG = [], Timer = [], US = [], FR = [].
+lhandler([log(Str)|Next],Login,LOG,Timer,US,FR):-
+   true|
+   LOG = [log(Str)|LOGN],
+   lhandler(Next,Login,LOGN,Timer,US,FR).
+lhandler([login(ALL)|Next],Login,LOG,Timer,US,FR):-
+   true|
+   LOG = {LOG1,LOG2},
+   Timer = {Timer1,Timer2},
+   set_vector_element(ALL,9,_,Login,ALL2),
+   set_vector_element(ALL2,10,_,LoginN,ALL3),
+   set_vector_element(ALL3,11,_,LOG1,ALL4),
+   set_vector_element(ALL4,12,_,Timer1,ALL5),
+   set_vector_element(ALL5,13,_,HIn,ALL6),
+   predicate_to_code(module#login_task,go,14,Code),
+   apply(Code,ALL6),
+   merge({Next,HIn},In),
+   lhandler(In,LoginN,LOG2,Timer2,US,FR).
+lhandler([login(LID,Part,NInfo,Abort)|Next],Login,LOG,Timer,US,FR):-
+   true|
+   set_vector_element(NInfo,1,FEP,FEP,NInfo2),
+   login_int:int2string(1,Part,PNo),
+   login_int:int2string(1,FEP,Fep),
+   login_int:int2string(1,LID,Lid),
+   Timer = [get_date_time(Result)|TimerN],
+   LOG = {LOG1,LOG2},
+   login_partition:wait_log(Result,PNo,Lid,Fep,NInfo2,LOG2),
+   lhandler(Next,Login,LOG1,TimerN,US,FR).
+lhandler([logout(LID,{Part,UN})|Next],Login,LOG,Timer,US,FR):-
+   true|
+   US = {US1,US2}, FR = {FR1,FR2},
+   Timer = [get_date_time(Result)|TimerN],
+   US2 = [get_uid(UN,St)|USN],
+   login_partition:wait_chpasswd(St,USN,FR2),
+   login_partition:wait_end_log(Result,Part,UN,LOG,LOGN,LID),
+   lhandler(Next,Login,LOGN,TimerN,US1,FR1).
+
+get_fep_node(_,Node,FEPNode):-
+    string(Node,_,_)|
+    FEPNode = Node.
+otherwise.
+get_fep_node(F,_,FEPNode):-
+    true|
+    FEPNode = F.
+

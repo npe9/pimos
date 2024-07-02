@@ -1,0 +1,68 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module timer_utility_time.
+:- with_macro pimos.
+:- public get_time_string/2,get_time_value/5,get_time_count/5.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% get_time_string(Time,^Str)
+%%      Time    :: Time count in milliseconds from 00:00:00 (integer)
+%%      Str     :: Time String
+
+get_time_string(Time,Str) :- 86400000>Time,Time>=0 |
+        get_time_value(Time,Hour,Min,Sec,_),
+        make_time_string(Hour,Min,Sec,Str).
+otherwise.
+get_time_string(Time,Str) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_time_count"),get_time_string(Time,Str)).
+
+make_time_string(Hour,Min,Sec,Str) :- true |
+        timer_utility:get_number_string(Hour,2,HourS),
+        timer_utility:get_number_string(Min,2,MinS),
+        timer_utility:get_number_string(Sec,2,SecS),
+        builtin#new_string(S,8),
+        builtin#set_substring(S,0,2,HourS,S1,_),
+        builtin#set_substring(S1,2,1,string#":",S2,_),
+        builtin#set_substring(S2,3,2,MinS,S3,_),
+        builtin#set_substring(S3,5,1,string#":",S4,_),
+        builtin#set_substring(S4,6,2,SecS,Str,_).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% get_time_value(Time,^Hour,^Min,^Sec,^Mill)
+%%      Date    :: Time count from 00:00:00 (integer)
+%%      Hour    :: Hour count (integer: 0~23)
+%%      Min     :: Minute count (integer: 0~59)
+%%      Sec     :: Second count (integer: 0~59)
+%%      Mill    :: Millisecond count (integer: 0~999)
+
+get_time_value(C,Hour,Min,Sec,Mill) :- integer(C) |
+        Hour:=C/3600000,
+        Min:=(C mod 3600000)/60000,
+        Sec:=(C mod 60000)/1000,
+        Mill:=C mod 1000.
+otherwise.
+get_time_value(C,Hour,Min,Sec,Mill) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_time_count"),get_time_value(C,Hour,Min,Sec,Mill)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% get_time_count(Hour,Min,Sec,Mill,^Time)
+%%      Hour    :: Hour count (integer: 0~23)
+%%      Min     :: Minute count (integer: 0~59)
+%%      Sec     :: Second count (integer: 0~59)
+%%      Mill    :: Millisecond count (integer: 0~999)
+%%      Date    :: Time count from 00:00:00 (integer)
+
+get_time_count(Hour,Min,Sec,Mill,Time) :- integer(Hour),integer(Min),
+    integer(Sec),integer(Mill),
+    H:=Hour*3600000,M:=Min*60000,S:=Sec*1000,Time0:=H+M+S+Mill |
+        Time=Time0.
+otherwise.
+get_time_count(Hour,Min,Sec,Mill,Time) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_data"),get_time_count(Hour,Min,Sec,Mill,Time)).

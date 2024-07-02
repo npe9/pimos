@@ -1,0 +1,234 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module login_task.
+:- with_macro pimos.
+:- public go/14, apply_code/6, dummy /1.
+
+%go(Info,NInfo,GR,GRN,P,S,Proc,Status,Login,LoginN,LOG,Timer,HIn)
+go(Info,NInfo,GR,GRN,UID,P,S,Proc,Status,Login,LoginN,LOG,Timer,HIn):-
+   vector_element(NInfo,6,"telnet")|
+   LOG = [],
+   GR = GRN,
+   set_vector_element(Info,0,UN,_,Info1),
+   set_vector_element(Info1,1,Prio,_,Info2),
+   set_vector_element(Info2,2,Dir,_,Info3),
+   set_vector_element(Info3,3,PE,_,Info4),
+%   set_vector_element(Info4,4,{Code,Args},_,Info5),
+   set_vector_element(Info4,5,Pack,_,_),
+%   Init = {16#"FFFFFF",16#"FFFFFFF"},
+   RI1 = 16#"FFFFFF",
+   RI2 = 16#"FFFFFFF",
+   Inc = {16#"FFFFFF",16#"FFFFFFF"},
+   copy:copy(UN,UN1,UN2),
+%   copy:copy(UN2,UN21,UN22),
+   predicate_to_code(module#login_task,apply_code,6,Apply),
+   set_vector_element(NInfo ,1,F,F,NInfo3),
+%   set_vector_element(NInfo0,2,Node00,Node01,NInfo1),
+%   set_vector_element(NInfo1,4,RU00,RU01,NInfo2),
+%   set_vector_element(NInfo2,5,RP00,RP01,NInfo3),
+   copy:copy(NInfo3,NInfo31,NInfo32),
+%   copy:copy(Node00,Node01,Node02),
+%   copy:copy(RU00,RU01,RU02),
+%   copy:copy(RP00,RP01,RP02),
+   new_vector(ToTelnet,6),
+    set_vector_element(ToTelnet,0,_,Apply,TT1),
+    set_vector_element(TT1,1,_,Args,TT2),
+    set_vector_element(TT2,2,_,Prio,TT3),
+    set_vector_element(TT3,3,_,RI1,TT4),
+    set_vector_element(TT4,4,_,RI2,TT5),
+    set_vector_element(TT5,5,_,UID,TT),
+    Args = {0,0,Dir,Pack,UN1,PE},
+    Status = normal(LID,TT,NInfo32,S,Proc,St),
+%   get_fep_node(F,Node02,FEPNode,F2),
+%   shoen:raise(pimos_tag#task,general_request(F2,FEPNode,RU02,RP02),
+%               NGR)@node(~(S+PE)),
+%   NGR = [execute_user_with_proc(Apply,{Code,Args,Dir,Pack,UN1,PE},UN21,0,Prio,
+%                      S,Proc,-1,Init,UID,St)],
+   wait_status_lid(Status0,LID),
+   wait_task(St,UN2,Login,LoginN,HIn,P,Inc,NInfo31,Timer,Status0).
+otherwise.
+go(Info,NInfo,GR,GRN,UID,P,S,Proc,Status,Login,LoginN,LOG,Timer,HIn):-
+   true|
+   LOG = [],
+   GR = GRN,
+   set_vector_element(Info,0,UN,_,Info1),
+   set_vector_element(Info1,1,Prio,_,Info2),
+   set_vector_element(Info2,2,Dir,_,Info3),
+   set_vector_element(Info3,3,PE,_,Info4),
+   set_vector_element(Info4,4,{Code,Args},_,Info5),
+   set_vector_element(Info5,5,Pack,_,_),
+   Init = {16#"FFFFFF",16#"FFFFFFF"},
+   Inc = {16#"FFFFFF",16#"FFFFFFF"},
+   copy:copy(UN,UN1,UN2),
+   copy:copy(UN2,UN21,UN22),
+   predicate_to_code(module#login_task,apply_code,6,Apply),
+   set_vector_element(NInfo ,1,F,F,NInfo0),
+   set_vector_element(NInfo0,2,Node00,Node01,NInfo1),
+   set_vector_element(NInfo1,4,RU00,RU01,NInfo2),
+   set_vector_element(NInfo2,5,RP00,RP01,NInfo3),
+   copy:copy(Node00,Node01,Node02),
+   copy:copy(RU00,RU01,RU02),
+   copy:copy(RP00,RP01,RP02),
+   get_fep_node(F,Node02,FEPNode,F2),
+   shoen:raise(pimos_tag#task,general_request(F2,FEPNode,RU02,RP02),
+               NGR)@node(~(S+PE)),
+   NGR = [execute_user_with_proc(Apply,{Code,Args,Dir,Pack,UN1,PE},UN21,0,Prio,
+                      S,Proc,-1,Init,UID,St)],
+%   GR = [execute_user(Apply,{Code,Args,Dir,Pack,UN1},UN21,0,Prio,-1,
+%                      Init,UID,St)|GRN],
+   wait_task(St,UN22,Login,LoginN,HIn,P,Inc,NInfo3,Timer,Status).
+
+wait_task(normal(C,R),UN,Login,LoginN,HIn,Part,Inc,NInfo,Timer,Status):-
+   true|
+   set_vector_element(NInfo,2,Node,Node2,NInfo2),
+   set_vector_element(NInfo2,1,Fep,Fep,NInfo3),
+   set_vector_element(NInfo3,4,RU,RU2,NInfo4),
+   set_vector_element(NInfo4,6,LAN,LAN2,NInfo6),
+   login_int:int2string(1,Fep,FEP),
+   login_int:int2string(1,Part,PART),
+   copy:copy(RU,RU1,RU2),
+   copy:copy(LAN,LAN1,LAN2),
+   copy:copy(Node,Node1,Node2),
+   copy:copy(UN,UN1,UN2),
+%   Login = [login(UN2,{Node1},St)|Login2],
+   Timer = [get_date_time(Date)],
+   login_info(Date,FEP,Node1,RU1,LAN1,PART,LInfo),
+%  LInfo = ["" ....],
+   Login = [login(UN2,LInfo,St)|Login2],
+   Login2 = {Login22,LoginN},
+   wait_task2(St,UN1,C,R,Login22,HIn,Part,Inc,NInfo6,Status).
+
+wait_task2(normal(LID),UN,C,R,Login,HIn,Part,Inc,NInfo,Status):-
+   true|
+   task_monitor(R,C,Com,Inc,Abort),
+   Status = normal(LID),
+   HIn = [login(LID,Part,NInfo,Abort)|HInN],
+   wait_logout(Com,LID,UN,Part,Login,HInN).
+otherwise.
+wait_task2(_,UN,C,R,Login,HIn,Part,Inc,NInfo,Status):-
+   true|
+   C = [],
+   Status = abnormal(NInfo),
+   Login = [],
+   HIn = [].
+
+wait_logout(Wait,LID,UN,Part,Login,HIn):-
+   wait(Wait),
+   LID >= 0|
+   Login = [logout(LID,St)],
+   wait_logout(St,LID,UN,Part,HIn).
+otherwise.
+wait_logout(Wait,LID,UN,Part,Login,HIn):-
+   true|
+   Login = [],
+   HIn = [logout(LID,{Part,UN})].
+
+wait_logout(Wait,LID,UN,Part,HIn):-
+   true|
+   HIn = [logout(LID,{Part,UN})].
+
+%%%%%%%%%%%
+%
+% monitor
+%
+%%%%%%%%%%%
+task_monitor(R,C,Com,Inc,Abort):-
+        wait(Abort)|
+        C = [abort(_)|CN],
+        task_monitor(R,CN,Com,Inc,_).
+alternatively.
+task_monitor([terminated|R],C,Com,Inc,Abort):- true|
+        C = [],
+        Com = logout.
+
+task_monitor([started|R],C,Com,Inc,Abort):- true|
+        task_monitor(R,C,Com,Inc,Abort).
+
+task_monitor([aborted|R],C,Com,Inc,Abort):-
+        true|
+        Com = top_task_abort,
+        C = [].
+
+task_monitor([resource_low|R],C,Com,{IncH,IncL},Abort):-
+        true|
+        C = [add_resource(IncH,IncL),allow_resource_report|CN],
+        task_monitor(R,CN,Com,Inc,Abort).
+
+task_monitor([resource_added|R],C,Com,Inc,Abort):- true|
+        task_monitor(R,C,Com,Inc,Abort).
+
+task_monitor([return_resource(_,_)|R],C,Com,Inc,Abort):- true|
+        task_monitor(R,C,Com,Inc,Abort).
+
+task_monitor([resource_report_allowed|R],C,Com,Inc,Abort):- true|
+        task_monitor(R,C,Com,Inc,Abort).
+
+task_monitor([statistics_started|R],C,Com,Inc,Abort):- true|
+        task_monitor(R,C,Com,Inc,Abort).
+
+task_monitor([statistics(ResH,ResL)|R],C,Com,Inc,Abort):-
+        display_console(ascii#"Statistics in Task:"),
+        display_console(ResH),
+        display_console(ResL)|
+        task_monitor(R,C,Com,Inc,Abort).
+
+task_monitor([exception(Code,Info,NewCode,NewArgv)|R],C,Com,Inc,Abort):-
+        true|
+        Com = exception,
+        predicate_to_code(module#login_task,dummy,1,NewCode),
+        NewArgv = {R},
+        C = [abort(_)].
+
+task_monitor([],C,Com,Inc,Abort):-
+        true|
+        Com = logout,
+        C = [abort(_)].
+
+%%%%%%%%%%%%
+%
+%  user task
+%
+%%%%%%%%%%%%
+apply_code(Code,Args,Dir,Pack,UN,PE):-
+   true|
+   apply_code(Code,Args,Dir,Pack,UN)@node(PE).
+apply_code(Code,Args,Dir,Pack,UN):-
+   true|
+   copy:copy(Dir,Dir1,Dir2),
+   shoen:raise(pimos_tag#task,general_request,GR),
+   GR = [setenv(task:home,Dir1,_),
+         setenv(task:directory,Dir2,_),
+         setenv(task:user,UN,_),
+         setenv(task:package,Pack,Status)],
+   wait_apply(Status,Code,Args).
+wait_apply(Status,Code,Args):-
+   wait(Status)|
+   apply(Code,Args).
+
+login_info(normal(Date,Time),FEP,Node,RU,LAN,PART,LInfo):-
+   true|
+   timer_utility:get_date_string(Date,DATE),
+   timer_utility:get_time_string(Time,TIME),
+   LInfo = [PART,DATE,TIME,FEP,Node,RU,LAN].
+
+get_fep_node(F,Node,FEPNode,F2):-
+    string(Node,_,_)|
+    F = F2,
+    FEPNode = Node.
+otherwise.
+get_fep_node(F,_,FEPNode,F2):-
+    true|
+    F = F2,
+    FEPNode = F.
+
+dummy([_|R]):- true| dummy(R).
+dummy([]):- true| true.
+
+wait_status_lid(normal(Lid),LID):-
+    true|
+    Lid = LID.
+

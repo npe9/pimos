@@ -1,0 +1,85 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_norm_convert.
+:- public convert_body_args/9.
+
+:- local_implicit goal:oldnew, trans:oldnew, ttbl:oldnew, attr:oldnew.
+convert_body_args(vector({atom((',')), X, Y})) --> true |
+    convert_body_args(X),
+    convert_body_args(Y).
+otherwise.
+convert_body_args(X) --> true |
+  {{convert_body_args_one_goal(&trans, &ttbl, &attr, X, NewX)}},
+    &goal<<=[NewX].
+
+:- local_implicit trans:oldnew, ttbl:oldnew, attr:oldnew.
+convert_body_args_one_goal(vector(X), WNewX) --> vector(X, N) |
+    convert_body_one_goal(N, X, NewX), WNewX=vector(NewX).
+convert_body_args_one_goal(atom(X), NewX) --> true |
+    NewX=atom(X).
+otherwise.
+convert_body_args_one_goal(Goal, New) --> true |
+    Goal=New.
+
+convert_body_one_goal(N, X, NewX) --> N>0, N1 := N-1 |
+  {{set_vector_element(X, N1, A, NA, X1)}},
+    convert_body_one_arg(A, NA),
+    convert_body_one_goal(N1, X1, NewX).
+convert_body_one_goal(0, X, NewX) --> true |
+    X = NewX.
+
+:- local_implicit trans:oldnew.
+convert_body_one_arg([{variable(N),Last}|Cdr], Ttbl, Attr0, Attr,
+        variable(N), New) --> true |
+  {{New=Last,
+    Ttbl=[{variable(N),Last}|Cdr],
+    modify_attr_element(Attr0, Attr, variable(N), Last)}},
+    &trans<<=[Last=var(variable(N))].
+otherwise.
+convert_body_one_arg([X|Cdr], Trans, Attr0, Attr, variable(N), New) --> true |
+  {{Trans=[X|Cdr0]}},
+    convert_body_one_arg(Cdr, Cdr0, Attr0, Attr, variable(N), New).
+% added for indexing version
+convert_body_one_arg(Trans0, Trans, Attr0, Attr, '@'(variable(N),Pos), New) --> true |
+    convert_body_one_arg(Trans0, Trans, Attr0, Attr, variable(N), New0),
+    New=(New0@Pos).
+convert_body_one_arg(Ttbl0, Ttbl, Attr0, Attr, list([X|Y]), New) --> true |
+    convert_body_one_arg(Ttbl0, Ttbl1, Attr0, Attr1, X, NewX),
+    convert_body_one_arg(Ttbl1, Ttbl, Attr1, Attr, Y, NewY),
+  {{New=list([NewX|NewY])}}.
+convert_body_one_arg(Ttbl0, Ttbl, Attr0, Attr, vector(Old), WNew) -->
+        vector(Old, N) |
+    convert_body_one_goal(Ttbl0, Ttbl, Attr0, Attr, N, Old, New),
+    WNew=vector(New).
+otherwise.
+convert_body_one_arg([], Ttbl, Attr0, Attr, Old, New) --> true |
+  {{Old=New, Ttbl=[], Attr0=Attr}}.
+otherwise.
+convert_body_one_arg(Ttbl0, Ttbl, Attr0, Attr, Arg0, Arg) --> true |
+   {{Ttbl0=Ttbl, Attr0=Attr, Arg0=Arg}}.
+
+modify_attr_element(Attr0, Attr, Old, New) :- vector(Attr0, N) |
+    modify_attr_element(0, N, Attr0, Attr, Old, New).
+
+modify_attr_element(A, N, Attr0, Attr, Old, New) :- A<N |
+    set_vector_element(Attr0, A, OldList, NewList, Attr1),
+    modify_attr_list(OldList, NewList, Old, New),
+    A1 := A+1,
+    modify_attr_element(A1, N, Attr1, Attr, Old, New).
+modify_attr_element(N, N, Attr0, Attr, _, _) :- true |
+    Attr0=Attr.
+
+modify_attr_list([element(Old, Pos, Var)|Cdr], Attr, Old, New) :- true |
+    Attr=[element(New, Pos, Var)|Cdr].
+otherwise.
+modify_attr_list([One|Cdr], Attr, Old, New) :- true |
+    Attr=[One|NewCdr],
+    modify_attr_list(Cdr, NewCdr, Old, New).
+modify_attr_list([], Attr, _, _) :- true |
+    Attr=[].
+
+    

@@ -1,0 +1,227 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module user_server.
+:- with_macro pimos.
+:- public go/3, go/2, filter/3, get_user_info/2, dummy/0 .
+
+go(OK1,OK,AB):-
+    wait(OK1)|
+    go(OK,AB).
+
+go(OK,AB):-
+    true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [register(user_request,{0,0,7},Res)],
+    wait_(Res,OK,AB).
+
+wait_(normal(St,Ab,_),OK,AB):-
+    true|
+    OK = ok,
+    shoen:raise(pimos_tag#task,user,User),
+    wait_0(User,St,Ab,AB).
+
+wait_0(normal(User),St,Ab,AB):-
+    true|
+    predicate_to_code(module#login_server,go,0,LS),
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [execute(LS,{},[resource(RH,RL),name("Login Server"),
+                         tag(-1)],St2)],
+    get_resource(RH,RL),
+    wait_login_server(St2,Ab,AB),
+    merge(UserIn,User),
+    predicate_to_code(module#user_server,filter,3,Code),
+    St = [get_request(Code,"user_request",Res)|Next],
+    wait_2(Res,Next,Code,Ab,UserIn,AB).
+
+wait_2(general_request(SCont,Ab,Att,SInfo,FInfo,In),Next,Code,RAb,User,AB):-
+    true|
+    Next = [get_request(Code,"user_request",Res)|Next1],
+    FInfo = [],
+    User = {User1,User2},
+    wait_2(Res,Next1,Code,RAb,User1,AB),
+    set_vector_element(SInfo,3,ANode,0,SInfo1),
+    get_user_info(SInfo1,UInfo),
+    internal_handler:get_relative_node(ANode,Node),
+    In = normal(In1,_,[]),
+    merge(SContIn,SCont),
+    wait_3(In1,User2,Att,SContIn,Ab,UInfo,AB)@node(Node).
+wait_2(_,Next,Code,RAb,User,AB):-
+    wait(AB)|
+    RAb = abort,
+    Next = [],
+    User = [].
+wait_2(aborted,Next,Code,RAb,User,AB):-
+    true|
+    Next = [],
+    User = [].
+wait_2(abnormal,Next,Code,RAb,User,AB):-
+    true|
+    Next = [],
+    User = [].
+
+wait_3(In,User,CAb,SCont,Ab,UInfo,AB):-
+    true|
+    user_request_device:driver(In2,User,UInfo),
+    handler0(In,In2,CAb,SCont,Ab,AB).
+
+handler0(In,normal(St,Abort,Att),CAb,SCont,Ab,AB):-
+    true|
+    handler(In,St,CAb,SCont,Ab,AB).
+
+handler([create(user(Result))|In],Out,CAb,Cont,Ab,AB):-
+    true|
+    Out = [create(user(Result2))|OutN],
+    handler(In,OutN,CAb,ContN,Ab,AB),
+    wait_handler(Result2,Result,Cont,ContN,CAb,user,AB).
+handler([create(group(Result))|In],Out,CAb,Cont,Ab,AB):-
+    true|
+    Out = [create(group(Result2))|OutN],
+    handler(In,OutN,CAb,ContN,Ab,AB),
+    wait_handler(Result2,Result,Cont,ContN,CAb,group,AB).
+handler([create(login(Result))|In],Out,CAb,Cont,Ab,AB):-
+    true|
+    Out = [create(login(Result2))|OutN],
+    handler(In,OutN,CAb,ContN,Ab,AB),
+    wait_handler(Result2,Result,Cont,ContN,CAb,login,AB).
+handler([Msg|In],Out,CAb,Cont,Ab,AB):-
+    vector(Msg,2),
+    vector_element(Msg,0,Func),
+    Func \= create|
+    Out = [Msg|OutN],
+    handler(In,OutN,CAb,Cont,Ab,AB).
+handler([Msg|In],Out,CAb,Cont,Ab,AB):-
+    vector(Msg,N),
+    N \= 2|
+    Out = [Msg|OutN],
+    handler(In,OutN,CAb,Cont,Ab,AB).
+handler([Msg|In],Out,CAb,Cont,Ab,AB):-
+    atom(Msg)|
+    Out = [Msg|OutN],
+    handler(In,OutN,CAb,Cont,Ab,AB).
+handler([],Out,CAb,Cont,Ab,AB):-
+    true|
+    Out = [],
+    Cont = [].
+handler(_,Out,CAb,Cont,Ab,AB):-
+    wait(CAb)|
+    Ab = abort,
+    Out = [],
+    Cont = [].
+handler(_,Out,CAb,Cont,Ab,AB):-
+    wait(AB)|
+    Ab = abort,
+    Out = [],
+    Cont = [].
+
+wait_handler(normal(User,Ab,Att),Result,Cont,ContN,CAb,user,AB):-
+    true|
+    Cont = [add_resource(user,"user",Res)|ContN],
+    wait_handler2(Res,User,Ab,Att,Result,CAb,AB).
+wait_handler(normal(User,Ab,Att),Result,Cont,ContN,CAb,group,AB):-
+    true|
+    Cont = [add_resource(group,"group",Res)|ContN],
+    wait_handler2(Res,User,Ab,Att,Result,CAb,AB).
+wait_handler(normal(User,Ab,Att),Result,Cont,ContN,CAb,login,AB):-
+    true|
+    Cont = [add_resource(login,"login",Res)|ContN],
+    wait_handler2(Res,User,Ab,Att,Result,CAb,AB).
+
+wait_handler2(normal(SCont,Ab),User,_,Att,Result,CAb,AB):-
+    true|
+    Result = normal(UserIn,_,Att),
+    handler(UserIn,User,CAb,SCont,Ab,AB).
+wait_handler2(abnormal,User,Ab,Att,Result,CAb,AB):-
+    true|
+    User = [],
+    Result = abnormal.
+wait_handler2(aborted,User,Ab,Att,Result,CAb,AB):-
+    true|
+    User = [],
+    Result = aborted.
+wait_handler2(_,User,Ab,Att,Result,CAb,AB):-
+    wait(CAb)|
+    User = [],
+    Result = aborted.
+wait_handler2(_,User,Ab,Att,Result,CAb,AB):-
+    wait(AB)|
+    User = [],
+    Result = aborted.
+
+filter(_,In,Out):-
+    true|
+    userreq_filter:userreq_filter(In,Out).
+    
+get_user_info(SInfo,UInfo):-
+    true|
+    set_vector_element(SInfo,0,Uid,0,SInfo1),
+    set_vector_element(SInfo1,1,Gids,0,SInfo2),
+    set_vector_element(SInfo2,2,Remote,0,_),
+    set_vector_element(Remote, 0,Fep,0,Remote1),
+    set_vector_element(Remote1,1,ION,0,Remote2),
+    set_vector_element(Remote2,2,RU,0,Remote3),
+    set_vector_element(Remote3,3,RP,0,_),
+    UInfo = {Fep,ION,Uid,RU,RP,Gids}.
+
+get_resource(RSC1,RSC2):-
+   true|
+   RSC1 = 16#"FFFFFF",
+   RSC2 = 16#"FFFFFFFF".
+
+wait_login_server(normal(Cont,Rep),Ab,AB):-
+   true|
+   task_monitor(Rep,Cont,Ab,AB).
+
+task_monitor(Rep,Cont,Ab,AB):-
+   wait(AB)|
+   Cont = [abort(_)|ContN],
+   task_monitor(Rep,ContN,_,_).
+alternatively.
+task_monitor([],_,_,_):-
+   true|
+   true.
+task_monitor([terminated|Rep],Cont,_,_):-
+   true|
+   Cont = [],
+   task_monitor(Rep,_,_,_).
+task_monitor([resource_low|Rep],Cont,Ab,AB):-
+   true|
+   get_resource(RSC1,RSC2),
+   Cont = [add_resource(RSC1,RSC2),allow_resource_report|ContN],
+   task_monitor(Rep,ContN,Ab,AB).
+task_monitor([aborted|Rep],Cont,Ab,AB):-
+   true|
+   Cont = [],
+   task_monitor(Rep,_,_,_).
+task_monitor([exception(A,B,NC,NA)|Rep],Cont,Ab,AB):-
+   display_console(ascii#"EXCEPTION:"),
+   display_console(A),
+   display_console(B)|
+   predicate_to_code(module#user_server,dummy,0,NC),
+   NA = {},
+   task_monitor(Rep,Cont,Ab,AB).
+task_monitor([statistics_started|Rep],Cont,Ab,AB):-
+   true|
+   task_monitor(Rep,Cont,Ab,AB).
+task_monitor([resource_report_allowed|Rep],Cont,Ab,AB):-
+   true|
+   task_monitor(Rep,Cont,Ab,AB).
+task_monitor([resource_added|Rep],Cont,Ab,AB):-
+   true|
+   task_monitor(Rep,Cont,Ab,AB).
+task_monitor([return_resource(_,_)|Rep],Cont,Ab,AB):-
+   true|
+   task_monitor(Rep,Cont,Ab,AB).
+task_monitor([statistics(_,_)|Rep],Cont,Ab,AB):-
+   true|
+   task_monitor(Rep,Cont,Ab,AB).
+task_monitor([stopped(_,C)|Rep],Cont,Ab,AB):-
+   true|
+   C = start,
+   task_monitor(Rep,Cont,Ab,AB).
+
+
+dummy:- true| true.

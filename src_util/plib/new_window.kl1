@@ -1,0 +1,255 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>LIBRARY>new_window.kl1.32, 28-Nov-90 17:35:56, Edit by yashiro
+:- with_macro pimos.
+:- module '$plib$window'.
+:- public window/5,window/8,
+          windowt/3,windowt/6,
+          get_max_size/5, get_max_size/8.
+
+window(mouse,mouse,Window,Abort,Attention) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,Window,Abort,Attention,plib_window,mouse,mouse).
+window(mouse,char(Chars,Lines),Window,Abort,Attention) :-
+    true |
+        '$plib$error':integer(Chars,plib_window,1,NChar),
+        '$plib$error':integer(Lines,plib_window,1,NLines),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,Window,Abort,Attention,plib_window,mouse,char(NChar,NLines)).
+window(at(X,Y),mouse,Window,Abort,Attention) :-
+    true |
+        '$plib$error':integer(X,plib_window,1,NX),
+        '$plib$error':integer(Y,plib_window,1,NY),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,Window,Abort,Attention,plib_window,at(NX,NY),mouse).
+window(at(X,Y),char(Char,Lines),Window,Abort,Attention) :-
+    true |
+        '$plib$error':integer(X,plib_window,1,NX),
+        '$plib$error':integer(Y,plib_window,1,NY),
+        '$plib$error':integer(Char,plib_window,2,NChar),
+        '$plib$error':integer(Lines,plib_window,2,NLines),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,Window,Abort,Attention,plib_window,at(NX,NY),char(NChar,NLines)).
+otherwise.
+window(Pos,Size,_,_,_) :-
+    true |
+        '$plib$error':error(plib_window,"illegal input",[Pos,Size]).
+
+window(Node,Username,Password,mouse,mouse,Window,Abort,Attention) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_window,1,_,_,NNode),
+        '$plib$error':string(Username,plib_window,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_window,3,_,_,NPassword),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,Window,Abort,Attention,plib_window,mouse,mouse).
+window(Node,Username,Password,mouse,char(Chars,Lines),Window,Abort,Attention) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_window,1,_,_,NNode),
+        '$plib$error':string(Username,plib_window,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_window,3,_,_,NPassword),
+        '$plib$error':integer(Chars,plib_window,5,NChars),
+        '$plib$error':integer(Lines,plib_window,5,NLines),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,Window,Abort,Attention,plib_window,mouse,char(NChars,NLines)).
+window(Node,Username,Password,at(X,Y),mouse,Window,Abort,Attention) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_window,1,_,_,NNode),
+        '$plib$error':string(Username,plib_window,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_window,3,_,_,NPassword),
+        '$plib$error':integer(X,plib_window,4,NX),
+        '$plib$error':integer(Y,plib_window,4,NY),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,Window,Abort,Attention,plib_window,at(NX,NY),char(NChar,NLines)).
+window(Node,Username,Password,at(X,Y),char(Char,Lines),Window,Abort,Attention) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_window,1,_,_,NNode),
+        '$plib$error':string(Username,plib_window,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_window,3,_,_,NPassword),
+        '$plib$error':integer(X,plib_window,4,NX),
+        '$plib$error':integer(Y,plib_window,4,NY),
+        '$plib$error':integer(Char,plib_window,5,NChar),
+        '$plib$error':integer(Lines,plib_window,5,NLines),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,Window,Abort,Attention,plib_window,at(NX,NY),char(NChar,NLines)).
+otherwise.
+window(_,_,_,Pos,Size,_,_,_) :-
+    true |
+        '$plib$error':error(plib_window,"illegal input",[Pos,Size]).
+
+check_window_request(normal(WR,_,_),GR,Win,Abort,Attention,ID,Pos,Size) :-
+    true |
+        GR=[],
+        WR=[create(St)],
+        check_window(St,Win,Abort,Attention,ID,Pos,Size).
+otherwise.
+check_window_request(_,GR,_,_,_,ID,_,_) :-
+    true |
+        GR=[connection(St)],
+        '$plib$error':check_connection(St,ID).
+
+
+check_window(normal(Win,Abort,Attention),NWin,NAbort,NAttention,ID,Pos,Size) :-
+    true |
+        Win=[activate(St)|Win1],
+        Abort=NAbort,
+        Attention=NAttention,
+        activate_check(St,Win1,NWin,ID,Pos,Size).
+otherwise.
+check_window(_,NWin,_,NAttention,ID,_,_) :-
+    true |
+        NWin=[],NAttention=[],
+        '$plib$error':error(ID,string#"cannot create window",[]).
+
+activate_check(normal,Win,NWin,ID,Pos,Size) :-
+    true |
+        Win=[reshape(Pos,Size,St)|Win1],
+        reshape_check(St,Win1,NWin,ID,Pos,Size).
+otherwise.
+activate_check(normal,_,_,ID,_,_) :-
+    true |
+        '$plib$error':error(ID,string#"cannot activate a window",[]).
+
+reshape_check(normal,Win,NWin,_,_,_) :-
+    true |
+        Win=NWin.
+otherwise.
+reshape_check(_,Win,_,ID,Pos,Size) :-
+    true |
+        Win=[],
+        '$plib$error':error(ID,string#"cannot reshape a window",[Pos,Size]).
+
+get_max_size(X,Y,Fontname,Chars,Lines) :-
+    true |
+        '$plib$error':integer(X,plib_get_max_size,1,NX),
+        '$plib$error':integer(Y,plib_get_max_size,2,NY),
+        '$plib$error':string(Fontname,plib_get_max_size,3,_,_,NFontname),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[window(St)|GR1],
+        check_window_request1(St,GR1,NX,NY,NFontname,Chars,Lines,plib_get_max_size).
+
+get_max_size(Node,Username,Password,X,Y,Fontname,Chars,Lines) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_get_max_size,1,_,_,NNode),
+        '$plib$error':string(Username,plib_get_max_size,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_get_max_size,3,_,_,NPassword),
+        '$plib$error':integer(X,plib_get_max_size,4,NX),
+        '$plib$error':integer(Y,plib_get_max_size,5,NY),
+        '$plib$error':string(Fontname,plib_get_max_size,6,_,_,NFontname),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[window(St)|GR1],
+        check_window_request1(St,GR1,NX,NY,NFontname,Chars,Lines,plib_get_max_size).
+
+check_window_request1(normal(WR,_,_),GR,X,Y,Fontname,Chars,Lines,ID) :-
+    true |
+        GR=[],
+        WR=[get_max_size(X,Y,Fontname,St)],
+        check_get_max_size(St,X,Y,Fontname,Chars,Lines,ID).
+otherwise.
+check_window_request1(_,GR,_,_,_,_,_,ID) :-
+    true |
+        GR=[connection(St)],
+        '$plib$error':check_connection(St,ID).
+
+check_get_max_size(normal(Chars,Lines),_,_,_,NChars,NLines,_) :-
+    true |
+        Chars=NChars,Lines=NLines.
+otherwise.
+check_get_max_size(_,X,Y,Fontname,_,_,ID) :-
+    true |
+        '$plib$error':error(ID,string#"cannot get maximum size of window",[X,Y,Fontname]).
+
+windowt(mouse,mouse,Window) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,RawWindow,_,_,plib_windowt,mouse,mouse),
+        buffer:interaction_filter(Window,RawWindow).
+windowt(mouse,char(Chars,Lines),Window) :-
+    true |
+        '$plib$error':integer(Chars,plib_windowt,1,NChar),
+        '$plib$error':integer(Lines,plib_windowt,1,NLines),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,RawWindow,_,_,plib_windowt,mouse,char(NChar,NLines)),
+        buffer:interaction_filter(Window,RawWindow).
+windowt(at(X,Y),mouse,Window) :-
+    true |
+        '$plib$error':integer(X,plib_windowt,1,NX),
+        '$plib$error':integer(Y,plib_windowt,1,NY),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,RawWindow,_,_,plib_windowt,at(NX,NY),mouse),
+        buffer:interaction_filter(Window,RawWindow).
+windowt(at(X,Y),char(Char,Lines),Window) :-
+    true |
+        '$plib$error':integer(X,plib_windowt,1,NX),
+        '$plib$error':integer(Y,plib_windowt,1,NY),
+        '$plib$error':integer(Char,plib_windowt,2,NChar),
+        '$plib$error':integer(Lines,plib_windowt,2,NLines),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,RawWindow,_,_,plib_windowt,at(NX,NY),char(NChar,NLines)),
+        buffer:interaction_filter(Window,RawWindow).
+otherwise.
+windowt(Pos,Size,_) :-
+    true |
+        '$plib$error':error(plib_windowt,"illegal input",[Pos,Size]).
+
+windowt(Node,Username,Password,mouse,mouse,Window) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_windowt,1,_,_,NNode),
+        '$plib$error':string(Username,plib_windowt,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_windowt,3,_,_,NPassword),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,RawWindow,_,_,plib_windowt,mouse,mouse),
+        buffer:interaction_filter(Window,RawWindow).
+windowt(Node,Username,Password,mouse,char(Chars,Lines),Window) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_windowt,1,_,_,NNode),
+        '$plib$error':string(Username,plib_windowt,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_windowt,3,_,_,NPassword),
+        '$plib$error':integer(Chars,plib_windowt,5,NChars),
+        '$plib$error':integer(Lines,plib_windowt,5,NLines),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,RawWindow,_,_,plib_windowt,mouse,char(NChars,NLines)),
+        buffer:interaction_filter(Window,RawWindow).
+windowt(Node,Username,Password,at(X,Y),mouse,Window) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_windowt,1,_,_,NNode),
+        '$plib$error':string(Username,plib_windowt,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_windowt,3,_,_,NPassword),
+        '$plib$error':integer(X,plib_windowt,4,NX),
+        '$plib$error':integer(Y,plib_windowt,4,NY),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,RawWindow,_,_,plib_windowt,at(NX,NY),char(NChar,NLines)),
+        buffer:interaction_filter(Window,RawWindow).
+windowt(Node,Username,Password,at(X,Y),char(Char,Lines),Window) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_windowt,1,_,_,NNode),
+        '$plib$error':string(Username,plib_windowt,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_windowt,3,_,_,NPassword),
+        '$plib$error':integer(X,plib_windowt,4,NX),
+        '$plib$error':integer(Y,plib_windowt,4,NY),
+        '$plib$error':integer(Char,plib_windowt,5,NChar),
+        '$plib$error':integer(Lines,plib_windowt,5,NLines),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[window(St)|GR1],
+        check_window_request(St,GR1,RawWindow,_,_,plib_windowt,at(NX,NY),char(NChar,NLines)),
+        buffer:interaction_filter(Window,RawWindow).
+otherwise.
+windowt(_,_,_,Pos,Size,_) :-
+    true |
+        '$plib$error':error(plib_windowt,"illegal input",[Pos,Size]).
+

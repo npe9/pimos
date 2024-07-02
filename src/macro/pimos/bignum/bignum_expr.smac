@@ -1,0 +1,196 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- if_not_defined(included).
+:- macro_module bignum_macro.
+:- inherit_macro pimos.
+:- with_macro pimos.
+:- end_if.
+
+%:- define(included, 0).
+%:- include("bignum_macro.mac").
+%:- include("RELEASE>src>utility>bignum>bignum_macro.umac").
+
+vector({atom(('^:=')), Z0, X0}) => vector({atom((=)), Z, X})
+                               when
+                                  PreInstr
+   :- as_a_goal |
+ {{convert_math_macro(&stream, Z0, Z, bignum, X0, PreInstr, X)}}.
+
+vector({atom(('^~')), vector({atom((+)), X, Y})}) => Z
+        when vector({vector({vector({atom(:), atom(bignum),
+                                        vector({atom(add), vector({atom((^~)),X}),
+                                                    vector({atom((^~)), Y}), Z})})})})
+    :- as_an_argument | true !
+vector({atom(('^~')), vector({atom((-)), X, Y})}) => Z
+        when vector({vector({vector({atom(:), atom(bignum),
+                                        vector({atom(subtract), vector({atom((^~)),X}),
+                                                    vector({atom((^~)), Y}), Z})})})})
+    :- as_an_argument | true !
+vector({atom(('^~')), vector({atom((*)), X, Y})}) => Z
+        when vector({vector({vector({atom(:), atom(bignum),
+                                        vector({atom(multiply), vector({atom((^~)),X}),
+                                                    vector({atom((^~)), Y}), Z})})})})
+    :- as_an_argument | true !
+vector({atom(('^~')), vector({atom((/)), X, Y})}) => Z
+        when vector({vector({vector({atom(:), atom(bignum),
+                                        vector({atom(divide), vector({atom((^~)),X}),
+                                                    vector({atom((^~)), Y}), Z})})})})
+    :- as_an_argument | true !
+vector({atom(('^~')), vector({atom((mod)), X, Y})}) => Z
+        when vector({vector({vector({atom(:), atom(bignum),
+                                        vector({atom(modulo), vector({atom((^~)),X}),
+                                                    vector({atom((^~)), Y}), Z})})})})
+    :- as_an_argument | true !
+vector({atom(('^~')), vector({atom((<<)), X, Y})}) => Z
+        when vector({vector({vector({atom(:), atom(bignum),
+                                        vector({atom(shift_left_abs), vector({atom((^~)),X}),
+                                                    vector({atom((~)), Y}), Z})})})})
+    :- as_an_argument | true !
+vector({atom(('^~')), vector({atom((>>)), X, Y})}) => Z
+        when vector({vector({vector({atom(:), atom(bignum),
+                                        vector({atom(shift_right_abs), vector({atom((^~)),X}),
+                                                    vector({atom((~)), Y}), Z})})})})
+    :- as_an_argument | true !
+vector({atom(('^~')), vector({atom((-)), X})}) => Z
+        when vector({vector({vector({atom(:), atom(bignum),
+                                        vector({atom(negate), vector({atom((^~)),X}), Z})})})})
+    :- as_an_argument | true !
+%vector({atom(('^~')), vector({atom((abs)), X})}) => Z
+%        when vector({vector({vector({atom(:), atom(bignum),
+%                                        vector({atom(absolute), vector({atom((^~)),X}), Z})})})})
+%    :- as_an_argument | true !
+vector({atom(('^$')), vector({atom((bignum_to_float)), X})}) => Z
+        when vector({vector({vector({atom(:), atom(bignum),
+                                        vector({atom(bignum_to_float), vector({atom((^~)),X}), Z})})})})
+     :- as_an_argument | true !
+otherwise !
+vector({atom((^~)), X0}) => X :-
+%     &stream <<= [eval(X0, X)].
+     X0=X.
+
+
+%
+% supprt routines
+%
+:- local_implicit stream:oldnew.
+convert_math_macro(Z0, Z, _, Term0, PreInstr, Term) --> true |
+    {{Z0=Z,
+%%      calcurate_right_hand(Type, Term0, Term1),
+      calcBigNum(Term0, Term1),
+      convert_math_macro(&stream, PreInstr, Term1, Term)}}.
+
+convert_math_macro(PreInstr, Term0, Term) --> true |
+    convert_math_macro(PreList, [], Term0, Term),
+%%  {{convert_list_to_term(PreList, PreInstr)}}.
+  {{kl1cmp_pimos_macro:convert_list_to_vector(PreList, PreInstr0),
+    PreInstr=vector({vector(PreInstr0)})}}.
+
+calcBigNum(vector({atom(Op), X0, Y0}), Z) :- true |
+    calcBigNum(X0, X1),
+    calcBigNum(Y0, Y1),
+    bignum:is_wrapped_bignum(X1, X, AnsX),
+    bignum:is_wrapped_bignum(Y1, Y, AnsY),
+    calcAgainOrNot(AnsX, AnsY, Op, X, Y, Z).
+calcBigNum(vector({atom(Op), X0}), Z) :- true |
+    calcBigNum(X0, X1),
+    bignum:is_wrapped_bignum(X1, X, AnsX),
+    calcAgainOrNot(AnsX, Op, X, Z).
+otherwise.
+calcBigNum(Z0, Z) :- true | Z0=Z.
+
+calcAgainOrNot(true, true, Op, X0, Y0, Z) :- true |
+  kl1cmp_wrap:unwrap(X0, X),
+  kl1cmp_wrap:unwrap(Y0, Y),
+  evalBignum({Op, X, Y}, Z0),
+  kl1cmp_wrap:wrap(Z0, Z).
+otherwise.
+calcAgainOrNot(_, _, Op, X, Y, Z) :- true |
+   Z=vector({atom(Op), X, Y}).
+
+calcAgainOrNot(true, Op, X0, Z) :- true |
+  kl1cmp_wrap:unwrap(X0, X1),
+  evalBignum({Op, X1}, Z0),
+  kl1cmp_wrap:wrap(Z0, Z).
+otherwise.
+calcAgainOrNot(_, Op, X, Z) :- true |
+  Z=vector({atom(Op), X}).
+
+evalBignum(X+Y, Z) :- true |
+  bignum:add(X, Y, Z).
+evalBignum(X-Y, Z) :- true |
+  bignum:subtract(X, Y, Z).
+evalBignum(X*Y, Z) :- true |
+  bignum:multiply(X, Y, Z).
+evalBignum(X/Y, Z) :- true |
+  bignum:divide(X, Y, Z).
+evalBignum((X mod Y), Z) :- true |
+  bignum:modulo(X, Y, Z).
+evalBignum(X<<Y, Z) :- true |
+  bignum:shift_left_abs(X, Y, Z).
+evalBignum(X>>Y, Z) :- true |
+  bignum:shift_right_abs(X, Y, Z).
+evalBignum(-X, Z) :- true |
+  bignum:negate(X, Z).
+otherwise.
+evalBignum(Z0, Z) :- true |
+    Z = Z0.
+
+:- local_implicit stream:oldnew, pre:oldnew.
+convert_math_macro(vector({atom((+)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:add('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(vector({atom((-)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:subtract('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(vector({atom((*)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:multiply('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(vector({atom((/)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:divide('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(vector({atom((mod)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:modelo('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(vector({atom((<<)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:shift_left_abs('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(vector({atom((>>)), X, Y}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:shift_right_abs('^~'(X), '^~'(Y), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+convert_math_macro(vector({atom((-)), X}), WTerm) --> true |
+    &pre <<= [wrap#(bignum:negate('^~'(X), Z))],
+    &stream <<= [new_variable(Z)], WTerm=Z.
+otherwise.
+convert_math_macro(Term0, Term) --> true | Term0=Term.
+
+%  implicit argument macro
+%vector({atom(($<=)), X, Y0}) => vector({atom((',')),vector({atom(($:=)), Z, Y}),
+%                                                    vector({atom((<=)), X, Z})})
+%    :- as_a_goal, in_the_body |
+% {{kl1cmp_pimos_macro:convertMacroArg(Y0, Y)}}.
+vector({atom((^<=)), X, Y0}) => vector({atom((',')),vector({atom((^:=)), Z, Y}),
+                                                    vector({atom((<=)), X, Z})})
+    :- as_a_goal, in_the_body |
+ {{convertMacroArg(Y0, Y)}}.
+
+%
+% convert &arg --> &arg(old)
+%
+convertMacroArg(wrap#('&'(Arg0)), Arg) :- true | Arg = wrap#('&'{Arg0, old}).
+otherwise.
+convertMacroArg(Vect0, Vect) :- vector(Vect0, N) |
+  convertMacroArg(0, N, Vect0, Vect).
+otherwise.
+convertMacroArg(Arg0, Arg) :- Arg0=Arg.
+
+convertMacroArg(A, N, Vect0, Vect) :- A<N |
+  set_vector_element(Vect0, A, Arg0, Arg, Vect1),
+  convertMacroArg(Arg0, Arg),
+  A1 := A+1,
+  convertMacroArg(A1, N, Vect1, Vect).
+convertMacroArg(N, N, Vect0, Vect) :- Vect0=Vect.
+

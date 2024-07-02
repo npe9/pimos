@@ -1,0 +1,942 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module login_request.
+:- with_macro pimos.
+:- public go/8, wait_who/9.
+%:- include("pimos.h").
+
+%   login request handling
+%   go(Req,User,Group,FR,TR,Atom,Mod,PART),
+go(Req,User,Group,FR,TR,Atom,Mod,PART):-
+   true|
+   user_setup(FR,User,UserN,Group,GroupN,Atom,AtomN,Mod,Status),
+   status_request(Status,Req,UserN,GroupN,TR,AtomN,PART).
+
+%:- switch(machine).
+%:- case(vm).
+user_setup(FR,User,UserN,Group,GroupN,Atom,AtomN,Mod,Status):-
+   true|
+   FR = [open(string#"pimos:pimos.logins",read(F)),
+         open(string#"pimos:pimos.groups",read(F2))|FRN],
+   merge({FR1,FR2},FRN),
+   wait_setup(F,User,UserN0,FR1,Status2),
+   wait_setup2(F2,Status2,Group,GroupN,UserN0,UserN1,FR2,Status3),
+   wait_setup3(Status3,UserN1,UserN,Atom,AtomN,Mod,Status).
+%:- default.
+%user_setup(FR,User,UserN,Group,GroupN,Atom,AtomN,Mod,Status):-
+%   true|
+%   FR = [open(string#"pimos:pimos.logins",read(F)),
+%         open(string#"pimos:pimos.groups",read(F2))|FRN],
+%   merge({FR1,FR2},FRN),
+%   wait_setup(F,User,UserN0,FR1,Status2),
+%   wait_setup2(F2,Status2,Group,GroupN,UserN0,UserN1,FR2,Status3),
+%   wait_setup3(Status3,UserN1,UserN,Atom,AtomN,Mod,Status).
+%:- end_switch.
+
+status_request(normal,Req,User,Group,TR,Atom,PART):-
+   true|
+   merge(User1,User),
+   merge(Atom1,Atom),
+   merge(PART1,PART),
+   Group = [],
+   distribute(Req,User1,Atom1,PART1,TR).
+otherwise.
+status_request(_,_,User,Group,TR,Atom,PART):-
+   true|
+   shutdown:go,
+   User = [],
+   Group = [],
+   TR = [],
+   Atom = [],
+   PART = [].
+
+%%%%
+
+wait_setup(normal(In0,_,_),User,UserN,FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup(Res,InN,User,UserN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup(_,User,UserN,FR,Status):-
+   true|
+   login_error:i(request,wait_setup_success,2,0,C),
+   wait_setup_retry(C,User,UserN,FR,Status).
+
+wait_setup(normal(end_of_file),In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   In = [],
+   Tail = [],
+   User = [set_up(Head,Status1)|NUser],
+   wait_setup_success(Status1,NUser,UserN,FR,Status,0).
+wait_setup(normal(empty),In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   In = [getwt(Res)|InN],
+   wait_setup(Res,InN,User,UserN,FR,Tail,Head,Status,C).
+otherwise.
+wait_setup(normal(WT),In,User,UserN,FR,Tail,Head,Status,C):-
+   variable:unwrap(WT,{_,T},NVP),
+   NVP = [count(N)],
+   wait_setup(N,T,In,User,UserN,FR,Tail,Head,Status,C).
+otherwise.
+wait_setup(abnormal(error({TL,Ps})),In,User,UserN,FR,Tail,Head,Status,C0):-
+   true|
+   login_error:i(request,wait_setup,1,{C0,TL,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry(C,User,UserN,FR,Status).
+wait_setup(abnormal(error({TL,Reason,Ps})),In,User,UserN,FR,Tail,Head,Status,C0):-
+   true|
+   login_error:i(request,wait_setup,2,{C0,TL,Reason,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry(C,User,UserN,FR,Status).
+wait_setup(abnormal(ambiguous({TL,Ps})),In,User,UserN,FR,Tail,Head,Status,C0):-
+   true|
+   login_error:i(request,wait_setup,3,{C0,TL,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry(C,User,UserN,FR,Status).
+
+
+wait_setup(0,T,In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   check_user_term(T,Status0),
+   wait_setup_term(Status0,In,User,UserN,FR,Tail,Head,Status,C).
+otherwise.
+wait_setup(_,_,In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success(abnormal,User,UserN,FR,Status,C).
+
+wait_setup_term(normal(T),In,User,UserN,FR,Tail,Head,Status,C):-
+   C1:= C + 1|
+   Tail = [T|TailN],
+   In = [getwt(WT)|InN],
+   wait_setup(WT,InN,User,UserN,FR,TailN,Head,Status,C1).
+otherwise.
+wait_setup_term(_,In,User,UserN,FR,Tail,Head,Status,C):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success(abnormal,User,UserN,FR,Status,C).
+
+wait_setup_success(normal,User,UserN,FR,Status,C):-
+   true|
+   User = UserN,
+   FR = [],
+   Status = normal.
+otherwise.
+wait_setup_success(_,User,UserN,FR,Status,Line):-
+   Line > 0|
+   login_error:i(request,wait_setup_success,1,Line,C),
+   wait_setup_retry(C,User,UserN,FR,Status).
+wait_setup_success(_,User,UserN,FR,Status,Line):-
+   Line < 0|
+   login_error:i(request,wait_setup_success,2,Line,C),
+   wait_setup_retry(C,User,UserN,FR,Status).
+wait_setup_success(_,User,UserN,FR,Status,Line):-
+   Line = 0|
+   login_error:i(request,wait_setup_success,3,Line,C),
+   wait_setup_retry(C,User,UserN,FR,Status).
+
+%:- switch(machine).
+%:- case(vm).
+wait_setup_retry(1,User,UserN,FR,Status):-
+   true|
+   FR = [open(string#"pimos:pimos.logins",read(F))|FRN],
+   wait_setup_retry0(F,User,UserN,FRN,Status).
+%:- default.
+%wait_setup_retry(1,User,UserN,FR,Status):-
+%   true|
+%   FR = [open(string#"pimos:pimos.logins",read(F))|FRN],
+%   wait_setup_retry0(F,User,UserN,FRN,Status).
+%:- end_switch.
+otherwise.
+wait_setup_retry(_,User,UserN,FR,Status):-
+   true|
+   User = UserN,
+   FR = [],
+   Status = abnormal.
+
+wait_setup_retry0(normal(In0,_,_),User,UserN,FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup(Res,InN,User,UserN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup_retry0(_,User,UserN,FR,Status):-
+   true|
+   wait_setup_success(abnormal,User,UserN,FR,Status,-1).
+
+%%%%
+%  group
+
+
+wait_setup2(normal(In0,_,_),normal,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup2(Res,InN,Group,GroupN,User,UserN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup2(normal(In0,_,_),_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   In0 = [],
+   Group = GroupN,
+   User = UserN,
+   FR = [],
+   Status = abnormal.
+otherwise.
+wait_setup2(abnormal,_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   login_error:i(request,wait_setup_success2,2,0,C),
+   wait_setup_retry2(C,Group,GroupN,User,UserN,FR,Status).
+otherwise.
+wait_setup2(_,_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   Group = GroupN,
+   User = UserN,
+   FR = [],
+   Status = abnormal.
+
+wait_setup2(normal(end_of_file),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,_):-
+   true|
+   In = [],
+   Tail = [],
+   Group = [set_up(Head,Status1)|NGroup],
+   wait_setup_success2(Status1,NGroup,GroupN,User,UserN,FR,Status,0).
+wait_setup2(normal(empty),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   In = [getwt(Res)|InN],
+   wait_setup2(Res,InN,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line).
+otherwise.
+wait_setup2(normal(WT),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   variable:unwrap(WT,{_,T},NVP),
+   NVP = [count(N)],
+   wait_setup2(N,T,In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line).
+otherwise.
+wait_setup2(abnormal(error({TL,Ps})),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   login_error:i(request,wait_setup2,1,{Line,TL,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry2(C,Group,GroupN,User,UserN,FR,Status).
+wait_setup2(abnormal(error({TL,Reason,Ps})),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   login_error:i(request,wait_setup2,2,{Line,TL,Reason,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry2(C,Group,GroupN,User,UserN,FR,Status).
+wait_setup2(abnormal(ambiguous({TL,Ps})),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   login_error:i(request,wait_setup2,3,{Line,TL,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry2(C,Group,GroupN,User,UserN,FR,Status).
+
+wait_setup2(0,T,In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   check_group_term(T,User,UserN0,Status0),
+   wait_setup_term2(Status0,In,Group,GroupN,UserN0,UserN,FR,Tail,Head,Status,Line).
+otherwise.
+wait_setup2(_,_,In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success2(abnormal,Group,GroupN,User,UserN,FR,Status,Line).
+
+wait_setup_term2(normal(T),In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   Line1 := Line + 1|
+   Tail = [T|TailN],
+   In = [getwt(WT)|InN],
+   wait_setup2(WT,InN,Group,GroupN,User,UserN,FR,TailN,Head,Status,Line1).
+otherwise.
+wait_setup_term2(_,In,Group,GroupN,User,UserN,FR,Tail,Head,Status,Line):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success2(abnormal,Group,GroupN,User,UserN,FR,Status,Line).
+
+wait_setup_success2(normal,Group,GroupN,User,UserN,FR,Status,Line):-
+   true|
+   Group = GroupN,
+   User = UserN,
+   FR = [],
+   Status = normal.
+otherwise.
+wait_setup_success2(_,Group,GroupN,User,UserN,FR,Status,Line):-
+   Line > 0|
+   login_error:i(request,wait_setup_success2,1,Line,C),
+   wait_setup_retry2(C,Group,GroupN,User,UserN,FR,Status).
+wait_setup_success2(_,Group,GroupN,User,UserN,FR,Status,Line):-
+   Line < 0|
+   login_error:i(request,wait_setup_success2,2,Line,C),
+   wait_setup_retry2(C,Group,GroupN,User,UserN,FR,Status).
+wait_setup_success2(_,Group,GroupN,User,UserN,FR,Status,Line):-
+   Line = 0|
+   login_error:i(request,wait_setup_success2,3,Line,C),
+   wait_setup_retry2(C,Group,GroupN,User,UserN,FR,Status).
+
+%:- switch(machine).
+%:- case(vm).
+wait_setup_retry2(1,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   FR = [open(string#"pimos:pimos.groups",read(F))|FRN],
+   wait_setup_retry02(F,Group,GroupN,User,UserN,FRN,Status).
+%:- default.
+%wait_setup_retry2(1,Group,GroupN,User,UserN,FR,Status):-
+%   true|
+%   FR = [open(string#"pimos:pimos.groups",read(F))|FRN],
+%   wait_setup_retry02(F,Group,GroupN,User,UserN,FRN,Status).
+%:- end_switch.
+otherwise.
+wait_setup_retry2(_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   Group = GroupN,
+   User = UserN,
+   FR = [],
+   Status = abnormal.
+
+wait_setup_retry02(normal(In0,_,_),Group,GroupN,User,UserN,FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup2(Res,InN,Group,GroupN,User,UserN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup_retry02(_,Group,GroupN,User,UserN,FR,Status):-
+   true|
+   wait_setup_success2(abnormal,Group,GroupN,User,UserN,FR,Status,-1).
+
+%%%%%%%%%%%%%%%%
+check_user_term({UN,Pass,UID,Max,Dir,PE,Prog,Com},Status):-
+   true|
+   username(UN,St0),
+   password(Pass,St1),
+   uid(UID,St2),
+   maxprio(Max,St3),
+   dir(Dir,St4),
+   pe(PE,St5),
+   prog(Prog,St6),
+   com(Com,St7),
+   wait_user_term(St0,St1,St2,St3,St4,St5,St6,St7,Status).
+
+wait_user_term(normal(UN),normal(Pass),normal(UID),normal(Max),
+               normal(Dir),normal(PE),normal(Prog),normal(Com),Status):-
+   true|
+   Status = normal({UN,Pass,UID,Max,Dir,PE,Prog,Com}).
+otherwise.
+wait_user_term(_,_,_,_,_,_,_,_,Status):-
+   true|
+   Status = abnormal.
+
+check_group_term({GN,GID,UList,Com},User,UserN,Status):-
+   true|
+   groupname(GN,St0),
+   gid(GID,St1),
+   ulist(UList,User,UserN,St2),
+   com(Com,St3),
+   wait_group_term(St0,St1,St2,St3,Status).
+
+wait_group_term(normal(GN),normal(GID),normal(UList),normal(Com),Status):-
+   true|
+   Status = normal({GN,GID,UList,Com}).
+otherwise.
+wait_group_term(_,_,_,_,Status):-
+   true|
+   Status = abnormal.
+
+username(UN,St):- string(UN,_,16)|St = normal(UN).
+otherwise.
+username(_,St):- true| St = abnormal.
+groupname(GN,St):- true| username(GN,St).
+password(Pass,St):- string(Pass,_,16)| St = normal(Pass).
+otherwise.
+password(_,St):- true| St = abnormal.
+uid(UID,St):- UID >= 0 | St = normal(UID).
+otherwise.
+uid(_,St):- true| St = abnormal.
+gid(GID,St):- GID >= 0 | St = normal(GID).
+otherwise.
+gid(_,St):- true| St = abnormal.
+maxprio(Max,St):- Max >= 0, Max =< 4096 | St = normal(Max).
+otherwise.
+maxprio(_,St):- true | St = abnormal.
+dir(Dir,St):- string(Dir,_,16)| St = normal(Dir).
+dir(*,St):-  true| St = normal(*).
+otherwise.
+dir(_,St):- true| St = abnormal.
+pe(PE,St):- 0 =< PE | St = normal(PE).
+pe(*,St):- true | St = normal(*).
+otherwise.
+pe(_,St):- true| St = abnormal.
+prog(Pak::Mod:Prog,St):- vector(Prog,N),N > 1,
+   atom(Pak),atom(Mod),vector_element(Prog,0,E),
+   atom(E)|
+   St = normal(Pak::Mod:Prog).
+prog(Mod:Prog,St):- vector(Prog,N),N > 1,
+   atom(Mod),vector_element(Prog,0,E),
+   atom(E)|
+   St = normal(Mod:Prog).
+prog(Pak::Mod:Prog,St):- atom(Prog),
+   atom(Pak),atom(Mod)|
+   St = normal(Pak::Mod:Prog).
+prog(Mod:Prog,St):- atom(Prog),
+   atom(Mod)|
+   St = normal(Mod:Prog).
+otherwise.
+prog(_,St):- true| St = abnormal.
+ulist(UList,User,UserN,St):- true|
+   ulist(UList,Tail,Tail,User,UserN,St).
+ulist([],Tail,Head,User,UserN,St):-
+   true|
+   Tail = [], User = UserN,
+   St = normal(Head).
+ulist([U|UList],Tail,Head,User,UserN,St):-
+   string(U,_,_)|
+   User = [get_uid(U,St0)|UserN0],
+   wait_ulist(St0,UList,Tail,Head,UserN0,UserN,St).
+otherwise.
+ulist(_,_,_,User,UserN,St):-
+   true|
+   User = UserN,
+   St = abnormal.
+wait_ulist(normal(UID),UList,Tail,Head,User,UserN,St):-
+   true|
+   Tail = [UID|TailN],
+   ulist(UList,TailN,Head,User,UserN,St).
+otherwise.
+wait_ulist(_,_,_,_,User,UserN,St):-
+   true|
+   User = UserN,
+   St = abnormal.
+
+com(Com,St):- true| com(Com,Med,Med,St).
+com([],Tail,Head,St):- true| Tail = [], St = normal(Head).
+com([S|Next],Tail,Head,St):- string(S,_,16)|
+   Tail = [S|TailN],
+   com(Next,TailN,Head,St).
+
+
+%%%%%%%%%%%%%%%%%%%%
+%
+%  defined package
+%
+%%%%%%%%%%%%%%%%%%%%
+
+wait_setup3(normal,User,UserN,Atom,AtomN,Mod,Status):-
+   true|
+   User = [get_all_info(Info)|UserN],
+   wait_setup3(Info,Atom,AtomN,Mod,Status).
+otherwise.
+wait_setup3(_,User,UserN,Atom,AtomN,Mod,Status):-
+   true|
+   User = UserN, Atom = AtomN, Mod = [],
+   Status = abnormal.
+
+wait_setup3(normal(Info),Atom,AtomN,Mod,Status):-
+   true|
+   setup3(Info,Atom,AtomN,Mod,Status).
+otherwise.
+wait_setup3(_,Atom,AtomN,Mod,Status):-
+   true|
+   Atom = AtomN, Mod = [], Status = abnormal.
+
+setup3([],Atom,AtomN,Mod,Status):-
+   true|
+   Atom = AtomN, Mod = [], Status = normal.
+setup3([UInfo|Info],Atom,AtomN,Mod,Status):-
+   vector_element(UInfo,0,UN),
+   vector_element(UInfo,2,UID)|
+   Atom = [intern(UN,St)|AtomN0],
+   setup3(St,Info,UID,AtomN0,AtomN,Mod,Status).
+
+setup3(normal(UN),Info,UID,Atom,AtomN,Mod,Status):-
+   true|
+   Mod = [define_package(UN,user,8#"711",St)|ModN],
+   mod_setup(St,Info,UN,UID,Atom,AtomN,ModN,Status).
+otherwise.
+setup3(_,info,_,Atom,AtomN,Mod,Status):-
+   true|
+   setup3(Info,Atom,AtomN,Mod,Status).
+
+mod_setup(normal,Info,UN,UID,Atom,AtomN,Mod,Status):-
+   true|
+   Mod = [set_package_owner(UN,{UID,0},St)|ModN],
+   mod_setup(St,Info,Atom,AtomN,ModN,Status).
+otherwise.
+mod_setup(_,Info,_,_,Atom,AtomN,Mod,Status):-
+   true|
+   setup3(Info,Atom,AtomN,Mod,Status).
+
+mod_setup(Wait,Info,Atom,AtomN,Mod,Status):-
+   wait(Wait)|
+   setup3(Info,Atom,AtomN,Mod,Status).
+
+%%%%%%%%%%%%%%%%%%%%%
+%
+%  distribution
+%
+%%%%%%%%%%%%%%%%%%%%%
+distribute(Req,User,Atom,Part,TR):-
+   true|
+   TR = [create(T)],
+   distribute1(T,Req,User,Atom,Part).
+distribute1(normal(Timer,_,_),Req,User,Atom,Part):-
+   true|
+   fep_check({0,0,0,0},REC),
+   merge(Timer1,Timer),
+   merge(REC1,REC),
+   distribute(Req,User,Atom,REC1,Part,Timer1).
+otherwise.
+distribute1(_,Req,User,Atom,Part):-
+   true|
+   login_error:e(request,distribute1,1),
+   User = [],
+   Atom = [],
+   Part = [],
+   shutdown:go.
+
+distribute([],User,Atom,REC,PART,Timer):-
+   true|
+   User = [],
+   Atom = [],
+   REC  = [],
+   PART = [],
+   Timer = [].
+distribute([{F,LAN,P}|Next],U,A,RE,PA,T):-
+   true|
+   U = {U1,U2},
+   A = {A1,A2},
+   RE = {RE1,RE2},
+   PA = {PA1,PA2},
+   T = {T1,T2},
+   request(LAN,F,U1,A1,RE1,PA1,T1)@node(P),
+   distribute(Next,U2,A2,RE2,PA2,T2).
+
+fep_check(V,[]):- true| fep_close(4,V).
+fep_check(V,[exist(N,St)|Next]):-
+   true |
+   set_vector_element(V,N,E,NE,NV),
+   fep_check0(E,NE,St),
+   fep_check(NV,Next).
+fep_check0(0,NE,St):-
+   true|
+   St = no(Rep),
+   NE = exist(Rep).
+fep_check0(exist(Rep),NE,St):-
+   true|
+   Rep = {Rep1,Rep2},
+   St = yes(Rep1),
+   NE = exist(Rep2).
+fep_close(0,V):- true| true.
+otherwise.
+fep_close(N,V):- N1 := N - 1|
+   set_vector_element(V,N1,E,0,NV),
+   fep_close(E),
+   fep_close(N1,NV).
+fep_close(0):- true| true.
+fep_close(exist(E)):- true| E = [].
+
+request(telnet,F,U,A,RE,PA,T):-
+   true|
+   RE = [],
+   login_error:e(request,wait_etc,4,F),
+   login_telnet:go(F,U,A,PA,T).
+otherwise.
+request(LAN,F,U,A,RE,PA,T):-
+   true|
+   shoen:raise(pimos_tag#task,general_request(F,"me","me"),GR),
+   GR = [string_io(St)|GRN],
+   merge(GRN0,GRN),
+   reqconf(St,GRN0,LAN,F,U,A,RE,PA,T).
+
+reqconf(normal(STR,_,_),GR,LAN,F,U,A,RE,PA,T):-
+   true|
+   RE = [exist(F,Ans)],
+   wait_reqconf(Ans,STR,GR,LAN,F,U,A,PA,T).
+otherwise.
+reqconf(_,GR,LAN,F,U,A,RE,PA,T):-
+   true|
+   login_error:e(request,reqconf,1,F),
+   RE = [], GR = [], U = [], A = [], PA = [], T = [],
+   shutdown:go.
+
+wait_reqconf(no(Rep),STR,GR,LAN,F,U,A,PA,T):-
+   true|
+   STR = [create(string#"pimos_remote_login_replier",St)|STRN],
+   wait_reqconf1(St,Rep,STRN,GR,LAN,F,U,A,PA,T).
+wait_reqconf(yes(Rep),STR,GR,LAN,F,U,A,PA,T):-
+   true|
+   STR = [create(string#"pimos_remote_login_server",St)],
+   wait_reqconf2(St,Rep,GR,LAN,F,U,A,PA,T).
+
+wait_reqconf1(normal(Rep,_,_),Rep1,STR,GR,LAN,F,U,A,PA,T):-
+   true|
+   Rep = [io(0,string#"",St)|RepN],
+   wait_reqconf1(St,RepN,Rep1,STR,GR,LAN,F,U,A,PA,T).
+otherwise.
+wait_reqconf1(_,Rep1,STR,GR,LAN,F,U,A,PA,T):-
+   true|
+   login_error:e(request,wait_reqconf1,1,F),
+   abnormal(Rep1),
+   STR = [], GR = [], U = [], A = [], PA = [], T = [].
+
+wait_reqconf1(normal(_),Rep,Rep1,STR,GR,LAN,F,U,A,PA,T):-
+   true|
+   merge({Rep1,Rep2},Rep0),
+%   replier(Rep0,Rep),
+   Rep0 = Rep,
+   wait_reqconf(yes(Rep2),STR,GR,LAN,F,U,A,PA,T).
+otherwise.
+wait_reqconf1(_,Rep,Rep1,STR,GR,LAN,F,U,A,PA,T):-
+   true|
+   login_error:e(request,wait_reqconf1,2,F),
+   abnormal(Rep1),
+   Rep = [], STR = [], GR = [], U = [], A = [], PA = [], T = [].
+
+wait_reqconf2(normal(Ser,_,_),Rep,GR,local,F,U,A,PA,T):-
+   Ser = [io(0,string#"local",St)|SerN],
+   wait_local(St,SerN,Rep,GR,F,U,A,PA,T).
+wait_reqconf2(normal(Ser,_,_),Rep,GR,tcpip,F,U,A,PA,T):-
+   Ser = [io(0,string#"tcpip",St)|SerN],
+   wait_tcpip(St,SerN,Rep,GR,F,U,A,PA,T).
+wait_reqconf2(normal(Ser,_,_),Rep,GR,lia,F,U,A,PA,T):-
+   Ser = [io(0,string#"lia",St)|SerN],
+   wait_lia(St,SerN,Rep,GR,F,U,A,PA,T).
+otherwise.
+wait_reqconf2(_,Rep,GR,LAN,F,U,A,PA,T):-
+   true|
+   login_error:e(request,wait_reqconf2,1,F),
+   Rep = [], GR = [], U = [], A = [], PA = [], T = [].
+
+wait_local(normal(_),Ser,Rep,GR,F,U,A,PA,T):-
+   true|
+   login_error:e(request,wait_etc,1,F)@node(0),
+   Ser = [io(1,string#"  ",St)|SerN],
+   login(St,SerN,Rep,GR,string#"local",F,U,A,PA,T).
+otherwise.
+wait_local(_,Ser,Rep,GR,F,U,A,PA,T):-
+   true|
+   login_error:e(request,wait_local,1,F),
+   Ser = [], Rep = [], GR = [], U = [], A = [], PA = [], T = [].
+
+wait_tcpip(normal(_),Ser,Rep,GR,F,U,A,PA,T):-
+   true|
+   login_error:e(request,wait_etc,2,F)@node(0),
+   Ser = [io(1,string#"  ",St)|SerN],
+   login(St,SerN,Rep,GR,string#"tcpip",F,U,A,PA,T).
+otherwise.
+wait_tcpip(_,Ser,Rep,GR,F,U,A,PA,T):-
+   true|
+   login_error:e(request,wait_tcpip,1,F),
+   Ser = [], Rep = [], GR = [], U = [], A = [], PA = [], T = [].
+
+wait_lia(normal(_),Ser,Rep,GR,F,U,A,PA,T):-
+   true|
+   login_error:e(request,wait_etc,3,F)@node(0),
+   Ser = [io(1,string#"  ",St)|SerN],
+   login(St,SerN,Rep,GR,string#"lia",F,U,A,PA,T).
+otherwise.
+wait_lia(_,Ser,Rep,GR,F,U,A,PA,T):-
+   true|
+   login_error:e(request,wait_lia,1,F),
+   Ser = [], Rep = [], GR = [], U = [], A = [],
+   PA = [], T = [].
+
+%%%%%%%%%
+%
+%  login request handling
+   
+login(normal(NI),Ser,Rep,GR,LAN,F,U,A,PA,T):-
+   true|
+   get_node_info(NI,ID,Node,UN,UP,RN,RP),
+   copy:copy(UN,UN1,UN2),
+   U = [authenticate(UN1,UP,Ans)|U2],
+   login0(Ans,{ID,F,Node,UN2,RN,RP,LAN},Ser,Rep,GR,F,U2,A,PA,T).
+otherwise.
+login(_,Ser,Rep,GR,LAN,F,U,A,PA,T):-
+   true|
+   login_error:e(request,login,1,{LAN,F}),
+   Ser = [], Rep = [], GR =[], U = [], A = [], PA = [], T = [].
+
+login0(normal,NInfo,Ser,Rep,GR,F,U,A,PA,T):-
+   true|
+   copy:copy(NInfo,NInfo1,NInfoN0),
+   set_vector_element(NInfoN0,6,LAN,LAN1,NInfoN),
+   copy:copy(LAN,LAN1,LAN2),
+   PA = [who(NInfo1,Info)|PAN],
+   Rep = {Rep1,Rep2},
+   GR = {GR1,GR2}, U = {U1,U2}, A = {A1,A2},
+   PAN = {PAN1,PAN2}, T = {T1,T2},
+   login2(Info,NInfoN,Rep1,GR1,U1,A1,PAN1,T1),
+   Ser = [io(1,string#"  ",NI)|SerN],
+   login(NI,SerN,Rep2,GR2,LAN2,F,U2,A2,PAN2,T2).
+otherwise.
+login0(_,{ID,F,Node,UN,RN,_,LAN},Ser,Rep,GR,F,U,A,PA,T):-
+   true|
+   login_partition:get_node_string(Node,NODE),
+   builtin#append_string([string#"Login incorrect: User:",
+                          UN,string#"(",RN,string#",",
+                          NODE,string#",",LAN,string#")"],Error),
+   PA = [log(Error)|PAN],
+   login_error:m(request,login,1,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   Rep = [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)|RepN],
+   Ser = [io(1,string#"  ",NI)|SerN],
+   login(NI,SerN,RepN,GR,LAN,F,U,A,PAN,T).
+
+login2(simple_start(Rep0),NInfo,Rep,GR,U,A,PA,T):-
+   true|
+   PA = [],
+   Rep0 = Rep,
+   GR = [], U = [], A = [], T = [].
+login2(error(Mes0),NInfo,Rep,GR,U,A,PA,T):-
+   true|
+   PA = [],
+   set_vector_element(NInfo,0,ID,ID,_),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   Rep = [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],
+   GR = [], U = [], A = [], T = [].
+login2(normal(Info),NInfo,Rep,GR,U,A,PA,T):-
+   true|
+   set_vector_element(NInfo,0,ID,ID,N0),
+   set_vector_element(N0,1,F,F,N1),
+   set_vector_element(N1,2,Node,Node2,N2),
+   set_vector_element(N2,4,RN,RN2,N3),
+   set_vector_element(N3,5,RP,RP2,NInfoN),
+   copy:copy(Node,Node1,Node2),
+   copy:copy(RN,RN1,RN2),
+   copy:copy(RP,RP1,RP2),
+   get_fep_node(F,Node1,FEPNode),
+   shoen:raise(pimos_tag#task,general_request(FEPNode,RN1,RP1),NGR),
+   NGR = [window(WR)|NGRN],
+   login_error:m(request,login2,3,Msg),
+   login_int:make_message(Msg,ID,MMsg),
+   Rep = [io(1,MMsg,_)|RepN],
+   login_int:timeout(T,10000,OK,TN),
+   login2(WR,1,OK,NGRN,Info,NInfoN,RepN,GR,U,A,PA,TN).
+
+login2(normal(WR,_,_),C,OK,NGR,Info,NInfo,Rep,GR,U,A,PA,T):-
+   true|
+   WR = [create(Win)],
+   window_create(Win,NGR,Info,NInfo,Rep,GR,U,A,PA,T).
+login2(Status,C,OK,NGR,Info,NInfo,Rep,GR,U,A,PA,T):-
+   wait(OK),
+   C =< 90,
+   C1 := C + 1|
+   set_vector_element(NInfo,0,ID,ID,NInfo2),
+   login_int:make_message(string#".",ID,MSG),
+   Rep = [io(1,MSG,_)|RepN],
+   login_int:timeout(T,10000,OK1,TN),
+   login2(Status,C1,OK1,NGR,Info,NInfo2,RepN,GR,U,A,PA,TN).
+login2(Status,C,OK,NGR,Info,NInfo,Rep,GR,U,A,PA,T):-
+   wait(OK),
+   C > 90|
+   set_vector_element(NInfo,0,ID,ID,_),
+   login_error:m(request,login2,4,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   Rep = [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],
+   NGR = [], GR = [], U = [], A = [], PA = [], T = [].
+login2(abnormal,C,OK,NGR,Info,NInfo,Rep,GR,U,A,PA,T):-
+   true|
+   set_vector_element(NInfo,0,ID,ID,_),
+   login_error:m(request,login2,2,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   Rep = [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],
+   NGR = [], GR = [], U = [], A = [], PA = [], T = [].
+login2(aborted,C,OK,NGR,Info,NInfo,Rep,GR,U,A,PA,T):-
+   true|
+   set_vector_element(NInfo,0,ID,ID,_),
+   login_error:m(request,login2,2,Mes0),
+   login_int:make_message(Mes0,ID,Mes),
+   login_int:make_id2(ID,Mes1,Mes2),
+   Rep = [io(1,Mes,_),io(1,Mes1,_),io(2,Mes2,_)],
+   NGR = [], GR = [], U = [], A = [], PA = [], T = [].
+
+window_create(normal(Win,Abort,_),NGR,Info,NInfo,Rep,GR,U,A,PA,T):-
+   true|
+   login_int:window_init(Win,WinN,NGR,NGRN),
+   set_vector_element(NInfo,0,ID,ID,_),
+   login_error:m(request,login2,5,Msg0),
+   login_int:make_message(Msg0,ID,Msg),
+   login_int:make_id2(ID,Mes1,Mes2),
+   Rep = [io(1,Msg,_),io(1,Mes1,_),io(2,Mes2,_)],
+   wait_who(Info,WinN,Abort,NGRN,GR,U,A,PA,T).
+otherwise.
+window_create(_,NGR,Info,NInfo,Rep,GR,U,A,PA,T):-
+   true|
+   login2(abnormal,_,_,NGR,Info,NInfo,Rep,GR,U,A,PA,T).
+
+wait_who({Who,Entry,NInfo},Win,Abort,NGR,GR,U,A,PA,T):-
+   true|
+   A = {A1,A2},
+   T = {T1,T2},
+   login_int:window_interact(Win,WinN,Abort,Who,Entry,A1,T1,Status),
+   wait_who2(Status,WinN,NInfo,NGR,GR,U,A2,PA,T2).
+
+wait_who2(entry(Ent),Win,NInfo,NGR,GR,U,A,PA,T):-
+   true|
+   set_vector_element(NInfo,3,User,User1,NInfo1),
+   copy:copy(User,User1,User2),
+   U = [get_uid(User2,UID)|U2],
+   wait_who2_user(UID,Ent,Win,NInfo1,NGR,GR,U2,A,PA,T).
+wait_who2(kill(Ent,Lid,Status),Win,NInfo,NGR,GR,U,A,PA,T):-
+   true|
+   set_vector_element(NInfo,3,User,User1,NInfo1),
+   copy:copy(User,User1,User2),
+   U = [get_uid(User2,UID)|U2],
+   wait_who2_kill(UID,Ent,Lid,Status,Win,NInfo1,NGR,GR,U2,A,PA,T).
+wait_who2(exit,Win,NInfo,NGR,GR,U,A,PA,T):-
+   true|
+   Win = [], NGR = [], GR = [],
+   U = [], A = [], PA = [], T = [].
+
+wait_who2_user(normal(UID),Ent,Win,NInfo,NGR,GR,U,A,PA,T):-
+   wait(UID)|
+   U = [get_info(UID,Info)|U2],
+   wait_who2_user2(Info,UID,Ent,Win,NInfo,NGR,GR,U2,A,PA,T).
+otherwise.
+wait_who2_user(_,Ent,Win,NInfo,NGR,GR,U,A,PA,T):-
+   true|
+   login_error:m(request,wait_who2_user,1,Mes0),
+   login_int:putl(Mes0,Win,WinN,Status),
+   NGR = [], GR = [], U = [], A = [], PA = [], T = [],
+   wait_who2_user(Status,WinN).
+
+wait_who2_user(Status,Win):- wait(Status)|
+   Win = [].
+
+wait_who2_user2(normal(Info),UID,Ent,Win,NInfo,NGR,GR,U,A,PA,T):-
+   true|
+   PA = [login(Ent,{UID,Info},NInfo,NGR,Status)|PAN],
+   wait_login(Status,Win,GR,U,A,PAN,T).
+otherwise.
+wait_who2_user2(_,_,_,Win,_,NGR,GR,U,A,PA,T):-
+   true|
+   login_error:m(request,wait_who2_user2,1,Mes0),
+   login_int:putl(Mes0,Win,WinN,Status),
+   NGR = [], GR = [], U = [], A = [], PA = [], T = [],
+   wait_who2_user(Status,WinN).
+
+wait_login(normal(LID,Info,NInfo,S,Nodes,St),Win,GR,U,A,PA,T):-
+   true|
+   Win = [change_mode],
+   login_telnet:exec_simple_task(Info,NInfo,S,Nodes,St),
+   GR = [], U = [], A = [], PA = [], T = [].
+
+wait_login(normal(LID),Win,GR,U,A,PA,T):-
+   true|
+   login_error:m(request,login2,1,Mes0),
+   login_int:putl(Mes0,Win,WinN,Status),
+   U = [],
+   wait_login2(Status,WinN,GR,A,PA,T).
+otherwise.
+wait_login(error(Mes0),Win,GR,U,A,PA,T):-
+   true|
+%   login_error:m(request,wait_login,1,Mes0),
+   login_int:putl(Mes0,Win,WinN,_),
+   U = [],
+   login_int:putb(string#"Confirm: ",WinN,WinNN,_),
+   WinNN = [getb(1,Status)|WinNNN],
+   login_int:timeout(T,OK,TN),
+   wait_login3(Status,OK,WinNNN,GR,A,PA,TN).
+
+wait_login2(Status,Win,GR,A,PA,T):-
+   wait(Status)|
+   Win = [], GR = [], A = [], PA = [], T = [].
+wait_login3(Status,OK,Win,GR,A,PA,T):-
+   wait(Status)|
+   Win = [], GR = [], A = [], PA = [], T = [].
+wait_login3(_,OK,Win,GR,A,PA,T):-
+   wait(OK)|
+   Win = [], GR = [], A = [], PA = [], T = [].
+
+wait_who2_kill(normal(UID),Ent,Lid,Status,Win,NInfo,NGR,GR,U,A,PA,T):-
+   true|
+   U = {U1,U2},
+   PA = [kill_task(UID,Ent,Lid,U1,St)|PAN],
+   wait_who2_kill2(St,Status,Win,NInfo,NGR,GR,U2,A,PAN,T).
+otherwise.
+wait_who2_kill(_,_,_,Status,Win,NInfo,NGR,GR,U,A,PA,T):-
+   true|
+   Status = abnormal(In),
+   wait_who2(In,Win,NInfo,NGR,GR,U,A,PA,T).
+
+wait_who2_kill2(normal,Status,Win,NInfo,NGR,GR,U,A,PA,T):-
+   true|
+   Status = normal,
+   Win = [], NGR = [], GR = [], U = [], A = [], PA = [],
+   T = [].
+otherwise.
+wait_who2_kill2(_,Status,Win,NInfo,NGR,GR,U,A,PA,T):-
+   true|
+   Status = abnormal(In),
+   wait_who2(In,Win,NInfo,NGR,GR,U,A,PA,T).
+
+
+%%%%%%%%%%%%%%%%%%%%
+get_node_info(NI,ID,Node,UN,UP,RN,RP):-
+    true|
+    string_element(NI ,0,ID,NI0),
+    string_element(NI0,1,NOL,NI1),
+    string_element(NI1,2,RNL,NI2),
+    string_element(NI2,3,RPL,NI3),
+    string_element(NI3,4,UNL,NI4),
+    string_element(NI4,5,UPL,NI5),
+    local_check(Node0,Node),
+    get_node_info(NI5,6,[Node0,RN,RP,UN,UP],[NOL,RNL,RPL,UNL,UPL]).
+
+local_check(string#"local",Node):- true| Node = 0.
+otherwise.
+local_check(Node0,Node):- true| Node0 = Node.
+
+get_node_info(NI,_,[],[]):- true| true.
+get_node_info(NI,From,[Var|NextV],[Len|NextL]):-
+    NextF := From + Len|
+    copy_str(NI,From,Len,Var,NI2),
+    get_node_info(NI2,NextF,NextV,NextL).
+
+copy_str(NI,From,Len,Var,NI2):-
+    true|
+    new_string(Var0,Len,16),
+    copy_str(0,Len,From,Var0,Var,NI,NI2).
+
+copy_str(N,N,_,Var0,Var,NI,NI2):-
+    true|
+    Var0 = Var,
+    NI = NI2.
+otherwise.
+copy_str(M,N,From,Var0,Var,NI,NI2):-
+    M1 := M + 1,
+    From1 := From + 1|
+    string_element(NI,From,E,NI1),
+    set_string_element(Var0,M,E,Var1),
+    copy_str(M1,N,From1,Var1,Var,NI1,NI2).
+
+
+abnormal([]):- true| true.
+abnormal([Vec|Next]):-
+   vector(Vec,N),
+   N1 := N - 1|
+   set_vector_element(Vec,N1,abnormal,_,_),
+   abnormal(Next).
+
+%%%%
+get_fep_node(_,Node,FEPNode):-
+    string(Node,_,_)|
+    FEPNode = Node.
+otherwise.
+get_fep_node(F,_,FEPNode):-
+    true|
+    F = FEPNode.
+

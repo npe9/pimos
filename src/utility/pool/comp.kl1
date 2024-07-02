@@ -1,0 +1,183 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module comparator.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public sort/5,descending_sort/5,
+        sort0/5,usage/1.
+
+usage(L) :- true |
+        pool_usage:comparator(L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% sort(X,Y,^Smaller,^Larger,^Swapped)
+%%      X,Y     :: values to be compared
+%%      Smaller :: smaller value
+%%      Larger  :: larger value
+%%      Swapped :: it is bound to 'yes' if X is larger than Y, otherwise 'no'.
+
+sort(X,Y,S,L,Swapped) :- true |
+        sort0(X,Y,X1,Y1,Res),
+        wait_sorted(X1,Y1,S,L,Swapped,Res).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% descending_sort(X,Y,^Larger,^Smaller,^Swapped)
+%%      X,Y     :: values to be compared
+%%      Larger  :: larger value
+%%      Smaller :: smaller value
+%%      Swapped :: it is bound to 'yes' if X is smaller than Y, otherwise 'no'.
+
+descending_sort(X,Y,L,S,Swapped) :- true |
+        sort0(Y,X,Y1,X1,Res),
+        wait_sorted(X1,Y1,L,S,Swapped,Res).
+
+
+sort0(X,Y,X2,Y2,Res) :- true |
+        get_type(X,X1,T),
+        get_type(Y,Y1,T1),
+        do_sort(X1,Y1,X2,Y2,Res,T,T1).
+
+wait_sorted(X,Y,A,B,Swapped,greater) :- true | A=Y,B=X,Swapped=yes.
+wait_sorted(X,Y,A,B,Swapped,same) :- true | A=X,B=Y,Swapped=no.
+wait_sorted(X,Y,A,B,Swapped,less) :- true | A=X,B=Y,Swapped=no.
+
+get_type(X,X1,T) :- integer(X) | X=X1,T=0.
+:- switch(floating_point).
+:- case(yes).
+get_type(X,X1,T) :- floating_point(X) | X=X1,T=1.
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+get_type(X,X1,T) :- extended_floating_point(X,_) | X=X1,T=2.
+:- end_switch.
+get_type(X,X1,T) :- atom(X)           | X=X1,T=3.
+get_type(X,X1,T) :- string(X,_,_)     | X=X1,T=4.
+get_type(X,X1,T) :- list(X)           | X=X1,T=5.
+get_type(X,X1,T) :- vector(X,_)       | X=X1,T=6.
+get_type(X,X1,T) :- module(X,_)       | X=X1,T=7.
+get_type(X,X1,T) :- code(X,_,_,_)     | X=X1,T=8.
+otherwise.
+get_type(X,X1,T) :- true | X=X1,T=9.
+
+do_sort(X,Y,X1,Y1,Res,T,T) :- true | comp(X,Y,X1,Y1,Res,T).
+:- switch(floating_point).
+:- case(yes).
+do_sort(X,Y,X1,Y1,Res,0,1) :- X0$:=float(X),X0$<Y | X=X1,Y=Y1,Res=less.
+do_sort(X,Y,X1,Y1,Res,0,1) :- X0$:=float(X),X0$>Y | X=X1,Y=Y1,Res=greater.
+do_sort(X,Y,X1,Y1,Res,0,1) :- X0$:=float(X),X0$=:=Y | X=X1,Y=Y1,Res=less.   % same
+do_sort(X,Y,X1,Y1,Res,1,0) :- Y0$:=float(Y),X$<Y0 | X=X1,Y=Y1,Res=less.
+do_sort(X,Y,X1,Y1,Res,1,0) :- Y0$:=float(Y),X$>Y0 | X=X1,Y=Y1,Res=greater.
+do_sort(X,Y,X1,Y1,Res,1,0) :- Y0$:=float(Y),X$=:=Y0 | X=X1,Y=Y1,Res=greater.    % same
+:- switch(extended_floating_point).
+:- case(yes).
+do_sort(X,Y,X1,Y1,Res,0,2) :- integer_to_extended_floating_point(X,X0),X0$$<Y | X=X1,Y=Y1,Res=less.
+do_sort(X,Y,X1,Y1,Res,0,2) :- integer_to_extended_floating_point(X,X0),X0$$>Y | X=X1,Y=Y1,Res=greater.
+do_sort(X,Y,X1,Y1,Res,0,2) :- integer_to_extended_floating_point(X,X0),X0=Y | X=X1,Y=Y1,Res=less.  % same
+do_sort(X,Y,X1,Y1,Res,1,2) :- floating_point_to_extended_floating_point(X,X0),X0$$<Y | X=X1,Y=Y1,Res=less.
+do_sort(X,Y,X1,Y1,Res,1,2) :- floating_point_to_extended_floating_point(X,X0),X0$$>Y | X=X1,Y=Y1,Res=greater.
+do_sort(X,Y,X1,Y1,Res,1,2) :- floating_point_to_extended_floating_point(X,X0),X0=Y | X=X1,Y=Y1,Res=less.  % same
+do_sort(X,Y,X1,Y1,Res,2,0) :- integer_to_extended_floating_point(Y,Y0),X$$<Y0 | X=X1,Y=Y1,Res=less.
+do_sort(X,Y,X1,Y1,Res,2,0) :- integer_to_extended_floating_point(Y,Y0),X$$>Y0 | X=X1,Y=Y1,Res=greater.
+do_sort(X,Y,X1,Y1,Res,2,0) :- integer_to_extended_floating_point(Y,Y0),X=Y0 | X=X1,Y=Y1,Res=greater.   % same
+do_sort(X,Y,X1,Y1,Res,2,1) :- floating_point_to_extended_floating_point(Y,Y0),X$$<Y0 | X=X1,Y=Y1,Res=less.
+do_sort(X,Y,X1,Y1,Res,2,1) :- floating_point_to_extended_floating_point(Y,Y0),X$$>Y0 | X=X1,Y=Y1,Res=greater.
+do_sort(X,Y,X1,Y1,Res,2,1) :- floating_point_to_extended_floating_point(Y,Y0),X=Y0 | X=X1,Y=Y1,Res=greater.   % same
+:- end_switch.
+:- end_switch.
+otherwise.
+do_sort(X,Y,X1,Y1,Res,T,T1) :- T<T1 | X=X1,Y=Y1,Res=less.
+do_sort(X,Y,X1,Y1,Res,T,T1) :- T>T1 | X=X1,Y=Y1,Res=greater.
+
+
+comp(X,Y,X1,Y1,Res,0) :- X<Y | X=X1,Y=Y1,Res=less.
+comp(X,Y,X1,Y1,Res,0) :- X>Y | X=X1,Y=Y1,Res=greater.
+comp(X,Y,X1,Y1,Res,0) :- X=:=Y | X=X1,Y=Y1,Res=same.
+:- switch(floating_point).
+:- case(yes).
+comp(X,Y,X1,Y1,Res,1) :- X$<Y | X=X1,Y=Y1,Res=less.
+comp(X,Y,X1,Y1,Res,1) :- X$>Y | X=X1,Y=Y1,Res=greater.
+comp(X,Y,X1,Y1,Res,1) :- X$=:=Y | X=X1,Y=Y1,Res=same.
+:- end_switch.
+:-switch(extended_floating_point).
+:- case(yes).
+comp(X,Y,X1,Y1,Res,2) :- X$$<Y | X=X1,Y=Y1,Res=less.
+comp(X,Y,X1,Y1,Res,2) :- X$$>Y | X=X1,Y=Y1,Res=greater.
+comp(X,Y,X1,Y1,Res,2) :- X=Y | X=X1,Y=Y1,Res=same.
+:- end_switch.
+comp(X,Y,X1,Y1,Res,3) :- tag_and_value(X,_,M),tag_and_value(Y,_,N),M<N | X=X1,Y=Y1,Res=less.
+comp(X,Y,X1,Y1,Res,3) :- tag_and_value(X,_,M),tag_and_value(Y,_,N),M>N | X=X1,Y=Y1,Res=greater.
+comp(X,Y,X1,Y1,Res,3) :- tag_and_value(X,_,M),tag_and_value(Y,_,N),M=:=N | X=X1,Y=Y1,Res=same.
+
+comp(X,Y,X1,Y1,Res,4) :- X&<Y | X=X1,Y=Y1,Res=less.
+comp(X,Y,X1,Y1,Res,4) :- X&>Y | X=X1,Y=Y1,Res=greater.
+comp(X,Y,X1,Y1,Res,4) :- X=Y | X=X1,Y=Y1,Res=same.
+
+comp(X,Y,X1,Y1,Res,5) :- true | comp_list(X,Y,X1,Y1,Res).
+
+comp(X,Y,X1,Y1,Res,6) :- vector(X,Sx),vector(Y,Sy),Sx<Sy | X=X1,Y=Y1,Res=less.
+comp(X,Y,X1,Y1,Res,6) :- vector(X,Sx),vector(Y,Sy),Sx>Sy | X=X1,Y=Y1,Res=greater.
+comp(X,Y,X1,Y1,Res,6) :- vector(X,Sx),vector(Y,Sy),Sx=Sy |
+        comp_vect_e(X,Y,X1,Y1,Res,0,Sx).
+
+comp(X,Y,X1,Y1,Res,7) :- module(X,Sx),module(Y,Sy),Sx<Sy | X=X1,Y=Y1,Res=less.
+comp(X,Y,X1,Y1,Res,7) :- module(X,Sx),module(Y,Sy),Sx>Sy | X=X1,Y=Y1,Res=greater.
+comp(X,Y,X1,Y1,Res,7) :- module(X,Sx),module(Y,Sy),Sx=Sy |
+        X=X1,Y=Y1,
+        comp_mod_e(X,Y,0,Sx,Res).
+
+comp(X,Y,X1,Y1,Res,8) :- code(X,_,_,Px),code(Y,_,_,Py),Px<Py | X=X1,Y=Y1,Res=less.
+comp(X,Y,X1,Y1,Res,8) :- code(X,_,_,Px),code(Y,_,_,Py),Px>Py | X=X1,Y=Y1,Res=greater.
+comp(X,Y,X1,Y1,Res,8) :- code(X,_,Mx,Px),code(Y,_,My,Py),Px=Py |
+        X=X1,Y=Y1,
+        comp(Mx,My,_,_,Res,7).
+
+otherwise.
+comp(X,Y,X1,Y1,Res,_) :- tag_and_value(X,Tx,Vx),tag_and_value(Y,Ty,Vy) |
+        X=X1,Y=Y1,
+        comp_tag_and_value(Tx,Ty,Vx,Vy,Res).
+
+
+comp_list([A|X],[B|Y],X1,Y1,Res) :- true |
+        sort0(A,B,A1,B1,R),
+        X1=[A1|Rx1],Y1=[B1|Ry1],
+        wait_compared_list(X,Y,Rx1,Ry1,Res,R).
+comp_list([],[B|Y],X1,Y1,Res) :- true | X1=[],Y1=[B|Y],Res=less.
+comp_list([A|X],[],X1,Y1,Res) :- true | X1=[A|X],Y1=[],Res=greater.
+comp_list([],[],X1,Y1,Res) :- true | X1=[],Y1=[],Res=same.
+otherwise.
+comp_list(X,Y,X1,Y1,Res) :- true | sort0(X,Y,X1,Y1,Res).
+
+wait_compared_list(X,Y,X1,Y1,Res,same) :- true | comp_list(X,Y,X1,Y1,Res).
+wait_compared_list(X,Y,X1,Y1,Res,R) :- R\=same | X1=X,Y1=Y,Res=R.
+
+comp_vect_e(X,Y,X1,Y1,Res,I,Size) :- I<Size |
+        set_vector_element(X,I,E,E1,X0),
+        set_vector_element(Y,I,F,F1,Y0),
+        sort0(E,F,E1,F1,R),
+        wait_compared_vect(X0,Y0,X1,Y1,Res,I,Size,R).
+comp_vect_e(X,Y,X1,Y1,Res,I,I) :- true | X1=X,Y1=Y,Res=same.
+
+wait_compared_vect(X,Y,X1,Y1,Res,I,Size,same) :- true |
+        comp_vect_e(X,Y,X1,Y1,Res,~(I+1),Size).
+wait_compared_vect(X,Y,X1,Y1,Res,_,_,R) :- R\=same | X=X1,Y=Y1,Res=R.
+
+comp_mod_e(X,Y,I,Size,Res) :- I<Size |
+        module_element(X,I,Ex),
+        module_element(Y,I,Ey),
+        sort0(Ex,Ey,_,_,R),
+        wait_compared_mod(X,Y,I,Size,Res,R).
+comp_mod_e(_,_,I,I,Res) :- true | Res=same.
+
+wait_compared_mod(X,Y,I,Size,Res,same) :- true |
+        comp_mod_e(X,Y,~(I+1),Size,Res).
+wait_compared_mod(_,_,_,_,Res,R) :- R\=same | Res=R.
+
+comp_tag_and_value(Tx,Ty,_,_,Res) :- Tx<Ty | Res=less.
+comp_tag_and_value(Tx,Ty,_,_,Res) :- Tx>Ty | Res=greater.
+comp_tag_and_value(Tx,Ty,Vx,Vy,Res) :- Tx=:=Ty,Vx<Vy | Res=less.
+comp_tag_and_value(Tx,Ty,Vx,Vy,Res) :- Tx=:=Ty,Vx>Vy | Res=greater.
+comp_tag_and_value(Tx,Ty,Vx,Vy,Res) :- Tx=:=Ty,Vx=:=Vy | Res=same.

@@ -1,0 +1,61 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module as_make_data.
+:- with_macro pimos.
+:- public go/3.
+
+    go(In,Out,Max):- true |
+        filter(In,1,Max,Out).
+
+    filter([],C,Max,Out):- true |
+        Out = [],Max:=C-1.
+    filter([List|RList],C,Max,Out):-true |
+        counter(List,0,Buf),
+        Out = [profile(C,Buf)|Out1],
+        NC := C + 1,
+        filter(RList,NC,Max,Out1).
+
+counter([],PE,Buf) :- true |
+    Buf = [].
+counter([{_PE,DataOfNode}|List],PE,Buf) :- true |
+    cal(DataOfNode,PE,NPE,Buf,RBuf),
+    counter(List,NPE,RBuf).
+
+cal({_,_,Vec1,Vec2,_,_,_},C,Next,Buf,RBuf):- vector(Vec1,PE) |
+   get_string(Vec1,Vec2,C,0,PE,Buf,RBuf),
+   Next := C + PE.
+
+get_string(Vec1,Vec2,PE,AllPE,AllPE,Buf,RBuf):- true |
+    RBuf = Buf.
+otherwise.
+get_string(Vec1,Vec2,PE,Count,AllPE,Buf,RBuf):- true |
+   set_vector_element(Vec1,Count,String1,[],Vec12),
+   set_vector_element(Vec2,Count,String2,[],Vec22),
+   count_message(String1,String2,0,31,List),
+   C := PE + Count,
+   Buf = [pe(C,List)|RB],
+   Next := Count + 1,
+   get_string(Vec12,Vec22,PE,Next,AllPE,RB,RBuf).
+   
+count_message(EncodeString,DecodeString,Count,Max,List):-
+   Count > Max |
+   List = [].
+count_message(EncodeString,DecodeString,Count,Max,List):-
+   Count =< Max |
+   string_element(EncodeString,Count,EValue,ENewString),
+   string_element(DecodeString,Count,DValue,DNewString),
+   NextCount := Count + 1, 
+   make_log(NextCount,DValue,EValue,List,RList),
+   count_message(ENewString,DNewString,NextCount,Max,RList).
+
+ make_log(NextCount,0,0,List,RList):- true |
+   RList = List.
+ make_log(NextCount,DValue,EValue,List,RList):-
+  (DValue > 0 ; EValue > 0) |
+   List = [{NextCount,DValue,EValue}|RList].
+  

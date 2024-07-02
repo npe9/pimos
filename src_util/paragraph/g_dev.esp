@@ -1,0 +1,347 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+add_operator((::),xfx,90).
+class g_dev has
+    :create(Class,View,Max,Dev):-
+        :new(Class,Dev),
+        Dev!view := View,
+        Dev!max := Max,
+        :create(#list,List),
+        Dev!graph_list := List;
+
+  instance 
+        attribute w,
+                  view,
+                  type,
+                  max,
+                  limit,
+                  graph_list,
+                  scale_change := yes,
+                  layout := nil;
+
+ :set_value(Dev,rs,{Pred,Num1,Num2},Rec):-
+      heap_vector(Num1,Size),!,
+      Dev!view = View,
+      Dev!type := rs,
+      get_value(rs,0,Size,Num1,Data1),
+      get_value(rs,0,Size,Num2,Data2),
+      select_class(#receiver!color,View,rs,Class),
+      Init = [element([suspension,reduction])|Init0] ,
+      make_init(Rec!view_mode,View,rs,Pred,Size,Init0,Dev!max,Dev!limit,Rec!start_pe),
+      :create(Class,G,Init),
+      :add_last(Dev!graph_list,G),
+      set_value2(View,Data1,Data2,NewList),
+      :set_all(G,NewList,Dev!layout),
+     ( Dev!view = predicate,!, true ;
+       G!xb = XB,
+       ( XB = 1,!,Dev!scale_change:=no;
+       Dev!scale_change:=yes)),!;
+ 
+
+ :set_value(Dev,Type,{Pred,Num},Rec):-
+      heap_vector(Num,Size) ,!,
+      Dev!view = View,
+      Dev!type := Type,
+      get_value(Type,0,Size,Num,Data),
+      select_class(#receiver!color,View,Type,Class),
+     ( Dev!view = when_where,!,Init0=Init ;
+       Init = [element([r])|Init0] ),
+      make_init(Rec!view_mode,View,Type,Pred,Size,Init0,Dev!max,Dev!limit,Rec!start_pe),
+      :create(Class,G,Init),
+      :add_last(Dev!graph_list,G),
+      set_value(View,Data,NewList),
+      ( Dev!view = when_where,!, 
+        :set_all(G,NewList) ;
+        :set_all(G,NewList,Dev!layout),
+        G!xb = XB,
+       ( XB = 1,!,Dev!scale_change:=no;
+         Dev!scale_change:=yes)),!;
+     
+
+  :set_all_value(Dev,Type,String,Rec):-
+     string(String,Length,_),
+     ( Dev!view = overall_what_where ,!,
+       L = Rec!pe ;
+       Dev!view = overall_what_when ,!,
+       L = Rec!cycle ),!,
+     Dev!type := Type,
+     Size = (Length-2) / (2*L+1),
+     View = Dev!view,
+     make_name_list(0,Size,2*L+1,String,NameList,Rec),
+     reverse(NameList,NameList1),
+     select_class(#receiver!color,View,Type,Class),
+     make_init(Rec!view_mode,View,Type,total,L,Init0,Dev!max,Dev!limit,Rec!start_pe),
+     :create(Class,G,[element(NameList1)|Init0]),
+     :add_last(Dev!graph_list,G),
+     set_total_value(View,NameList1,NameList,Size,L,String,NewList,Rec),
+     :set_all(G,NewList,Dev!layout),
+     G!xb = XB,
+      ( XB = 1,!,Dev!scale_change:=no;
+        Dev!scale_change:=yes),!;
+     
+
+  :h(Obj,Attribute):-
+     :create(#h,H,Obj!w,Attribute),
+     Obj!layout := H;
+
+  :hg(Obj,Attribute):-!,
+     :create(#h_grade,HG,Obj!w,Attribute),
+     Obj!layout := HG;
+
+  :v(Obj,Attribute):-!,
+     :create(#v,V,Obj!w,Attribute),
+     Obj!layout := V;
+
+  :layout(Obj):-
+     Obj!layout == nil,!;
+  :layout(Obj):-
+     Obj!layout = Layout,
+     :get_contents(Obj!graph_list,List),
+     count(List,0,Num),
+     Layout!num := Num,
+     :layout(Layout,List),
+     :get_size(Obj!w,Width,_),
+     W0 = Width-300,
+     ( W0 < 200,!, true ;
+       draw_predicate(Obj,List,Layout) );
+   
+   :draw(Obj):-
+     Obj!layout == nil,!;
+   :draw(Obj):-
+     Layout = Obj!layout,
+     :draw(Layout),
+     ( Obj!view = when_where,!,
+       Layout!xb = XB,
+       Layout!y_unit = YUnit,  %%%  16
+     ( XB = 1,YUnit = 1,!, Obj!scale_change := no;
+       Obj!scale_change := yes ) ; true  );
+
+
+local
+
+    select_class(_,when_where,r,#grade_h):-!;
+    select_class(_,when_where,s,#grade_h):-!;
+    select_class(mono,what_when,rs,#line2_v):-!;
+    select_class(mono,what_where,rs,#bar2_v):-!;
+    select_class(mono,what_when,_,#line_v):-!;
+    select_class(mono,what_where,_,#bar_v):-!;
+    select_class(mono,overall_what_when,rs,#line2_v):-!;
+    select_class(mono,overall_what_when,_,#line_v):-!;
+    select_class(mono,overall_what_where,rs,#bar2_v):-!;
+    select_class(mono,overall_what_where,_,#bar_v):-!;
+    select_class(mono,predicate,rs,#bar2_h):-!;
+    select_class(color,what_when,rs,#color_line2_v):-!;
+    select_class(color,what_where,rs,#color_bar2_v):-!;
+    select_class(color,what_when,_,#color_line_v):-!;
+    select_class(color,what_where,_,#color_bar_v):-!;
+    select_class(color,overall_what_when,rs,#color_line2_v):-!;
+    select_class(color,overall_what_when,_,#color_line_v):-!;
+    select_class(color,overall_what_where,rs,#color_bar2_v):-!;
+    select_class(color,overall_what_where,_,#color_bar_v):-!;
+    select_class(color,predicate,rs,#color_bar2_h):-!;
+
+
+%%%% what_where %%%%
+    make_init(pe,what_where,Type,Pred,Size,Init,_,Limit,SPE):-
+     ( Type==r,!, Name="%" ;
+       Type==s,!, Name="%" ;
+       Type==rs,!, Name="%" ),!,
+     title_string(Pred,Pred1),
+     Init = [title(Pred1),x("Node",Size-1,1),y_auto(Name),limit(Limit),
+     set_y_max(100)];
+    make_init(pe,overall_what_where,Type,Pred,Size,Init,_,_,SPE):-
+     ( Type==r,!, Name="%" ;
+       Type==s,!, Name="%" ;
+       Type==rs,!, Name ="%" ),
+     Init = [x("Node",Size-1,1),y_auto(Name),set_y_max(100)];
+ 
+%%%% what_when %%%%
+    make_init(pe,what_when,Type,Pred,Size,Init,_,Limit,_):-
+     ( Type==r,!, Name="%";
+       Type==s,!, Name="%";
+       Type==rs,!, Name="%" ),!,
+      title_string(Pred,Pred1),
+      Init = [title(Pred1),name_vis(no),x("T",Size,1),y_auto(Name),limit(Limit),set_y_max(100)];
+   make_init(pe,overall_what_when,Type,Pred,Size,Init,_,_,_):-
+     ( Type==r,!, Name="%" ;
+       Type==s,!, Name="%" ;
+       Type==rs,!, Name ="%" ),
+      Init = [name_vis(no),x("T",Size,1),y_auto(Name),set_y_max(100)];
+
+%%%% when_where %%%%
+    make_init(pe,when_where,Type,Pred,Size,Init,Max,_,SPE):-
+     ( Type==r,!, Name=r;
+       Type==s,!, Name=s ),!,
+       title_string(Pred,Pred1),
+       Init = [title(Pred1),y(node,Size),set_max(100),x(Name,Max),frame(off)];
+
+%%%% what_where %%%%
+    make_init(ViewMode,what_where,Type,Pred,Size,Init,_,Limit,SPE):-
+     ( Type==r,!, Name="r";
+       Type==s,!, Name="s";
+       Type==rs,!, Name="rs" ),!,
+     title_string(Pred,Pred1),
+     Init = [title(Pred1),x("Node",Size-1,1),y_auto(Name),limit(Limit)];
+    make_init(ViewMode,overall_what_where,Type,Pred,Size,Init,_,_,SPE):-
+     ( Type==r,!, Name="r";
+       Type==s,!, Name="s";
+       Type==rs,!, Name="rs" ),!,
+     Init = [x("Node",Size-1,1),y_auto(Name)];
+ 
+%%%% what_when %%%%
+    make_init(ViewMode,what_when,Type,Pred,Size,Init,_,Limit,_):-
+     ( Type==r,!, Name="r";
+       Type==s,!, Name="s";
+       Type==rs,!, Name="rs" ),!,
+      title_string(Pred,Pred1),
+      Init = [title(Pred1),name_vis(no),x("T",Size,1),y_auto(Name),limit(Limit)];
+   make_init(ViewMode,overall_what_when,Type,Pred,Size,Init,_,_,_):-
+     ( Type==r,!, Name="r" ;
+       Type==s,!, Name="s" ;
+       Type==rs,!, Name ="rs" ),
+      Init = [name_vis(no),x("T",Size,1),y_auto(Name)];
+
+%%%% when_where %%%%
+    make_init(ViewMode,when_where,Type,Pred,Size,Init,Max,_,SPE):-
+     ( Type==r,!, Name=r;
+       Type==s,!, Name=s ),!,
+       title_string(Pred,Pred1),
+       Init = [title(Pred1),y(node,Size),x(Name,Max),frame(off)];
+   
+%%%% pred %%%%
+    make_init(ViewMode,predicate,_,Pred,Size,Init,_,_,_):-
+     :get_atom_string(#symbolizer,Pred,Pred1),
+     Init = [y("N",Size,1),x_auto(rs),
+             y_name_visibility(on),x_max_visibility(on)];
+%%%%%%%%%
+    get_s_value(Type,Max,Max,Vec,[]):- !;
+    get_s_value(Type,N,Max,Vec,[Value|D1]):-
+        string_element(Vec,N,Value),
+        get_s_value(Type,N+1,Max,Vec,D1);
+
+    get_value(Type,Max,Max,Vec,[]):- !;
+    get_value(Type,N,Max,Vec,[Value|D1]):-
+        vector_element(Vec,N,Value),
+        get_value(Type,N+1,Max,Vec,D1);
+
+   set_value(View,Data,NewList):-
+      View = what_when,!,
+      NewList = [{0,[{r,0}]}|NewList0],
+      set_all(Data,1,NewList0);
+   set_value(View,Data,NewList):-
+      ( View = predicate ,!, P = 1 ; P = 0 ),
+      set_all(Data,P,NewList);
+
+   set_all([],_,[]):- !;
+   set_all([Value|V1],N,NewList):-
+      NewList = [{N,[{r,Value}]}|R],!,
+      set_all(V1,N+1,R);
+ 
+   set_value2(View,Data1,Data2,NewList):-
+      ( View = what_when,!; View = overall_what_when ),!,
+      NewList = [{0,[{s,0},{r,0}]}|NewList0],
+      set_all2(Data1,Data2,1,NewList0);
+   set_value2(View,Data1,Data2,NewList):-
+      ( View = predicate ,!, P = 1 ; P = 0 ),
+     set_all2(Data1,Data2,P,NewList);
+   
+   set_all2([],[],_,[]):- !;
+   set_all2([Value1|V1],[Value2|V2],N,NewList):-
+        NewList = [{N,[{s,Value1},{r,Value2}]}|R],!,
+        set_all2(V1,V2,N+1,R);
+  
+   set_total_value(View,RNameList,NameList,Size,L,String,NewList,Rec):-
+       View = overall_what_when,!,
+       set_zero(RNameList,ZeroList),
+       NewList = [{0,ZeroList}|NewList0],
+       set_total_info(NameList,Size,0,L,String,1,NewList0,Rec);
+   set_total_value(View,RNameList,NameList,Size,L,String,NewList,Rec):-
+       set_total_info(NameList,Size,0,L,String,0,NewList,Rec);
+        
+    set_zero([],[]):-!;
+    set_zero([Name|RN],[{Name,0}|RL]):-!,
+        set_zero(RN,RL);
+
+    set_total_info(NameList,Size,L,L,String,_,[],_):-!;
+    set_total_info(NameList,Size,C,L,String,P,NewList,Rec):-
+        make_unit_list(NameList,String,1,Size,C,L,UnitList,Rec),
+        reverse(UnitList,RevList),
+        NewList = [{P,RevList}|RList],
+        set_total_info(NameList,Size,C+1,L,String,P+1,RList,Rec);
+
+    make_unit_list([],String,_,_,C,L,[],_):-!;
+    make_unit_list([PredS|RName],String,N,Size,C,L,NewList,Rec):-
+        string_element(String,(N-1)*L*2+N+C*2,Val1),
+        string_element(String,(N-1)*L*2+N+C*2+1,Val2),
+        Val = Val1*65536 + Val2,
+        NewList = [{PredS,Val}|RList],
+        make_unit_list(RName,String,N+1,Size,C,L,RList,Rec);
+
+    make_name_list(N,N,_,_,[],_):- !;
+    make_name_list(C,N,ElmNum,String,List,Rec):-
+        string_element(String,C*ElmNum,Id),
+       ( Id = 0,!, PredS = "others" ;
+        :get_at(Rec!pred_pool,Vect,Id),
+        get_pred_string(Vect,PredS)),
+        List = [PredS|NameList],
+        make_name_list(C+1,N,ElmNum,String,NameList,Rec);
+
+    reverse(List,Ans):-
+        reverse(List,[],Ans);
+    reverse([],Rev,Rev):- !;
+    reverse([H|T],Rev,Ans):- !,
+        reverse(T,[H|Rev],Ans);
+
+    count([],Ans,Ans):- !;
+    count([H|T],C,Ans):- !,
+        count(T,C+1,Ans);
+
+
+   get_pred_string(Vect,PredS):-
+        heap_vector(Vect,8),!,
+        vector_element(Vect,1,Pack),
+        vector_element(Vect,2,Mod),
+        vector_element(Vect,3,Pred),
+        vector_element(Vect,4,Ar),
+        :get_atom_string(#symbolizer,Pack,Pack1),
+        :get_atom_string(#symbolizer,Mod,M1),
+        :get_atom_string(#symbolizer,Pred,P1),
+        :get_number_string(#symbolizer,Ar,A1),
+        :append(#string,[Pack1,"::",M1,":",P1,"/",A1],PredS);
+   get_pred_string(Vect,PredS):-
+        heap_vector(Vect,7),!,
+        vector_element(Vect,1,Pack),
+        vector_element(Vect,2,Mod),
+        vector_element(Vect,3,Pred),
+        :get_atom_string(#symbolizer,Pack,Pack1),
+        :get_atom_string(#symbolizer,Mod,M1),
+        :get_atom_string(#symbolizer,Pred,P1),
+        :append(#string,[Pack1,"::",M1,":",P1],PredS);
+   get_pred_string(Vect,PredS):-
+        heap_vector(Vect,5),!,
+        vector_element(Vect,1,P),
+        :get_atom_string(#symbolizer,P,PredS);
+
+    title_string(Pred,Pred1):- string(Pred,L,T),!,Pred1 = Pred ;
+    title_string(Pred,Pred1):- atom(Pred),!,
+       :get_atom_string(#symbolizer,Pred,Pred1) ;
+    title_string(Pred,Pred1):- integer(Pred),!,
+       :get_number_string(#symbolizer,Pred,Pred1);
+    title_string(Pred,Pred1):-!,
+       Pred1="?";
+      
+   draw_predicate(Obj,List,Layout):-
+      ( Obj!view = overall_what_when, !, true ;
+        Obj!view = overall_what_where, !, true;
+        fail ),
+         List = [G],!,
+          Obj!w=Win,Obj!type = Type,
+          Win!type:=Type,
+       ( Type == rs,!,NameList1 = [];
+         :get_element(G,NameList),
+         reverse(NameList,NameList1)),
+         :draw_list(Obj!w,Layout!width+72,50,NameList1,font_11); 
+   draw_predicate(Obj,List,Layout):-!;
+  
+end.
+

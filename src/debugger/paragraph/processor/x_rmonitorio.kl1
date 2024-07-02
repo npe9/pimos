@@ -1,0 +1,427 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module xrmonitor.
+:- public go/0, go/1 .
+:- with_macro pimos.
+:- include("pimos.h").
+
+go :-
+    true |
+        shoen:raise(pimos_tag#task, general_request, GenReq),
+        shoen:raise(pimos_tag#task, get_std(out), StdOut),
+        GenReq = [getenv(pmeter:interval,Interval)|GenReq1],
+        check_interval(Interval,GenReq1,StdOut,0).
+go(T) :-
+    true |
+        shoen:raise(pimos_tag#task, general_request, GenReq),
+        shoen:raise(pimos_tag#task, get_std(out), StdOut),
+        GenReq = [getenv(pmeter:interval,Interval)|GenReq1],
+        check_interval(Interval,GenReq1,StdOut,T).
+
+%%%%%% interval %%%%%%
+check_interval(normal(Interval),GenReq,StdOut,T) :-
+    integer(Interval) |
+        GenReq = [getenv(pmeter:profiling_node,Node),connection(Result)|GenReq1],
+        check_my_node(Result,Interval,Node,GenReq1,StdOut,T).
+otherwise.
+check_interval(_,GenReq,StdOut,T) :-
+    true |
+        Interval = 2000,
+        GenReq = [getenv(pmeter:profiling_node,Node),connection(Result)|GenReq1],
+        check_my_node(Result,Interval,Node,GenReq1,StdOut,T).
+
+%%%%%% my_node %%%%%
+% 94.4.11 K.Nakao
+check_my_node(normal(MyNode),Interval,normal(Node),GenReq,StdOut,T):- integer(MyNode) |
+%        buffer:character_pool(F),
+%        check_profiling_node(Interval,Node,MyNode,GenReq,F,StdOut,T).
+        check_profiling_node(Interval,Node,MyNode,GenReq,StdOut,T).
+check_my_node(normal(MyNode),Interval,normal(Node),GenReq,StdOut,T):- string(MyNode,_,_) |
+%        buffer:character_pool(F),
+%        F=[do([putb(MyNode),putl(" . "),flush(_),getwt(normal(atom(MyNode1))),flush(_)])|B],
+%        check_profiling_node(Interval,Node,MyNode1,GenReq,B,StdOut,T).
+        atom_table:intern(MyNode,{_,MyNode1}),
+        check_profiling_node(Interval,Node,MyNode1,GenReq,StdOut,T).
+check_my_node(normal(MyNode),Interval,abnormal,GenReq,StdOut,T):- integer(MyNode) |
+%        buffer:character_pool(F),
+%        check_profiling_node(Interval,abnormal,MyNode,GenReq,F,StdOut,T).
+        check_profiling_node(Interval,abnormal,MyNode,GenReq,StdOut,T).
+check_my_node(normal(MyNode),Interval,abnormal,GenReq,StdOut,T):- string(MyNode,_,_) |
+%        buffer:character_pool(F),
+%        F=[do([putb(MyNode),putl(" . "),flush(_),getwt(normal(atom(MyNode1))),flush(_)])|B],
+%        check_profiling_node(Interval,abnormal,MyNode1,GenReq,B,StdOut,T).
+        atom_table:intern(MyNode,{_,MyNode1}),
+        check_profiling_node(Interval,abnormal,MyNode1,GenReq,StdOut,T).
+otherwise.
+check_my_node(_,_,_,GenReq,StdOut,_):- true |
+        StdOut = [putb(" Cannot connect my_node!"),nl,flush(_)],
+        GenReq = [].
+ 
+%%%%%% profiling_node %%%%%%
+check_profiling_node(Interval,TFEPNO,MyNode,GenReq,StdOut,T) :-
+        integer(TFEPNO),
+        TFEPNO \= MyNode | 
+        GenReq = [getenv(pmeter:profiling_username,USER),
+                  getenv(pmeter:profiling_password,PW)|GenReq1],
+        check_profiling_user(TFEPNO,USER,PW,GenReq1,Interval,MyNode,StdOut,T).
+check_profiling_node(Interval,TFEPNO,MyNode,GenReq,StdOut,T) :-
+        integer(TFEPNO),
+        TFEPNO = MyNode | 
+        shoen:raise(pimos_tag#task,general_request(TFEPNO),TGR),
+        TGR=[connection(Result)|TGR1],
+        check_display_node(TGR1,Interval,GenReq,MyNode,StdOut,T).
+check_profiling_node(Interval,system_timer,MyNode,GenReq,StdOut,T) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,TGR),
+        TGR=[connection(Result)|TGR1],
+        check_display_node(TGR1,Interval,GenReq,MyNode,StdOut,T).
+check_profiling_node(Interval,abnormal,MyNode,GenReq,StdOut,T) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,TGR),
+        TGR=[connection(Result)|TGR1],
+        check_display_node(TGR1,Interval,GenReq,MyNode,StdOut,T).
+otherwise.
+check_profiling_node(Interval,_,_,GenReq,StdOut,T) :-
+    true |
+        StdOut = [putb(" Cannot connect profiling_node!"),nl,flush(_)],
+        GenReq=[].
+
+%%%%% profiling_username, profiling_password %%%%%%
+check_profiling_user(TFEPNO,normal(User),normal(Pass),GenReq1,Interval,MyNode,StdOut,T) :-
+        true |
+        atom_table:get_atom_name(User,normal(UserS)),
+        atom_table:get_atom_name(Pass,normal(PassS)),
+        shoen:raise(pimos_tag#task,general_request(TFEPNO,UserS,PassS),TGR), 
+        TGR=[connection(Result)|TGR1],
+        check_profiling_user0(Result,TGR1,Interval,GenReq1,MyNode,StdOut,T).
+otherwise.
+check_profiling_user(TFEPNO,_,_,GenReq1,Interval,MyNode,StdOut,T) :-
+        true |
+        shoen:raise(pimos_tag#task,general_request(TFEPNO),TGR), 
+        TGR=[connection(Result)|TGR1],
+        check_profiling_user0(Result,TGR1,Interval,GenReq1,MyNode,StdOut,T).
+
+check_profiling_user0(normal(TNode),TGR1,Interval,GenReq1,MyNode,StdOut,T):-
+       true |
+        check_display_node(TGR1,Interval,GenReq1,MyNode,StdOut,T).
+check_profiling_user0(abnormal,TGR1,Interval,GenReq1,MyNode,StdOut,T):-
+       true |
+       StdOut = [putb(" Cannot connect profiling_node!"),nl,flush(_)],
+       TGR1 = [], GenReq1 = [].
+ 
+%%%%%% display_node %%%%%%
+check_display_node(TGR,Interval,GenReq,MyNode,StdOut,T):-
+    integer(MyNode) |
+        shoen:raise(pimos_tag#task,general_request(MyNode),DGR),
+        DGR=[connection(Result)|DGR1],
+        check_display_user0(Result,DGR1,TGR,Interval,GenReq,MyNode,StdOut,T).
+check_display_node(TGR,Interval,GenReq,MyNode,StdOut,T):-
+    atom(MyNode) |
+        atom_table:get_atom_name(MyNode,normal(MyNodes)),
+        shoen:raise(pimos_tag#task,general_request(MyNodes),DGR),
+        DGR=[connection(Result)|DGR1],
+        check_display_user0(Result,DGR1,TGR,Interval,GenReq,MyNode,StdOut,T).
+otherwise.
+check_display_node(TGR,Interval,GenReq,MyNode,StdOut,T) :-
+    true |
+        StdOut = [putb(" Cannot connect display_node!"),nl,flush(_)],
+        TGR=[], GenReq=[].
+
+%%%%%%%%
+check_display_user0(normal(DNode),DGR1,TGR,Interval,GenReq1,MyNode,StdOut,T):-
+       true |
+       DGR1 = [socket(Result)],
+       check_node(Result,TGR,Interval,GenReq1,MyNode,StdOut,T).
+check_display_user0(abnormal,DGR1,TGR,Interval,GenReq1,MyNode,StdOut,T):-
+       true |
+        DGR1 = [],
+        StdOut = [putb(" Cannot connect display_node!"),nl,flush(_)],
+        TGR = [], GenReq1 = [].
+
+%%%%%%%%
+check_node(normal(Request,_,_),TGR,Interval,GenReq1,MyNode,StdOut,T):-
+       true |
+       GenReq1 = [getenv(pmeter:display_node,Display)|GenReq2],
+       check_disp_node(Display,Request,TGR,Interval,GenReq2,MyNode,StdOut,T).
+check_node(abnormal,TGR,Interval,GenReq1,MyNode,StdOut,T):-
+       true |
+        StdOut = [putb(" Cannot connect display_node!"),nl,flush(_)],
+        TGR = [], GenReq1 = [].
+
+check_disp_node(normal(Display),Request,TGR,Interval,GenReq1,MyNode,StdOut,T):- true |
+       check_nodes(Display,Request,DisplayNode,T),
+       create_pmeter(DisplayNode,TGR,Interval,GenReq1,StdOut,T).
+check_disp_node(abnormal,Request,TGR,Interval,GenReq1,MyNode,StdOut,T):- true |
+       StdOut = [],
+       GenReq1 = [getenv(task:io_node,IO)|GenReq2],
+       check_io_node(IO,Request,DisplayNode,T),
+       create_pmeter(DisplayNode,TGR,Interval,GenReq2,StdOut,T).
+otherwise.
+check_disp_node(_,Request,TGR,Interval,GenReq1,MyNode,StdOut,T):-
+       true |
+        StdOut = [putb(" Cannot connect display_node!"),nl,flush(_)],
+        Request = [], TGR = [], GenReq1 = [].
+
+
+%check_nodes([],Request,DisplayNode,T):- true |
+%       Request = [] , DisplayNode  = [].                   % Deleted By Kiyohara 1993/1/8
+check_nodes([NodeName|R],Request,DisplayNode,T):- 
+       string(NodeName,_,_)|
+       Port = 4000,
+       Request = [connect({NodeName,Port},SocketD)|RReq],
+       connect(SocketD,DisplayNode,NewDN),
+       check_nodes(R,RReq,NewDN,T).
+check_nodes([NodeName|R],Request,DisplayNode,T):- 
+       atom(NodeName)|
+       atom_table:get_atom_name(NodeName,normal(NodeNames)),
+       Port = 4000,
+       Request = [connect({NodeNames,Port},SocketD)|RReq],
+       connect(SocketD,DisplayNode,NewDN),
+       check_nodes(R,RReq,NewDN,T).
+check_nodes([{A,B,C,D}|R],Request,DisplayNode,T):- 
+       integer(A),integer(B),integer(C),integer(D)|
+       Port = 4000,
+       Request = [connect({NodeName,Port},SocketD)|RReq],
+       connect(SocketD,DisplayNode,NewDN),
+       check_nodes(R,RReq,NewDN,T).
+check_nodes(NodeName,Request,DisplayNode,T):- 
+       string(NodeName,_,_)|
+       Port = 4000,
+       Request = [connect({NodeName,Port},SocketD)],
+       connect(SocketD,DisplayNode,NewDN),
+       NewDN = [].
+check_nodes(NodeName,Request,DisplayNode,T):- 
+       atom(NodeName)|
+       atom_table:get_atom_name(NodeName,normal(NodeNames)),
+       Port = 4000,
+       Request = [connect({NodeNames,Port},SocketD)],
+       connect(SocketD,DisplayNode,NewDN),
+       NewDN = [].
+check_nodes({A,B,C,D},Request,DisplayNode,T):-               % 93.5.10 K.Nakao
+       integer(A),integer(B),integer(C),integer(D)|
+       Port = 4000,
+       Request = [connect({{A,B,C,D},Port},SocketD)],
+       connect(SocketD,DisplayNode,NewDN),
+       NewDN = [].
+otherwise.
+check_nodes(_,Request,DisplayNode,T):- 
+       true|
+       Request = [], DisplayNode  = [].
+
+check_io_node(normal(NodeName),Request,DisplayNode,T):- 
+       string(NodeName,_,_)|
+       Port = 4000,
+       Request = [connect({NodeName,Port},SocketD)],
+       connect(SocketD,DisplayNode,NewDN),
+       NewDN = [].
+otherwise.
+check_io_node(_,Request,DisplayNode,_):- true |
+       Request = [],
+       DisplayNode = [].
+
+connect(normal(SockD,_,_),DisplayNode,Status):- true |
+   DisplayNode = [SockD | R],
+   Status = R.
+connect(abnormal,DisplayNode,Status):- true |
+   Status = DisplayNode.
+
+%%%%%%% create_pmeter %%%%%%%%
+create_pmeter([],TGR,Interval,GenReq,StdOut,T) :- true | 
+   StdOut = [],
+   TGR = [], GenReq = [].
+otherwise.
+create_pmeter(DisplayNode,TGR,Interval,GenReq,StdOut,T) :- true |
+        StdOut = [],
+        GenReq = [getenv(pmeter:item,INFO),
+                  getenv(pmeter:node,Node)],
+        info_flag(INFO,InF),
+        node_flag(Node,NF),
+        TGR = [request(profiling_device,_,Status)],        
+        current_node(_,NPE),
+        get_attribute(NF,T,NPE,NewPE),        
+        make_p_meter(DisplayNode,Status,NewPE,Interval,InF,T).
+
+:-if_equal(machine_type,mpsi).
+get_attribute(NF,T,NPE,NewPE):- true|
+        get_node_attribute(NF,T,NPE,NewPE).
+:-else.
+get_attribute(NF,T,NPE,NewPE):- true|
+        current_processor(_,Processor),
+        get_node_attribute(NF,T,NPE,Processor,NewPE).
+:-end_if.
+        
+make_p_meter(SockD,normal(Prof),PE,Interval,InF,T) :-
+    true |
+    Prof = [create(Interval,[idling_time,local_gc,message_handling_time],Status)],
+    make_p_meter2(SockD,Status, PE,InF,T).
+make_p_meter(SockD,abnormal, PE, Interval,InF,T) :- true |
+    close_socket(SockD).
+
+make_p_meter2(SockD,normal(Prof,_,_), PE, InF,T) :- true |
+    x_r_monitor_shoen:go(SockD,Prof, PE, InF,T).
+make_p_meter2(SockD,abnormal, PE, InF,T) :- true |
+    close_socket(SockD).
+
+
+ info_flag(normal(Integer),InF):- integer(Integer),Integer \=0  |
+        InF = Integer.
+ info_flag(abnormal,InF):- true |
+        InF = 111.
+otherwise.
+ info_flag(normal(_),InF):- true |
+        InF = 111.
+
+ node_flag(normal(processor),Node):- true |
+        Node = 0.
+ node_flag(normal(cluster),Node):- true |
+        Node = 1.
+ node_flag(abnormal,Node):- true |
+        Node = 0.
+
+:-if_equal(machine_type,mpsi).
+get_node_attribute(NF,4,Node,Ans):- 0 < Node, Node =< 8 |
+     Ans = {NF,1,1,1,Node}.
+get_node_attribute(NF,4,Node,Ans):- 8 < Node, Node =< 16 |
+     Ans = {NF,2,1,2,8}.
+get_node_attribute(NF,4,Node,Ans):- 16 < Node, Node =< 32 |
+     Ans = {NF,4,2,2,8}.
+get_node_attribute(NF,4,Node,Ans):- 32 < Node, Node =< 64 |
+     Ans = {NF,8,2,4,8}.
+get_node_attribute(NF,4,Node,Ans):- 64 < Node, Node =< 128 |
+     Ans = {NF,16,4,4,8}.
+get_node_attribute(NF,4,Node,Ans):- 128 < Node, Node =< 256 |
+     Ans = {NF,32,4,8,8}.
+get_node_attribute(NF,T,Node,Ans):- T \= 4 |
+     get_topology(Node,NX,NY),
+     Ans = {NF,Node,NX,NY}.
+
+:-else.
+get_node_attribute(NF,4,1,Proc,Ans):- true |
+     Ans = {NF,1,1,1,Proc}.
+get_node_attribute(NF,4,2,Proc,Ans):- true |
+     Ans = {NF,2,1,2,Proc}.
+get_node_attribute(NF,4,Node,Proc,Ans):- 2 < Node, Node =< 4 |
+     Ans = {NF,Node,2,2,Proc}.
+get_node_attribute(NF,4,Node,Proc,Ans):- 4 < Node, Node =< 8 |
+     Ans = {NF,Node,2,4,Proc}.
+get_node_attribute(NF,4,Node,Proc,Ans):- 8 < Node, Node =< 16 |
+     Ans = {NF,Node,4,4,Proc}.
+get_node_attribute(NF,4,Node,Proc,Ans):- 16 < Node, Node =< 32 |
+     Ans = {NF,Node,4,8,Proc}.
+% 93.5.28 by K.Nakao
+get_node_attribute(NF,4,Node,Proc,Ans):- 32 < Node, Node =< 64 |
+     Ans = {NF,Node,8,8,Proc}.
+%
+get_node_attribute(NF,T,Node,Proc,Ans):- T \= 4 |
+     Processor := Node * Proc,
+     get_topology(Processor,NX,NY),
+     Ans = {NF,Node,Proc,NX,NY}.
+:- end_if.
+
+close_socket([]):- true| true.
+close_socket([Socket|R]):- true|
+    Socket = [],
+    close_socket(R).
+
+get_topology( Node,X,Y) :- 1 =< Node, Node =< 3 |
+          X=Node,    Y=1.
+get_topology( 6,X,Y) :-
+    true |    X=3,    Y=2.
+get_topology( 8,X,Y) :-
+    true |    X=4,    Y=2.
+get_topology( 9,X,Y) :-
+    true |    X=3,    Y=3.
+get_topology( 10,X,Y) :-
+    true |   X=5,    Y=2.
+get_topology( 12,X,Y) :-
+    true |   X=4,    Y=3.
+get_topology( 14,X,Y) :-
+    true |   X=7,    Y=2.
+get_topology( 15,X,Y) :-
+    true |   X=5,    Y=3.
+get_topology( 16,X,Y) :-
+    true |   X=4,    Y=4.
+get_topology( 18,X,Y) :-
+    true |   X=6,    Y=3.
+get_topology( 20,X,Y) :-
+    true |   X=5,    Y=4.
+get_topology( 21,X,Y) :-
+    true |   X=7,    Y=3.
+get_topology( 22,X,Y) :-
+    true |   X=11,   Y=2.
+get_topology( 24,X,Y) :-
+    true |   X=6,    Y=4.
+get_topology( 25,X,Y) :-
+    true |   X=5,    Y=5.
+get_topology( 26,X,Y) :-
+    true |   X=13,   Y=3.
+get_topology( 27,X,Y) :-
+    true |   X=9,    Y=3.
+get_topology( 28,X,Y) :-
+    true |   X=7,    Y=4.
+get_topology( 30,X,Y) :-
+    true |   X=6,    Y=5.
+get_topology( 32,X,Y) :-
+    true |   X=8,    Y=4.
+get_topology( 33,X,Y) :-
+    true |   X=11,   Y=3.
+get_topology( 35,X,Y) :-
+    true |   X=7,    Y=5.
+get_topology( 36,X,Y) :-
+    true |   X=9,    Y=4.
+get_topology( 38,X,Y) :-
+    true |   X=19,   Y=2.
+get_topology( 39,X,Y) :-
+    true |   X=13,   Y=3.
+get_topology( 40,X,Y) :-
+    true |   X=8,    Y=5.
+get_topology( 42,X,Y) :-
+    true |   X=7,    Y=6.
+get_topology( 44,X,Y) :-
+    true |   X=11,   Y=4.
+get_topology( 45,X,Y) :-
+    true |   X=9,    Y=5.
+get_topology( 46,X,Y) :-
+    true |   X=23,   Y=2.
+get_topology( 48,X,Y) :-
+    true |   X=8,    Y=6.
+get_topology( 49,X,Y) :-
+    true |   X=7,    Y=7.
+get_topology( 50,X,Y) :-
+    true |   X=10,   Y=5.
+get_topology( 52,X,Y) :-
+    true |   X=13,   Y=4.
+get_topology( 54,X,Y) :-
+    true |   X=9,    Y=6.
+get_topology( 55,X,Y) :-
+    true |   X=11,   Y=5.
+get_topology( 56,X,Y) :-
+    true |   X=8,    Y=7.
+get_topology( 57,X,Y) :-
+    true |   X=19,   Y=3.
+get_topology( 58,X,Y) :-
+    true |   X=29,   Y=2.
+get_topology( 60,X,Y) :-
+    true |   X=10,   Y=6.
+get_topology( 62,X,Y) :-
+    true |   X=31,   Y=2.
+get_topology( 63,X,Y) :-
+    true |   X=9,    Y=7.
+get_topology( 64,X,Y) :-
+    true |   X=8,    Y=8.
+get_topology( Node,X,Y) :- 64 < Node, Node =< 128 |
+             X=16,    Y=8.
+get_topology( Node,X,Y) :- 128 < Node, Node =< 256 |
+             X=16,    Y=16.
+% 94.2.26 K.Nakao
+get_topology( Node,X,Y) :- 256 < Node, Node =< 512 |
+             X=32,    Y=16.
+%
+otherwise.
+get_topology(PE,X,Y) :-
+    true | X=PE,   Y=1.

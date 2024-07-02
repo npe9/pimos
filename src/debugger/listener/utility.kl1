@@ -1,0 +1,298 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_utility.
+:- public make_up_goal/3, break_up_goal/3, 
+          make_goal/4. % For special user.
+:- public valve/3, dummy/1.
+:- public length/4, reverse/2, prepend/3, member/3.
+:- public to_list/2, to_list/3,
+          integer_to_string/2, integer_to_string/3, half/4,
+          directory/2, string_to_term/2.
+:- public time/5, half/4, date_time_string/3.
+:- public print_module_info/6.
+:- public ground_unify/2, wait_unify/2, wait_unify/3.
+:- public check_input/5.
+:- public pathname/3.
+:- public in/1, out/1, inter/1, mes/1, io/1.
+:- public genreq/1, resource/1, buffer/1.
+:- public read_term/4, read_term/6.
+:- with_macro pimos.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% make_up_goal(Func,ArgV,^Goal) %
+%  Functor + ArgV -> Goal       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+make_up_goal(Func,{},  Goal) :- true | Goal=Func.
+make_up_goal(Func,ArgV,Goal) :- vector(ArgV,Arity), Arity=\=0 |
+    new_vector(V,~(Arity+1)),
+    set_vector_element(V,0,_,Func,V1),
+    set_args(Arity,ArgV,V1,Goal).
+
+set_args(N, Av,V,G) :- N=\=0 |
+    N1 := N-1,
+    set_vector_element(Av,N1,E,0,Av1),
+    set_vector_element(V, N, _,E,V1),
+    set_args(N1,Av1,V1,G).
+set_args(0,_Av,V,G) :- true  | G=V.
+
+%%% For special users. (paragraph, kappa)
+make_goal(ArgV,Func,Goal,NArgV) :- true |
+    NArgV=ArgV,
+    make_up_goal(Func,ArgV,Goal).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% break_up_goal(Goal,^Func,^ArgV) %
+%  Goal -> Functor + ArgV         %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+break_up_goal(Goal,Func,ArgV) :- atom(Goal) | Func=Goal, ArgV={}.
+break_up_goal(Goal,Func,ArgV) :- vector(Goal,Size) |
+    Arity := Size-1,
+    new_vector(V,Arity),
+    set_vector_element(Goal,0,Func,0,Goal1),
+    get_args(Arity,Goal1,V,ArgV).
+
+get_args(N,G,V,Av) :- N =\=0 |
+    N1 := N-1,
+    set_vector_element(G,N, A,0,G1),
+    set_vector_element(V,N1,_,A,V1),
+    get_args(N1,G1,V1,Av).
+get_args(0,_G,V,Av) :- true | Av=V.
+
+
+%%%%%%%%%%%%%%%%%%
+% FOR PROTECTION %
+%%%%%%%%%%%%%%%%%%
+valve(TF,_,    OUT) :- wait(TF) | OUT=[].
+alternatively.
+valve(TF,[H|T],OUT) :- true     | OUT=[H|T1], valve(TF,T,T1).
+valve(_, [],   OUT) :- true     | OUT=[].
+
+dummy(X) :- wait(X) | true.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%
+% FOR LIST PROCESSING %
+%%%%%%%%%%%%%%%%%%%%%%%
+length([H|T],N,N2,L) :- true | N1 := N+1, L=[H|T1], length(T,N1,N2,T1).
+length([],   N,N1,L) :- true | N1=N, L=[].
+
+reverse(L,LL) :- true | reverse(L,[],LL).
+reverse([A|X],Y,Z) :- true | reverse(X,[A|Y],Z).
+reverse([],   Y,Z) :- true | Z=Y.
+
+prepend([A|X],Y,Z) :- true | Z=[A|Z1], prepend(X,Y,Z1).
+prepend([],   Y,Z) :- true | Y=Z.
+
+member(X,[X|_],YorN) :- true | YorN=yes.
+member(_,[],   YorN) :- true | YorN=no.
+otherwise.
+member(X,[_|Y],YorN) :- true | member(X,Y,YorN).
+
+
+
+to_list(V,L) :- true | to_list(V,[],L).
+
+to_list((A,B),W,L) :- true | check(A,W,W1), to_list(B,W1,L).
+otherwise.
+to_list(A,W,L) :- true | check(A,W,W1), L=W1.
+
+check(A,[A|W],L) :- true | L=[A|W].
+otherwise.
+check(A,[B|W],L) :- true | L=[B|L1], check(A,W,L1).
+check(A,[],L) :- true | L=[A].
+
+
+%%%%%%%%%%%%%%%%%
+% TIMER UTILITY %
+%%%%%%%%%%%%%%%%%
+time(H2,L2,H1,L1,TimeStr) :-
+    double_num:subtract(H2,L2,H1,L1,H3,L3),
+    half(H3,L3,H4,L4),
+    half(H4,L4,H5,L5),
+    half(H5,L5,H6,L6),
+    half(H6,L6,H7,L7),
+    integer_to_string(H7,L7,TimeStr).
+
+half(U,L,Up,Lo) :-
+    U0 := U/\1,
+    Up := U>>1,
+    L1 := L>>1,
+    low(U0,L1,Lo).
+
+low(0,L1,Lo) :- true | Lo=L1.
+low(1,L1,Lo) :- true | Lo := L1\/16#"80000000".
+
+print_module_info(normal({Create,Link,Source,SrcDate,Depends}),Name,Size,Msg,IN,IN2) :- true|
+    date_time_string(Create, CD,CT),
+    date_time_string(Link,   LD,LT),
+    date_time_string(SrcDate,SD,ST),
+    IN=[putf(" ~s~n",             [Msg]),
+        putf(" Module  : ~t~n",   [Name]),
+        putf(" Size    : ~t~n",   [Size]),
+        putf(" Created : ~s ~s~n",[CD,CT]),
+        putf(" Linked  : ~s ~s~n",[LD,LT]),
+        putf(" Source  : ~s~n",   [Source]),
+        putf("         : ~s ~s~n",[SD,ST])|IN1],
+    print_depends(Depends,IN1,IN2).
+otherwise.
+print_module_info(_,_,_,_,IN,IN1) :- true | IN1=IN.
+
+print_depends([],IN,IN1) :- true | IN1=IN.
+otherwise.
+print_depends(L,IN,IN2) :- true |
+    IN=[putf(" [Dependent Files]~n",[])|IN1],
+    prt_depends(L,IN1,IN2).
+
+prt_depends([],IN,IN1) :- true | IN1=IN.
+prt_depends([{F,DT}|L],IN,IN2) :- true |
+    date_time_string(DT,DS,TS),
+    IN=[putf(" ~s ~s ~s~n",[F,DS,TS])|IN1],
+    prt_depends(L,IN1,IN2).
+
+date_time_string({Date,Time},DS,TS) :- true |
+    timer_utility: get_date_string(Date,DS),
+    timer_utility: get_time_string(Time,TS).
+
+
+directory(Pathname,Dir) :- string(Pathname,_,_) |
+    shoen:raise(pimos_tag#task,general_request,[file(normal(FR,_,_))]),
+    FR=[directory(Pathname,normal(Dir,_,_))].
+
+
+string_to_term(L,T) :-
+    buffer:character_pool([putb(L),nl,putl("."),flush(_),getft(T,_)]).
+
+integer_to_string(Int,Str) :- true| buffer_utility:integer_to_string(Int,10,Str).
+integer_to_string(U,L,String) :-
+    double_num:xtod(U,L,List),
+    int_list(List,NewList),
+    builtin#append_string(NewList,String).
+
+int_list([],   Str) :- true | Str=["0"].
+int_list([H|T],Str) :- true | 
+    Str=[S|Str1],
+    buffer_utility:integer_to_string(H,10,S),
+    int_list1(T,Str1).
+
+int_list1([N|L],Str) :- N < 10 | 
+    Str=["000",S|Str1],
+    buffer_utility:integer_to_string(N,10,S),
+    int_list1(L,Str1).
+int_list1([N|L],Str) :- N >=10, N < 100 | 
+    Str=["00",S|Str1],
+    buffer_utility:integer_to_string(N,10,S),
+    int_list1(L,Str1).
+int_list1([N|L],Str) :- N >= 100, N < 1000 | 
+    Str=["0",S|Str1],
+    buffer_utility:integer_to_string(N,10,S),
+    int_list1(L,Str1).
+int_list1([N|L],Str) :- N >= 1000 | 
+    Str=[S|Str1],
+    buffer_utility:integer_to_string(N,10,S),
+    int_list1(L,Str1).
+int_list1([],Str) :- true | Str=[].
+
+
+%%%%%%%%%
+% UNIFY %
+%%%%%%%%%
+ground_unify(OS,US) :- vector(OS,_) | ground(OS,done,Done), wait_unify(Done,OS,US).
+ground_unify(OS,US) :- list(OS)     | ground(OS,done,Done), wait_unify(Done,OS,US).
+otherwise.
+ground_unify(OS,US) :- wait(OS) | US=OS.
+
+ground(Vector,D0,D) :- vector(Vector,Length) |
+    ground_vector(0,Length,Vector,D0,D).
+ground([Car|Cdr],D0,D) :- true |
+    ground(Car,D0,D1),
+    ground(Cdr,D1,D).
+ground(String,D0,D) :- string(String,_,_) |
+    D0 = D.
+otherwise.
+ground(Atomic,D0,D) :- wait(Atomic) |
+    D0 = D.
+
+ground_vector(I,Length,Vector,D0,D) :- I < Length |
+    vector_element(Vector,I,Elm,NewVector),
+    ground(Elm,D0,D1),
+    I1 := I + 1,
+    ground_vector(I1,Length,NewVector,D1,D).
+otherwise.
+ground_vector(_,_,_,D0,D) :- true | D0 = D.
+
+wait_unify(Done,OS,US) :- wait(Done) | US=OS.
+wait_unify(X,Y) :- wait(X) | Y=X.
+
+%%%%%%%%%%%%%%%%%%%%
+% CHECK INPUT TERM %
+%%%%%%%%%%%%%%%%%%%%
+check_input(N,          _,Input,IN,IN1) :- N>=0  | Input=N, IN1=IN.
+check_input(end_of_file,N,Input,IN,IN1) :- true  | Input=N, IN1=IN.
+otherwise.
+check_input(_,          N,Input,IN,IN2) :- true  |
+    IN=[putb(" >Illegal input. Input again => "), getlt(Term)|IN1],
+    check_input(Term,N,Input,IN1,IN2).
+
+
+%%%%%%%%%%%%%%%%%%%
+% EXPAND PATHNAME %
+%%%%%%%%%%%%%%%%%%%
+pathname(File,Pathname,Ext) :- string(File,Size,_)|
+    File=Pathname,
+    get_extention(File,Size,Ext).
+otherwise.
+pathname(File,Pathname,Ext) :- true |
+    shoen:raise(pimos_tag#listener,resource,[environment(ENV),atom(ATM)]),
+    ENV=[do(DO)],
+    DO=[getenv(task:directory,CWD), getenv(task:home,HD)],
+    shellUtils:file_type(DLM),
+    shellUtils:expand_pathname(File,Pathname,ATM,[],CWD,HD,DLM),
+    get_extention(Pathname,Ext).
+
+get_extention(File,Ext) :- string(File,Size,_)| get_extention(File,Size,Ext).
+get_extention(File,Size,Ext) :- true|
+    End := Size-1,
+    search_character(File,End,0,#".",Pos,File1),
+    check_extention(Pos,End,File1,Ext).
+
+check_extention(Pos,End,File,Ext) :- Pos>=0, Pos<End|
+    builtin#substring(File,Pos,~(End-Pos+1),Ext,_).
+otherwise.
+check_extention(_,  _,  _,   Ext) :- true| Ext= "" .
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+% STANDARD I/O UTILITIES %
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+in(IN)     :- true | shoen:raise(pimos_tag#task,get_std(in),IN).
+out(OUT)   :- true | shoen:raise(pimos_tag#task,get_std(out),OUT).
+inter(INT) :- true | shoen:raise(pimos_tag#task,get_std(inter),INT).
+io(IO)     :- true | shoen:raise(pimos_tag#task,get_std(io),IO).
+mes(MES)   :- true | shoen:raise(pimos_tag#shell,get_std_mes,MES).
+
+genreq(GR) :- true | shoen:raise(pimos_tag#task,general_request,GR).
+resource(RSC) :- true | shoen:raise(pimos_tag#listener,resource,RSC).
+buffer(BUF) :- true | shoen:raise(pimos_tag#listener,buffer,BUF).
+
+read_term(Msg, Arg,Def,Trm) :- string(Msg,_,_) |
+    shoen:raise(pimos_tag#task,get_std(inter),[do(IN)]),
+    read_term(Msg,Arg,Def,Trm,IN,[]).
+read_term(MsgL,Arg,Def,Trm) :- list(MsgL) |
+    builtin#append_string(MsgL,Msg),
+    shoen:raise(pimos_tag#task,get_std(inter),[do(IN)]),
+    read_term(Msg,Arg,Def,Trm,IN,[]).
+
+read_term(Msg,Arg,Def,Trm,IN,IN1) :- true|
+    IN=[putf(Msg,Arg),getl(Line)|IN1],
+    buffer:character_pool(POOL),
+    POOL=[putb(Line),putb(" . "),getft(T,_)],
+    check_term(T,Def,Trm).
+
+check_term(end_of_file,Def,Trm) :- true| Trm=Def.
+otherwise.
+check_term(Input,      _,  Trm) :- true| Trm=Input.

@@ -1,0 +1,85 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_take_command.
+:- public go/0, go/2.
+:- with_macro pimos.
+
+go :- true |
+    shoen:raise(pimos_tag#task,get_std(in),IN),
+    listener_operator:pool(OP),
+    IN=[change_op_pool(OP),prompt("TAKE> "),getwt(WT)|IN1],
+    read(WT,IN1,List,std_in),
+    shoen:raise(pimos_tag#listener,resource,[command(COM)]),
+    COM=[put_command(List,_)].
+
+go(Files,Mode) :- list(Files)| 
+    listener_utility:reverse(Files,Files1), go1(Files1,Mode).
+otherwise.
+go(File,Mode) :- true|
+    listener_utility:pathname(File,Pathname,Ext),
+    read_open(Pathname,Ext,Status),
+    read_command(Mode,Status).
+
+go1([File|Files],Mode):- true| go(File,Mode), go1(Files,Mode).
+go1([],_) :- true| true.
+
+read_open(Pathname,Ext,Status) :- string(Pathname,S,16), S\=0 |
+    shoen:raise(pimos_tag#task,general_request,[file(FRStatus)]),
+    fileReq_status(FRStatus,Pathname,Ext,Status).
+otherwise.
+read_open(Pathname,_,  Status) :- Status=illegal_pathname(Pathname).
+
+fileReq_status(normal(FR,_,_),Pathname,Ext,Status) :- true|
+    FR=[open(Pathname,read(St))|FR1],
+    read_open_status(St,Pathname,Ext,FR1,Status).
+otherwise.
+fileReq_status(_,_,_,Status) :- true| Status=abnormal(file_request_device).
+
+read_open_status(normal(F,_,_),_,_,        FR,Status) :- FR=[], Status=normal(F).
+otherwise.
+read_open_status(_Abnormal,    P,"",       FR,Status) :- true|
+    builtin#append_string(P,".com",Pathname),
+    FR=[open(Pathname,read(St))],
+    reopen_status(St,P,Pathname,Status).
+otherwise.
+read_open_status(_Abnormal,    P,_,        FR,Status) :- true| FR=[], Status=non_existent(P).
+
+reopen_status(normal(F,_,_),_,_, Status) :- true| Status=normal(F).
+otherwise.
+reopen_status(_Abnormal,    P,P1,Status) :- true| Status=non_existent(P,P1).
+
+read_command(_,     normal(F)) :- true |
+    F=[pathname(normal(Pathname))|F1],
+    listener_buffer:input_filter([getwt(WT)|IN],F1),
+    read(WT,IN,List,Pathname),
+    shoen:raise(pimos_tag#listener,resource,[command(COM)]),
+    COM=[put_command(List,_)].
+read_command(normal,illegal_pathname(Pathname)) :- true |
+    shoen:raise(pimos_tag#task,get_std(out),
+        [putf(" Illegal pathname: ~t~n",[Pathname])]).
+read_command(normal,non_existent(Pathname)) :- true |
+    shoen:raise(pimos_tag#task,get_std(out),
+        [putf(" take: ~s nonexistent~n",[Pathname])]).
+read_command(normal,non_existent(P,P1)) :- true |
+    shoen:raise(pimos_tag#task,get_std(out),
+        [do([putf(" take: ~s     nonexistent~n",[P]),
+             putf(" take: ~s nonexistent~n",[P1])])]).
+read_command(normal,abnormal(Dev)) :- true |
+    shoen:raise(pimos_tag#task,get_std(out),
+        [putf(" take: cannot make ~t~n",[Dev])]).
+otherwise.
+read_command(init,  _) :- true | true.
+
+
+read(normal(end_of_file),  IN,L,Pathname) :- string(Pathname,_,_) | IN=[], L=[end_of_take(Pathname)].
+read(normal(end_of_file),  IN,L,std_in  ) :- IN=[], L=[].
+read(normal(variable("Z")),IN,L,_) :- IN=[], L=[].
+otherwise.
+read(WT,IN,L,PN) :- 
+    IN=[prompt("TAKE> "),getwt(NewWT)|IN1], L=[WT|L1],
+    read(NewWT,IN1,L1,PN).

@@ -1,0 +1,524 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_monitor.
+:- with_macro pimos.
+:- public monitor0/10,monitor/10.
+
+monitor0(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar) :- true |
+        set_vector_element(EnvVar,7,TID,TID,EnvVar1),
+        IO=[io_request(TID,Res)|IO1],
+        report_started(ID,Str,Res),
+        monitor(X,Pat,Str,MM,Mon,Mon1,V,IO1,ID,EnvVar1).
+
+report_started(ID,Str,normal(Flg,WS,_,B)) :- true |
+        Flg=out,
+        WS=[started(ID,Str)],
+        B=[].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar)
+%%      X       :: Data to be monitored
+%%      Pat     :: Monitoring condition
+%%      Str     :: Memo string
+%%      MM      :: Output stream to the monitor_manager (merged)
+%%      Mon,Mon1 :: Input and output streams from/to the monitor_manager and other monitors
+%%      V       :: Output stream to the inspector_var_manager
+%%      IO      :: Output stream to the monitor_io_manager
+%%      ID      :: ID number
+%%      EnvVar  :: Environment variables, ={SAM,QM,Init,Big,LBig,BEEP,PSM,TID}
+%%                  SAM = on/off (monitor:stream_auto_mode)
+%%                   QM = on/off (monitor:query_mode)
+%%                  TID :: Tracer window ID (>0)
+%%                         Listener window ID (=:=0)
+%%                         Inspector window (<0)
+
+monitor(_,_,_,MM,[],Mon1,V,IO,_,_) :- true |
+        MM=[],Mon1=[],V=[],IO=[].
+monitor(X,Pat,Str,MM,[monitored_terms_list(A)|Mon],Mon1,V,IO,ID,EnvVar) :- true |
+        vector_element(EnvVar,0,SAM,EnvVar1),
+        vector_element(EnvVar1,1,QM,EnvVar2),
+        A=[{ID,{{SAM,QM},Pat,Str,X}}|A1],
+        Mon1=[monitored_terms_list(A1)|Mon2],
+        monitor(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar2).
+monitor(X,Pat,Str,MM,[kill(N)|Mon],Mon1,V,IO,ID,EnvVar) :- true |
+        if_terminate(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,N).
+monitor(X,Pat,Str,MM,[change_condition(N,NPat)|Mon],Mon1,V,IO,ID,EnvVar) :- true |
+        if_change_condition(ID,N,Pat,NPat,Pat1,Mon1,Mon2),
+        monitor(X,Pat1,Str,MM,Mon,Mon2,V,IO,ID,EnvVar).
+monitor(X,Pat,Str,MM,[change_stream_auto_mode(N)|Mon],Mon1,V,IO,ID,EnvVar) :- true |
+        set_vector_element(EnvVar,0,SAM,SAM1,EnvVar1),
+        if_change_mode(ID,N,SAM,SAM1,Mon1,Mon2,change_stream_auto_mode),
+        monitor(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1).
+monitor(X,Pat,Str,MM,[change_query_mode(N)|Mon],Mon1,V,IO,ID,EnvVar) :- true |
+        set_vector_element(EnvVar,1,QM,QM1,EnvVar1),
+        if_change_mode(ID,N,QM,QM1,Mon1,Mon2,change_query_mode),
+        monitor(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1).
+monitor(X,Pat,Str,MM,[silent_mode(Param)|Mon],Mon1,V,IO,ID,EnvVar) :- true |
+        Mon1=[silent_mode(Param)|Mon2],
+        set_vector_element(EnvVar,5,_,Param,EnvVar1),
+        monitor(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1).
+
+alternatively.
+monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar) :- wait(X) |
+        monitor_unify_check:unify_check(Pat,Pat1,X,Res),
+        if_get_io_stream(X,Pat1,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Res).
+
+if_get_io_stream(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,wake_up) :- true |
+        set_vector_element(EnvVar,7,TID,TID,EnvVar1),
+        IO=[io_request(TID,Res)|IO1],
+        wait_io_stream(X,Pat,Str,MM,Mon,Mon1,V,IO1,ID,EnvVar1,Res).
+if_get_io_stream(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,not_determined(Y)) :- true |
+        monitor_wait_initiated(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Y).
+if_get_io_stream(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,no) :- true |
+        if_auto(X,EnvVar,Auto),
+        if_continue(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Auto).
+
+monitor_wait_initiated(_,_,_,MM,[],Mon1,V,IO,_,_,_) :- true |
+        MM=[],Mon1=[],V=[],IO=[].
+monitor_wait_initiated(X,Pat,Str,MM,[monitored_terms_list(A)|Mon],Mon1,V,IO,ID,EnvVar,Y) :-
+    true |
+        vector_element(EnvVar,0,SAM,EnvVar1),
+        vector_element(EnvVar1,1,QM,EnvVar2),
+        A=[{ID,{{SAM,QM},Pat,Str,X}}|A1],
+        Mon1=[monitored_terms_list(A1)|Mon2],
+        monitor_wait_initiated(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar2,Y).
+monitor_wait_initiated(X,Pat,Str,MM,[kill(N)|Mon],Mon1,V,IO,ID,EnvVar,Y) :- true |
+        if_terminate_wait_initiated(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Y,N).
+monitor_wait_initiated(X,Pat,Str,MM,[change_condition(N,NPat)|Mon],Mon1,V,IO,ID,EnvVar,_) :-
+    true |
+        if_change_condition(ID,N,Pat,NPat,Pat1,Mon1,Mon2),
+%        monitor_wait_initiated(X,Pat1,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Y).
+        monitor(X,Pat1,Str,MM,Mon,Mon2,V,IO,ID,EnvVar).
+monitor_wait_initiated(X,Pat,Str,MM,[change_stream_auto_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Y) :-
+    true |
+        set_vector_element(EnvVar,0,SAM,SAM1,EnvVar1),
+        if_change_mode(ID,N,SAM,SAM1,Mon1,Mon2,change_stream_auto_mode),
+        monitor_wait_initiated(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Y).
+monitor_wait_initiated(X,Pat,Str,MM,[change_query_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Y) :-
+    true |
+        set_vector_element(EnvVar,1,QM,QM1,EnvVar1),
+        if_change_mode(ID,N,QM,QM1,Mon1,Mon2,change_query_mode),
+        monitor_wait_initiated(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Y).
+monitor_wait_initiated(X,Pat,Str,MM,[silent_mode(Param)|Mon],Mon1,V,IO,ID,EnvVar,Y) :- true |
+        Mon1=[silent_mode(Param)|Mon2],
+        set_vector_element(EnvVar,5,_,Param,EnvVar1),
+        monitor_wait_initiated(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Y).
+
+alternatively.
+monitor_wait_initiated(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Y) :- wait(Y) |
+        monitor_unify_check:unify_check(Pat,Pat1,X,Res),
+        if_get_io_stream(X,Pat1,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Res).
+
+if_continue(_,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,{on,[_|X]}) :- true |
+        monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar).
+otherwise.
+if_continue(_,_,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,_) :- true |
+        vector_element(EnvVar,7,TID,_),
+        IO=[io_request(TID,Res)],
+        MM=[],Mon=Mon1,V=[],
+        report_terminated(Res,ID,Str).
+
+report_terminated(normal(Flg,WS,_,B),ID,Str) :- true |
+        Flg=out,
+        WS=[terminated(ID,Str)],
+        B=[].
+
+if_terminate(_,_,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,ID) :- true |
+        vector_element(EnvVar,7,TID,_),
+        IO=[io_request(TID,Res)],
+        MM=[],Mon=Mon1,V=[],
+        report_terminated(Res,ID,Str).
+otherwise.
+if_terminate(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,N) :- true |
+        Mon1=[kill(N)|Mon2],
+        monitor(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar).
+
+if_terminate_wait_initiated(_,_,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,_,ID) :- true |
+        vector_element(EnvVar,7,TID,_),
+        IO=[io_request(TID,Res)],
+        MM=[],Mon=Mon1,V=[],
+        report_terminated(Res,ID,Str).
+otherwise.
+if_terminate_wait_initiated(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Y,N) :- true |
+        Mon1=[kill(N)|Mon2],
+        monitor_wait_initiated(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Y).
+
+if_change_condition(ID,ID,_,NPat,Pat1,Mon,Mon1) :- true |
+        NPat=Pat1,
+        Mon=Mon1.
+otherwise.
+if_change_condition(_,N,Pat,NPat,Pat1,Mon,Mon1) :- true |
+        Pat=Pat1,
+        Mon=[change_condition(N,NPat)|Mon1].
+
+if_change_mode(ID,ID,M,M1,Mon,Mon1,_) :- true |
+        change_mode(M,M1),
+        Mon=Mon1.
+otherwise.
+if_change_mode(_,N,M,M1,Mon,Mon1,Name) :- true |
+        M=M1,
+        Mon=[{Name,N}|Mon1].
+
+change_mode(on,M) :- true | M=off.
+change_mode(off,M) :- true | M=on.
+
+wait_io_stream(_,_,_,MM,[],Mon1,V,IO,_,_,_) :- true |
+        MM=[],Mon1=[],V=[],IO=[].
+wait_io_stream(X,Pat,Str,MM,[monitored_terms_list(A)|Mon],Mon1,V,IO,ID,EnvVar,Res) :- true |
+        vector_element(EnvVar,0,SAM,EnvVar1),
+        vector_element(EnvVar1,1,QM,EnvVar2),
+        A=[{ID,{{SAM,QM},Pat,Str,X}}|A1],
+        Mon1=[monitored_terms_list(A1)|Mon2],
+        wait_io_stream(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar2,Res).
+wait_io_stream(X,Pat,Str,MM,[kill(N)|Mon],Mon1,V,IO,ID,EnvVar,Res) :- true |
+        wait_io_stream_if_terminate(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Res,N).
+wait_io_stream(X,Pat,Str,MM,[change_condition(N,NPat)|Mon],Mon1,V,IO,ID,EnvVar,Res) :- true |
+        if_change_condition(ID,N,Pat,NPat,Pat0,Mon1,Mon2),
+        monitor_unify_check:unify_check(Pat0,Pat1,X,UnifyRes),
+        if_cancel_io_stream(X,Pat1,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Res,UnifyRes).
+wait_io_stream(X,Pat,Str,MM,[change_stream_auto_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Res) :- true |
+        set_vector_element(EnvVar,0,SAM,SAM1,EnvVar1),
+        if_change_mode(ID,N,SAM,SAM1,Mon1,Mon2,change_stream_auto_mode),
+        wait_io_stream(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Res).
+wait_io_stream(X,Pat,Str,MM,[change_query_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Res) :- true |
+        set_vector_element(EnvVar,1,QM,QM1,EnvVar1),
+        if_change_mode(ID,N,QM,QM1,Mon1,Mon2,change_query_mode),
+        wait_io_stream(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Res).
+wait_io_stream(X,Pat,Str,MM,[silent_mode(Param)|Mon],Mon1,V,IO,ID,EnvVar,Res) :- true |
+        Mon1=[silent_mode(Param)|Mon2],
+        set_vector_element(EnvVar,5,_,Param,EnvVar1),
+        wait_io_stream(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Res).
+
+alternatively.
+wait_io_stream(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,normal(Flag,WS,IR,B)) :- true |
+        get_flag(X,EnvVar,Flag),
+        merge(WS1,WS),
+        inspector_data_stack:stack(S),
+        monitor_active(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flag,WS1,IR,B,S).
+
+if_cancel_io_stream(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Res,wake_up) :- true |
+        wait_io_stream(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Res).
+if_cancel_io_stream(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Res,not_determined(Y)) :- true |
+        wait_and_terminate(Res),
+        monitor_wait_initiated(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Y).
+if_cancel_io_stream(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Res,no) :- true |
+        wait_and_terminate(Res),
+        monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar).
+
+get_flag(X,EnvVar,Flag) :- list(X),
+    vector_element(EnvVar,0,on),vector_element(EnvVar,1,off) |
+        Flag=out.
+otherwise.
+get_flag(_,_,Flag) :- true | Flag=io.
+
+wait_io_stream_if_terminate(_,_,Str,MM,Mon,Mon1,V,IO,ID,_,Res,ID) :- true |
+        MM=[],Mon=Mon1,V=[],IO=[],
+        report_terminated(Res,ID,Str).
+otherwise.
+wait_io_stream_if_terminate(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Res,N) :- true |
+        Mon1=[kill(N)|Mon2],
+        wait_io_stream(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Res).
+
+wait_and_terminate(normal(Flg,WS,_,B)) :- true | Flg=io,WS=[],B=[].
+
+monitor_active(_,_,_,MM,[],Mon1,V,IO,_,_,_,WS,_,B,S) :- true |
+        V=[],
+        MM=[],Mon1=[],IO=[],B=[],S=[],WS=[].
+monitor_active(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,[_|IR],B,S) :- true |
+        monitor_active(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S).
+monitor_active(X,Pat,Str,MM,[monitored_terms_list(A)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S) :- true |
+        vector_element(EnvVar,0,SAM,EnvVar1),
+        vector_element(EnvVar1,1,QM,EnvVar2),
+        A=[{ID,{{SAM,QM},Pat,Str,X}}|A1],
+        Mon1=[monitored_terms_list(A1)|Mon2],
+        monitor_active(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar2,Flg,WS,IR,B,S).
+monitor_active(X,Pat,Str,MM,[kill(N)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S) :- true |
+        monitor_active_if_kill(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,N).
+monitor_active(X,Pat,Str,MM,[change_condition(N,NPat)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S) :- true |
+        if_change_condition(ID,N,Pat,NPat,Pat1,Mon1,Mon2),
+        monitor_active(X,Pat1,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S).
+monitor_active(X,Pat,Str,MM,[change_stream_auto_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S) :- true |
+        set_vector_element(EnvVar,0,SAM,SAM1,EnvVar1),
+        if_change_mode(ID,N,SAM,SAM1,Mon1,Mon2,change_stream_auto_mode),
+        monitor_active(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Flg,WS,IR,B,S).
+monitor_active(X,Pat,Str,MM,[change_query_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S) :- true |
+        set_vector_element(EnvVar,1,QM,QM1,EnvVar1),
+        if_change_mode(ID,N,QM,QM1,Mon1,Mon2,change_query_mode),
+        monitor_active(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Flg,WS,IR,B,S).
+monitor_active(X,Pat,Str,MM,[silent_mode(Param)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S) :- true |
+        Mon1=[silent_mode(Param)|Mon2],
+        set_vector_element(EnvVar,5,_,Param,EnvVar1),
+        monitor_active(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Flg,WS,IR,B,S).
+
+alternatively.
+monitor_active(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S) :- true |
+        beep(EnvVar,WS,WS1),
+        if_auto(X,EnvVar,Auto),
+        monitor_get_cmd(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS1,IR,B,S,Auto).
+
+beep(EnvVar,WS,WS1) :- vector_element(EnvVar,5,off) |
+        WS=[beep(_)|WS1].
+otherwise.
+beep(_,WS,WS1) :- true | WS=WS1.
+
+if_auto(X,EnvVar,Auto) :- list(X),vector_element(EnvVar,0,on) |
+        Auto={on,X}.
+otherwise.
+if_auto(_,_,Auto) :- true | Auto=off.
+
+monitor_active_if_kill(_,_,Str,MM,Mon,Mon1,V,IO,ID,_,_,WS,_,B,S,ID) :- true |
+        MM=[],Mon=Mon1,V=[],IO=[],B=[],S=[],
+        WS=[terminated(ID,Str)].
+otherwise.
+monitor_active_if_kill(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,N) :- true |
+        Mon1=[kill(N)|Mon2],
+        monitor_active(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S).
+
+monitor_get_cmd(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto) :- true |
+        WS=[print_depth(PD,PD),print_length(PL,PL),wrap(X,WT,PD,PL)|WS1],
+        monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS1,IR,B,S,Auto,PD,PL,WT).
+
+monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,out,WS,_,B,S,_,PD,PL,list(WT)) :- true |
+        WS=[monitor_prompt({on,off},ID,Pat,Str,PD,PL,list(WT))],
+        B=[],S=[],
+        if_next_monitor_var(list(WT),PL,X,X1,Pat),
+        wait_next_monitor_var(X1,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar).
+otherwise.
+monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT) :- true |
+        vector_element(EnvVar,0,SAM,EnvVar1),
+        vector_element(EnvVar1,1,QM,EnvVar2),
+        MM=[get_LAb(LAb)|MM1],
+        WS=[monitor_prompt_and_getl(LAb,{SAM,QM},ID,Pat,Str,PD,PL,WT,Line)|WS1],
+        monitor_wait_input(X,Pat,Str,MM1,Mon,Mon1,V,IO,ID,EnvVar2,Flg,WS1,IR,B,S,Auto,PD,PL,WT,Line).
+
+monitor_wait_input(_,_,_,MM,[],Mon1,V,IO,_,_,_,WS,_,B,S,_,_,_,_,_) :- true |
+        V=[],
+        MM=[],Mon1=[],IO=[],B=[],S=[],WS=[].
+monitor_wait_input(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,[_|IR],B,S,Auto,PD,PL,WT,Line) :- true |
+        monitor_wait_input(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line).
+monitor_wait_input(X,Pat,Str,MM,[monitored_terms_list(A)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line) :- true |
+        vector_element(EnvVar,0,SAM,EnvVar1),
+        vector_element(EnvVar1,1,QM,EnvVar2),
+        A=[{ID,{{SAM,QM},Pat,Str,X}}|A1],
+        Mon1=[monitored_terms_list(A1)|Mon2],
+        monitor_wait_input(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar2,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line).
+
+monitor_wait_input(X,Pat,Str,MM,[kill(N)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line) :-
+    true |
+        monitor_wait_input_if_kill(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line,N).
+
+monitor_wait_input(X,Pat,Str,MM,[change_condition(N,NPat)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line) :- true |
+        if_change_condition(ID,N,Pat,NPat,Pat1,Mon1,Mon2),
+        monitor_wait_input(X,Pat1,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line).
+monitor_wait_input(X,Pat,Str,MM,[change_stream_auto_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line) :- true |
+        Mon1=[change_stream_auto_mode(N)|Mon2],
+        monitor_wait_input(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line).
+monitor_wait_input(X,Pat,Str,MM,[change_query_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line) :- true |
+        Mon1=[change_query_mode(N)|Mon2],
+        monitor_wait_input(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line).
+monitor_wait_input(X,Pat,Str,MM,[silent_mode(Param)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line) :- true |
+        Mon1=[silent_mode(Param)|Mon2],
+        set_vector_element(EnvVar,5,_,Param,EnvVar1),
+        monitor_wait_input(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line).
+
+alternatively.
+monitor_wait_input(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line) :- wait(Line) |
+        inspector_command_analyser:analyse_monitor_cmd(Line,Cmd,Type,B,B1,V,V1),
+        execute(X,Pat,Str,MM,Mon,Mon1,V1,IO,ID,EnvVar,Flg,WS,IR,B1,S,Auto,PD,PL,WT,Cmd,Type).
+
+monitor_wait_input_if_kill(_,_,Str,MM,Mon,Mon1,V,IO,ID,_,_,WS,_,B,S,_,_,_,_,_,ID) :- true |
+        MM=[],Mon=Mon1,V=[],IO=[],B=[],S=[],
+        WS=[terminated(ID,Str)].
+otherwise.
+monitor_wait_input_if_kill(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line,N) :-
+    true |
+        Mon1=[kill(N)|Mon2],
+        monitor_wait_input(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Line).
+
+
+execute(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Cmd,basic0) :- true |
+        execute_cmd_basic0(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Cmd).
+execute(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Cmd,monitor) :- true |
+        execute_cmd_mon(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Cmd).
+execute(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Cmd,inspect) :- true |
+        MM=[get_LAb(LAb)|MM1],
+        inspector_cmd_inspect:execute(LAb,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,Cmd),
+        monitor_get_cmd1(X1,Pat,Str,MM1,Mon,Mon1,V1,IO,ID,EnvVar,Flg,WS1,IR1,B,S1,Auto,PD,PL,WT).
+execute(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Cmd,var_pool) :- true |
+        MM=[get_LAb(LAb)|MM1],
+        inspector_cmd_varpool:execute(LAb,X,X1,IR,IR1,WS,WS1,V,V1,Cmd),
+        monitor_get_cmd1(X1,Pat,Str,MM1,Mon,Mon1,V1,IO,ID,EnvVar,Flg,WS1,IR1,B,S,Auto,PD,PL,WT).
+execute(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Cmd,env) :- true |
+        MM=[get_LAb(LAb)|MM1],
+        inspector_cmd_environment:execute(LAb,WS,WS1,B,B1,V,V1,Cmd),
+        monitor_get_cmd1(X,Pat,Str,MM1,Mon,Mon1,V1,IO,ID,EnvVar,Flg,WS1,IR,B1,S,Auto,PD,PL,WT).
+execute(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Cmd,basic) :- true |
+        inspector_cmd_basic:execute(WS,WS1,Cmd),
+        monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS1,IR,B,S,Auto,PD,PL,WT).
+otherwise.
+execute(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,_,Type) :- true |
+        WS=[error(Type)|WS1],
+        monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS1,IR,B,S,Auto,PD,PL,WT).
+
+execute_cmd_basic0(_,_,Str,MM,Mon,Mon1,V,IO,ID,_,_,WS,_,B,S,_,_,_,_,exit) :- true |
+        V=[],MM=[],Mon=Mon1,IO=[],B=[],S=[],
+        WS=[terminated(ID,Str)].
+execute_cmd_basic0(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,_,B,S,Auto,PD,PL,WT,[]) :- true |
+        B=[],S=[],
+        if_monitor_auto(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,Auto,PD,PL,WT).
+execute_cmd_basic0(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,_,B,S,Auto,PD,PL,WT,fork) :- true |
+        set_vector_element(EnvVar,7,_,-1,EnvVar1),
+        V=[get_listener_varlist(LisVL),get_listener_var_manager(LV)],
+        MM=[get_LAb(NLAb),get_idmanager(NIDM)],
+        Mon=Mon1,IO=[],B=[],
+        WS=[getenv_all(Envs)],
+        make_title(ID,Pat,Str,Title),
+        inspector_window_manager:manager_a(NLAb,Win,NMM1,LisVL,Envs,EnvVar1,Title,Status),
+        inspector_var_manager:manager(NV,LV),
+        merge({NV0,NV1},NV),
+        monitor_manager:manager1(NLAb,_,NMM,NV0,NIDM,Win,EnvVar1),
+        NMM=[join(NMMC,NMon,NMon1,NIO)|NMM1],
+        NIO=[io_request(-1,Res)|NIO1],
+        wait_created_monitor_manager(X,Pat,Str,NMMC,NMon,NMon1,NV1,NIO1,ID,EnvVar1,Flg,S,Auto,PD,PL,WT,Res,Status).
+
+wait_created_monitor_manager(X,Pat,Str,NMMC,NMon,NMon1,NV1,NIO1,NID,EnvVar,Flg,S,Auto,PD,PL,WT,
+    normal(NFlg,NWS,NIR,NB),normal) :- true |
+        NFlg=Flg,
+        monitor_get_cmd1(X,Pat,Str,NMMC,NMon,NMon1,NV1,NIO1,NID,EnvVar,NFlg,NWS,NIR,NB,S,Auto,PD,PL,WT).
+
+if_monitor_auto(_,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,_,WS,{on,[E|X]},_,PL,WT) :- true |
+        WS=[],
+        if_next_monitor_var(WT,PL,[E|X],X1,Pat),
+        wait_next_monitor_var(X1,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar).
+otherwise.
+if_monitor_auto(_,_,Str,MM,Mon,Mon1,V,IO,ID,_,_,WS,_,_,_,_) :- true |
+        MM=[],Mon=Mon1,V=[],IO=[],
+        WS=[terminated(ID,Str)].
+
+execute_cmd_mon(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,cmonitor(M,NPat,NStr)) :- true |
+        if_monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,[],M,NPat,NStr).
+execute_cmd_mon(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,cmonitor(M,NPat)) :- true |
+        if_monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,[],M,NPat,string#"").
+execute_cmd_mon(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,cmonitor_and_fork(M,NPat,NStr)) :- true |
+        if_monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,and_fork,M,NPat,NStr).
+execute_cmd_mon(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,cmonitor_and_fork(M,NPat)) :- true |
+        if_monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,and_fork,M,NPat,string#"").
+execute_cmd_mon(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,monitored_terms) :- true |
+        MM=[get_LAb(LAb)|MM0],
+        inspector_cmd_monitor:monitored_terms(LAb,MM0,MM1,IR,IR1,WS,WS1,B,B1,V,V1,End),
+        wait_monitored_terms(X,Pat,Str,MM1,Mon,Mon1,V1,IO,ID,EnvVar,Flg,WS1,IR1,B1,S,Auto,PD,PL,WT,End).
+execute_cmd_mon(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,stream_auto_mode) :- true |
+        monitor_manager:stream_auto_mode(EnvVar,EnvVar1,normal(FStr,Info)),
+        WS=[putf(FStr,Info)|WS1],
+        monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar1,Flg,WS1,IR,B,S,Auto,PD,PL,WT).
+execute_cmd_mon(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,query_mode) :- true |
+        monitor_manager:query_mode(EnvVar,EnvVar1,normal(FStr,Info)),
+        WS=[putf(FStr,Info)|WS1],
+        monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar1,Flg,WS1,IR,B,S,Auto,PD,PL,WT).
+execute_cmd_mon(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,silent_mode(Param)) :- true |
+        inspector_cmd_monitor:silent_mode(WS,WS1,MM,MM1,Param,Ac),
+        wait_monitored_terms(X,Pat,Str,MM1,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS1,IR,B,S,Auto,PD,PL,WT,Ac).
+execute_cmd_mon(X,_,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,change_condition(NPat)) :- true |
+        monitor_get_cmd1(X,NPat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT).
+
+wait_monitored_terms(_,_,_,MM,[],Mon1,V,IO,_,_,_,WS,_,B,S,_,_,_,_,_) :- true |
+        MM=[],Mon1=[],V=[],IO=[],WS=[],B=[],S=[].
+wait_monitored_terms(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,[_|IR],B,S,Auto,PD,PL,WT,End) :- true |
+        wait_monitored_terms(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End).
+wait_monitored_terms(X,Pat,Str,MM,[monitored_terms_list(A)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End) :-
+    true |
+        Mon1=[monitored_terms_list(A)|Mon2],
+        wait_monitored_terms(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End).
+% (must be ID=/=N)
+wait_monitored_terms(X,Pat,Str,MM,[kill(N)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End) :- true |
+        Mon1=[kill(N)|Mon2],
+        wait_monitored_terms(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End).
+wait_monitored_terms(X,Pat,Str,MM,[change_condition(N,NPat)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End) :- true |
+        if_change_condition(ID,N,Pat,NPat,Pat1,Mon1,Mon2),
+        wait_monitored_terms(X,Pat1,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End).
+wait_monitored_terms(X,Pat,Str,MM,[change_stream_auto_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End) :- true |
+        Mon1=[change_stream_auto_mode(N)|Mon2],
+        wait_monitored_terms(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End).
+wait_monitored_terms(X,Pat,Str,MM,[change_query_mode(N)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End) :- true |
+        Mon1=[change_query_mode(N)|Mon2],
+        wait_monitored_terms(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End).
+wait_monitored_terms(X,Pat,Str,MM,[silent_mode(Param)|Mon],Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End) :- true |
+        Mon1=[silent_mode(Param)|Mon2],
+        set_vector_element(EnvVar,5,_,Param,EnvVar1),
+        wait_monitored_terms(X,Pat,Str,MM,Mon,Mon2,V,IO,ID,EnvVar1,Flg,WS,IR,B,S,Auto,PD,PL,WT,End).
+
+alternatively.
+wait_monitored_terms(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,End) :- wait(End) |
+        monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT).
+
+
+if_monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Fk,M,NPat,NStr) :- true |
+        unbound(M,M0),
+        inspector_cmd_monitor:if_get_term(Ab,M0,X,X1,S,S1,Res),
+        wait_term(X1,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S1,Auto,PD,PL,WT,Fk,Res,NPat,NStr,Ab).
+
+wait_term(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,[abort|IR],B,S,Auto,PD,PL,WT,_,_,_,_,Ab) :- true |
+        Ab=abort,
+        monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT).
+wait_term(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Fk,normal(Y,Y1,_),NPat,NStr,Ab) :- true |
+        Ab=[],
+        Y=Y1,
+        create_monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,Fk,Y,NPat,NStr).
+wait_term(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,_,error(Type),_,_,Ab) :- true |
+        Ab=[],
+        WS=[error(Type)|WS1],
+        monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS1,IR,B,S,Auto,PD,PL,WT).
+wait_term(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,Auto,PD,PL,WT,_,atomic(Type,Y,Y1,_),_,_,Ab) :- true |
+        Ab=[],Y=Y1,
+        WS=[putf(string#"~s~t~n",[string#">Cannot monitor : ",Type])|WS1],
+        monitor_get_cmd1(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS1,IR,B,S,Auto,PD,PL,WT).
+
+create_monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,
+                                Auto,PD,PL,WT,[],E,NPat,NStr) :- true |
+        V={V0,V1},
+        IO={IO0,IO1},
+        MM=[get_id(NID)|MM1],
+        MM1={MM2,MM3},
+        WS=[started(NID,NStr)|WS1],
+        monitor(E,NPat,NStr,MM2,Mon0,Mon1,V1,IO1,NID,EnvVar),
+        monitor_get_cmd1(X,Pat,Str,MM3,Mon,Mon0,V0,IO0,ID,EnvVar,Flg,WS1,IR,B,S,Auto,PD,PL,WT).
+create_monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS,IR,B,S,
+                                Auto,PD,PL,WT,and_fork,E,NPat,NStr) :- true |
+        WS=[getenv_all(Envs)|WS1],
+        MM=[monitor_and_fork_with_envs(E,NPat,NStr,Envs)|MM1],
+        monitor_get_cmd1(X,Pat,Str,MM1,Mon,Mon1,V,IO,ID,EnvVar,Flg,WS1,IR,B,S,Auto,PD,PL,WT).
+
+make_title(ID,Pat,Str,Title) :- true |
+        monitor_manager:make_title(ID,Pat,Str,Title).
+
+if_next_monitor_var(WT,PL,X,X1,variable(_)) :- true |
+        next_monitor_var(WT,PL,X,X1).
+otherwise.
+if_next_monitor_var(WT,PL,X,X1,PWT) :- true |
+        remove_pat(WT,PWT,X,X1).
+
+next_monitor_var(variable(_),_,X,X1) :- true | X1=normal(X).
+next_monitor_var(list([_|WT]),PL,[_|X],X1) :- PL>0 |
+        next_monitor_var(WT,~(PL-1),X,X1).
+next_monitor_var(list(_),0,X,X1) :- true | X1=normal(X).
+otherwise.
+next_monitor_var(_,_,_,X1) :- true | X1=end.
+
+remove_pat(list([_|WT]),list([_|PWT]),[_|X],X1) :- true |
+        remove_pat(WT,PWT,X,X1).
+remove_pat(_,variable(_),X,X1) :- true | X1=normal(X).
+otherwise.
+remove_pat(_,_,_,X1) :- true | X1=end.
+
+wait_next_monitor_var(normal(X),Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar) :- true |
+        monitor(X,Pat,Str,MM,Mon,Mon1,V,IO,ID,EnvVar).
+wait_next_monitor_var(end,_,Str,MM,Mon,Mon1,V,IO,ID,EnvVar) :- true |
+        vector_element(EnvVar,7,TID,_),
+        IO=[io_request(TID,Res)],
+        MM=[],Mon=Mon1,V=[],
+        report_terminated(Res,ID,Str).
+

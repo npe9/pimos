@@ -1,0 +1,826 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>user>yashiro>V33>boot>bios.kl1.28, 16-May-92 17:11:43, Edit by yashiro
+:- module pim.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public dummy/2, get_dummy_code/1, get_dummy_code/2, dummy/0,
+                                     get_dummy_code2/1, connect/2 , merger_close/1.
+:- public go/4.
+
+version(Version) :- true |  Version = string#"V3.0".
+date(Date) :- true | Date = string#"13-Apr-92".
+message(Message) :- true | 
+        builtin#append_string([string#"BIOS ",Version, string#" ", Date],Message),
+        date(Date),
+        version(Version).
+
+:- switch(virtual_machine_interface).
+:- case(yes).
+% top level predicate.
+go(CSPParam,Atoms,Modules,Comments) :-
+    true |
+        pimos_version:console_title(Version),
+        builtin#append_string([string#"*** PIMOS/VM for ",Version, " ***"],Message),
+        go1(Message,CSPParam,Atoms,Modules,Comments).
+
+go1(Message,CSPParam,Atoms,Modules,Comments) :-
+    true |
+        shoen:raise(pimos_tag#task,get_std(io),STD),
+        new_string(LF,1,16),
+        set_string_element(LF,0,key#lf,NLF),
+        builtin#append_string([Message,NLF],NMessage),
+        STD=[putb(NMessage,_),flush(_)],
+        go2(CSPParam,Atoms,Modules,Comments).
+:- default.
+% top level predicate.
+go(CSPParam,Atoms,Modules,Comments) :-
+    true |
+        pimos_version:console_title(Version),
+        builtin#append_string([string#"PIMOS ",Version],Message),
+        jis_to_ascii:convert(Message,ASCII_Message),
+        go1(ASCII_Message,CSPParam,Atoms,Modules,Comments).
+
+go1(Message,CSPParam,Atoms,Modules,Comments) :-
+    display_console(Message) |
+        go2(CSPParam,Atoms,Modules,Comments).
+:- end_switch.
+:- switch(ipl_parameter).
+:- case(yes).
+go2(CSPParam,Atoms,Modules,Comments) :-
+    true |
+        decompose_boot_info(CSPParam,Cluster,Processor,Unit,Send_LUN,Receive_LUN,_),
+        scsi_manager:create(SCSI),
+        initiate_device(BIOS,SCSI,Modules,Atoms,{Cluster,Processor,Unit,Send_LUN,Receive_LUN},Comments),
+        merge({OS,OS1},BIOS),
+        predicate_to_code(module#init,go,0,PIMOS_TOP),
+        shoen:execute(PIMOS_TOP,{},0,4050,-1,[start|Control],Report),
+        wait_finish_or_reboot(Shut,OS1),
+        bios_monitor(Report,Control,OS,Shut).
+:- default.
+go2(_,Atoms,Modules,Comments) :-
+    true |
+        Cluster = 0, Processor = 0, Unit = 7, Send_LUN = 0, Receive_LUN = 1,
+        scsi_manager:create(SCSI),
+        initiate_device(BIOS,SCSI,Modules,Atoms,{Cluster,Processor,Unit,Send_LUN,Receive_LUN},Comments),
+        merge({OS,OS1},BIOS),
+        predicate_to_code(module#init,go,0,PIMOS_TOP),
+        shoen:execute(PIMOS_TOP,{},0,4050,-1,[start|Control],Report),
+        wait_finish_or_reboot(Shut,OS1),
+        bios_monitor(Report,Control,OS,Shut).
+:- end_switch.
+
+bios_monitor([terminated|R],C,BIOS,Shut):-
+    true|
+        C = [statistics],
+        bios_monitor(R,_,BIOS,Shut).
+bios_monitor([started|R],C,BIOS,Shut):-
+    true|
+        bios_monitor(R,C,BIOS,Shut).
+:- switch(virtual_machine_interface).
+:- case(yes).
+bios_monitor([aborted|R],C,BIOS,Shut):-
+    true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(bios,
+            "pimos_process_aborted"),{}),
+        C = [],
+        bios_monitor(R,_,BIOS,Shut).
+:- default.
+bios_monitor([aborted|R],C,BIOS,Shut):-
+    display_console(ascii#"PIMOS PROCESSES WERE ABORTED")|
+        C = [],
+        bios_monitor(R,_,BIOS,Shut).
+:- end_switch.
+bios_monitor([resource_low|R],C,BIOS,Shut):-
+    true|
+        C = [add_resource(16#"3FFFFFFF",16#"FFFFFFFF"),allow_resource_report|CN],
+        bios_monitor(R,CN,BIOS,Shut).
+bios_monitor([resource_added|R],C,BIOS,Shut):-
+    true|
+        bios_monitor(R,C,BIOS,Shut).
+bios_monitor([return_resource(_,_)|R],C,BIOS,Shut):-
+    true|
+        bios_monitor(R,C,BIOS,Shut).
+bios_monitor([resource_report_allowed|R],C,BIOS,Shut):-
+    true|
+        bios_monitor(R,C,BIOS,Shut).
+bios_monitor([statistics_started|R],C,BIOS,Shut):-
+    true|
+        bios_monitor(R,C,BIOS,Shut).
+:- switch(virtual_machine_interface).
+:- case(yes).
+bios_monitor([statistics(ResH,ResL)|R],C,BIOS,Shut):-
+    true |
+        shoen:raise(pimos_tag#task,get_std(io),STD),
+        new_string(LF,1,16),
+        set_string_element(LF,0,key#lf,NLF),
+        hex_to_jis(ResH,RESHS),
+        hex_to_jis(ResL,RESLS),
+        builtin#append_string(["Statistics in PIMOS: {",RESHS,",",RESLS,"}",NLF],MES),
+        STD=[putb(MES,_),flush(_)],
+        bios_monitor(R,C,BIOS,Shut).
+bios_monitor([exception(Type,Info,NewCode,NewArgv)|R],C,BIOS,Shut):-
+    Type \= raised |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(bios,
+            "exception_occurred"),{Type,Info}),
+        get_dummy_code(NewCode),
+        NewArgv = {{Type,Info},BIOS},
+        bios_monitor(R,C,BIOS,Shut).
+bios_monitor([],C,BIOS,Shut):-
+    true |
+        shoen:raise(pimos_tag#task,get_std(io),STD),
+        new_string(LF,1,16),
+        set_string_element(LF,0,key#lf,NLF),
+        builtin#append_string(["****** PIMOS END ********",NLF],MES),
+        STD=[putb(MES,_)],
+        Shut = shut,
+        BIOS = [],
+        C = [].
+:- default.
+bios_monitor([statistics(ResH,ResL)|R],C,BIOS,Shut):-
+    display_console(ascii#"Statistics in PIMOS:"),
+    display_console(ResH),
+    display_console(ResL)|
+        bios_monitor(R,C,BIOS,Shut).
+bios_monitor([exception(Type,Info,NewCode,NewArgv)|R],C,BIOS,Shut):-
+    Type = merger_deadlock,
+    display_console(ascii#"MERGER DEADLOCK WAS OCCURRED in PIMOS"),
+    display_console(ascii#"Close a stream of the merger"),
+    display_console(Info) |
+        get_merger_close_code(NewCode),
+        NewArgv = {Info},
+        bios_monitor(R,C,BIOS,Shut).
+bios_monitor([exception(Type,Info,NewCode,NewArgv)|R],C,BIOS,Shut):-
+    Type \= raised,
+    Type \= merger_deadlock,
+    display_console(ascii#"EXCEPTION WAS OCCURRED in PIMOS : error code:"),
+    display_console(Type),
+    display_console(Info) |
+        get_dummy_code(NewCode),
+        NewArgv = {{Type,Info},BIOS},
+        bios_monitor(R,C,BIOS,Shut).
+bios_monitor([],C,BIOS,Shut):-
+    display_console(ascii#"PIMOS END********")|
+        Shut = shut,
+        BIOS = [],
+        C = [].
+:- end_switch.
+bios_monitor([exception(Type,Info,NewCode,NewArgv)|R],C,BIOS,Shut):-
+    Type = raised |
+        BIOS = {BIOS1,BIOS2},
+        raised_handler(Info,BIOS1,NewCode,NewArgv),
+        bios_monitor(R,C,BIOS2,Shut).
+otherwise.
+bios_monitor([R|Rest],C,BIOS,Shut):-
+    display_console(R)|
+        bios_monitor(Rest,C,BIOS,Shut).
+
+wait_finish_or_reboot(Shut,BIOS) :- 
+    wait(Shut) |
+        BIOS = [console(normal(Console))|BIOS1],
+        Console = [putb(string#"Will you reboot (Y/N)?",_),getl(Status)],
+        check_reboot0(Status,BIOS1).
+
+check_reboot0(normal(Buf),BIOS) :-
+    string(Buf,0,_) |
+        BIOS = [console(normal(Console))|BIOS1],
+        Console = [putb(string#"Will you reboot (Y/N)?",_),getl(Status)],
+        check_reboot0(Status,BIOS1).
+check_reboot0(normal(Buf),BIOS) :-
+    string(Buf,Len,_), Len > 0 |
+        string_element(Buf,0,Char,_),
+        check_reboot(Char,BIOS).
+otherwise.
+check_reboot0(_,BIOS) :-
+    true |
+        BIOS = [].
+
+check_reboot(Char,BIOS) :-
+    Char =\= #"Y",
+    Char =\= #"y" |
+        BIOS = [].
+otherwise.
+check_reboot(_,BIOS) :-
+    true |
+        {OS,OS1}=BIOS,
+        predicate_to_code(module#init,go,0,PIMOS_TOP),
+        shoen:execute(PIMOS_TOP,{},0,4050,-1,[start|Control],Report),
+        wait_finish_or_reboot(NShut,OS1),
+        bios_monitor(Report,Control,OS,NShut).
+
+raised_handler({_,Info,Data},BIOS,NewCode,NewArgv) :-
+    Info = bios |
+        get_dummy_code2(NewCode),
+        NewArgv = {Data,BIOS}.
+:-switch(virtual_machine_interface).
+:-case(yes).
+raised_handler({_,Info,Data},BIOS,NewCode,NewArgv) :-
+    Info = get_std_out |
+        BIOS = [],
+        get_dummy_code2(NewCode),
+        NewArgv = {Data,STDOUT},
+        shoen:raise(pimos_tag#shell, get_std_out, STDOUT).
+raised_handler({_,'$PIMOS$'(ERROR,INFO),Data},BIOS,NewCode,NewArgv) :-
+    wait(ERROR), wait(INFO) |
+        BIOS = [],
+        shoen:raise(pimos_tag#error,'$PIMOS$'(ERROR,INFO),Data),
+        get_dummy_code(NewCode,NewArgv).
+raised_handler({_,get_std(DIRECTION),Data},BIOS,NewCode,NewArgv) :-
+    atom(DIRECTION) |
+        BIOS = [],
+        get_dummy_code2(NewCode),
+        NewArgv = {Data,STDOUT},
+        shoen:raise(pimos_tag#task, get_std(DIRECTION), STDOUT).
+raised_handler({_,Info,Data},BIOS,NewCode,NewArgv) :-
+    Info = general_request |
+        BIOS = [],
+        shoen:raise(pimos_tag#pimos, general_request, GR),
+        get_dummy_code2(NewCode),
+        NewArgv = {Data,GR}.
+:-end_switch.
+otherwise.
+raised_handler({_,_,Data},BIOS,NewCode,NewArgv) :-
+    true |
+        get_dummy_code(NewCode,NewArgv),
+        BIOS = [].
+
+initiate_device(BIOS,SCSI,Modules,Atoms,CSPParam,Comments) :-
+    true |
+        module_manager(Module,Modules),
+        merge(OSModule,Module),
+        atom_manager(Atom,Atoms),
+        merge(OSAtom,Atom),
+        merge({OSSCSI1,OSSCSI2},SCSI),
+        create_os_device(OSDev,OSSCSI1,CSPParam),
+        request_handler(BIOS,OSSCSI2,OSModule,OSAtom,OSDev,Comments).
+
+request_handler([],SCSI,OSModule,OSAtom,OSDev,_) :-
+    true |
+        SCSI = [], OSModule = [], OSAtom = [], OSDev = [].
+%%  revised by H.Yashiro 1991-10-22
+request_handler([ipl_comments(Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        Result = normal(Comments),
+        request_handler(Request,SCSI,OSModule,OSAtom,OSDev,Comments).
+%%  patched by Fujise 1991-09-18
+request_handler([fep(N,Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        OSDev = [fep(N,Result)|NOSDev],
+        request_handler(Request,SCSI,OSModule,OSAtom,NOSDev,Comments).
+request_handler([number_of_fep(Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        OSDev = [number_of_fep(Result)|NOSDev],
+        request_handler(Request,SCSI,OSModule,OSAtom,NOSDev,Comments).
+%%  end
+request_handler([scsi(Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        SCSI={SCSI1,SCSI2},
+        Result=normal(SCSI1),
+        request_handler(Request,SCSI2,OSModule,OSAtom,OSDev,Comments).
+request_handler([atom(Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        OSAtom={OSAtom1,OSAtom2},
+        Result=normal(OSAtom1),
+        request_handler(Request,SCSI,OSModule,OSAtom2,OSDev,Comments).
+request_handler([module(Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        OSModule={OSModule1,OSModule2},
+        Result=normal(OSModule1),
+        request_handler(Request,SCSI,OSModule2,OSAtom,OSDev,Comments).
+request_handler([console(Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        OSDev=[console(Result)|NOSDev],
+        request_handler(Request,SCSI,OSModule,OSAtom,NOSDev,Comments).
+request_handler([timer(Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        OSDev=[timer(Result)|NOSDev],
+        request_handler(Request,SCSI,OSModule,OSAtom,NOSDev,Comments).
+request_handler([system_timers(Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        OSDev=[system_timers(Result)|NOSDev],
+        request_handler(Request,SCSI,OSModule,OSAtom,NOSDev,Comments).
+request_handler([syslog(Result)|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    true |
+        OSDev=[syslog(Result)|NOSDev],
+        request_handler(Request,SCSI,OSModule,OSAtom,NOSDev,Comments).
+otherwise.
+request_handler([A|Request],SCSI,OSModule,OSAtom,OSDev,Comments) :-
+    display_console(ascii#"illegal message to BIOS manager"),
+    display_console(A) |
+        request_handler(Request,SCSI,OSModule,OSAtom,OSDev,Comments).
+
+module_manager([get_all_modules(Result)|Module],Modules) :-
+    true |
+        Result = normal(Modules),
+        module_manager(Module,Modules).
+module_manager([],_) :-
+    true |
+        true.
+otherwise.
+module_manager([A|Module],Modules) :-
+    display_console(ascii#"illegal message to BIOS module device"),
+    display_console(A) |
+        module_manager(Module,Modules).
+
+atom_manager([get_all_atoms(Result)|Atom],Atoms) :-
+    true |
+        Result = normal(Atoms),
+        atom_manager(Atom,Atoms).
+atom_manager([],_) :-
+    true |
+        true .
+:-switch(virtual_machine_interface).
+:-case(yes).
+atom_manager([intern(Name,Result)|Atom],Atoms) :-
+    string(Name,_,_)|
+        atom_table:intern(Name,Result),
+        atom_manager(Atom,Atoms).
+atom_manager([get_atom_name(Name,Result)|Atom],Atoms) :-
+    atom(Name)|
+        atom_table:get_atom_name(Name,Result),
+        atom_manager(Atom,Atoms).
+:-end_switch.
+otherwise.
+atom_manager([A|Atom],Atoms) :-
+    display_console(ascii#"illegal message to BIOS atom device"),
+    display_console(A) |
+        atom_manager(Atom,Atoms).
+
+dummy(A,B):- true | true.
+get_dummy_code(Code):- true|
+    predicate_to_code(module#pim,dummy,2,Code).
+
+%   CSP Parameter (16bit String)
+%   Elem No. +============================+
+%         0  |  Cluster Number            |
+%         1  |  Processor Number          |   PIM/m and Multi-PSI's procesor number is always 0.
+%         2  |  Unit Number               |
+%         3  |  LUN for sender            |
+%         4  |  LUN for receiver          |
+%         5  |Length of IPL FILE Pathname |  (N elements, N > 0)
+%        5+N |   Pathname (last element)  |
+%         ......
+%         6  |   Pathname (First element) |
+%            +============================+
+decompose_boot_info(CSPParam0,Cluster,Processor,Unit,Send_LUN,Receive_LUN,Pathname) :-
+    string(CSPParam0,Length,16) |
+        string_element(CSPParam0,0,Cluster,CSPParam1),
+        string_element(CSPParam1,1,Processor,CSPParam2),
+        string_element(CSPParam2,2,Unit,CSPParam3),
+        string_element(CSPParam3,3,Send_LUN,CSPParam4),
+        string_element(CSPParam4,4,Receive_LUN,CSPParam5),
+        string_element(CSPParam5,5,PathnameLength,CSPParam6),
+        new_string(Pathname0,PathnameLength,16),
+        builtin#copy_string_elements(Pathname0,0,PathnameLength,CSPParam6,6,Pathname,_).
+
+    
+create_os_device(OSDev,SCSI,{Cluster,Processor,Unit,_,_}) :-
+    true |
+        scsi_fep:create(SCSI,SCSIResult)@node(Cluster),
+        check_configuration({Cluster,Processor,0},Unit,SCSIResult,Result),
+        create_os_device1(OSDev,Result).
+
+%%  revised by Fujise 1991-09-18
+create_os_device1(OSDev,normal(Devs0)) :-
+    true |
+        set_vector_element(Devs0,0,Dev0,NDev,Devs), %%%
+        initiate_general_request(Dev0,Dev),
+        console:create(Console,Dev,Dev1),
+        system_timer_manager:create(Timer,Dev1,Dev2),
+        syslog:create(Syslog,Dev2,NDev),
+        fep_manager(Fep,Devs),       %%  these goals was added by Fujise
+        os_device_manager0(OSDev,Console,Syslog,Timer,Fep). %% revised by Fujise
+create_os_device1(_,abnormal) :-
+    display_console(ascii#"cannot create OS devices.") |
+        true .
+
+%close_general_request(Dev) :-
+%    true |
+%        Dev = fep#nil.
+
+os_device_manager0(OSDev,normal(Console),normal(Syslog),normal(Timer),Fep) :-
+    true |
+        merge(NConsole,Console1),
+        merge(NSyslog,Syslog),
+%        merge(NTimer,Timer),
+        merge(NFep,Fep),
+        Console = [putl(Message,_)|Console1],
+        message(Message),
+        os_device_manager(OSDev,NConsole,NSyslog,Timer,NFep).
+otherwise.
+os_device_manager0(_,_,_,_,Fep) :-
+    display_console(ascii#"os device initiation failed") |
+        Fep = [].
+
+%%   added by Fujise
+%%   fep management
+fep_manager(Fep,FepV):-
+    vector(FepV,N)|
+    create_fep_manager(0,N,Fep,FepV).
+
+create_fep_manager(N,N,Fep,FepV):-
+    true|
+        fep_manager(Fep,FepV,N).
+otherwise.
+create_fep_manager(M,N,Fep,FepV):-
+    M1 := M + 1|
+        set_vector_element(FepV,M,UFep,UFepIn,NFepV),
+        merge(UFepIn,UFepOut),
+        unit_fep_manager(UFepOut,UFep),
+        create_fep_manager(M1,N,Fep,NFepV).
+
+unit_fep_manager([],Fep):-
+    true|
+        Fep = fep#nil.
+unit_fep_manager([window(Result)|UFep],Fep):-
+    true|
+        Fep = {fep#window,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+unit_fep_manager([file(Result)|UFep],Fep):-
+    true|
+        Fep = {fep#file,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+unit_fep_manager([timer(Result)|UFep],Fep):-
+    true|
+        Fep = {fep#timer,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+unit_fep_manager([string_io(Result)|UFep],Fep):-
+    true|
+        Fep = {fep#string_io,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+unit_fep_manager([socket(Result)|UFep],Fep):-
+    true|
+        Fep = {fep#socket,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+unit_fep_manager([remote_window(IONode,Result)|UFep],Fep):-
+    true|
+        Fep = {fep#remote_window,IONode,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+unit_fep_manager([remote_file(IONode,Result)|UFep],Fep):-
+    true|
+        Fep = {fep#remote_file,IONode,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+unit_fep_manager([remote_timer(IONode,Result)|UFep],Fep):-
+    true|
+        Fep = {fep#remote_timer,IONode,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+unit_fep_manager([remote_string_io(IONode,Result)|UFep],Fep):-
+    true|
+        Fep = {fep#remote_string_io,IONode,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+unit_fep_manager([remote_socket(IONode,Result)|UFep],Fep):-
+    true|
+        Fep = {fep#remote_socket,IONode,Stream,Status,NFep},
+        ans_unit_fep_manager(Status,Stream,Result),
+        unit_fep_manager(UFep,NFep).
+
+ans_unit_fep_manager(fep#normal,Stream,Result):-
+    true|
+        Result = normal(Stream).
+ans_unit_fep_manager(fep#abnormal,Stream,Result):-
+    true|
+        Stream = fep#nil,
+        Result = abnormal.
+ans_unit_fep_manager(fep#aborted,Stream,Result):-
+    true|
+        Stream = fep#nil,
+        Result = aborted.
+
+fep_manager([],FepV,N):-
+    true|
+        close_feps(N,FepV).
+fep_manager([number_of_fep(Result)|Fep],FepV,N):-
+    true|
+        Result = normal(N),
+        fep_manager(Fep,FepV,N).
+fep_manager([fep(M,Result)|Fep],FepV,N):-
+    M >= 0,
+    M < N|
+        set_vector_element(FepV,M,Fep0,Fep2,NFepV),
+        Fep0 = {Fep1,Fep2},
+        Result = normal(Fep1),
+        fep_manager(Fep,NFepV,N).
+otherwise.
+fep_manager([fep(_,Result)|Fep],FepV,N):- true |
+        Result=abnormal,
+        fep_manager(Fep,FepV,N).
+otherwise.
+fep_manager([Msg|Fep],FepV,N) :-
+    display_console(ascii#"illegal message to BIOS fep_manager"),
+    display_console(Msg) |
+        fep_manager(Fep,FepV,N).
+
+close_feps(0,_):-
+    true|
+        true.
+otherwise.
+close_feps(N,FepV):-
+    N1 := N - 1|
+        set_vector_element(FepV,N1,[],0,NFepV),
+        close_feps(N1,NFepV).
+%%%%%%%%%%%%%%%%
+
+%%%   add Fep as an argument for fep manager
+os_device_manager([],Console,Syslog,Timer,Fep) :-
+    true |
+        Console=[],Syslog=[],Timer=[],Fep = [].
+os_device_manager([fep(N,Result)|OSDev],Console,Syslog,Timer,Fep):-
+    true|
+        Fep = [fep(N,Result)|FepN],
+        os_device_manager(OSDev,Console,Syslog,Timer,FepN).
+os_device_manager([number_of_fep(Result)|OSDev],Console,Syslog,Timer,Fep):-
+    true|
+        Fep = [number_of_fep(Result)|FepN],
+        os_device_manager(OSDev,Console,Syslog,Timer,FepN).
+os_device_manager([console(Result)|OSDev],Console,Syslog,Timer,Fep) :-
+    true |
+        Console = {Console1,Console2},
+        Result = normal(Console1),
+        os_device_manager(OSDev,Console2,Syslog,Timer,Fep).
+os_device_manager([timer(Result)|OSDev],Console,Syslog,Timer,Fep) :-
+    true |
+        Timer = [timer(Result)|NTimer],
+        os_device_manager(OSDev,Console,Syslog,NTimer,Fep).
+os_device_manager([system_timers(Result)|OSDev],Console,Syslog,Timer,Fep) :-
+    true |
+        Timer = [system_timers(Result)|NTimer],
+        os_device_manager(OSDev,Console,Syslog,NTimer,Fep).
+os_device_manager([syslog(Result)|OSDev],Console,Syslog,Timer,Fep) :-
+    true |
+        Syslog = {Syslog1,Syslog2},
+        Result = normal(Syslog1),
+        os_device_manager(OSDev,Console,Syslog2,Timer,Fep).
+otherwise.
+os_device_manager([A|OSDev],Console,Syslog,Timer,Fep) :-
+    display_console(ascii#"illegal message to OS device manager"),
+    display_console(A) |
+        os_device_manager(OSDev,Console,Syslog,Timer,Fep).
+
+initiate_general_request(Dev,NDev) :-
+    true |
+        Dev = {fep#reset,ABORT,ATTENTION,STATUS,Dev1},
+        wait_and_unify_nil(ATTENTION,ABORT),
+        check_reset_status(STATUS,Dev1,NDev).
+
+check_reset_status(fep#normal,Dev,NDev) :-
+    true |
+        Dev = NDev.
+check_reset_status(fep#abnormal,Dev,NDev) :-
+    display_console(ascii#"BIOS ERROR: cannot reset general reqeust on BOOT FEP") |
+        Dev = NDev.
+
+wait_and_unify_nil(ATTENTION,ABORT) :-
+    wait(ATTENTION) |
+        ABORT = fep#nil.
+
+check_configuration(SCSI_Desc,Unit,normal(SCSIConf),Result) :-
+    true |
+        get_fep_stream(SCSIConf,SCSI_Desc,Unit,NSCSIConf,Result0),
+        get_only_boot_fep_stream(Result0,NSCSIConf,SCSI_Desc,Unit,Result).
+otherwise.
+check_configuration(_,Unit,abnormal,Result) :-
+    display_console(ascii#"FEP module initiation failure")  |
+        Result = abnormal.
+
+% Phase 1.
+%% old interface
+get_fep_stream([{Descriptor,Unit,FepResult}|Next],Descriptor,Unit,NSCSI_CONF,Result) :-
+    true |
+        NSCSI_CONF = [{Descriptor,Unit,FepResult}|Next],
+        Result = normal.
+%% new interface
+get_fep_stream([{Descriptor,Unit,Info,FepResult}|Next],Descriptor,Unit,NSCSI_CONF,Result) :-
+    true |
+        NSCSI_CONF = [{Descriptor,Unit,FepResult}|Next],
+        Result = normal.
+get_fep_stream([],Boot_Descriptor,Boot_Unit,NSCSI_CONF,Result) :-
+    true |
+        NSCSI_CONF = [],
+        Result = abnormal.
+otherwise.
+get_fep_stream([{Descriptor,Unit,FepResult}|Next],Boot_Descriptor,Boot_Unit,NSCSI_CONF,Result) :-
+    true |
+        NSCSI_CONF = [{Descriptor,Unit,FepResult}|NSCSI_CONF1],
+        get_fep_stream(Next,Boot_Descriptor,Boot_Unit,NSCSI_CONF1,Result).
+get_fep_stream([{Descriptor,Unit,Info,FepResult}|Next],Boot_Descriptor,Boot_Unit,NSCSI_CONF,Result) :-
+    true |
+        NSCSI_CONF = [{Descriptor,Unit,FepResult}|NSCSI_CONF1],
+        get_fep_stream(Next,Boot_Descriptor,Boot_Unit,NSCSI_CONF1,Result).
+
+% Phase 2.
+%%%     recoded by Fujise    1991-09-18
+get_only_boot_fep_stream(normal,SCSIConf,SCSI_Desc,Unit,Result) :-
+    true |
+        make_fep_vector(N,Result1,Result),
+        get_only_boot_fep_stream0(SCSIConf,SCSI_Desc,Unit,Feps,Feps,Result1,0,N).
+otherwise.
+get_only_boot_fep_stream(_,[BOOT_SCSI|SCSIConf],_,Unit,Result) :-
+    true |
+        make_fep_vector(N,Result1,Result),
+        get_only_boot_fep_stream0([BOOT_SCSI|SCSIConf],BOOT_SCSI,Unit,Feps,Feps,Result1,0,N).
+
+make_fep_vector(N,Result1,Result):-
+    true|
+        new_vector(FepV,N),
+        make_fep_vector(Result1,0,FepV,Result).
+make_fep_vector([],_,FepV,Result):-
+    true|
+        Result = normal(FepV).
+make_fep_vector([Fep|Next],N,FepV,Result):-
+    N1 := N + 1|
+        set_vector_element(FepV,N,_,Fep,NFepV),
+        make_fep_vector(Next,N1,NFepV,Result).
+
+get_only_boot_fep_stream0([{Descriptor,Unit,normal(Fep)}|Next],
+                    Descriptor,Unit,Top,Bot,Out,M,N) :-
+    true |
+        Fep = {fep#reset,ABORT,ATTENTION,STATUS,Fep1},
+        wait_and_unify_nil(ATTENTION,ABORT),
+        wait_get_only_boot_fep_stream1(STATUS,Fep1,Next,
+                                    Descriptor,Unit,Top,Bot,Out,M,N).
+get_only_boot_fep_stream0([{Descriptor,Unit,Info,normal(Fep)}|Next],
+                    Descriptor,Unit,Top,Bot,Out,M,N) :-
+    true |
+        Fep = {fep#reset,ABORT,ATTENTION,STATUS,Fep1},
+        wait_and_unify_nil(ATTENTION,ABORT),
+        wait_get_only_boot_fep_stream1(STATUS,Fep1,Next,
+                                    Descriptor,Unit,Top,Bot,Out,M,N).
+get_only_boot_fep_stream0([{Descriptor,Unit,abnormal}|Next],
+                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N) :-
+    true|
+        get_only_boot_fep_stream0(Next,
+                                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N).
+get_only_boot_fep_stream0([{Descriptor,Unit,Info,abnormal}|Next],
+                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N) :-
+    true|
+        get_only_boot_fep_stream0(Next,
+                                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N).
+get_only_boot_fep_stream0([],Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N) :-
+    true|
+        Out = Top,
+        Bot = [],
+        M = N.
+otherwise.
+get_only_boot_fep_stream0([{Descriptor,Unit,normal(Fep)}|Next],
+                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N) :-
+    true |
+%    Boot_Descriptor =\= Descriptor,
+%    Boot_Unit =\= Unit |
+        Fep = {fep#reset,ABORT,ATTENTION,STATUS,Fep1},
+        wait_and_unify_nil(ATTENTION,ABORT),
+        wait_get_only_boot_fep_stream0(STATUS,Fep1,Next,
+                                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N).
+get_only_boot_fep_stream0([{Descriptor,Unit,Info,normal(Fep)}|Next],
+                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N) :-
+    true |
+%    Boot_Descriptor =\= Descriptor,
+%    Boot_Unit =\= Unit |
+        Fep = {fep#reset,ABORT,ATTENTION,STATUS,Fep1},
+        wait_and_unify_nil(ATTENTION,ABORT),
+        wait_get_only_boot_fep_stream0(STATUS,Fep1,Next,
+                                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N).
+
+wait_get_only_boot_fep_stream0(fep#normal,Fep,Next,
+                                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N):-
+    M1 := M + 1|
+        Bot = [Fep|BotN],
+        get_only_boot_fep_stream0(Next,Boot_Descriptor,Boot_Unit,Top,BotN,Out,M1,N).
+otherwise.
+wait_get_only_boot_fep_stream0(_,Fep,Next,
+                                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N):-
+    true|
+        Fep = fep#nil,
+        get_only_boot_fep_stream0(Next,Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N).
+
+wait_get_only_boot_fep_stream1(fep#normal,Fep,Next,
+                                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N):-
+    M1 := M + 1|
+        Out = [Fep|OutN],
+        get_only_boot_fep_stream0(Next,Boot_Descriptor,Boot_Unit,Top,Bot,OutN,M1,N).
+otherwise.
+wait_get_only_boot_fep_stream1(_,Fep,Next,
+                                    Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N):-
+    true|
+        Fep = fep#nil,
+        get_only_boot_fep_stream0(Next,Boot_Descriptor,Boot_Unit,Top,Bot,Out,M,N).
+
+close_fep_stream([{Descriptor,Unit,normal(Fep)}|Next]) :-
+    true |
+        Fep = {fep#reset,ABORT,ATTENTION,STATUS,Fep1},
+        wait_and_unify_nil(ATTENTION,ABORT),
+        check_reset_status(STATUS,Fep1,fep#nil),
+        close_fep_stream(Next).
+close_fep_stream([{Descriptor,Unit,Info,normal(Fep)}|Next]) :-
+    true |
+        Fep = {fep#reset,ABORT,ATTENTION,STATUS,Fep1},
+        wait_and_unify_nil(ATTENTION,ABORT),
+        check_reset_status(STATUS,Fep1,fep#nil),
+        close_fep_stream(Next).
+close_fep_stream([]) :-
+    true |
+        true .
+otherwise.
+close_fep_stream([_|Next]) :-
+    true |
+        close_fep_stream(Next).
+
+search_another_fep([{Descriptor,Unit,normal(Fep)}|Next],Result) :-
+    true |
+        Result = normal(Fep),
+        close_fep_stream(Next).
+search_another_fep([{Descriptor,Unit,Info,normal(Fep)}|Next],Result) :-
+    true |
+        Result = normal(Fep),
+        close_fep_stream(Next).
+search_another_fep([{Descriptor,Unit,abnormal}|Next],Result) :-
+    true |
+        search_another_fep(Next,Result).
+search_another_fep([{Descriptor,Unit,Info,abnormal}|Next],Result) :-
+    true |
+        search_another_fep(Next,Result).
+search_another_fep([],Result) :-
+    display_console(ascii#"No available FEP found!!") |
+        Result = abnormal.
+
+get_dummy_code(NewCode,NewArgv):-
+    true|
+    predicate_to_code(module#pim,dummy,0,NewCode),
+    new_vector(NewArgv,0).
+
+dummy:- true| true.
+
+get_dummy_code2(NewCode):-
+    true|
+    predicate_to_code(module#pim,connect,2,NewCode).
+
+connect(A,B):-
+    true|
+        A = B.
+%
+% Debug routine for IPL comments
+%
+%display_comments(A) :-
+%    display_console(ascii#"*** IPL Comments") |
+%        display_comments0(A).
+%display_comments0([{Filename,Comment}|Tail]) :-
+%    display_console(ascii#" Filename:"),
+%    display_console(Filename),
+%    display_console(ascii#" Comment:"),
+%    display_console(Comment) |
+%        display_comments0(Tail).
+%display_comments0([]) :-
+%    true |
+%        true.
+
+
+:- switch(virtual_machine_interface).
+:- case(yes).
+hex_to_jis(H,NHS):-
+    true |
+        new_string(HS,8,16),
+        hex_to_jis(8,HS,H,NHS).
+
+hex_to_jis(Cnt,HS,H,NHS) :-
+    Cnt > 0,
+    Cnt1 := Cnt - 1,
+    LSB := H /\ 16#"F",
+    H1 := H >> 4 |
+        hex_to_jis1(LSB,Elem),
+        set_string_element(HS,Cnt1,Elem,HS1),
+        hex_to_jis(Cnt1,HS1,H1,NHS).
+otherwise.
+hex_to_jis(Cnt,HS,H,NHS) :-
+    true |
+        HS = NHS.
+
+hex_to_jis1(LSB,Elem) :-
+    LSB > 9 ,
+    Elem1 := LSB + #"A" - 10 |
+        Elem =Elem1.
+otherwise.
+hex_to_jis1(LSB,Elem) :-
+    Elem1 := LSB + #"0" |
+        Elem =Elem1.
+
+:-end_switch.
+
+get_merger_close_code(NewCode):-
+    true|
+    predicate_to_code(module#pim, merger_close,1,NewCode).
+
+merger_close(Info):-
+     true|
+     set_vector_element(Info,2,[],0,_).

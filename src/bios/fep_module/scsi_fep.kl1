@@ -1,0 +1,628 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module scsi_fep.
+:- with_macro pimos.
+:- public create/2, create/3.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% create(SCSI, ^Result)            
+%%      SCSI   ::  stream for SCSI KL1 handler
+%%      Result ::  stream for fep device
+%%               Result   ::= {normal, InfoList}|abnormal
+%%               InfoList ::= []|[EachInfo|InfoList]
+%%               EachInfo ::= {SCSI_Descriptor, Unit, Info, FepResult}
+%%               SCSI_Descriptor ::= {Cluster, Processor, Port}
+%%               Info ::= any ground term(for additional information)
+%%               FepResult::= {normal, FepStream}|abnormal
+
+create(SCSI, Result) :- true |
+    create(16, SCSI, Result).
+
+create(Init, SCSI, Result) :- true |
+        SCSI = [configuration(R)|Tail],
+        create1(R, Init, Tail, Result).
+
+create1(normal(Info), Init, SCSI, Result) :- true |
+        fep_config(Info, Fep),
+        fep_manager(Fep, Init, SCSI, Result).
+otherwise.
+create1(_, _, SCSI, Result) :- true |
+        SCSI = [],
+        Result = abnormal.
+
+
+fep_config([], Fep) :- true |
+        Fep = [].
+fep_config([{processor, SCSI_Descriptor, Unit, Info}|Rest], Fep) :- true |
+        Fep = [{SCSI_Descriptor, Unit, Info}|Others],
+        fep_config(Rest, Others).
+otherwise.
+fep_config([_|Rest], Fep) :- true |
+        fep_config(Rest, Fep).
+
+
+fep_manager([], _, SCSI, Result) :- true |
+        SCSI = [],
+        Result = abnormal.
+otherwise.
+fep_manager(FEP, Init, SCSI, Result) :- true |
+        connectFEP(FEP, Init, SCSI, Info),
+        Result = normal(Info).
+
+connectFEP([], _, SCSI, FepR) :- true |
+        SCSI = [],
+        FepR = [].
+connectFEP([{{Cluster,Processor,Port}, Unit, Info}|Rest], Init, SCSI, FepR) :-
+    true |
+        SCSI = {SCSI1, SCSI2},
+        FepR = [EachInfo|Tail],
+        fep_create({Cluster,Processor,Port}, Unit, Info, 0, 1, Init, SCSI1,
+                EachInfo)@node(Cluster),
+        connectFEP(Rest, Init, SCSI2, Tail).
+
+
+fep_create(SCSI_Descriptor, Unit, Info, LUN0, LUN1, Init, SCSI, Result) :-
+    true |
+        SCSI = [get_info(R)|Tail],
+        fep_create1(R, SCSI_Descriptor, Unit, Info, LUN0, LUN1, Init, Tail,
+                Result).
+
+fep_create1(normal(_, Size), SCSI_Descriptor, Unit, Info, LUN0, LUN1, Init,
+        SCSI, Result) :-
+    Init < 16 |
+        SCSI = [processor(os, SCSI_Descriptor, Unit, LUN0, R)|Tail],
+        fep_create2(R, SCSI_Descriptor, Unit, Info, LUN1, Size, Init, Tail,
+                Result).
+fep_create1(normal(_, Size), SCSI_Descriptor, Unit, Info, LUN0, LUN1, Init,
+            SCSI, Result) :-
+    Init >= 16 |
+        SCSI = [processor(SCSI_Descriptor, Unit, LUN0, R)|Tail],
+        fep_create2(R, SCSI_Descriptor, Unit, Info, LUN1, Size, Init, Tail,
+                Result).
+otherwise.
+fep_create1(_, SCSI_Descriptor, Unit, Info, _, _, _, SCSI, Result) :- true |
+            SCSI = [],
+        Result = {SCSI_Descriptor, Unit, Info, abnormal}.
+
+fep_create2(normal(SCSI_Send), SCSI_Descriptor, Unit, Info, LUN1, Size, Init,
+            SCSI, Result) :-
+    Init < 16 |
+        SCSI = [processor(os, SCSI_Descriptor, Unit, LUN1, R)],
+        fep_create3(R, SCSI_Descriptor, Unit, Info, Size, Init, SCSI_Send,
+                Result).
+fep_create2(normal(SCSI_Send), SCSI_Descriptor, Unit, Info, LUN1, Size, Init,
+            SCSI, Result) :-
+    Init >= 16 |
+        SCSI = [processor(SCSI_Descriptor, Unit, LUN1, R)],
+        fep_create3(R, SCSI_Descriptor, Unit, Info, Size, Init, SCSI_Send,
+                Result).
+otherwise.
+fep_create2(_, SCSI_Descriptor, Unit, Info, _, _, _, SCSI, Result) :- true |
+        SCSI = [],
+        Result = {SCSI_Descriptor, Unit, Info, abnormal}.
+
+fep_create3(normal(SCSI_Receive), SCSI_Descriptor, Unit, Info, Size, Init,
+            SCSI_Send, Result) :- true |
+        new_string(SBuffer, Size, 8),
+        new_string(RBuffer, Size, 8),
+        scsi_controler(Size, SBuffer, RBuffer, Send1, Receive, SCSI_Send,
+                SCSI_Receive),
+        id_manager(Init, ID_manager1, Receive),
+        merge(Send, Send1),
+        merge(ID_manager, ID_manager1),
+        fep_device_handler(Stream, ID_manager, Send),
+        Result = {SCSI_Descriptor, Unit, Info, normal(Stream)}.
+otherwise.
+fep_create3(_, SCSI_Descriptor, Unit, Info, _, _, SCSI_Send, Result) :- true |
+        SCSI_Send = [],
+        Result = {SCSI_Descriptor, Unit, Info, abnormal}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% id_manager(Init, ID_manager, Receive)
+%%      Init       ::  initiation number of Device ID
+%%      ID_manager ::  Device ID and Stream of the Device
+%%      Receive    ::  received messages from SCSI DRIVER
+
+id_manager(Init, ID_manager, Receive) :-
+    true |
+        pool:keyed_set(Pool),
+        id_manager1(Init, Pool, ID_manager, Receive).
+
+id_manager1(_, Pool, [], []) :-
+    true |
+        Pool =[].
+id_manager1(ID, Pool, [id(Result)|NID_manager], Receive) :-
+    true |
+        Pool=[put(ID, ready(Stream),Old)|NPool],
+        id_manager2(Old, Result, Stream, ID, NPool, NID_manager, Receive).
+alternatively.
+id_manager1(MaxID, Pool, ID_manager, [normal(Value)|NReceive]) :-
+    vector_element(Value, 0, DevID),
+    DevID =< MaxID,
+    integer(DevID) |
+        Pool = [get_if_any_and_put(DevID, Stream, ready(Tail))|NPool],
+        id_manager3(Stream, Tail, Value, MaxID, NPool, ID_manager, NReceive).
+id_manager1(_, Pool, ID_manager, [abnormal|_]) :-
+    true |
+        Pool = [get_all(DevInfo)],
+        scsi_io_error(DevInfo),
+        id_manager4(ID_manager).
+
+id_manager2(Old, Result, Stream, ID, Pool, ID_manager, Receive) :-
+    wait(Old) |
+        Result = normal(ID,Stream),
+        id_manager1(~(ID+1), Pool, ID_manager, Receive).
+
+id_manager3({ready(Stream)}, Tail, Value, MaxID, Pool, ID_manager, Receive) :-
+    true |
+        Stream = [normal(Value)|Tail],
+        id_manager1(MaxID, Pool, ID_manager, Receive).
+otherwise.
+id_manager3(_, _, _, _, Pool, _, _) :-
+    display_console("SCSI_FEP internal error.") |
+        Pool = [] .
+
+id_manager4([id(Result)|Rest]) :-
+    true |
+        Result = abnormal,
+        id_manager4(Rest).
+id_manager4([]) :-
+    true |
+        true .
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% scsi_io_error(DevInfo)
+%%      DevInfo ::  Device ID and Stream of the Device
+
+scsi_io_error([]) :-
+    true |
+        true.
+scsi_io_error([{DevID, ready(Stream)}|Rest]) :-
+    true |
+        Stream = [abnormal({DevID,fep#abnormal})],
+        scsi_io_error(Rest).
+otherwise.
+scsi_io_error([_|Rest]) :-
+    true |
+        scsi_io_error(Rest).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% fep_device_handler(Stream, ^ID_manager, ^Send)
+%%     Stream     ::  stream from Device Driver
+%%     ID_manager ::  device ID and stream of Device
+%%     Send       ::  send message for SCSI Driver
+
+fep_device_handler(Stream, ID_manager, Send) :-
+    true |
+        fep_device:request_device_process(Stream, ID_manager, Send).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% scsi_controler(Size, SBuffer, RBuffer, Send, ^Reply,
+%%                ^SCSI_Send, ^SCSI_Receive)
+%%      Size       ::  max size of scsi protocol buffer
+%%      SBuffer    ::  scsi buffer for send message
+%%      RBuffer    ::  scsi buffer for receive message
+%%      Send       ::  send message from device process
+%%      Reply      ::  stream for ID_manager
+%%      SCSI_Send  ::  stream for SCSI KL1 handler
+%%      SCSI_Receive :: stream for SCSI KL1 handler
+
+scsi_controler(Size, SBuffer, RBuffer, 
+               Send, Reply, SCSI_Send, SCSI_Receive) :-
+    true |
+        scsi_sender(Size, SBuffer, Send, SCSI_Send),
+        scsi_receiver(Size, RBuffer, Reply, SCSI_Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% scsi_sender(Size, Buffer, Send, ^SCSI_Send)
+%%      Sise       ::  max size of scsi protocol buffer
+%%      Buffer     ::  scsi buffer for send message
+%%      Send       ::  send message from device process
+%%      SCSI_Send  ::  stream for SCSI KL1 handler
+
+scsi_sender(Size, Buffer, [], SCSI_Send) :-
+    true |
+        send_packet(Size, Buffer, {-1,fep#terminate}, SCSI_Send, [], Result),
+        fep_terminate(Result).
+scsi_sender(Size, Buffer, [send(Message, Status)|Send], SCSI_Send) :-
+    true |
+        send_packet(Size, Buffer, Message, SCSI_Send, SCSI_Send1, Result),
+        next_send(Result, Status, Size, Send, SCSI_Send1).
+
+fep_terminate(normal(_,_)) :-
+    true |
+        true.
+fep_terminate(abnormal(Reason,_,_)) :-
+    display_console("SCSI I/O Error: send message"),
+    display_console(Reason) |
+        true.
+fep_terminate(abnormal) :-
+    display_console("SCSI I/O Error: send message") |
+        true.
+
+next_send(normal(_, NBuffer), Status, Size, Send, SCSI_Send) :-
+    string(NBuffer, _, 8) |
+        Status = normal,
+        scsi_sender(Size, NBuffer, Send, SCSI_Send).
+next_send(abnormal(Reason, _, NBuffer), Status, Size, Send, SCSI_Send) :-
+    display_console("SCSI I/O Error: send message"),
+    display_console(Reason) |
+        Status = abnormal,
+        scsi_sender(Size, NBuffer, Send, SCSI_Send).
+next_send(abnormal, Status, Size, Send, SCSI_Send) :-
+    display_console("SCSI I/O Error: send message") |
+        Status = abnormal,
+        new_string(NBuffer, Size, 8),
+        scsi_sender(Size, NBuffer, Send, SCSI_Send).
+    
+send_packet(_, Buffer, Msg, Send, Tail, Result) :-
+    string(Buffer, _, 8),
+    vector(Msg, N),
+    N < 3 |
+        vector_element(Msg, 0, DevID, Msg1),
+        vector_element(Msg1, 1, Com, _),
+        int32_to_str8(DevID, DevID1),
+        int32_to_str8(fep#packet_last, PF),
+        int32_to_str8(Com, Com1),
+        int32_to_str8(0, N1),
+        builtin#set_substring(Buffer, 0, DevID1, Buffer1),
+        builtin#set_substring(Buffer1, 4, PF, Buffer2),
+        builtin#set_substring(Buffer2, 8, Com1, Buffer3),
+        builtin#set_substring(Buffer3, 12, N1, Buffer4),
+        send_scsi(Buffer4, 16, Send, Next, Result),
+        Next = Tail.
+otherwise.
+send_packet(Size, Buffer, Msg, Send, Tail, Result) :-
+    string(Buffer, _, 8),
+    vector(Msg, N),
+    N1 := N - 2 |
+        vector_element(Msg, 0, DevID, Msg1),
+        vector_element(Msg1, 1, Com, Msg2),
+        check_data_size(Msg2, 2, N, Len, Data),
+        int32_to_str8(Com, Com1),
+        int32_to_str8(N1, N2),
+        builtin#set_substring(Buffer, 8, Com1, Buffer1),
+        builtin#set_substring(Buffer1, 12, N2, Buffer2),
+        set_data_length(Buffer2, 16, Len, Buffer3),
+        send_packet1(Size, Buffer3, ~(16+(N1*4)), DevID, Data, Send, Tail,
+                Result).
+
+send_packet1(_, Buffer, Pos, DevID, [], Send, Tail, Result) :-
+    string(Buffer, _, 8) |
+        int32_to_str8(DevID, DevID1),
+        int32_to_str8(fep#packet_last, PF),
+        builtin#set_substring(Buffer, 0, DevID1, Buffer1),
+        builtin#set_substring(Buffer1, 4, PF, Buffer2),
+        send_scsi(Buffer2, Pos, Send, Next, Result),
+        Next = Tail.
+send_packet1(Size, Buffer, Pos, DevID, [{-1,D}|Rest], Send, Tail, Result) :-
+    string(Buffer, _, 8),
+    Size >= Pos + 4 |
+        int32_to_str8(D, D1),
+        builtin#set_substring(Buffer, Pos, D1, Buffer1),
+        send_packet1(Size, Buffer1, ~(Pos+4), DevID, Rest, Send, Tail, Result).
+send_packet1(Size, Buffer, Pos, DevID, [{L,D}|Rest], Send, Tail, Result) :-
+    string(Buffer, _, 8),
+    L >= 0,
+    Pos1 := Pos + ~(((L+3)/4)*4), 
+    Size >= Pos1 |
+        builtin#set_substring(Buffer, Pos, D, Buffer1),
+        send_packet1(Size, Buffer1, Pos1, DevID, Rest, Send, Tail, Result).
+send_packet1(Size, Buffer, Pos, DevID, [{-1,D}|Rest], Send, Tail, Result) :-
+    string(Buffer, Size, 8),
+    Size < Pos + 4 |
+        int32_to_str8(DevID, DevID1),
+        int32_to_str8(fep#packet_continued, PF),
+        int32_to_str8(D, D1),
+        builtin#set_substring(Buffer, 0, DevID1, Buffer1),
+        builtin#set_substring(Buffer1, 4, PF, Buffer2),
+        Pos2 := Size - Pos,
+        builtin#substring(D1, 0, Pos2, Sub, D2),
+        builtin#set_substring(Buffer2, Pos, Sub, Buffer3),
+        send_scsi(Buffer3, Size, Send, Next, Result1),
+        send_packet2(Result1, Size, DevID, 4, Pos2, D2, Rest, Next, Tail,
+                Result).
+send_packet1(Size, Buffer, Pos, DevID, [{L,D}|Rest], Send, Tail, Result) :-
+    string(Buffer, Size, 8),
+    L >= 0,
+    Pos1 := Pos + ~(((L+3)/4)*4), 
+    Size < Pos1 |
+        int32_to_str8(DevID, DevID1),
+        int32_to_str8(fep#packet_continued, PF),
+        builtin#set_substring(Buffer, 0, DevID1, Buffer1),
+        builtin#set_substring(Buffer1, 4, PF, Buffer2),
+        Pos2 := Size - Pos,
+        builtin#substring(D, 0, Pos2, Sub, D2),
+        builtin#set_substring(Buffer2, Pos, Sub, Buffer3),
+        send_scsi(Buffer3, Size, Send, Next, Result1),
+        send_packet2(Result1, Size, DevID, L, Pos2, D2, Rest, Next, Tail,
+                Result).
+
+send_packet2(normal(_, Buffer), Size, DevID, L, Pos, D, Data, Send, Tail,
+                Result) :-
+%%%% Remake by Amanuma %%%%
+%    L1 := ((L+3)/4)* 4|
+%        send_packet3(Size, Buffer, DevID, L1, Pos, D, Data, Send, Tail, Result).
+%%%%
+    true |
+        send_packet3(Size, Buffer, DevID, L, Pos, D, Data, Send, Tail, Result).
+%%%%
+send_packet2(abnormal(Reason, Size, Buffer), _, _, _, _, _, _, Send, Tail,
+                Result) :-
+    true |
+        Send = Tail,
+        Result = abnormal(Reason, Size, Buffer).
+send_packet2(abnormal, _, _, _, _, _, _, Send, Tail, Result) :-
+    true |
+        Send = Tail,
+        Result = abnormal.
+    
+%%%% Remake by Amanuma %%%%
+%send_packet3(Size, Buffer, DevID,  L, Pos, D, Data, Send, Tail, Result) :-
+%    string(Buffer, _, 8),
+%    L1 := L - Pos,
+%    Size - 8 >= L1 |
+%        builtin#substring(D, Pos, L1, S, _),
+%        builtin#set_substring(Buffer, 8, S, Buffer1),
+%        Pos1 := L1 + 8,
+%        send_packet1(Size, Buffer1, Pos1, DevID, Data, Send, Tail, Result).
+%send_packet3(Size, Buffer, DevID, L, Pos, D, Data, Send, Tail, Result) :-
+%    string(Buffer, _, 8),
+%    L1 := L - Pos,
+%    L2 := Size - 8,
+%    L2 < L1 |
+%        int32_to_str8(DevID, DevID1),
+%        int32_to_str8(fep#packet_continued, PF),
+%        builtin#set_substring(Buffer, 0, DevID1, Buffer1),
+%        builtin#set_substring(Buffer1, 4, PF, Buffer2),
+%        builtin#substring(D, Pos, L2, S, D1),
+%        builtin#set_substring(Buffer2, 8, S, Buffer3),
+%        send_scsi(Buffer3, Size, Send, Next, Result1),
+%        Pos1 := Pos + L2,
+%        send_packet2(Result1, Size, DevID, L, Pos1, D1, Data, Next, Tail,
+%                Result).
+%%%%
+send_packet3(Size, Buffer, DevID,  L, Pos, D, Data, Send, Tail, Result) :-
+    string(Buffer, _, 8),
+    L1 := ((L+3)/4)*4 - Pos,
+    Size - 8 >= L1 |
+%        builtin#substring(D, Pos, L1, S, _),
+%        builtin#set_substring(Buffer, 8, S, Buffer1),
+        builtin#copy_string_elements(Buffer,8, ~(L-Pos), D, Pos, Buffer1, _),
+        Pos1 := L1 + 8,
+        send_packet1(Size, Buffer1, Pos1, DevID, Data, Send, Tail, Result).
+send_packet3(Size, Buffer, DevID, L, Pos, D, Data, Send, Tail, Result) :-
+    string(Buffer, _, 8),
+    L1 := ((L+3)/4)*4 - Pos,
+    L2 := Size - 8,
+    L2 < L1 |
+        int32_to_str8(DevID, DevID1),
+        int32_to_str8(fep#packet_continued, PF),
+        builtin#set_substring(Buffer, 0, DevID1, Buffer1),
+        builtin#set_substring(Buffer1, 4, PF, Buffer2),
+        builtin#substring(D, Pos, L2, S, D1),
+        builtin#set_substring(Buffer2, 8, S, Buffer3),
+        send_scsi(Buffer3, Size, Send, Next, Result1),
+        Pos1 := Pos + L2,
+        send_packet2(Result1, Size, DevID, L, Pos1, D1, Data, Next, Tail,
+                Result).
+%%%%
+check_data_size(_, N, N, Len, Data) :- 
+    true |
+        Len = [],
+        Data = [].
+otherwise.
+check_data_size(Msg, I, N, Len, Data) :-
+    true |
+        vector_element(Msg, I, E, Msg1),
+        check_data_size1(E, Msg1, I, N, Len, Data).
+
+check_data_size1(E, Msg, I, N, L, Data) :-
+    integer(E) |
+        L = [-1|NL],
+        Data = [{-1, E}|NData],
+        check_data_size(Msg, ~(I+1), N, NL, NData).
+check_data_size1(E, Msg, I, N, L, Data) :-
+    string(E, Len, 16) |
+        Len1 := Len * 2,
+        L = [Len1|NL],
+        change_element_size(E, 8, E1),
+        Data = [{Len1, E1}|NData],
+        check_data_size(Msg, ~(I+1), N, NL, NData).
+check_data_size1(E, Msg, I, N, L, Data) :-
+    string(E, Len, 8) |
+        L = [Len|NL],
+        Data = [{Len, E}|NData],
+        check_data_size(Msg, ~(I+1), N, NL, NData).
+
+
+set_data_length(Buffer, _, [], NBuffer) :-
+    string(Buffer, _, 8) |
+        NBuffer = Buffer.
+set_data_length(Buffer, P, [L|Rest], NBuffer) :-
+    string(Buffer, _, 8) |
+        int32_to_str8(L, L1),
+        builtin#set_substring(Buffer, P, L1, Buffer1),
+        set_data_length(Buffer1, ~(P+4), Rest, NBuffer).
+
+
+send_scsi(Buffer, Size, Send, Next, Result) :-
+    string(Buffer, _, 8) |
+        Send = [send(Buffer, Size, Result)|Next].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% scsi_receiver(Size, Buffer, ^Reply, ^SCSI_Receive)
+%%      Sise       ::  max size of scsi protocol buffer
+%%      Buffer     ::  scsi buffer for receive message
+%%      Reply      ::  stream for ID_manager
+%%      SCSI_Receive :: stream for SCSI KL1 handler
+
+scsi_receiver(Size, Buffer, Reply, SCSI_Receive) :-
+    true |
+        pool:keyed_set(Pool),
+        receive_packet(Pool, Size, Buffer, Reply, SCSI_Receive). 
+
+
+receive_packet(Pool, Size, Buffer, Reply, SCSI_Receive) :-
+    string(Buffer, _, 8) |
+        SCSI_Receive = [receive(Buffer, Size, Result)|ReceiveTail],
+        receive_packet1(Result, Pool, Size, Reply, ReceiveTail).
+
+receive_packet1(normal(Length, NBuffer), Pool, Size, Reply, SCSI_Receive) :-
+    string(NBuffer, _, 8) |
+        builtin#substring(NBuffer, 0, 4, DevIDStr, NBuffer1),
+        str8_to_int32(DevIDStr, DevID),
+        builtin#substring(NBuffer1, 4, 4, PFStr, NBuffer2),
+        str8_to_int32(PFStr, PF),
+        receive_packet2(PF, DevID, Length, Pool, Size, NBuffer2, Reply,
+                SCSI_Receive).
+receive_packet1(abnormal(Reason, _, _), Pool, _, Reply, SCSI_Receive) :-
+        display_console("SCSI I/O Error: receive message"),
+        display_console(Reason) |
+        Pool = [],
+        Reply = [abnormal],
+        SCSI_Receive = [].
+receive_packet1(abnormal, Pool, _, Reply, SCSI_Receive) :-
+        display_console("SCSI I/O Error: receive message") |
+        Pool = [],
+        Reply = [abnormal],
+        SCSI_Receive = [].
+
+receive_packet2(fep#packet_last, DevID, Length, Pool, Size, NBuffer, Reply,
+            SCSI_Receive) :-
+    true |
+        Pool = [get_if_any(DevID, Val)|NPool],
+        receive_packet3(Val, DevID, Length, NPool, Size, NBuffer, Reply,
+                SCSI_Receive).
+receive_packet2(fep#packet_continued, DevID, Length, Pool, Size, NBuffer, Reply,
+            SCSI_Receive) :-
+    true |
+        Pool = [get_if_any(DevID, Val)|NPool],
+        receive_packet2_1(Val, DevID, Length, NPool, Size, NBuffer, Reply,
+                SCSI_Receive).
+
+receive_packet2_1({}, DevID, Length, Pool, Size, NBuffer, Reply, SCSI_Receive)
+    :-  true |
+        builtin#substring(NBuffer, 8, ~(Length-8), Before, NBuffer1),
+        Pool = [put(DevID, Before, _)|NPool],
+        receive_packet(NPool, Size, NBuffer1, Reply, SCSI_Receive).
+otherwise.
+receive_packet2_1({Before}, DevID, Length, Pool, Size, NBuffer, Reply,
+            SCSI_Receive) :-
+    string(Before, _, 8) |
+        builtin#substring(NBuffer, 8, ~(Length-8), Data, NBuffer1),
+        builtin#append_string(Before, Data, NBefore),
+        Pool = [put(DevID, NBefore, _)|NPool],
+        receive_packet(NPool, Size, NBuffer1, Reply, SCSI_Receive).
+
+receive_packet3({}, DevID, Length, Pool, Size, NBuffer, Reply, SCSI_Receive) :-
+    true |
+        builtin#substring(NBuffer, 8, 4, ResStr, NBuffer1),
+        str8_to_int32(ResStr, Res),
+        receive_packet4(Res, DevID, Length, Pool, Size, NBuffer1, Reply,
+                SCSI_Receive).
+otherwise.
+receive_packet3({Before}, DevID, Length, Pool, Size, NBuffer, Reply,
+            SCSI_Receive) :-
+    string(Before, _, 8) |
+        builtin#substring(NBuffer, 8, ~(Length-8), Data, NBuffer1),
+        builtin#append_string(Before, Data, MsgString),
+        str8_to_msg(DevID, MsgString, Msg),
+        receive_packet5(Msg, Pool, Size, NBuffer1, Reply, SCSI_Receive).
+
+
+receive_packet4(fep#end, _, _, Pool, _, _, Reply, SCSI_Receive) :-
+    true |
+        Pool = [],
+        Reply = [],
+        SCSI_Receive = [].
+otherwise.
+receive_packet4(_, DevID, Length, Pool, Size, NBuffer, Reply, SCSI_Receive) :-
+        builtin#substring(NBuffer, 8, ~(Length-8), MsgString, NBuffer1),
+        str8_to_msg(DevID, MsgString, Msg),
+        receive_packet5(Msg, Pool, Size, NBuffer1, Reply, SCSI_Receive).
+
+receive_packet5(Msg, Pool, Size, NBuffer, Reply, SCSI_Receive) :-
+    vector(Msg, _) |
+        Reply = [normal(Msg)|NReply],
+        receive_packet(Pool, Size, NBuffer, NReply, SCSI_Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% str8_to_mag(DevID, Msg, Str8)
+%%      DevID   ::  device ID (integer)
+%%      Str8    ::  send message (string#8)
+%%      Msg     ::  send message (vector)
+
+str8_to_msg(DevID, MsgString, Msg) :-
+    string(MsgString, _, 8) |
+        builtin#substring(MsgString, 0, 4, ResponseStr, MsgString1),
+        str8_to_int32(ResponseStr, Response),
+        str8_to_msg1(Response, DevID, MsgString1, Msg).
+
+str8_to_msg1(fep#control_c, DevID, _, Msg) :-
+    true |
+        new_vector(MsgTmp, 2),
+        set_vector_element(MsgTmp, 0, _, DevID, MsgTmp1),
+        set_vector_element(MsgTmp1, 1, _, fep#attention, Msg).
+otherwise.
+str8_to_msg1(Status, DevID, MsgString, Msg) :-
+    true |
+        builtin#substring(MsgString, 4, 4, ArgsStr, MsgString1),
+        str8_to_int32(ArgsStr, Args),
+        new_vector(MsgTmp, ~(Args+2)),
+        set_vector_element(MsgTmp, 0, _, DevID, MsgTmp1),
+        set_vector_element(MsgTmp1, 1, _, Status, MsgTmp2),
+        str8_to_msg2(Args, 2, MsgString1, 8, ~(Args*4+8), MsgTmp2, Msg).
+
+str8_to_msg2(0, _, _, _, _, MsgTmp, Msg) :-
+    true |
+        Msg = MsgTmp.
+otherwise.
+str8_to_msg2(Args, Pos, MsgString, Pos1, Pos2, MsgTmp, Msg) :-
+    true |
+        builtin#substring(MsgString, Pos1, 4, LenStr, MsgString1),
+        str8_to_int32(LenStr, Length),
+        str8_to_msg3(Length, Args, Pos, MsgString1, Pos1, Pos2, MsgTmp, Msg).
+
+str8_to_msg3(-1, Args, Pos, MsgString, Pos1, Pos2, MsgTmp, Msg) :-
+    true |
+        builtin#substring(MsgString, Pos2, 4, IntStr, MsgString1),
+        str8_to_int32(IntStr, Int),
+        set_vector_element(MsgTmp, Pos, _, Int, MsgTmp1),
+        str8_to_msg2(~(Args-1), ~(Pos+1), MsgString1, ~(Pos1+4), ~(Pos2+4),
+                MsgTmp1, Msg).
+otherwise.
+str8_to_msg3(Length, Args, Pos, MsgString, Pos1, Pos2, MsgTmp, Msg) :-
+    true |
+        builtin#substring(MsgString, Pos2, Length, Str_8, MsgString1),
+        set_vector_element(MsgTmp, Pos, _, Str_8, MsgTmp1),
+        str8_to_msg2(~(Args-1), ~(Pos+1), MsgString1, ~(Pos1+4),
+                ~(Pos2+(((Length+3)/4)*4)), MsgTmp1, Msg).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% int32_to_str8/2.
+%% str8_to_int32/2.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+int32_to_str8(Int, Str8) :-
+    integer(Int) |
+        new_string(Str32,1,32),
+        set_string_element(Str32, 0, Int, NStr32),
+        change_element_size(NStr32, 8, Str8).
+
+str8_to_int32(Str8, Int) :-
+    string(Str8,4,8) |
+        change_element_size(Str8, 32, Str32),
+        string_element(Str32, 0, Int, _).

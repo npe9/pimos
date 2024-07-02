@@ -1,0 +1,214 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module fep_device.
+:- with_macro pimos.
+:- public request_device_process/3.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% request_device_process(Stream, ^ID_manager, ^Send)
+%%      Stream     ::  stream from Device Driver
+%%      ID_manager ::  device ID and stream of Device
+%%      Send       ::  send message for SCSI DRIVER
+
+request_device_process(fep#nil, ID_manager, Send) :-
+    true |
+        Send = [],
+        ID_manager = [].
+request_device_process(Stream, ID_manager, Send) :-
+    Stream = {fep#reset, Abort, Attention, Status, Cdr} |
+        Status = fep#normal,
+        request_device_io(Cdr, Abort, Attention, ID_manager, Send).
+otherwise.
+request_device_process(Stream, ID_manager, Send) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        Send = [],
+        ID_manager = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_device: request_device_process/ 3"),
+                    Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% request_device_io(Stream, Abort, Attention, ^ID_manager, ^Send)
+%%      Stream     ::  stream from Device Driver
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      ID_manager ::  device ID and stream of Device
+%%      Send       ::  send message for SCSI DRIVER
+
+request_device_io(Stream, Abort, Attention, ID_manager, Send) :-
+    wait(Abort) |
+        request_device_aborted(Stream, Abort, Attention, ID_manager, Send).
+alternatively.
+request_device_io(Stream, Abort, Attention, ID_manager, Send) :-
+    true |
+        request_device_io0(Stream, Abort, Attention, ID_manager, Send).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% request_device_io0(Stream, Abort, Attention, ^ID_manager, ^Send)
+%%      Stream     ::  stream from Device Driver
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      ID_manager ::  device ID and stream of Device
+%%      Send       ::  send message for SCSI DRIVER
+
+request_device_io0(fep#nil, _, Attention, ID_manager, Send) :-
+    true |
+        Attention = fep#nil,
+        fep_utility:close_device(Attention, Send),
+        ID_manager =[].
+
+request_device_io0(Stream, _, Attention, ID_manager, Send) :-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        Attention = fep#nil,
+        Status = fep#normal,
+        request_device_io(Cdr, NewAbort, NewAttention, ID_manager, Send).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Attention = fep#nil,
+        Status = fep#normal,
+        request_device_io(Cdr, Abort, NewAttention, ID_manager, Send).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#socket, Socket, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_socket_request_device:request_device_process(Socket, string#"", 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#window, Window, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_window_request_device:request_device_process(Window, string#"", 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#file, File, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_file_request_device:request_device_process(File, string#"", 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#timer, Timer, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_timer_request_device:request_device_process(Timer, string#"", 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#string_io, String_io, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_string_io_request_device:request_device_process(String_io, string#"", 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#remote_socket, Node, Socket, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_socket_request_device:request_device_process(Socket, Node, 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#remote_window, Node, Window, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_window_request_device:request_device_process(Window, Node, 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#remote_file, Node, File, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_file_request_device:request_device_process(File, Node, 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#remote_timer, Node, Timer, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_timer_request_device:request_device_process(Timer, Node, 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+
+request_device_io0(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#remote_string_io, Node, String_io, Status, Cdr} |
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        fep_string_io_request_device:request_device_process(String_io, Node, 
+                        ID_manager1, Send1),
+        request_device_io(Cdr, Abort, Attention, ID_manager2, Send2).
+otherwise.
+request_device_io0(Stream, _, Attention, ID_manager, Send) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        fep_utility:close_device(Attention, Send),
+        ID_manager = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_device: request_device_io/ 5"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% request_device_aborted(Stream, Abort, Attention, ^ID_manager, ^Send)
+%%      Stream     ::  stream from Device Driver
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      ID_manager ::  device ID and stream of Device
+%%      Send       ::  send message for SCSI DRIVER
+
+request_device_aborted(fep#nil, _, Attention, ID_manager, Send) :-
+    true |
+        Attention = fep#nil,
+        fep_utility:close_device(Attention, Send),
+        ID_manager = [].
+
+request_device_aborted(Stream, _, Attention, ID_manager, Send):-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        Attention = fep#nil,
+        Status = fep#normal,
+        request_device_io(Cdr, NewAbort, NewAttention, ID_manager, Send).
+
+request_device_aborted(Stream, Abort, Attention, ID_manager, Send) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#aborted,
+        NewAttention = fep#nil,
+        request_device_aborted(Cdr, Abort, Attention, ID_manager, Send).
+otherwise.
+request_device_aborted(Stream, Abort, Attention, ID_manager, Send) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#aborted,
+        request_device_aborted(Cdr, Abort, Attention, ID_manager, Send).
+
+

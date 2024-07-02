@@ -1,0 +1,376 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module x_r_monitor.
+:- public p_meter/5.
+:- with_macro pimos.
+:- include("pimos.h").
+
+
+p_meter(SockD,Prof, PE,InF,T) :- true |
+    p_meter0(SockD,Prof, PE,InF,T)@priority(*,4095).
+
+p_meter0(SockD, Prof, {_NF,PENO,X,Y}, InF,T) :- T \= 4 |
+    new_string(String0, 1, 16),
+    set_string_element(String0, 0, T, String),
+    new_string(String1, 5, 16),
+    set_string_element(String1, 0, 1, String11),
+    set_string_element(String11, 1, PENO, String21),
+    set_string_element(String21, 2, X, String2),
+    set_string_element(String2, 3, Y, String3),
+    set_string_element(String3, 4, InF, String4),
+    change_element_size(String,8,NewString),
+    change_element_size(String4,8,NewString4),
+    send_socket(SockD,NewString,SockD1,normal,Stat1),
+    send_socket(SockD1,NewString4,RSockD,Stat1,Stat2),
+    p_meter1(Stat2,RSockD,Prof,InF,T,0,PENO,1).
+p_meter0(SockD, Prof, {1,Node,Proc,X,Y},InF,T) :-  ( T = 0; T = 1 )  |
+    new_string(String0, 1, 16),
+    set_string_element(String0, 0, T, String),
+    new_string(String1, 5, 16),
+    set_string_element(String1, 0, 1, String11),
+    set_string_element(String11, 1, Node, String21),
+    set_string_element(String21, 2, X, String2),
+    set_string_element(String2, 3, Y, String3),
+    set_string_element(String3, 4, InF, String4),
+    change_element_size(String,8,NewString),
+    change_element_size(String4,8,NewString4),
+    send_socket(SockD,NewString,SockD1,normal,Stat1),
+    send_socket(SockD1,NewString4,RSockD,Stat1,Stat2),
+    p_meter1(Stat2,RSockD,Prof,InF,T, 1,Node,Proc).
+
+p_meter0(SockD, Prof, {_NF,Cluster,X,Y,PE}, InF,4) :- true |
+    T = 4,
+    new_string(String0, 1, 16),
+    set_string_element(String0, 0, T, String),
+    new_string(String1, 6, 16),
+    set_string_element(String1, 0, 1, String11),
+    set_string_element(String11, 1, Cluster,String12),
+    set_string_element(String12, 2, X, String13),
+    set_string_element(String13, 3, Y, String2),
+    set_string_element(String2, 4, PE, String3),
+    set_string_element(String3, 5, InF, String4),
+    change_element_size(String,8,NewString),
+    change_element_size(String4,8,NewString4),
+    send_socket(SockD,NewString,SockD1,normal,Stat1),
+    send_socket(SockD1,NewString4,RSockD,Stat1,Stat2),
+    p_meter1(Stat2,RSockD,Prof, InF,T,0,Cluster,PE).
+
+p_meter0(SockD, Prof, {0,Node,Proc,X,Y}, InF,T) :- T \= 4 |
+    PENO := Node * Proc,
+    new_string(String0, 1, 16),
+    set_string_element(String0, 0, T, String),
+    new_string(String1, 7, 16),
+    set_string_element(String1, 0, 1, String11),
+    set_string_element(String11, 1, PENO, String21),
+    set_string_element(String21, 2, X, String2),
+    set_string_element(String2, 3, Y, String3),
+    set_string_element(String3, 4, InF, String4),
+    change_element_size(String,8,NewString),
+    change_element_size(String4,8,NewString4),
+    send_socket(SockD,NewString,SockD1,normal,Stat1),
+    send_socket(SockD1,NewString4,RSockD,Stat1,Stat2),
+    p_meter1(Stat2,RSockD,Prof,InF,T,0,Node,Proc).
+
+p_meter1(Status,SockD,Prof, InF, T, NF, Cluster,PE) :- wait(Status) |
+    get_profile(Prof,Repo),
+    make_data(NF,Cluster,PE,Repo,InF,Out,T),
+    out(Out,SockD).
+
+
+make_data(1,Cluster,PE,Repo,InF,Out,T):- (T = 0; T = 1) |
+    make_data2(Repo,Cluster,PE,InF,Out,T).
+otherwise.
+make_data(_NF,Cluster,PE,Repo,InF,Out,T):- true |
+    AllPE := Cluster * PE,
+    make_data1(Repo,AllPE,InF,Out,T).
+
+get_profile(Prof,Rep) :- true |
+    Prof = [get(Status)|RStream],
+    get_stream(Status,RStream,Rep).
+
+get_stream(Data,Prof,Rep):- wait(Data) |
+    get_stream1(Data,Prof,Rep).
+
+get_stream1(abnormal(_),Prof,Rep):- true |
+    Prof = [stop(_)], Rep = [].
+get_stream1(normal(end_of_data),Prof,Rep):- true |
+    Prof = [stop(_)], Rep = [].
+otherwise.                                        % Added by Kiyohara  1993/1/8
+get_stream1(normal(Data),Prof,Rep):- true |
+    make_answer(Data,AnsList),
+    Rep = [AnsList|RRep],
+    get_profile(Prof,RRep).
+
+make_answer([],AnsList):- true| AnsList = [].
+make_answer([{_Node,DataofNode}|R],AnsList):- true| 
+    make_ans(DataofNode,Ans),
+    AnsList = [Ans|RAns],
+    make_answer(R,RAns).
+
+make_ans({Vec1,_,_,_,String2,_,Vec3},AnsList):- vector(Vec1,PE) |
+    get_string(Vec1,String2,Vec3,PE,0,AnsList).
+
+get_string(Vec1,String2,Vec3,PE,PE,AnsList):- true |
+    AnsList = [].
+otherwise.
+get_string(Vec1,String1,Vec3,PE,Count,AnsList):- true |
+    set_vector_element(Vec1,Count,String0,[],Vec12),
+    set_vector_element(Vec3,Count,String2,[],Vec32),
+    string_element(String0,1,Run,NewString1),
+    string_element(NewString1,2,Idle,_),
+    string_element(String1,1,GCCount,String12),
+    string_element(String12,2,GCTime,String13),
+    string_element(String2,1,DecodeTime,NString),
+    string_element(NString,0,EncodeTime,_),
+    AnsList = [{Run,Idle,GCCount,GCTime,DecodeTime,EncodeTime}|RList],
+    Next := Count + 1,
+    get_string(Vec12,String13,Vec32,PE,Next,RList).
+
+make_data1([Repo|R],PE,InF,Out,2):- true |
+    Out = [NewString|O2],
+    counter2(Repo,NewString,0.0,0.0,0.0,0.0,0.0),
+    make_data1(R,PE,InF,O2,2).
+otherwise.
+make_data1([Repo|R],PE,InF,Out,T) :- true |
+    Out = [NewString|O2],
+    L := PE * 5 + 1,
+    new_string(String, L, 16),
+    set_string_element(String,0, 2, String1),
+    counter(Repo,0,String1,NewString,InF),
+    make_data1(R,PE,InF,O2,T).
+
+counter([],C,String,NewString,InF) :- true |
+    String = NewString.
+otherwise.
+counter([VecList|Repo],C,String,NewString,InF) :- true |
+    filter(VecList,C,NPE,String,RString,InF),
+    counter(Repo,NPE,RString,NewString,InF).
+
+filter([],C,NPE,String,NewString,InF):- true |
+    NPE = C,
+    NewString = String.
+filter([Vec|RVec],C,NPE,String,NewString,InF):- vector(Vec,_) |
+    Po := C * 5 +1,
+    Po2 := Po + 1,
+    Po3 := Po + 2,
+    Po4 := Po + 3,
+    Po5 := Po + 4,
+    cal(InF,Vec,Run,Idle,GC),
+    check_value(Run,Value1,Value2),
+    check_value(Idle,Value3,Value4),
+    set_string_element(String, Po, Value3, String1),
+    set_string_element(String1, Po2, Value4, String2),
+    set_string_element(String2, Po3, Value1, String3),
+    set_string_element(String3, Po4, Value2, String4),
+    set_string_element(String4, Po5, GC, String5),
+    Next := C + 1,
+    filter(RVec,Next,NPE,String5,NewString,InF).
+
+counter2([],NewString,Comp,Encode,Decode,GC,Idle) :- true |
+    SL = 5,
+    new_string(String, SL, 16),
+    minas_check(Comp,NComp),
+    minas_check(Encode,NEncode),
+    minas_check(Decode,NDecode),
+    minas_check(GC,NGC),
+    minas_check(Idle,NIdle),
+    All $:= NComp+NEncode+NDecode+NGC+NIdle,
+    cal_ratio(All,NComp,CompP),
+    cal_ratio(All,NEncode,EnP),
+    cal_ratio(All,NDecode,DeP),
+    cal_ratio(All,NGC,GCP),
+    set_string_element(String, 0, 2, String11),
+    set_string_element(String11, 1, CompP, String1),
+    set_string_element(String1, 2, EnP, String2),
+    set_string_element(String2, 3, DeP, String3),
+    set_string_element(String3, 4, GCP, String4),
+    NewString = String4.
+otherwise.
+counter2([Vec|Repo],NewString,Comp,Encode,Decode,GC,Idle):- true |
+    filter2(Vec,0.0,0.0,0.0,0.0,0.0,NComp,NEncode,NDecode,NGC,NIdle),
+    NewComp $:= Comp + NComp,
+    NewEncode $:= Encode + NEncode,
+    NewDecode $:= Decode + NDecode,
+    NewGC $:= GC + NGC,
+    NewIdle $:= Idle + NIdle,
+    counter2(Repo,NewString,NewComp,NewEncode,NewDecode,NewGC,NewIdle).
+ 
+filter2([],Comp,Encode,Decode,GC,Idle,NComp,NEncode,NDecode,NGC,NIdle):- true |
+    NComp = Comp,
+    NEncode = Encode,
+    NDecode = Decode,
+    NGC = GC,
+    NIdle = Idle.
+filter2([Vec|RVec],Comp,Encode,Decode,GC,Idle,NComp,NEncode,NDecode,NGC,NIdle):- true |
+    cal2(Vec,NComp0,NEncode0,NDecode0,NGC0,NIdle0),
+    NewComp $:= Comp + NComp0,
+    NewEncode $:= Encode + NEncode0,
+    NewDecode $:= Decode + NDecode0,
+    NewGC $:= GC + NGC0,
+    NewIdle $:= Idle + NIdle0,
+    filter2(RVec,NewComp,NewEncode,NewDecode,NewGC,NewIdle,NComp,NEncode,NDecode,NGC,NIdle).
+
+make_data2([Repo|R],Cluster,PE,InF,Out,T) :- true |
+    Out = [NewString|O2],
+    L := Cluster * 5 + 1,
+    new_string(String, L, 16),
+    set_string_element(String,0, 2, String1),
+    counter_all(Repo,0,PE,String1,NewString,InF),
+    make_data2(R,Cluster,PE,InF,O2,T).
+
+counter_all([],C,PE,String,NewString,InF) :- true |
+    String = NewString.
+otherwise.
+counter_all([Vec|Repo],C,PE,String,NewString,InF) :- true |
+    filter_all(Vec,PE,0,0,Run,Idle,GC,InF),
+    check_value(Run,Value1,Value2),
+    check_value(Idle,Value3,Value4),
+    Po := C * 5 +1,
+    Po2 := Po + 1,
+    Po3 := Po + 2,
+    Po4 := Po + 3,
+    Po5 := Po + 4,
+    set_string_element(String, Po, Value3, String1),
+    set_string_element(String1, Po2, Value4, String2),
+    set_string_element(String2, Po3, Value1, String3),
+    set_string_element(String3, Po4, Value2, String4),
+    set_string_element(String4, Po5, GC, String5),
+    NPE := C + 1,
+    counter_all(Repo,NPE,PE,String5,NewString,InF).
+
+filter_all([],PE,TotalRun,TotalIdle,AnsRun,AnsIdle,GC,InF):- true |
+    AnsRun = TotalRun / PE,
+    AnsIdle = TotalIdle / PE.
+filter_all([Vec|RVec],PE,TotalRun,TotalIdle,AnsRun,AnsIdle,GC,InF):- true |
+    cal(InF,Vec,Run,Idle,GC),
+    TotalR := TotalRun + Run,
+    TotalI := TotalIdle + Idle,
+    filter_all(RVec,PE,TotalR,TotalI,AnsRun,AnsIdle,GC,InF).
+
+
+send_socket([Sock],NewString,RSockD,Status1,Stat):- wait(Status1) |
+   Sock = [send(NewString,Status2)|RSock],
+   RSockD = [RSock],
+%   Stat = normal.
+   send_socket_stat(Status2,Stat).
+otherwise.
+send_socket(SockD,NewString,RSockD,Status1,Stat):- true |
+   send_socket_N(SockD,NewString,RSockD,Status1,Stat).
+
+send_socket_stat(Status,Stat):- wait(Status) | Stat = normal.
+
+send_socket_N([],_,RSockD,Status1,Stat):- wait(Status1) |
+   RSockD = [], Stat = normal.
+send_socket_N([Sock|R],NewString,RSockD,Status1,Stat):- wait(Status1) |
+   Sock = [send(NewString,Status2)|RSock],
+   RSockD = [RSock|RS],
+   send_socket_N(R,NewString,RS,Status2,Stat).
+
+
+cal(_,{},R,I,GC):- true | R = 0, I = 0, GC = 0.
+cal(InF,{Run,Idle,GCCount,GCTime,DecodeTime,EncodeTime},R,I,GC):- true |
+    cal0(InF,Run,Idle,DecodeTime,EncodeTime,GCTime,R,I),
+    ( GCCount = 0 -> GC = 0 ;
+      GCCount =\= 0 -> GC = 1 ).
+
+cal0(111,Run,Idle,DecodeTime,EncodeTime,GCTime,NRun,NIdle):- true |
+    NRun = Run ,
+    NIdle = Idle.
+cal0(110,Run,Idle,DecodeTime,EncodeTime,GCTime,NRun,NIdle):- true |
+    cal_running_time(Run,DecodeTime,EncodeTime,GCTime,Total),
+    NRun :=  Total - EncodeTime - GCTime ,
+    cal_add(Idle,EncodeTime,NIdle0),
+    cal_add(NIdle0,GCTime,NIdle).
+cal0(101,Run,Idle,DecodeTime,EncodeTime,GCTime,NRun,NIdle):- true |
+    cal_running_time(Run,DecodeTime,EncodeTime,GCTime,Total),
+    NRun :=  Total - DecodeTime - GCTime ,
+    cal_add(Idle,DecodeTime,NIdle0),
+    cal_add(NIdle0,GCTime,NIdle).
+cal0(100,Run,Idle,DecodeTime,EncodeTime,GCTime,NRun,NIdle):- true |
+    cal_running_time(Run,DecodeTime,EncodeTime,GCTime,Total),
+    NRun :=  Total - DecodeTime - EncodeTime - GCTime ,
+    cal_add(Idle,DecodeTime,NIdle0),
+    cal_add(NIdle0,EncodeTime,NIdle1),
+    cal_add(NIdle1,GCTime,NIdle).
+cal0(011,Run,Idle,DecodeTime,EncodeTime,GCTime,NRun,NIdle):- true |
+    cal_running_time(Run,DecodeTime,EncodeTime,GCTime,Total),
+    cal_add(DecodeTime,EncodeTime,NRun),
+    cal_add(Idle,Total,NIdle0),
+    NIdle :=  NIdle0 - DecodeTime - EncodeTime.
+cal0(010,Run,Idle,DecodeTime,EncodeTime,GCTime,NRun,NIdle):- true |
+    NRun :=  DecodeTime,
+%    NIdle :=  Idle + Run -  DecodeTime .
+    cal_running_time(Run,DecodeTime,EncodeTime,GCTime,Total),
+    cal_add(Idle,Total,NIdle0),
+    NIdle :=  NIdle0 - DecodeTime.
+cal0(001,Run,Idle,DecodeTime,EncodeTime,GCTime,NRun,NIdle):- true |
+    NRun :=  EncodeTime,
+    cal_running_time(Run,DecodeTime,EncodeTime,GCTime,Total),
+    cal_add(Idle,Total,NIdle0),
+    NIdle :=  NIdle0 - EncodeTime.
+
+cal_add(Time1,Time2,Total):-  
+   2147483647 - Time1 =< Time2 |
+   Total = 2147483647.
+otherwise.
+cal_add(Time1,Time2,Total):- true |
+   Total :=  Time1 + Time2.
+
+
+cal_running_time(Run,DecodeTime,EncodeTime,GCTime,Result):- true |
+    Run2 :=  DecodeTime + EncodeTime + GCTime ,
+    select_runtime(Run,Run2,Result).
+    
+select_runtime(Run,Run2,Result):- Run > Run2 |
+    Result = Run.
+select_runtime(Run,Run2,Result):- Run =< Run2 |
+    Result = Run2.
+
+check_value(0,Value1,Value2):- true |
+        Value1 = 0,
+        Value2 = 0.
+check_value(Data,Value1,Value2):- Data > 0 |
+        Value1 := Data/65536,
+        Value2 := Data mod 65536.
+
+
+cal2({},C,E,D,GC,Idle):- true | C = 0.0, E = 0.0, D = 0.0, GC = 0.0 , Idle = 0.0 .
+cal2({Run,Idle,GCCount,GCTime,DecodeTime,EncodeTime},C,E,D,GC,I):- true |
+    minas_check_int(Run,CRun),
+    minas_check_int(DecodeTime,CDecodeTime),
+    minas_check_int(EncodeTime,CEncodeTime),
+    minas_check_int(GCTime,CGCTime),
+    minas_check_int(Idle,CIdle),
+    cal_running_time(CRun,CDecodeTime,CEncodeTime,CGCTime,Total),
+    IC :=  Total -  CDecodeTime - CEncodeTime - CGCTime ,
+    C $:= float(IC),
+    E $:= float(CEncodeTime),
+    D $:= float(CDecodeTime),
+    GC $:= float(CGCTime),
+    I $:= float(CIdle).
+
+cal_ratio(All,Data,Ratio):- All $=< 0.0 | Ratio = 0.
+cal_ratio(All,Data,Ratio):- Data $=< 0.0 | Ratio = 0.
+cal_ratio(All,Data,Ratio):- All $> 0.0 , Data $> 0.0 | 
+    FRatio $:= Data * 100.0 / All ,
+    Ratio := int(FRatio).
+
+minas_check_int(Data,NData):- Data =< 0 | NData = 0.
+minas_check_int(Data,NData):- Data > 0 | NData = Data.
+
+minas_check(Data,NData):- Data $=< 0.0 | NData = 0.0.
+minas_check(Data,NData):- Data $> 0.0 | NData = Data.
+
+out([String|Rest], SockD) :- wait(String) |
+    change_element_size(String,8,NewString),
+    send_socket(SockD,NewString,RSock,normal,Status),
+    out1(Status, Rest, RSock).
+
+out1(_, Out, SockD) :- true |
+    out(Out, SockD) .
+

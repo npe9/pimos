@@ -1,0 +1,694 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module portray_monitor.
+:- with_macro pimos.
+:- public init/3,dummy/0.
+
+init(Out,default,Ptry) :- true |
+        Out=[],
+        Ptry=default.
+init(Out,{Cod,Argv},Ptry) :- code(Cod,_,_,_),vector(Argv,N),N>0 |
+        set_vector_element(Argv,0,_,In,Argv1),
+        shoen:raise(pimos_tag#task,general_request,
+            [execute(Cod,Argv1,"portray process",0,4096,16#"ffff0000",Res)]),
+        wait_task_created(Out,Ptry,In,Res).
+otherwise.
+init(Out,Ptry,Ptry1) :- true |
+        Ptry1=default,
+        Out=[nl,putl("*** Portray failed in creation ***")].
+
+wait_task_created(Out,Ptry,In,normal(Ctr,Rep)) :- true |
+        Ptry={1200,normal,In,Ab},
+        monitor_ptry(Out,Ctr,Ab,Rep).
+wait_task_created(Out,Ptry,_,abnormal) :- true |
+        Ptry=default,
+        Out=[nl,putl("*** Portray task failed in creation ***")].
+
+:- local_implicit out:stream,ctr:stream,abort:shared.
+
+monitor_ptry([resource_low|Rep]) --> true |
+        &ctr <<= [add_resource(16#"3fffffff",16#"ffffffff")],
+        monitor_ptry1(Rep).
+monitor_ptry([aborted|_]) --> true |
+        &abort=aborted.
+monitor_ptry([terminated|_]) --> true |
+        &abort=aborted.
+monitor_ptry([exception(Kind,Info,NCod,NArgv)|Rep]) --> true |
+        {{predicate_to_code(module#portray_monitor,dummy,0,NCod)}},
+        NArgv={},
+        &ctr <<= [abort(_)],
+        &abort=aborted,
+        &out <<= [do(DoOut)],
+        {{print_exception_msg(Kind,Info,DoOut)}},
+        monitor_ptry(Rep).
+otherwise.
+monitor_ptry([_|Rep]) --> true |
+        monitor_ptry(Rep).
+monitor_ptry([]) --> true | true.
+
+monitor_ptry1([resource_added|Rep]) --> true |
+        &ctr <<= [allow_resource_report],
+        monitor_ptry(Rep).
+monitor_ptry1([aborted|_]) --> true |
+        &abort=aborted.
+monitor_ptry1([terminated|_]) --> true |
+        &abort=aborted.
+monitor_ptry1([exception(Kind,Info,NCod,NArgv)|Rep]) --> true |
+        {{predicate_to_code(module#buffer,dummy,0,NCod)}},
+        NArgv={},
+        &ctr <<= [abort(_)],
+        &abort=aborted,
+        &out <<= [do(DoOut)],
+        {{print_exception_msg(Kind,Info,DoOut)}},
+        monitor_ptry1(Rep).
+otherwise.
+monitor_ptry1([_|Rep]) --> true |
+        monitor_ptry1(Rep).
+monitor_ptry1([]) --> true | true.
+
+dummy :- true | true.
+
+print_exception_msg(Kind,Info,Out) :- true |
+        Out=[print_depth(D,D),print_length(L,L),
+             nl,putl("*** Exception in portray, process aborted ***")|Out1],
+        exception_msg(D,L,Out1,[],Kind,Info).
+
+/*
+print_error1(Kind,Info,Out) :- true |
+        variable:wrap(Info,{_,WInfo},99,99),
+        Out=[putb("Kind> "),putt(Kind),nl,
+             putb("Info> ",putwt(WInfo),nl].
+*/
+
+make_up_goal(Pred,Argv,D,L,WGoal) :- vector(Argv,N) |
+        N1:=N+1,
+        new_vector(V0,N1),
+        set_vector_element(V0,0,_,Pred,V1),
+        make_goal(Argv,V1,Goal,N),
+        variable:wrap(Goal,{_,WGoal},D,L).
+
+make_up_goal_unwrapped(Pred,Argv,Goal) :- vector(Argv,N) |
+        N1:=N+1,
+        new_vector(V0,N1),
+        set_vector_element(V0,0,_,Pred,V1),
+        make_goal(Argv,V1,Goal,N).
+
+make_goal(Argv,V,V1,I) :- I>0 |
+        I1:=I-1,
+        set_vector_element(Argv,I1,E,0,Argv1),
+        set_vector_element(V,I,_,E,V0),
+        make_goal(Argv1,V0,V1,I1).
+make_goal(_,V,V1,0) :- true | V=V1.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% MESSAGES FOR EXCEPTIONS %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% exception_msg(&pd,&pl,&out,Kind,Info)
+
+:- local_implicit pd:shared,pl:shared,out:oldnew.
+
+% PRIORITY_PRAGMA_ILLEGAL_INPUT
+exception_msg(illegal_input,
+    {NodeV,{calculate_priority_from_minimum,Caller},{Rate,_},_Pos}) --> true|
+        {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+        &out <<= [putb(" >> Priority rate """),putwt(WRate),
+                         putf(""" is illegal input.~n",[]),
+                  putb(" Pragma> @ priority("),putwt(WRate),putf(")~n",[]),
+                  putb(" Caller> "), putt((Pac::M:Pred/Arity)), nl],
+        {{variable:wrap(Rate,{_,WRate},&pd,&pl)}},
+        print_node(NodeV,3).
+exception_msg(illegal_input,
+    {NodeV,{calculate_priority_from_minimum,Caller1,Caller2},{Rate,_},_Pos}) --> true|
+        {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+        {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+        &out <<= [putb(" >> Priority rate """), putwt(WRate),
+                         putf(""" is illegal input.~n",[]),
+                  putb("  Pragma> @ priority("), putwt(WRate), putf(")~n",[]),
+                  putb(" Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+                  putb("  Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+        {{variable:wrap(Rate,{_,WRate},&pd,&pl)}},
+        print_node(NodeV,4).
+
+exception_msg(illegal_input,
+    {NodeV,{calculate_priority_from_current,Caller},{Rate,_},_Pos}) --> true |
+        {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+        &out <<= [putb(" >> Priority rate """),putwt(WRate),
+                         putf(""" is illegal input.~n",[]),
+                  putb(" Pragma> @ relative_priority("),putwt(WRate), putf(")~n",[]),
+                  putb(" Caller> "), putt((Pac::M:Pred/Arity)), nl],
+        {{variable:wrap(Rate,{_,WRate},&pd,&pl)}},
+        print_node(NodeV,3).
+exception_msg(illegal_input,
+    {NodeV,{calculate_priority_from_current,Caller1,Caller2},{Rate,_},_Pos}) --> true |
+        {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+        {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+        &out <<= [putb(" >> Priority rate """),putwt(WRate),
+                        putf(""" is illegal input.~n",[]),
+                  putb("  Pragma> @ relative_priority("),putwt(WRate), putf(")~n",[]),
+                  putb(" Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+                  putb("  Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+        {{variable:wrap(Rate,{_,WRate},&pd,&pl)}},
+        print_node(NodeV,4).
+
+
+% THROW_GOAL_PRAGMA_ILLEGAL_INPUT
+exception_msg(illegal_input,
+    {NodeV,{enqueue_to_processor,Caller},{Prc,Code,_},_Pos}) --> true |
+        {{module:get_predicate_info(Code,  _Pac,_M,GPred,GArity,_Ginfo)}},
+        {{module:get_predicate_info(Caller, Pac, M, Pred, Arity,_Info)}},
+        &out <<= [putb(" >> Node number """),putwt(WPrc), 
+                         putf(""" is illegal input.~n",[]),
+                  putf(" Pragma> ~t @ node(",[(GPred/GArity)]),
+                                       putwt(WPrc), putf(")~n",[]),
+                  putb(" Caller> "), putt((Pac::M:Pred/Arity)), nl],
+        {{variable:wrap(Prc,{_,WPrc},&pd,&pl)}},
+        print_node(NodeV,3).
+exception_msg(illegal_input,
+  {NodeV,{enqueue_to_processor,Caller1,Caller2},{Prc,Code,_},_Pos}) --> true |
+        {{module:get_predicate_info(Code,   _Pac,_M,GPred,GArity,_Ginfo)}},
+        {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+        {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+        &out <<= [putb(" >> Node number """),putwt(WPrc),
+                     putf(""" is illegal input.~n",[]),
+                  putf("  Pragma> ~t @ node(",[(GPred/GArity)]),
+                                   putwt(WPrc), putf(")~n",[]),
+                  putb(" Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+                  putb("  Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+        {{variable:wrap(Prc,{_,WPrc},&pd,&pl)}},
+        print_node(NodeV,4).
+
+
+% PRIORITY_PRAGMA_RANGE_OVERFLOW
+exception_msg(range_overflow,
+    {NodeV,{calculate_priority_from_minimum,Caller},{Rate,_}}) --> true|
+        {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+        &out <<= [putf(" >> Priority rate ""~t"" is range overflow.~n",[Rate]),
+            putf(" Pragma> @ priority(~t)~n",[Rate]),
+            putb(" Caller> "), putt((Pac::M:Pred/Arity)), nl],
+        print_node(NodeV,3).
+exception_msg(range_overflow,
+    {NodeV,{calculate_priority_from_minimum,Caller1,Caller2},{Rate,_}}) --> true |
+        {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+        {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+        &out <<= [putf(" >> Priority rate ""~t"" is range overflow.~n",[Rate]),
+            putf("  Pragma> @ priority(~t)~n",[Rate]),
+            putb(" Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+            putb("  Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+        print_node(NodeV,4).
+
+exception_msg(range_overflow,
+  {NodeV,{calculate_priority_from_current,Caller},{Rate,_}}) --> true |
+        {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+        &out <<= [putf(" >> Priority rate ""~t"" is range overflow.~n",[Rate]),
+            putf(" Pragma> @ relative_priority(~t)~n",[Rate]),
+            putb(" Caller> "), putt((Pac::M:Pred/Arity)), nl],
+        print_node(NodeV,3).
+exception_msg(range_overflow,
+  {NodeV,{calculate_priority_from_current,Caller1,Caller2},{Rate,_}}) --> true |
+        {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+        {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+        &out <<= [putf(" >> Priority rate ""~t"" is range overflow.~n",[Rate]),
+            putf("  Pragma> @ relative_priority(~t)~n",[Rate]),
+            putb(" Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+            putb("  Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+        print_node(NodeV,4).
+
+
+% THROW_GOAL_PRAGMA_RANGE_OVERFLOW
+exception_msg(range_overflow,
+    {NodeV,{enqueue_to_processor,Caller},{Prc,Code,_}}) --> true |
+        {{module:get_predicate_info(Code,  _Pac,_M,GPred,GArity,_Ginfo)}},
+        {{module:get_predicate_info(Caller, Pac, M, Pred, Arity,_Info)}},
+        &out <<= [putf(" >> Cannot throw the goal to node ""~t"".~n",[Prc]),
+        putf(" Pragma> ~t @ node(~t)~n",[(GPred/GArity),Prc]),
+        putb(" Caller> "), putt((Pac::M:Pred/Arity)), nl],
+        print_node(NodeV,3).
+exception_msg(range_overflow,
+    {NodeV,{enqueue_to_processor,Caller1,Caller2},{Prc,Code,_}}) --> true |
+        {{module:get_predicate_info(Code,   _Pac,_M,GPred,GArity,_Ginfo)}},
+        {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+        {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+        &out <<= [putf(" >> Cannot throw the goal to node ""~t"".~n",[Prc]),
+            putf("  Pragma> ~t @ node(~t)~n",[(GPred/GArity),Prc]),
+            putb(" Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+            putb("  Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+        print_node(NodeV,4).
+
+
+% UNDEFINED_MODULE
+exception_msg(undefined_module,
+    {NodeV,{{Pac,M,Pred,Arity},Caller},ArgV}) --> true |
+        {{module:get_predicate_info(Caller,PPac,PM,PPred,PArity,_PInfo)}},
+        {{make_up_goal(Pred,ArgV,&pd,&pl,WGoal)}},
+        &out <<= [putb(" Undefined module> "), putt((Pac::M:Pred/Arity)), nl,
+            putb("             Goal> "), putwt(WGoal), nl,
+            putb("           Caller> "), putt((PPac::PM:PPred/PArity)), nl],
+        print_node(NodeV,13).
+exception_msg(undefined_module,
+    {NodeV,{{M,Pred,Arity},Caller},ArgV}) --> true |
+        {{module:get_predicate_info(Caller,PPac,PM,PPred,PArity,_PInfo)}},
+        {{make_up_goal(Pred,ArgV,&pd,&pl,WGoal)}},
+        &out <<= [putb(" Undefined module> "), putt((PPac::M:Pred/Arity)), nl,
+            putb("             Goal> "), putwt(WGoal), nl,
+            putb("           Caller> "), putt((PM:PPred/PArity)), nl],
+        print_node(NodeV,13).
+
+
+% UNDEFINED_PREDICATE
+exception_msg(undefined_predicate,
+    {NodeV,{{Mod,Pred,Arity},Caller},ArgV}) --> true |
+        {{module:get_predicate_info(Caller,PPac,PM,PPred,PArity,_PInfo)}},
+        {{module:get_module_name(Mod,M)}},
+        {{make_up_goal(Pred,ArgV,&pd,&pl,WGoal)}},
+        &out <<= [putb(" Undefined predicate> "), putt((M:Pred/Arity)), nl,
+            putb("                Goal> "), putwt(WGoal), nl,
+            putb("              Caller> "), putt((PPac::PM:PPred/PArity)), nl],
+        print_node(NodeV,16).
+
+
+% ILLEGAL_MERGER_INPUT
+exception_msg(illegal_merger_input,
+    {NodeV,{_Name,Caller},Input,NewInput}) --> true |
+        {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+        &out <<= [
+            putb(" Illegal merger input> "),putwt(WInput),  nl,
+            putb("     New merger input> "),putwt(WNewInput), nl,
+            putb("               Caller> "), putt((Pac::M:Pred/Arity)), nl],
+        {{variable:wrap(Input,{_,WInput},&pd,&pl)}},
+        {{variable:wrap(NewInput,{_,WNewInput},&pd,&pl)}},
+        print_node(NodeV,17).
+exception_msg(illegal_merger_input,
+    {NodeV,{_Name,Caller1,Caller2},Input,NewInput}) --> true |
+        {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+        {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+        &out <<= [
+            putb(" Illegal merger input> "),putwt(WInput,_),  nl,
+            putb("     New merger input> "),putwt(WNewInput,_), nl,
+            putb("              Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+            putb("               Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+        {{variable:wrap(Input,{_,WInput},&pd,&pl)}},
+        {{variable:wrap(NewInput,{_,WNewInput},&pd,&pl)}},
+        print_node(NodeV,17).
+
+
+% REDUCTION_FAILURE
+exception_msg(reduction_failure,
+    {NodeV,Code,ArgV}) --> code(Code,_,_,_)|
+        {{module:get_predicate_info(Code,Pac,M,Pred,Arity,_Info)}},
+        {{make_up_goal(Pred,ArgV,&pd,&pl,WGoal)}},
+        &out <<= [putb(" Failure> "), putt((Pac::M:Pred/Arity)), nl, 
+            putb("    Goal> "), putwt(WGoal), nl],
+        print_node(NodeV,4).
+exception_msg(reduction_failure,
+    {NodeV,{Code,Caller},ArgV}) --> true |
+        {{module:get_predicate_info(Code,  GPac,GM,GPred,GArity,_Ginfo)}},
+        {{module:get_predicate_info(Caller, Pac, M, Pred, Arity,_Info)}},
+        {{make_up_goal(GPred,ArgV,&pd,&pl,WGoal)}},
+        &out <<= [putb(" Failure> "), putt((GPac::GM:GPred/GArity)), nl, 
+            putb(" Library> "), putwt(WGoal,_), nl,
+            putb("  Caller> "), putt((Pac::M:Pred/Arity)), nl],
+        print_node(NodeV,4).
+
+
+% UNIFICATION FAILURE
+exception_msg(unification_failure,{NodeV,X,Y}) --> true |
+        &out <<= [putb(" Unification failure> "),putwt(WY),  nl,
+            putb("                With> "),putwt(WX),  nl],
+        {{variable:wrap(Y,{_,WY},&pd,&pl)}},
+        {{variable:wrap(X,{_,WX},&pd,&pl)}},
+        print_node(NodeV,16).
+exception_msg(unification_failure,
+  {NodeV,X,Y,Caller}) --> true |
+        {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+        &out <<= [
+            putb(" Unification failure> "), putwt(Y),  nl,
+            putb("                With> "), putwt(X),  nl,
+            putb("              Caller> "), putt((Pac::M:Pred/Arity)), nl],
+        {{variable:wrap(Y,{_,WY},&pd,&pl)}},
+        {{variable:wrap(X,{_,WX},&pd,&pl)}},
+        print_node(NodeV,16).
+
+
+% DEADLOCK
+% Global-GC
+exception_msg(deadlock,
+  {NodeV,Code,ArgV,Type}) --> code(Code,_,_,_)|
+        {{module:get_predicate_info(Code,Pac,M,Pred,_Arity,_Info)}},
+        {{make_up_goal_unwrapped(Pred,ArgV,Goal)}},
+        {{variable:wrap((Pac::M:Goal),{_,WGoal},&pd,&pl)}},
+        {{deadlock_type_msg(Type,hooko,Msg)}},
+        &out <<= [putf("~s~n",[Msg]),
+            putb(" Goal> "), putwt(WGoal), nl],
+        print_node(NodeV,1).
+exception_msg(deadlock,
+  {NodeV,{Code,Caller},ArgV,Type}) --> code(Code,_,_,_)|
+        {{module:get_predicate_info(Code,  Pac, M, Pred, _Arity,_Info)}},
+        {{module:get_predicate_info(Caller,Pac1,M1,Pred1,Arity1,_Info1)}},
+        {{make_up_goal_unwrapped(Pred,ArgV,Goal)}},
+        {{variable:wrap((Pac::M:Goal),{_,WGoal},&pd,&pl)}},
+        {{deadlock_type_msg(Type,hooko,Msg)}},
+        &out <<= [putf("~s~n",[Msg]),
+            putb(" Library> "), putwt(WGoal), nl,
+            putb("  Caller> "), putt((Pac1::M1:Pred1/Arity1)), nl],
+        print_node(NodeV,4).
+exception_msg(deadlock,
+  {NodeV,{Name,Caller},ArgV,Type}) --> atom(Name)|
+    {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+    {{make_up_goal(Name,ArgV,&pd,&pl,WBuiltin)}},
+    {{deadlock_type_msg(Type,hooko,Msg)}},
+    &out <<= [putf("~s~n",[Msg]),
+        putb(" Builtin> "), putwt(WBuiltin), nl,
+        putb("  Caller> "), putt((Pac::M:Pred/Arity)), nl],
+    print_node(NodeV,4).
+exception_msg(deadlock,
+  {NodeV,{Name,Caller1,Caller2},ArgV,Type}) --> true|
+    {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+    {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+    {{make_up_goal(Name,ArgV,&pd,&pl,WBuiltin)}},
+    {{deadlock_type_msg(Type,hooko,Msg)}},
+    &out <<= [putf("~s~n",[Msg]),
+        putb(" Builtin> "), putwt(WBuiltin), nl,
+        putb(" Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+        putb("  Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+    print_node(NodeV,4).
+
+% MRB-GC (collect_value, suspend, active-unify)
+exception_msg(deadlock,
+  {NodeV,Code,ArgV,Type,Collector}) --> code(Code,_,_,_)|
+    {{module:get_predicate_info(Code,Pac,M,Pred,_Arity,_Info)}},
+    {{make_up_goal_unwrapped(Pred,ArgV,Goal)}},
+    {{variable:wrap((Pac::M:Goal),{_,WGoal},&pd,&pl)}},
+    {{deadlock_type_msg(Type,Colctr,Msg)}},
+    &out <<= [putf("~s~n",[Msg]),
+         putb(" Goal> "), putwt(WGoal), nl,
+         putb(" With> ")],
+    {{deadlock_collector(Collector,Colctr,&out)}},
+    print_node(NodeV,1).
+exception_msg(deadlock,
+  {NodeV,{Code,Caller},ArgV,Type,Collector}) --> code(Code,_,_,_)|
+    {{module:get_predicate_info(Code,  Pac, M, Pred, _Arity,_Info)}},
+    {{module:get_predicate_info(Caller,Pac1,M1,Pred1,Arity1,_Info1)}},
+    {{make_up_goal_unwrapped(Pred,ArgV,Goal)}},
+    {{variable:wrap((Pac::M:Goal),{_,WGoal},&pd,&pl)}},
+    {{deadlock_type_msg(Type,Colctr,Msg)}},
+    &out <<= [putf("~s~n",[Msg]),
+         putb(" Library> "), putwt(WGoal), nl,
+         putb("  Caller> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+         putb("    With> ") ],
+    {{deadlock_collector(Collector,Colctr,&out)}},
+    print_node(NodeV,4).
+exception_msg(deadlock,
+  {NodeV,{Name,Caller},ArgV,Type,Collector}) --> atom(Name)|
+    {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+    {{make_up_goal(Name,ArgV,&pd,&pl,WBuiltin)}},
+    {{deadlock_type_msg(Type,Colctr,Msg)}},
+    &out <<= [putf("~s~n",[Msg]),
+         putb(" Builtin> "), putwt(WBuiltin), nl,
+         putb("  Caller> "), putt((Pac::M:Pred/Arity)), nl,
+         putb("    With> ")],
+    {{deadlock_collector(Collector,Colctr,&out)}},
+    print_node(NodeV,4).
+exception_msg(deadlock,
+  {NodeV,{Name,Caller1,Caller2},ArgV,Type,Collector}) --> true|
+    {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+    {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+    {{make_up_goal(Name,ArgV,&pd,&pl,WBuiltin)}},
+    {{deadlock_type_msg(Type,Colctr,Msg)}},
+    &out <<= [putf("~s~n",[Msg]),
+         putb(" Builtin> "), putwt(WBuiltin), nl,
+         putb(" Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+         putb("  Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl,
+         putb("    With> ")],
+    {{deadlock_collector(Collector,Colctr,&out)}},
+    print_node(NodeV,4).
+
+% MERGER_DEADLOCK
+% Global-GC
+exception_msg(merger_deadlock,
+  {NodeV,{_Name,Caller},Inputs,Type}) --> wait(Inputs)|
+    {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+    {{merger_deadlock_type_msg(Type,hooko,Msg)}},
+    {{merger_deadlock_size_msg(Inputs,Size,MMsg)}},
+    &out <<= [putf("~s~n *** ~t~s~n",[Msg,Size,MMsg]),
+        putb(" Abandoned> "), write(Inputs,_),nl,
+        putb("    Caller> "), putt((Pac::M:Pred/Arity)), nl],
+    print_node(NodeV,6).
+exception_msg(merger_deadlock,
+  {NodeV,{_Name,Caller1,Caller2},Inputs,Type}) --> wait(Inputs)|
+    {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+    {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+    {{merger_deadlock_type_msg(Type,hooko,Msg)}},
+    {{merger_deadlock_size_msg(Inputs,Size,MMsg)}},
+    &out <<= [putf("~s~n *** ~t~s~n",[Msg,Size,MMsg]),
+        putb(" Abandoned> "), write(Inputs,_),nl,
+        putb("   Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+        putb("    Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+    print_node(NodeV,6).
+% MRB-GC
+exception_msg(merger_deadlock,
+  {NodeV,{_Name,Caller},Inputs,Type,Collector}) --> wait(Inputs)|
+    {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+    {{merger_deadlock_type_msg(Type,Colctr,Msg)}},
+    &out <<= [putf("~s~n",[Msg]),
+         putb(" Abandoned> "), write(Inputs,_),nl,
+         putb("    Caller> "), putt((Pac::M:Pred/Arity)), nl,
+         putb("      With> ")],
+    {{deadlock_collector(Collector,Colctr,&out)}},
+    print_node(NodeV,6).
+exception_msg(merger_deadlock,
+  {NodeV,{_Name,Caller1,Caller2},Inputs,Type,Collector}) --> wait(Inputs)|
+    {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+    {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+    {{merger_deadlock_type_msg(Type,Colctr,Msg)}},
+    &out <<= [putf("~s~n",[Msg]),
+         putb(" Abandoned> "), write(Inputs,_),nl,
+         putb("   Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+         putb("    Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl,
+         putb("      With> ")],
+    {{deadlock_collector(Collector,Colctr,&out)}},
+    print_node(NodeV,6).
+
+% TRACE
+exception_msg(trace,
+  {NodeV,[ID|_],SubGoals}) --> true|
+    &out <<= [putf(" >> Trace exception occurred.~n",[]),
+        putb(" Trace ID> "), write(ID,_), nl,
+        putb(" SubGoals> "), write(SubGoals,_), nl],
+    print_node(NodeV,5).
+exception_msg(trace,
+  {NodeV,[ID|_],SubGoals,0}) --> true|
+    &out <<= [putf(" >> Trace exception occurred.~n",[]),
+        putb(" Trace ID> "), write(ID,_), nl,
+        putb(" SubGoals> "), write(SubGoals,_), nl],
+    print_node(NodeV,5).
+exception_msg(trace,
+  {NodeV,[ID|_],SubGoals,Info}) --> Info\=0|
+    &out <<= [putf(" >> Trace exception occurred.~n",[]),
+        putb(" Trace ID> "), write(ID,_), nl,
+        putb(" SubGoals> "), write(SubGoals,_), nl,
+        putf("     Info> ~t~n",[Info])],
+    print_node(NodeV,5).
+
+
+% SPY
+exception_msg(spy,
+  {NodeV,ID,SubGoal,Caller}) --> true|
+    {{module:get_predicate_info(Caller,Pac,M,P,A,_Info)}},
+    &out <<= [putf(" >> Spy exception occurred.~n",[]),
+        putb(" Spy ID> "), write(ID,_), nl,
+        putb(" Caller> "), putt((Pac::M:P/A)), nl,
+        putb("   Goal> "), write(SubGoal,_), nl],
+    print_node(NodeV,3).
+
+
+% ERROR_DETECTED_BY_PIMOS
+exception_msg(raised,
+  {NodeV,'$PIMOS$'(ID,Info),Data}) --> string(Info,_,_)|
+    &out <<= [putf(" Error> ~t~n",[ID]),
+        putf("  Info> ~s~n",[Info]),
+        putb("  Data> "),write(Data),nl],
+    print_node(NodeV,2).
+
+
+% ETC
+exception_msg(etc,
+  {ExpID,ExpInfo}) --> true |
+    &out <<= [putf(" >> Unknown exception occurred(etc).~n",[]),
+        putf(" Exception ID> ~t~n",[ExpID]),
+        putb("  Information> "), write(ExpInfo,_), nl].
+
+otherwise.
+% RAISED
+exception_msg(raised,
+  {NodeV,Info,Data}) --> true|
+    &out <<= [putf(" Raised> ~t~n",[Info]),
+        putb("   Data> "), write(Data,_), nl],
+    print_node(NodeV,3).
+
+otherwise.
+% RANGE_OVERFLOW, OUT_OF_BOUNDS WITHOUT POSITION_INFORMATION
+% INTEGER_OVERFLOW, INTEGER_ZERO_DIVISION, 
+% INVALID_FLOATING_POINT_OPERATION, ARITY_MISMATCH
+exception_msg(Kind,
+  {NodeV,{Code,Caller},ArgV}) --> code(Code,_,_,_)|
+    {{module:get_predicate_info(Code,  Pac, M, Pred, _Arity,_Info)}},
+    {{module:get_predicate_info(Caller,Pac1,M1,Pred1,Arity1,_Info1)}},
+    {{make_up_goal_unwrapped(Pred,ArgV,Library)}},
+    {{variable:wrap((Pac::M:Library),{_,WLibrary},&pd,&pl)}},
+    &out <<= [putf(" Exception> ~t~n",[Kind]),
+        putb("   Library> "), putwt(WLibrary), nl,
+        putb("    Caller> "), putt((Pac1::M1:Pred1/Arity1)), nl],
+    print_node(NodeV,6).
+exception_msg(Kind,
+  {NodeV,{Name,Caller},ArgV}) --> atom(Name)|
+    {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+    {{make_up_goal(Name,ArgV,&pd,&pl,WBuiltin)}},
+    &out <<= [putf(" Exception> ~t~n",[Kind]),
+        putb("   Builtin> "), putwt(WBuiltin), nl,
+        putb("    Caller> "), putt((Pac::M:Pred/Arity)), nl],
+    print_node(NodeV,6).
+exception_msg(Kind,
+  {NodeV,{Name,Caller1,Caller2},ArgV}) --> true|
+    {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+    {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+    {{make_up_goal(Name,ArgV,&pd,&pl,WBuiltin)}},
+    &out <<= [putf(" Exception> ~t~n",[Kind]),
+        putb("   Builtin> "), putwt(WBuiltin), nl,
+        putb("   Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+        putb("    Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+    print_node(NodeV,6).
+
+
+% ILLEGAL_INPUT & RANGE_OVERFLOW, OUT_OF_BOUNDS WITH POSITION_INFORMATION
+exception_msg(Kind,
+  {NodeV,{Code,Caller},ArgV,Pos}) --> code(Code,_,_,_)|
+    {{module:get_predicate_info(Code,  Pac, M, Pred, _Arity,_Info)}},
+    {{module:get_predicate_info(Caller,Pac1,M1,Pred1,Arity1,_Info1)}},
+    {{make_up_goal_unwrapped(Pred,ArgV,Library)}},
+    {{variable:wrap((Pac::M:Library),{_,WLibrary},&pd,&pl)}},
+    &out <<= [putf(" Exception> ~t_at_arg~t~n",[Kind,Pos]),
+        putb("   Library> "), putwt(WLibrary), nl,
+        putb("    Caller> "), putt((Pac1::M1:Pred1/Arity1)), nl],
+    print_node(NodeV,6).
+exception_msg(Kind,
+  {NodeV,{Name,Caller},ArgV,Pos}) --> atom(Name)|
+    {{module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info)}},
+    {{make_up_goal(Name,ArgV,&pd,&pl,WBuiltin)}},
+    &out <<= [putf(" Exception> ~t_at_arg~t~n",[Kind,Pos]),
+        putb("   Builtin> "), putwt(WBuiltin), nl,
+        putb("    Caller> "), putt((Pac::M:Pred/Arity)), nl],
+    print_node(NodeV,6).
+exception_msg(Kind,
+  {NodeV,{Name,Caller1,Caller2},ArgV,Pos}) --> true|
+    {{module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1)}},
+    {{module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2)}},
+    {{make_up_goal(Name,ArgV,&pd,&pl,WBuiltin)}},
+    &out <<= [putf(" Exception> ~t_at_arg~t~n",[Kind,Pos]),
+        putb("   Builtin> "), putwt(WBuiltin), nl,
+        putb("   Library> "), putt((Pac1::M1:Pred1/Arity1)), nl,
+        putb("    Caller> "), putt((Pac2::M2:Pred2/Arity2)), nl],
+    print_node(NodeV,6).
+
+
+deadlock_type_msg(0,_,Msg) :- true | 
+    Msg=" *** Deadlock detected during GC.".
+deadlock_type_msg(1,_,Msg) :- true | 
+    Msg=" *** Deadlock detected (traced goal).".
+deadlock_type_msg(2,_,Msg) :- true | 
+    Msg=" *** Deadlock detected (spied goal).".
+deadlock_type_msg(10,_,Msg) :- true |
+    Msg=" *** Deadlock occurred. [collect_value(HOOKo)]".
+deadlock_type_msg(11,merge,Msg) :- true |
+    Msg=" *** Deadlock occurred. [suspend(MGHOK)]".
+deadlock_type_msg(12,merge,Msg) :- true |
+    Msg=" *** Deadlock occurred. [unify(HOOKo,MGHOK)]".
+deadlock_type_msg(13,_,Msg) :- true |
+    Msg=" *** Deadlock occurred. [suspend(VOID)]".
+deadlock_type_msg(14,_,Msg) :- true |
+    Msg=" *** Deadlock occurred. [unify(HOOKo,VOID)]".
+deadlock_type_msg(15,_,Msg) :- true |
+    Msg=" *** Deadlock occurred. [%release(HOOKo)]".
+otherwise.
+deadlock_type_msg(11,_,Msg) :- true |
+    Msg=" *** Deadlock occurred. [suspend(HOOKo)]".
+deadlock_type_msg(12,_,Msg) :- true |
+    Msg=" *** Deadlock occurred. [unify(HOOKo,HOOKo)]".
+otherwise.
+deadlock_type_msg(_,_,Msg) :- true | 
+    Msg=" *** Deadlock occurred.".
+
+
+merger_deadlock_type_msg(0,_,Msg) :- true | 
+    Msg=" *** Merger deadlock detected during GC.".
+merger_deadlock_type_msg(1,_,Msg) :- true | 
+    Msg=" *** Merger deadlock detected (traced goal).".
+merger_deadlock_type_msg(2,_,Msg) :- true | 
+    Msg=" *** Merger deadlock detected (spied goal).".
+merger_deadlock_type_msg(10,_,Msg) :- true |
+    Msg=" *** Merger deadlock occurred. [collect_value(MGHOK)]".
+merger_deadlock_type_msg(11,merge,Msg) :- true |
+    Msg=" *** Merger deadlock occurred. [suspend(MGHOK)]".
+merger_deadlock_type_msg(12,merge,Msg) :- true |
+    Msg=" *** Merger deadlock occurred. [unify(MGHOK,MGHOK)]".
+merger_deadlock_type_msg(13,_,Msg) :- true |
+    Msg=" *** Merger deadlock occurred. [suspend(VOID)]".
+merger_deadlock_type_msg(14,_,Msg) :- true |
+    Msg=" *** Merger deadlock occurred. [unify(VOID,MGHOK)]".
+merger_deadlock_type_msg(15,_,Msg) :- true |
+    Msg=" *** Merger deadlock occurred. [%release(MGHOK)]".
+otherwise.
+merger_deadlock_type_msg(11,_,Msg) :- true |
+    Msg=" *** Merger deadlock occurred. [suspend(HOOKo)]".
+merger_deadlock_type_msg(12,_,Msg) :- true |
+    Msg=" *** Merger deadlock occurred. [unify(MGHOK,HOOKo)]".
+otherwise.
+merger_deadlock_type_msg(_,_,Msg) :- true | 
+    Msg=" *** Merger deadlock occurred.".
+
+merger_deadlock_size_msg({}, Size,Msg) :- Size=0, Msg=" merger input was abandoned.".
+merger_deadlock_size_msg({_},Size,Msg) :- Size=1, Msg=" merger input was abandoned.".
+otherwise.
+merger_deadlock_size_msg(V,  Size,Msg) :- vector(V,S) | 
+    Size=S, Msg=" merger inputs were abandoned.".
+
+
+deadlock_collector(Code,                    Colctr,IN1,IN0) :- code(Code,_,_,_) |
+    module:get_predicate_info(Code,Pac,M,Pred,Arity,_Info),
+    IN1 = [putt((Pac::M:Pred/Arity)), nl |IN0],
+    Colctr=hooko.
+deadlock_collector({Code,Caller},           Colctr,IN1,IN0) :- code(Code,_,_,_) |
+    module:get_predicate_info(Code,  Pac, M, Pred, Arity, _Info),
+    module:get_predicate_info(Caller,Pac1,M1,Pred1,Arity1,_Info1),
+    IN1 = [putt((Pac::M:Pred/Arity)),
+           putb(" called from "), 
+           putt((Pac1::M1:Pred1/Arity1)), nl |IN0],
+    Colctr=hooko.
+deadlock_collector({Name,Caller},           Colctr,IN1,IN0) :- atom(Name) |
+    module:get_predicate_info(Caller,Pac,M,Pred,Arity,_Info),
+    IN1 = [putf("""~t"" called from ",[Name]), putt((Pac::M:Pred/Arity)), nl |IN0],
+    Colctr=Name.
+deadlock_collector({Name,Caller1,Caller2},  Colctr,IN1,IN0) :-
+    module:get_predicate_info(Caller1,Pac1,M1,Pred1,Arity1,_Info1),
+    module:get_predicate_info(Caller2,Pac2,M2,Pred2,Arity2,_Info2),
+    IN1 = [putf("""~t"" in ",[Name]), 
+           putt((Pac1::M1:Pred1/Arity1)),
+           putb(" called from "), 
+           putt((Pac2::M2:Pred2/Arity2)), nl |IN0],
+    Colctr=Name.
+
+
+
+print_node(_,_,IN,IN1,{Cls,Pe},Tab) :- true|
+    IN=[tab(Tab),putf("Node> ~t~n",[Cls]),
+        tab(Tab),putf("  Pe> ~t~n",[Pe])|IN1].
+otherwise.
+print_node(_,_,IN,IN1,NodeV,Tab) :- true|
+    IN=[tab(Tab),putf("Node> ~t~n",[NodeV])|IN1].

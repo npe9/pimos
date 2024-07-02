@@ -1,0 +1,211 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%% 1991.7.25
+
+class array_index_buffer has
+:create(Class,Size,UnitSize,Obj):-
+    :new(Class,Obj),
+    new_heap_vector(Hv,Size),
+    Obj!root:=Hv,
+    Obj!size:=Size,
+    Obj!unit:=UnitSize,
+    create(0,Size,UnitSize,Hv);
+instance
+attribute root,
+          size,
+          unit;
+
+:get_at(Obj,P,N,V):-
+    vector_element(Obj!root,P,H),
+    vector_element(H,N,V);
+
+:count(Obj,Obj!size):-!;
+
+:put_contents_with_key(Obj,L):-!,
+    set_all_list(0,Obj!size,Obj!unit,L,Obj!root);
+
+:invert(Obj,P,N):-!,
+    vector_element(Obj!root,P,Hv),
+    vector_element(Hv,N,E),
+    set_vector_element(Hv,N,(E+1) mod 2);
+
+:get_partial_contents(Obj,Pos,Len,L):-!,
+    get_p(Pos,Len,Obj!size,Obj!unit,Obj!root,L);
+
+:get_contents_at(Obj,Key,Flag,L):-!,
+    get_at(0,Obj!size,Obj!unit,Key,Flag,Obj!root,L);
+
+:get_keys(Obj,Key,L):-
+    get_k(0,Obj!size,Obj!root,Key,L);
+
+:set_all_at(Obj,N):-!,
+    set_all(Obj!size,0,Obj!root,N,1);
+:reset_all_at(Obj,N):-!,
+    set_all(Obj!size,0,Obj!root,N,0);
+
+:move_mark_with_set(Obj,SP,DP):-!,
+    move(Obj!size,0,Obj!root,SP,DP,1);
+:move_mark_with_reset(Obj,SP,DP):-!,
+    move(Obj!size,0,Obj!root,SP,DP,0);
+
+:set_to(Obj,P,T,N):-
+    set_t(P,T,Obj!root,N);
+
+:reset_to(Obj,P,T,N):-
+    reset_t(P,T,Obj!root,N);
+
+:make_index(Obj,Key,L,New):-
+    get_contents_pointer_at(0,Obj!size,Obj!root,Key,L,L1,0,Count),
+    :new(#array_index_buffer,New),
+    new_heap_vector(Hv,Count),
+    New!root:=Hv,
+    New!size:=Count,
+    New!unit:=Obj!unit,
+    put_contents_pointer(Hv,0,L1);
+
+:cal_and_set_total(Obj,RPos,WPos,Total):-
+    cal(0,Obj!size,Obj!root,RPos,WPos,0,Total);
+
+:set_skip_direct(Obj,KeyItemNum,L):-
+    set_skip_direct(L,Obj!root,KeyItemNum,1);
+
+:reset_skip_direct(Obj,KeyItemNum,L):-
+    set_skip_direct(L,Obj!root,KeyItemNum,0);
+
+:set_direct(Obj,Key,L):-
+    set_direct(L,0,Obj!size,Obj!root,Key,1);
+
+:check_key(Obj,Key,Val):-
+    check_k(0,Obj!size,Obj!root,Key,Val);
+
+:sum(Obj,Key,N):-
+    sum(0,Obj!size,Obj!root,Key,0,N);
+
+local
+
+create(N,N,_,_):-!;
+create(C,N,U,H):-
+    new_heap_vector(New,U),
+    set_vector_element(H,C,New),
+    create(C+1,N,U,H);
+
+set_all_list(S,S,_,[],_):-!;
+set_all_list(C,S,Len,[St|L],A):-
+    vector_element(A,C,H),
+    set_subvector(H,0,Len,St),
+    set_all_list(C+1,S,Len,L,A);
+
+set_all(0,P,H,N,M):-!;
+set_all(C,P,H,N,M):-
+    vector_element(H,P,Hv),
+    set_vector_element(Hv,N,M),
+    set_all(C-1,P+1,H,N,M);
+
+
+get_p(N,_,N,_,_,[]):-!;  %%% too small
+get_p(_,0,_,_,_,[]):-!;
+get_p(C,N,Max,S,H,[St|L]):-
+    new_stack_vector(St,S),
+    vector_element(H,C,Hv),
+    copy(Hv,0,S,St),
+    get_p(C+1,N-1,Max,S,H,L);
+
+copy(_,_,0,_):-!;
+copy(H,C,N,S):-
+    vector_element(H,C,E),
+    vector_element(S,C,E),
+    copy(H,C+1,N-1,S);
+
+move(0,_,_,_,_,_):-!;
+move(C,N,H,S,D,M):-
+    vector_element(H,N,Hv),
+    vector_element(Hv,S,1),!,
+    set_vector_element(Hv,S,0),
+    set_vector_element(Hv,D,M),
+    move(C-1,N+1,H,S,D,M);
+move(C,N,H,S,D,M):-
+    move(C-1,N+1,H,S,D,M);
+
+get_at(_,0,_,_,_,_,[]):-!;
+get_at(C,N,U,K,F,H,[St|L]):-
+    vector_element(H,C,Hv),
+    vector_element(Hv,K,F),!,
+    new_stack_vector(St,U),
+    copy(Hv,0,U,St),
+    get_at(C+1,N-1,U,K,F,H,L);
+get_at(C,N,U,K,F,H,L):-
+    get_at(C+1,N-1,U,K,F,H,L);
+
+set_t(C,T,_,_):-C>T,!;
+set_t(C,T,H,N):-
+    vector_element(H,C,Hv),
+    set_vector_element(Hv,N,1),
+    set_t(C+1,T,H,N);
+
+reset_t(C,T,_,_):-C>T,!;
+reset_t(C,T,H,N):-
+    vector_element(H,C,Hv),
+    set_vector_element(Hv,N,0),
+    reset_t(C+1,T,H,N);
+
+get_contents_pointer_at(C,C,Root,Pos,Keys,[],N,N):-!;
+get_contents_pointer_at(C,Size,Root,Pos,Keys,[Hv|L],C1,N):-
+    vector_element(Root,C,Hv),
+    vector_element(Hv,Pos,K),
+    member(K,Keys),!,
+    get_contents_pointer_at(C+1,Size,Root,Pos,Keys,L,C1+1,N);
+get_contents_pointer_at(C,Size,Root,Pos,Keys,L,C1,N):-!,
+    get_contents_pointer_at(C+1,Size,Root,Pos,Keys,L,C1,N);
+
+member(F,[F1|_]):-F==F1,!;
+member(F,[_|L]):-
+    member(F,L);
+
+put_contents_pointer(_,_,[]):-!;
+put_contents_pointer(Root,C,[Hv|L]):-
+    set_vector_element(Root,C,Hv),
+    put_contents_pointer(Root,C+1,L);
+
+cal(N,N,_,_,W,T,T):-!;
+cal(C,N,Root,R,W,Sum,T):-
+    vector_element(Root,C,Hv),
+    vector_element(Hv,R,Num),
+    Sum1=Sum+Num,
+    set_vector_element(Hv,W,Sum1),
+    cal(C+1,N,Root,R,W,Sum1,T);
+
+set_skip_direct([Pos|L],Root,KN,Data):-!,
+    vector_element(Root,Pos,Hv),
+    set_vector_element(Hv,KN,Data),
+    set_skip_direct(L,Root,KN,Data);
+set_skip_direct([],_,_,_):-!;
+
+set_direct([],C,C,_,_,_):-!;
+set_direct([C|L],C,Len,Root,KN,Data):-!,
+    vector_element(Root,C,Hv),
+    set_vector_element(Hv,KN,Data),
+    set_direct(L,C+1,Len,Root,KN,Data);
+set_direct(L,C,Len,Root,KN,Data):-!,
+    vector_element(Root,C,Hv),
+    set_vector_element(Hv,KN,0),
+    set_direct(L,C+1,Len,Root,KN,Data);
+
+get_k(N,N,_,_,[]):-!;
+get_k(C,N,Root,Key,[Data|L]):-
+    vector_element(Root,C,Hv),
+    vector_element(Hv,Key,Data),
+    get_k(C+1,N,Root,Key,L);
+
+check_k(N,N,_,Key,Val):-!;
+check_k(C,N,Root,Key,Val):-!,
+    vector_element(Root,C,Hv),
+    vector_element(Hv,Key,Val),
+    check_k(C+1,N,Root,Key,Val);
+
+sum(C,C,Root,Key,Sum,Sum):-!;
+sum(C,Len,Root,Key,N,Sum):-
+    vector_element(Root,C,Hv),
+    vector_element(Hv,Key,N0),
+    sum(C+1,Len,Root,Key,N+N0,Sum);
+
+end.

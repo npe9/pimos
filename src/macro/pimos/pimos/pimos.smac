@@ -1,0 +1,532 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- if_not_defined(included).
+:- macro_module  pimos.
+%:- with_macro    pimos.
+%:- inherit_macro pimos.
+:- end_if.
+
+%% goal@node -> goal@processor
+vector({atom((@)),Goal,Pragma0}) =>
+        vector({atom('`'),vector({atom((@)),Goal,Pragma})})
+    :- as_a_goal,in_the_body |
+  {{kl1cmp_pimos_macro:convertPragma(Pragma0, Pragma)}}.
+vector({atom((:)),Mod,vector({atom((@)),Goal,Pragma0})}) =>
+        vector({atom((:)),Mod,vector({atom('`'), vector({atom((@)),Goal,Pragma})})})
+    :- as_a_goal,in_the_body |
+  {{kl1cmp_pimos_macro:convertPragma(Pragma0, Pragma)}}.
+
+vector({atom(vector), Vect}) =>
+        vector({atom(vector), Vect, _})
+    :- as_a_goal, in_the_guard | true.
+vector({atom(string), String}) =>
+        vector({atom(string), String, _, _})
+    :- as_a_goal, in_the_guard | true.
+:- if_equal(extended_floating_point, yes).
+vector({atom(extended_floating_point), EFloat}) =>
+        vector({atom(extended_floating_point), EFloat, _})
+    :- as_a_goal, in_the_guard | true.
+:- else.
+vector({atom(extended_floating_point), EFloat}) =>
+        vector({atom('`'), vector({atom(extended_floating_point), EFloat})})
+    :- as_a_goal, in_the_guard |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+:- end_if.
+
+%%
+%% following were defined in macro expander program.
+%%
+
+vector({atom((#)), atom(wrap), A}) => Z
+    :- true | {{kl1cmp_wrap:wrap(A, Z)}}.
+vector({atom((#)), integer(Base), string(Str)}) => Int
+    :- string(Str, N, _) | {{kl1cmp_pimos_macro:convert_string_to_integer(0, N, Str, 0, Int, Base)}}.
+
+vector({atom((#)), atom(ascii), string(Str)}) => string(NewArg)
+        :-true |
+  {{kl1cmp_jisasc:convert_jis_to_ascii(Str, NewArg)}}.
+vector({atom((#)), atom(ascii), atom(Char)}) => integer(NewArg)
+        :- true |
+    &stream <<= [get_atom_name(Char, normal(Str))],
+  {{string_element(Str, 0, Jis, _),
+    kl1cmp_jisasc:convert_one_char_jis_to_ascii(Jis, NewArg)}}.
+vector({atom((#)), atom(string), string(Str)}) => string(Str).
+vector({atom((#)), atom(c), string(Str)}) => integer(NewArg)
+        :- string(Str, 1, _) |
+  {{string_element(Str, 0, Jis, _),
+    kl1cmp_jisasc:convert_one_char_jis_to_ascii(Jis, NewArg)}}.
+vector({atom((#)), string(Str)}) => integer(NewArg)
+        :- string(Str, 1, 16) |
+  {{string_element(Str, 0, NewArg, _)}}.
+vector({atom((#)), atom(key), atom(lf)}) => integer(10).
+vector({atom((#)), atom(key), atom(cr)}) => integer(13).
+
+%%
+%% arithmetic macros
+%% 
+
+%% :=, $:= macros
+vector({atom((:=)), Z0, Term0}) => vector({atom((=)), Z, Term})
+                    when PreInstr
+            :- as_a_goal |
+     {{kl1cmp_pimos_macro:convert_math_macro(&stream, Z0, Z, integer, Term0, PreInstr, Term)}}.
+
+vector({atom(($:=)), Z0, Term0}) => vector({atom((=)), Z, Term})
+                    when PreInstr
+            :- as_a_goal |
+    {{kl1cmp_pimos_macro:convert_math_macro(&stream, Z0, Z, floating, Term0, PreInstr, Term)}}.
+
+:- if_equal(extended_floating_point, yes).
+vector({atom(($$:=)), Z0, Term0}) => vector({atom((=)), Z, Term})
+                    when PreInstr
+            :- as_a_goal |
+    {{kl1cmp_pimos_macro:convert_math_macro(&stream, Z0, Z, extended_floating, Term0, PreInstr, Term)}}.
+:- else.
+vector({atom(($$:=)), Z0, Term0}) => vector({atom('`'), vector({atom(($$:=)), Z0, Term0})})
+            :- as_a_goal |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+:- end_if.
+
+:- if_equal(extended_floating_point, yes).
+vector({atom((~)), vector({atom((+)), X, Y})}) => Z
+          when vector({vector({vector({atom(add), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((-)), X, Y})}) => Z
+          when vector({vector({vector({atom(subtract), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((*)), X, Y})}) => Z
+          when vector({vector({vector({atom(multiply), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((/)), X, Y})}) => Z
+          when vector({vector({vector({atom(divide), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((mod)), X, Y})}) => Z
+          when vector({vector({vector({atom(modulo), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((xor)), X, Y})}) => Z
+          when vector({vector({vector({atom(exclusive_or), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((/\)), X, Y})}) => Z
+          when vector({vector({vector({atom(and), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((\/)), X, Y})}) => Z
+          when vector({vector({vector({atom(or), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((<<)), X, Y})}) => Z
+          when vector({vector({vector({atom(shift_left), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((>>)), X, Y})}) => Z
+          when vector({vector({vector({atom(shift_right), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((\)), X})}) => Z
+          when vector({vector({vector({atom(complement), vector({atom((~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((-)), X})}) => Z
+            when vector({vector({vector({atom(subtract), integer(0), vector({atom((~)), X}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom(int), X})}) => Z
+          when vector({vector({vector({atom(floating_point_to_integer), vector({atom(($~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom(ftoi), X})}) => Z
+          when vector({vector({vector({atom(floating_point_to_integer), vector({atom(($~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom(xtoi), X})}) => Z
+          when vector({vector({vector({atom(extended_floating_point_to_integer),
+                                            vector({atom(($$~)), X}), Z})})})
+    :- as_an_argument | true !
+otherwise !
+vector({atom((~)), X}) => X :- as_an_argument | true.
+:- else.
+vector({atom((~)), vector({atom((+)), X, Y})}) => Z
+          when vector({vector({vector({atom(add), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((-)), X, Y})}) => Z
+          when vector({vector({vector({atom(subtract), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((*)), X, Y})}) => Z
+          when vector({vector({vector({atom(multiply), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((/)), X, Y})}) => Z
+          when vector({vector({vector({atom(divide), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((mod)), X, Y})}) => Z
+          when vector({vector({vector({atom(modulo), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((xor)), X, Y})}) => Z
+          when vector({vector({vector({atom(exclusive_or), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((/\)), X, Y})}) => Z
+          when vector({vector({vector({atom(and), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((\/)), X, Y})}) => Z
+          when vector({vector({vector({atom(or), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((<<)), X, Y})}) => Z
+          when vector({vector({vector({atom(shift_left), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((>>)), X, Y})}) => Z
+          when vector({vector({vector({atom(shift_right), vector({atom((~)),X}), vector({atom((~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((\)), X})}) => Z
+          when vector({vector({vector({atom(complement), vector({atom((~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom((-)), X})}) => Z
+            when vector({vector({vector({atom(subtract), integer(0), vector({atom((~)), X}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom(int), X})}) => Z
+          when vector({vector({vector({atom(floating_point_to_integer), vector({atom(($~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom(ftoi), X})}) => Z
+          when vector({vector({vector({atom(floating_point_to_integer), vector({atom(($~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom((~)), vector({atom(xtoi), X})}) => 
+          vector({atom('`'), vector({atom((~)), vector({atom(xtoi), X})})}) :- as_an_argument |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])]!
+otherwise !
+vector({atom((~)), X}) => X :- as_an_argument | true.
+:- end_if.
+
+:- if_equal(extended_floating_point, yes).
+vector({atom(($~)), vector({atom((+)), X, Y})}) => Z
+          when vector({vector({vector({atom(floating_point_add), vector({atom(($~)),X}), vector({atom(($~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom((-)), X, Y})}) => Z 
+         when vector({vector({vector({atom(floating_point_subtract), vector({atom(($~)),X}), vector({atom(($~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom((*)), X, Y})}) => Z
+          when vector({vector({vector({atom(floating_point_multiply), vector({atom(($~)),X}), vector({atom(($~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom((/)), X, Y})}) => Z
+          when vector({vector({vector({atom(floating_point_divide), vector({atom(($~)),X}), vector({atom(($~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom((-)), X})}) => Z
+          when vector({vector({vector({atom(floating_point_multiply), floating_point(-1.0), vector({atom(($~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom(float), X})}) => Z
+          when vector({vector({vector({atom(integer_to_floating_point), vector({atom((~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom(xtof), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_to_floating_point),
+                                     vector({atom(($$~)), X}), Z})})})
+    :- as_an_argument | true !
+otherwise !
+vector({atom(($~)), X}) => X :- as_an_argument | true.
+:- else.
+vector({atom(($~)), vector({atom((+)), X, Y})}) => Z
+          when vector({vector({vector({atom(floating_point_add), vector({atom(($~)),X}), vector({atom(($~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom((-)), X, Y})}) => Z 
+         when vector({vector({vector({atom(floating_point_subtract), vector({atom(($~)),X}), vector({atom(($~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom((*)), X, Y})}) => Z
+          when vector({vector({vector({atom(floating_point_multiply), vector({atom(($~)),X}), vector({atom(($~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom((/)), X, Y})}) => Z
+          when vector({vector({vector({atom(floating_point_divide), vector({atom(($~)),X}), vector({atom(($~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom((-)), X})}) => Z
+          when vector({vector({vector({atom(floating_point_multiply), floating_point(-1.0), vector({atom(($~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom(float), X})}) => Z
+          when vector({vector({vector({atom(integer_to_floating_point), vector({atom((~)),X}), Z})})}) :- as_an_argument | true !
+vector({atom(($~)), vector({atom(xtof), X})}) =>
+    vector({atom('`'), vector({atom(($~)), vector({atom(xtof), X})})}) :- as_an_argument |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])]!
+otherwise !
+vector({atom(($~)), X}) => X :- as_an_argument | true.
+:- end_if.
+
+:- if_equal(extended_floating_point, yes).
+vector({atom(($$~)), vector({atom((+)), X, Y})}) => Z
+          when vector({vector({vector({atom(extended_floating_point_add),
+                vector({atom(($$~)),X}), vector({atom(($$~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($$~)), vector({atom((-)), X, Y})}) => Z
+          when vector({vector({vector({atom(extended_floating_point_subtract),
+                vector({atom(($$~)),X}), vector({atom(($$~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($$~)), vector({atom((*)), X, Y})}) => Z
+          when vector({vector({vector({atom(extended_floating_point_multiply),
+                vector({atom(($$~)),X}), vector({atom(($$~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($$~)), vector({atom((/)), X, Y})}) => Z
+          when vector({vector({vector({atom(extended_floating_point_divide),
+                vector({atom(($$~)),X}), vector({atom(($$~)),Y}), Z})})}) :- as_an_argument | true !
+vector({atom(($$~)), vector({atom((-)), X})}) => Z
+          when vector({vector({vector({atom(extended_floating_point_neg), vector({atom(($$~)),X}), Z})})})
+            :- as_an_argument | true !
+% Data conversion
+vector({atom(($$~)), vector({atom(ftox), X})}) => Z
+          when vector({vector({vector({atom(floating_point_to_extended_floating_point),
+                        vector({atom(($~)),X}), Z})})})
+           :- as_an_argument | true !
+vector({atom(($$~)), vector({atom(itox), X})}) => Z
+          when vector({vector({vector({atom(integer_to_extended_floating_point),
+                       vector({atom((~)), X}), Z})})})
+           :- as_an_argument | true !
+% arithmetic operations
+vector({atom(($$~)), vector({atom(abs), X})}) => Z
+          when vector({vector({vector({atom(extended_floating_point_abs),
+                       vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(sqrt), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_sqrt),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(exp), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_etox),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(('**')), X, Y})}) => Z
+        when vector({vector({vector({vector({atom(#), atom(builtin), atom(pow)}),
+                                            vector({atom(($$~)), X}),
+                                            vector({atom(($$~)), Y}), Z})})})
+            :- as_an_argument, in_the_body | true !
+%%vector({atom(($$~)), vector({atom(etoxm1), X})}) => Z
+%%        when vector({vector({vector({atom(extended_floating_point_etoxm1),
+%%                     vector({atom(($$~)), X}), Z})})})
+%%            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(ln), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_logn),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true .
+%%vector({atom(($$~)), vector({atom(lognp1), X})}) => Z
+%%        when vector({vector({vector({atom(extended_floating_point_lognp1),
+%%                     vector({atom(($$~)), X}), Z})})})
+%%            :- as_an_argument, in_the_body | true !
+%%vector({atom(($$~)), vector({atom(log2), X})}) => Z
+%%        when vector({vector({vector({atom(extended_floating_point_log2),
+%%                     vector({atom(($$~)), X}), Z})})})
+%%            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(log), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_log10),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(sin), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_sin),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(cos), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_cos),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(tan), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_tan),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(asin), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_asin),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(acos), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_acos),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(atan), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_atan),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(sinh), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_sinh),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(cosh), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_cosh),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(tanh), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_tanh),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+vector({atom(($$~)), vector({atom(atanh), X})}) => Z
+        when vector({vector({vector({atom(extended_floating_point_atanh),
+                     vector({atom(($$~)), X}), Z})})})
+            :- as_an_argument, in_the_body | true !
+otherwise !
+vector({atom(($$~)), X}) => X :- as_an_argument | true.
+:- else.
+vector({atom(($$~)), X}) => vector({atom('`'), vector({atom(($$~)), X})})
+            :- as_an_argument |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+:- end_if.
+
+:- if_equal(extended_floating_point, yes).
+vector({atom(extended_floating_point_neg), X, Y}) =>
+            vector({atom(extended_floating_point_subtract), extended_floating_point(EZero), X, Y})
+        :- as_a_goal, in_the_guard |
+     {{integer_to_extended_floating_point(0, EZero)}}.
+:- else.
+vector({atom(extended_floating_point_neg), X, Y}) =>
+    vector({atom('`'), vector({atom(extended_floating_point_neg), X, Y})})
+        :- as_a_goal, in_the_guard |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+:- end_if.
+
+% pow(X, Y, Z) => Z $$:= exp(Y * ln(X))
+:- if_equal(extended_floating_point, yes).
+vector({atom((#)), atom(builtin), atom(pow), integer(2), Y, Z}) =>
+    vector({atom(extended_floating_point_twotox), Y, Z}) !
+vector({atom((#)), atom(builtin), atom(pow), integer(10), Y, Z}) =>
+    vector({atom(extended_floating_point_tentox), Y, Z}) !
+otherwise !
+vector({vector({atom((#)), atom(builtin), atom(pow)}), X, Y, Z}) =>
+    vector({atom((',')), vector({atom(extended_floating_point_logn), X, LogX}),
+    vector({atom((',')), vector({atom(extended_floating_point_multiply), LogX, Y, YLogX}),
+                         vector({atom(extended_floating_point_etox), YLogX, Z})})}).
+:- else.
+vector({vector({atom((#)), atom(builtin), atom(pow)}), X, Y, Z}) =>
+    vector({atom('`'), vector({vector({atom((#)), atom(builtin), atom(pow)}), X, Y, Z})}) :- true |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+:- end_if.
+
+%%
+%% comparison macros
+%% 
+
+% for integer
+vector({atom((<)), X, Y}) => vector({atom(less_than), vector({atom((~)), X}), vector({atom((~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom((>)), X, Y}) => vector({atom(less_than), vector({atom((~)), Y}), vector({atom((~)), X})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom((>=)), X, Y}) =>
+            vector({atom(not_less_than), vector({atom((~)), X}), vector({atom((~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom((=<)), X, Y}) =>
+            vector({atom(not_less_than), vector({atom((~)), Y}), vector({atom((~)), X})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom((=:=)), X, Y}) =>
+            vector({atom(equal), vector({atom((~)), X}), vector({atom((~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom((=\=)), X, Y}) =>
+            vector({atom(not_equal), vector({atom((~)), X}), vector({atom((~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+
+% floating
+vector({atom(($<)), X, Y}) =>
+            vector({atom(floating_point_less_than), vector({atom(($~)), X}), vector({atom(($~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($>)), X, Y}) =>
+            vector({atom(floating_point_less_than), vector({atom(($~)), Y}), vector({atom(($~)), X})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($>=)), X, Y}) =>
+            vector({atom(floating_point_not_less_than),
+                            vector({atom(($~)), X}), vector({atom(($~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($=<)), X, Y}) =>
+            vector({atom(floating_point_not_less_than),
+                            vector({atom(($~)), Y}), vector({atom(($~)), X})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($=:=)), X, Y}) =>
+            vector({atom(floating_point_equal), vector({atom(($~)), X}), vector({atom(($~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($=\=)), X, Y}) =>
+            vector({atom(floating_point_not_equal), vector({atom(($~)), X}), vector({atom(($~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+
+% extended_floating
+:- if_equal(extended_floating_point, yes).
+vector({atom(($$<)), X, Y}) =>
+            vector({atom(extended_floating_point_less_than),
+                       vector({atom(($$~)), X}), vector({atom(($$~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($$>)), X, Y}) =>
+            vector({atom(extended_floating_point_less_than),
+                        vector({atom(($$~)), Y}), vector({atom(($$~)), X})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($$>=)), X, Y}) =>
+            vector({atom(extended_floating_point_not_less_than),
+                            vector({atom(($$~)), X}), vector({atom(($$~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($$=<)), X, Y}) =>
+            vector({atom(extended_floating_point_not_less_than),
+                            vector({atom(($$~)), Y}), vector({atom(($$~)), X})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($$=:=)), X, Y}) =>
+            vector({atom(extended_floating_point_equal),
+                            vector({atom(($$~)), X}), vector({atom(($$~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+vector({atom(($$=\=)), X, Y}) =>
+            vector({atom(extended_floating_point_not_equal),
+                           vector({atom(($$~)), X}), vector({atom(($$~)), Y})})
+        :- as_a_goal, in_the_guard | true.
+:- else.
+vector({atom(($$<)), X, Y}) => vector({atom('`'), vector({atom(($$<)), X, Y})})
+        :- as_a_goal, in_the_guard |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+vector({atom(($$>)), X, Y}) => vector({atom('`'), vector({atom(($$>)), X, Y})})
+        :- as_a_goal, in_the_guard |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+vector({atom(($$>=)), X, Y}) => vector({atom('`'), vector({atom(($$>=)), X, Y})})
+        :- as_a_goal, in_the_guard |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+vector({atom(($$=<)), X, Y}) => vector({atom('`'), vector({atom(($$=<)), X, Y})})
+        :- as_a_goal, in_the_guard |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+vector({atom(($$=:=)), X, Y}) => vector({atom('`'), vector({atom(($$=:=)), X, Y})})
+        :- as_a_goal, in_the_guard |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+vector({atom(($$=\=)), X, Y}) => vector({atom('`'), vector({atom(($$=\=)), X, Y})})
+        :- as_a_goal, in_the_guard |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+:- end_if.
+
+% string
+vector({atom((&<)), X, Y}) =>
+            vector({atom(string_less_than), X, Y})
+        :- as_a_goal, in_the_guard | true.
+vector({atom((&>)), X, Y}) =>
+            vector({atom(string_less_than), Y, X})
+        :- as_a_goal, in_the_guard | true.
+vector({atom((&>=)), X, Y}) =>
+            vector({atom(string_not_less_than), X, Y})
+        :- as_a_goal, in_the_guard | true.
+vector({atom((&=<)), X, Y}) =>
+            vector({atom(string_not_less_than), Y, X})
+        :- as_a_goal, in_the_guard | true.
+
+%% for error detecting
+vector({atom((:-)), vector({atom(error), string(Message)})}) =>
+            vector({atom((:-)), atom(true), atom(true)})
+        :- as_a_clause |
+    &stream <<= [error("~s", [Message])].
+vector({atom((:-)), vector({atom(warning), string(Message)})}) =>
+            vector({atom((:-)), atom(true), atom(true)})
+        :- as_a_clause |
+    &stream <<= [warning("~s", [Message])].
+
+%% source program information
+vector({atom(#), atom(macro), atom(module_name)}) => Module
+       :- as_an_argument |
+   &stream <<= [get_module_name(Module)].
+
+%% ''Miyasaki'' macro support
+vector({atom(('<=')), vector({atom(('&')), Var}), vector(Expression0)}) => vector({atom(('<=')), vector({atom(('&')), Var}), Term})
+        when vector({atom((':=')), Term, WExpression})
+    :- as_a_goal, in_the_body | {{convertExpression(vector(Expression0), WExpression)}}.
+vector({atom(('$<=')), Var, Expression0}) => vector({atom(('<=')), Var, Term})
+        when vector({atom(('$:=')), Term, Expression})
+    :- as_a_goal, in_the_body | {{convertExpression(Expression0, Expression)}}.
+:- if_equal(extended_floating_point, yes).
+vector({atom(('$$<=')), Var, Expression0}) => vector({atom(('<=')), Var, Term})
+        when vector({atom(('$$:=')), Term, Expression})
+    :- as_a_goal, in_the_body | {{convertExpression(Expression0, Expression)}}.
+:- else.
+vector({atom(('$$<=')), Var, Expression0}) => vector({atom('`'), vector({atom(('$$<=')), Var, Expression0})})
+    :- as_a_goal, in_the_body |
+    &stream <<= [error("~t is not allowed", [extended_floating_point])].
+:- end_if.
+
+convertExpression(list([Car0|Cdr0]), Expression) :- true |
+    convertExpression(Car0, Car),
+    convertExpression(Cdr0, Cdr),
+    Expression=list([Car|Cdr]).
+convertExpression(vector({atom(('&')), atom(Atom)}), Expr) :- true |
+    Expr=vector({atom(('&')), vector({atom(Atom), atom(old)})}).
+otherwise.
+convertExpression(vector(Vect0), Expression) :- vector(Vect0, N) |
+    convertExpression(0, N, Vect0, Vect),
+    Expression=vector(Vect).
+otherwise.
+convertExpression(Expr0, Expr) :- true | Expr0=Expr.
+
+convertExpression(A, N, Vect0, Vect) :- A<N |
+    set_vector_element(Vect0, A, Elm0, Elm, Vect1),
+    convertExpression(Elm0, Elm),
+    A1 := A+1,
+    convertExpression(A1, N, Vect1, Vect).
+convertExpression(N, N, Vect0, Vect) :- true | Vect0=Vect.
+
+vector({atom(#), atom(macro), atom(predicate)}) => Pred
+       :- as_an_argument |
+   &stream <<= [get_predicate(Pred)].
+
+vector({atom(#), atom(macro),
+    vector({atom(switch), Flag0, AList, Default})}) => Value
+    :- true |
+  checkValueAndDecide(Flag0, AList, Default, Value).
+
+:- local_implicit info:shared, stream:oldnew.
+checkValueAndDecide(atom(Flag0), AList, Default, Value) --> true |
+   &stream <<= ['$sagi_macro_inf'(empty(Flag0, YorN))],
+  (YorN = yes -> &stream <<= [error("Undefined macro found in macro#switch : ~t", [Flag0])],
+                Value=Default;
+   YorN = no -> &stream <<= ['$sagi_macro_inf'(get_and_put(Flag0, Value0, Value1))],
+     decideValue(Value0, AList, Default, Value1, Value)).
+otherwise.
+checkValueAndDecide(Flag0, _, _, Value) --> true |
+   &stream <<= [error("Illegal macro found in macro#switch : ~W", [Flag0]), new_variable(X)],
+   Value=X.
+
+decideValue(Flag0, wrap#[{Flag0, Value0}|_], _, Flag, Value) --> true |
+   Flag0=Flag, Value0=Value.
+otherwise.
+decideValue(Flag0, wrap#[{_,_}|Cdr], Default, Flag, Value) --> true |
+   decideValue(Flag0, Cdr, Default, Flag, Value).
+decideValue(Flag0, wrap#[], Default, Flag, Value) --> true |
+   Flag0=Flag, Value=Default.
+otherwise.
+decideValue(Flag0, Term, Default, Flag, Value) --> true |
+   Flag0=Flag, Default=Value,
+   &stream <<= [error("Illegal term in macro#switch a-list : ~W", [Term])].

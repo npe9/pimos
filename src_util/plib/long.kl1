@@ -1,0 +1,66 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+:- module '$plib$long'.
+:- with_macro pimos.
+:- public subtract/3, add/3, l_shift/3, r_shift/3, convert_to_string/2.
+
+subtract({H2,L2},{H1,L1},H) :-
+    true |
+        H= {H3,L3},
+        double_num:subtract(H2,L2,H1,L1,H3,L3).
+add({H2,L2},{H1,L1},H) :-
+    true |
+        H={H3,L3},
+        double_num:add(H2,L2,H1,L1,H3,L3).
+
+convert_to_string({H,L},TimerStr) :-
+    true |
+        double_num:xtod(H,L,List),
+        integer_list_to_string_list(List,StrList),
+        builtin#append_string(StrList,TimerStr).
+
+r_shift(0,Long,NLong) :-
+    true |
+        Long=NLong.
+r_shift(Cnt,{H,L},Long) :-
+    Cnt =\= 0,
+    Cnt1 := Cnt - 1 |
+        r_shift1(H,L,H1,L1),
+        r_shift(Cnt1,{H1,L1},Long).
+
+r_shift1(U,L,Up,Lo) :-
+    U0 := U/\1,
+    L1 := L>>1 |
+        Up := U>>1,
+        low(U0,L1,Lo).
+low(0,L1,Lo) :- true | Lo=L1.
+low(1,L1,Lo) :- true | Lo := L1\/16#"80000000".
+
+l_shift(0,Long,NLong) :-
+    true |
+        Long=NLong.
+l_shift(Cnt,{H,L},Long) :-
+    Cnt =\= 0,
+    Cnt1 := Cnt - 1 |
+        l_shift1(H,L,H1,L1),
+        l_shift(Cnt1,{H1,L1},Long).
+
+l_shift1(U,L,U0,L0) :-
+    L_MSB := L/\16#"80000000",
+    U1 := U<<1 |
+        L1 := L<<1,
+        high(L_MSB,U1,U0).
+
+high(0,U0,U1) :- true | U0=U1.
+otherwise.
+high(L_MSB,L1,Lo) :- true | U0 := U1\/1.
+
+integer_list_to_string_list([],StringList) :-
+    true |
+        StringList=[].
+integer_list_to_string_list([Int|Tail],StringList) :-
+    true |
+        '$plib$atos':atos(Int,String),
+        StringList=[String|StringList1],
+        integer_list_to_string_list(Tail,StringList1).
+

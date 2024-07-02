@@ -1,0 +1,309 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module profiler_filter.
+:- with_macro pimos.
+:- public go/4, trans/4, hash/3.
+
+%profiler_filter:go([profiling_information(1,{0,_},_,_,{1,0,1,0,[]})],O,M,N).
+
+    go(In,Out,Max,What):- true |
+        pool:keyed_sorted_bag(ProcBag),
+        collect(In,ProcBag,In1),
+        dist(In1,Data,Name),
+        predicate_to_code(module#profiler_filter,hash,3,Hash),
+        pool:keyed_bag(Hash,NameBag,10000),
+        merge_name(Name,1,NameBag,NameBag1),
+%        NameBag1=[get_load_factor(Factor),
+%            get_average_chaining_length(Length)|NameBag2],
+%        shoen:raise(pimos_tag#task,get_std(out),Std_Out),
+%        Std_Out =[print_string_length(1000),
+%            putt("lfactor="),putt(Factor),nl,
+%            putt("alength = "),putt(Length),nl],
+        pool:keyed_sorted_bag(MC),
+        merge_cycle(Data,NameBag1,NameTable,Max,MC,Out),
+        quicksort(NameTable,What).
+
+
+    hash(X,H,Y):- atom(X) |
+        hasher:hash(X,H,Y).
+    hash(X,H,Y):- vector_element(X,2,N) |
+        hasher:hash(N,H,_), Y=X.
+
+    %% If Proc >= 0
+    collect([profiling_information(C,{Proc,_},_Type,_Depth,Data)|Next],
+                ProcBag,Ans):- 
+        Proc >= 0 |
+        ProcBag=[empty(Proc,YorN)|PB],
+        check_proc(YorN,C,Proc,Data,PB,PB1),
+        collect(Next,PB1,Ans).
+
+    collect([],PB,Ans):- true |
+        PB=[get_all(Data)],
+        close(Data,Ans).
+otherwise.
+    %% If Proc < 0
+    collect([H|T],ProcBag,Ans):- true |
+        collect(T,ProcBag,Ans).
+
+    check_proc(no,C,Proc,Data,PB,PB1):- true |
+        PB=[get(Proc,{H,T}),put(Proc,{H,T1})|PB1],
+        T=[{C,Data}|T1].
+    check_proc(yes,C,Proc,Data,PB,PB1):- true |
+        PB=[put(Proc,{[{C,Data}|T],T})|PB1].
+
+    close([{Proc,{H,T}}|Data],Ans):- true |
+        T=[],
+        Ans=[{Proc,H}|Ans1],
+        close(Data,Ans1).
+    close([],Ans):- true | Ans=[].
+
+    % dist Data={C,Data}
+    dist([{Proc,Data}|Next],Ans,NameList):- true |
+            trans(Data,Proc,NewData,Name)@node(Proc),
+            Ans=[NewData|Ans1],
+            merge({Name,NL},NameList),
+            dist(Next,Ans1,NL).
+
+    dist([],Ans,NameList):- true | Ans=[],NameList=[].
+
+    trans(Data,Proc,NewData,Name):- true |
+        pool:keyed_sorted_bag(CycleBag),
+        predicate_to_code(module#profiler_filter,hash,3,Hash),
+        pool:keyed_bag(Hash,NameBag,10000),
+        translate(Data,CycleBag,NameBag,Proc,NewData,Name).
+
+
+    translate([{C,Data}|Next],CycleBag,NB,Proc,NewData,Name):- true |
+        CycleBag=[empty(C,YorN)|CB],
+        check_cycle(YorN,C,Data,CB,CB1,NB,NB1),
+        translate(Next,CB1,NB1,Proc,NewData,Name).
+
+    translate([],CycleBag,NameBag,Proc,NewData,Name):- true |
+        CycleBag=[get_all(Data)],
+        close_cyclebag(Data,Data1),
+        NewData={Proc,Data1},
+        NameBag=[get_all(Name)].
+
+    close_cyclebag([{C,PB}|Next],Data):- true |
+        PB=[get_all(PredList)],
+        change_pred(PredList,NewPredList),
+        Data=[{C,NewPredList}|Data1],
+        close_cyclebag(Next,Data1).
+    close_cyclebag([],Data):- true | Data=[].
+
+    check_cycle(no,C,Data,CB,CB1,NB,NB1):- true |
+        exception_table:translate_profiling_data(Data,Data1),
+        comp(Data1,NewData0),
+        code_to_name(NewData0,NewData),
+        CB=[get(C,Pred),put(C,NewPred)|CB1],
+        make_pred(NewData,Pred,NewPred,NB,NB1).
+
+    check_cycle(yes,C,Data,CB,CB1,NB,NB1):- true |
+        exception_table:translate_profiling_data(Data,Data1),
+        comp(Data1,NewData0),
+        code_to_name(NewData0,NewData),
+        pool:keyed_bag(PredBag,800),
+        make_pred(NewData,PredBag,PredBag1,NB,NB1),
+        CB=[put(C,PredBag1)|CB1].
+
+    make_pred([{Pred,R,S}|Data],PB,NewPB,NB,NewNB):- true |
+        PB=[empty(Pred,YorN)|PB1],
+        check_pred(YorN,Pred,Id,R,S,PB1,PB2),
+        NB=[empty(Pred,YorN1)|NB1],
+        check_name(YorN1,Pred,Id,R,S,NB1,NB2),
+        make_pred(Data,PB2,NewPB,NB2,NewNB).
+
+    make_pred([],PB,NewPB,NB,NewNB):- true | 
+        NewPB=PB,NewNB=NB.
+
+    check_pred(no,Pred,Id,R1,S1,PB,PB1):- true |
+        PB=[get(Pred,{Id,R2,S2}),put(Pred,{Id,R,S})|PB1],
+        R:=R1+R2, S:=S1+S2.
+    check_pred(yes,Pred,Id,R,S,PB,PB1):- true |
+        PB=[put(Pred,{Id,R,S})|PB1].
+
+% Sum reductions and suspensions of Each Goal's
+    check_name(no,Pred,Id,R1,S1,NB,NB1):- true |
+        NB=[get(Pred,{Id,R2,S2}),put(Pred,{Id,R,S})|NB1],
+        R:=R1+R2, S:=S1+S2.
+    check_name(yes,Pred,Id,R,S,NB,NB1):- true |
+        NB=[put(Pred,{Id,R,S})|NB1].
+
+    comp([{Code,D,S}|Next],Ans):- code(Code,_,_,_) |
+        R := D-S,
+        Ans=[{Code,R,S}|Ans1],
+        comp(Next,Ans1).
+    comp([{{Code,Caller},D,S}|Next],Ans):- code(Code,_,_,_) |
+        R := D-S,    
+        Ans=[{{Code,Caller},R,S}|Ans1],
+        comp(Next,Ans1).
+    comp([],Ans):- true | Ans=[].
+    otherwise.
+    comp([Data|Next],Ans):- true |
+        Ans=[Data|Ans1],
+        comp(Next,Ans1).
+
+%
+    merge_name([{Pred,{Pid,R,S}}|Next],Id,CNB,Nt):- true |
+        CNB=[empty(Pred,YorN)|CNB1],
+        check_merge1(YorN,Pred,Pid,R,S,Id,Id1,CNB1,CNB2),
+        merge_name(Next,Id1,CNB2,Nt).
+    merge_name([],_,CNB,Nt):- true |
+        Nt=CNB.
+
+    check_merge1(no,Pred,Pid,R1,S1,Id,Id1,CNB,NewCNB):- true |
+        CNB=[get_and_put(Pred,{Pid,R2,S2},{Pid,R,S})|NewCNB],
+        R:=R1+R2, S:=S1+S2,
+        Id1=Id.
+    check_merge1(yes,Pred,Pid,R,S,Id,Id1,CNB,NewCNB):- true |
+        CNB=[put(Pred,{Pid,R,S})|NewCNB],
+        Pid = Id,
+        Id1:=Id+1.
+ 
+    merge_cycle([{Proc,[{C,PredList}|Next]}|Rest],
+            NB,NT,Max,MC,Out):- true |
+%        change_pred(PredList,NewPredList),
+        MC=[empty(C,YorN)|MC1],
+        add_same_cycle(YorN,C,Proc,PredList,MC1,MC2),
+        merge_cycle([{Proc,Next}|Rest],NB,NT,Max,MC2,Out).
+
+    merge_cycle([{_,[]}|Rest],NB,NT,Max,MC,Out):- true |
+        merge_cycle(Rest,NB,NT,Max,MC,Out).
+
+    merge_cycle([],NB,NT,Max,MC,Out):- true |
+        MC=[get_all(List)],
+        make_profile(List,_,Max,Out),
+        NB=[get_all(NT0)],
+        make_name_table(NT0,NT).
+
+   add_same_cycle(no,C,Proc,PredList,MC,MC1):- true |    
+        MC=[get_and_put(C,{H,T},{H,T1})|MC1],
+        T=[pe(Proc,PredList)|T1].
+   add_same_cycle(yes,C,Proc,PredList,MC,MC1):- true |
+        MC=[put(C,{[pe(Proc,PredList)|T],T})|MC1].
+
+    make_profile([{C,{Profile,Tail}}|Next],C0,Max,Out):- true |
+        Out=[profile(C,Profile)|Out1], Tail=[],
+        make_profile(Next,C,Max,Out1).
+    make_profile([],C,Max,Out):- true |
+        Max=C, Out=[].
+
+    make_name_table([{{P,M,N,A},{Id,R,S}}|Next],NT):- true |
+        NT=[{P,M,N,A,R,S,Id}|NT1],
+        make_name_table(Next,NT1).
+
+
+    make_name_table([{Name,{Id,R,S}}|Next],NT):- true |
+        NT=[{Name,R,S,Id}|NT1],
+        make_name_table(Next,NT1).
+
+    make_name_table([],NT):- true |
+        NT=[].
+
+%%Info = {Id,R,S}
+    change_pred([{Term,Info}|Next],PredList):-
+        true |
+        PredList=[Info|PL1],
+        change_pred(Next,PL1).
+
+    change_pred([],PredList):- true |
+        PredList=[].
+
+%% p_filter2 %%
+    code_to_name([{Code,R,S}|Next],NT):- 
+        code(Code,_,_,_) |
+       module:get_predicate_info(Code,PackageName,ModuleName,Name,Arity,_),
+        NT=[{{PackageName,ModuleName,Name,Arity},R,S}|NT1],
+        code_to_name(Next,NT1).
+
+    code_to_name([{{Code,Caller},R,S}|Next],NT):- 
+        code(Code,_,_,_) |
+        module:get_predicate_info(Code,PackageName,ModuleName,Name,Arity,_),
+        NT=[{{PackageName,ModuleName,Name,Arity},R,S}|NT1],
+        code_to_name(Next,NT1).
+
+    code_to_name([{{Name,Caller1,Caller2},R,S}|Next],NT):- 
+        atom(Name) |
+        NT=[{Name,R,S}|NT1],
+        code_to_name(Next,NT1).
+
+    code_to_name([{{Name,Caller},R,S}|Next],NT):-
+        atom(Name) |
+        NT=[{Name,R,S}|NT1],
+        code_to_name(Next,NT1).
+
+    code_to_name([{Name,R,S}|Next],NT):-
+        atom(Name) |
+        NT=[{Name,R,S}|NT1],
+        code_to_name(Next,NT1).
+
+    code_to_name([],NT):- true |
+        NT=[].
+
+ %% sorting %%
+    quicksort(Xs,Ys):- true |
+        qsort(Xs,Ys,[]).
+
+    qsort([],Ys0,Ys1):- true |
+        Ys0 = Ys1.
+% Elm = {P,M,N,Ar,Red,Susp,Id}
+    qsort([Elm|Xs],Ys0,Ys3):- 
+        vector(Elm,7),vector_element(Elm,4,Red) |
+        partition(Xs,Red,S,L),
+        qsort(L,Ys0,Ys1),
+        Ys1=[Elm|Ys2],
+        qsort(S,Ys2,Ys3).
+% Elm = {P,M,N,Red,Susp,Id}
+    qsort([Elm|Xs],Ys0,Ys3):- 
+        vector(Elm,6),vector_element(Elm,3,Red)|
+        partition(Xs,Red,S,L),
+        qsort(L,Ys0,Ys1),
+        Ys1=[Elm|Ys2],
+        qsort(S,Ys2,Ys3).
+% Elm = {N,Red,Susp,Id}
+    qsort([Elm|Xs],Ys0,Ys3):- 
+        vector(Elm,4),vector_element(Elm,1,Red)|
+        partition(Xs,Red,S,L),
+        qsort(L,Ys0,Ys1),
+        Ys1=[Elm|Ys2],
+        qsort(S,Ys2,Ys3).
+
+    partition([],A,S,L):- true |
+        S=[],L=[].
+% Elm = {P,M,N,Ar,Red,Susp,Id}
+    partition([Elm|Xs],A,S,L0):- vector(Elm,7), 
+        vector_element(Elm,4,Red),A < Red |
+        L0=[Elm|L1],
+        partition(Xs,A,S,L1).
+% Elm ={P,M,N,Red,Susp,Id}
+    partition([Elm|Xs],A,S,L0):- vector(Elm,6),
+        vector_element(Elm,3,Red),A < Red |
+        L0=[Elm|L1],
+        partition(Xs,A,S,L1).
+% Elm = {N,Red,Susp,Id}
+    partition([Elm|Xs],A,S,L0):- vector(Elm,4),
+        vector_element(Elm,1,Red),A < Red |
+        L0=[Elm|L1],
+        partition(Xs,A,S,L1).
+
+% Elm = {P,M,N,Ar,Red,Susp,Id}
+    partition([Elm|Xs],A,S0,L):- vector(Elm,7), 
+        vector_element(Elm,4,Red),A >= Red |
+        S0=[Elm|S1],
+        partition(Xs,A,S1,L).
+% Elm ={P,M,N,Red,Susp,Id}
+    partition([Elm|Xs],A,S0,L):- vector(Elm,6),
+        vector_element(Elm,3,Red),A >= Red |
+        S0=[Elm|S1],
+        partition(Xs,A,S1,L).
+% Elm = {N,Red,Susp,Id}
+    partition([Elm|Xs],A,S0,L):- vector(Elm,4),
+        vector_element(Elm,1,Red),A >= Red |
+        S0=[Elm|S1],
+        partition(Xs,A,S1,L).
+

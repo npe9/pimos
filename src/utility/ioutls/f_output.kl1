@@ -1,0 +1,677 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module output_filter.
+:- with_macro pimos.
+:- public init/6,usage/1.
+
+:- implicit penv:shared,op:stream,atom:stream.
+
+usage(L) :- true | ioutls_usage:output_filter(L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% init(In,Out,N,OpPool,AtomDvc,Portray)
+%%      Portray     :: = default ; {1200,normal,Ptry,Abort},
+%%                      Ptry :: output stream to the user-defined portray process
+
+init(In,Out,N,OpPool,AtomDvc,Portray) :- wait(N) |
+        merge(In,In1),
+        new_string(Buffer,N,16),
+        operator_filter:go(Op,OpPool),
+        outputFilter({4,10,20,30,10},Op,AtomDvc,BufOut,Portray1,{[]},ErrIn,In1),
+        portray_monitor:init(ErrIn,Portray,Portray1),
+        buffer(BufOut,0,N,Out,Buffer).
+
+raise_error(Info,Data) :- wait(Info) |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(buffer:output_filter,Info),Data).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% outputFilter(&penv,&op,&atom,&out,&ptry,&v,&err,In)
+%%      out     :: Output stream to buffer process
+%%      penv    :: Environment parameters (vector)
+%%                 = {Print_depth, Print_length, Print_string_length,
+%%                          Print_atom_length, Print_integer_radix}
+%%      op      :: Output stream to operator_pool
+%%      atom    :: Output stream to atom_table
+%%      ptry    :: Information for portray
+%%      v       :: Information vector
+%%                 = {duBuf}
+%%                 doBuf   :: stack for do messages
+%%      In      :: Input stream from user
+
+:- local_implicit out:shared,ptry:shared,v:shared,err:shared.
+
+outputFilter(In) --> &err=[Msg|ErrIn] |
+        &err <= ErrIn,
+        outputFilter([Msg|In]).
+outputFilter([Msg|In]) --> true |
+        msg([Msg|In]).
+outputFilter([]) --> &v={[]},&ptry=default |
+        &out=[].
+outputFilter([]) --> &v={[]},&ptry={_,_,P,_} |
+        P=[],
+        &ptry <= default,
+        {{terminate_portray(&penv,&op,&atom,&out,[],default,_,&err)}}.
+outputFilter([]) --> &v={[S|SS]} |
+        &v <= {SS},
+        outputFilter(S).
+
+
+msg([C|In]) --> 0=<C,C=<16#"ffff" |            % private use (for portray)
+        &out=[C|Out],
+        &out <= Out,
+        outputFilter(In).
+msg([putc(C)|In]) --> 0=<C,C=<16#"ffff" |
+        &out=[C|Out],
+        &out <= Out,
+        outputFilter(In).
+msg([putl(L)|In]) --> string(L,_,16) |
+        &out=[putb(L),key#lf|Out],
+        &out <= Out,
+        outputFilter(In).
+msg([putb(B)|In]) --> string(B,_,16) |
+        &out=[putb(B)|Out],
+        &out <= Out,
+        outputFilter(In).
+msg([putb(B,P,Cnt)|In]) --> string(B,_,16) |
+        &out=[putb(B,P,Cnt)|Out],
+        &out <= Out,
+        outputFilter(In).
+msg([putf(Fmt,Args)|In]) --> string(Fmt,N,16) |
+        {{putf0(&penv,&op,&atom,&out,Out,&ptry,Ptry,Fmt,Args,0,N)}},
+        &out <= Out,
+        &ptry <= Ptry,
+        outputFilter(In).
+
+msg([Msg|In]) --> vector_element(Msg,0,putt),
+    vector(Msg,N),(2=<N,N=<6) |
+        &op <<= [do(DoOp)],
+        {{output_term(&penv,DoOp,&atom,&out,Out,&ptry,Ptry,Msg,nonVariable,nonQuote)}},
+        &out <= Out,
+        &ptry <= Ptry,
+        outputFilter(In).
+msg([Msg|In]) --> vector_element(Msg,0,puttq),
+    vector(Msg,N),(2=<N,N=<6) |
+        &op <<= [do(DoOp)],
+        {{output_term(&penv,DoOp,&atom,&out,Out,&ptry,Ptry,Msg,nonVariable,quote)}},
+        &out <= Out,
+        &ptry <= Ptry,
+        outputFilter(In).
+msg([Msg|In]) --> vector_element(Msg,0,putft),
+    vector(Msg,N),(2=<N,N=<6) |
+        &op <<= [do(DoOp)],
+        {{output_term(&penv,DoOp,&atom,&out,Out,&ptry,Ptry,Msg,variable,nonQuote)}},
+        &out <= Out,
+        &ptry <= Ptry,
+        outputFilter(In).
+msg([Msg|In]) --> vector_element(Msg,0,putftq),
+    vector(Msg,N),(2=<N,N=<6) |
+        &op <<= [do(DoOp)],
+        {{output_term(&penv,DoOp,&atom,&out,Out,&ptry,Ptry,Msg,variable,quote)}},
+        &out <= Out,
+        &ptry <= Ptry,
+        outputFilter(In).
+msg([Msg|In]) --> vector_element(Msg,0,putwt),
+    vector(Msg,N),(2=<N,N=<6) |
+        &op <<= [do(DoOp)],
+        {{output_term(&penv,DoOp,&atom,&out,Out,&ptry,Ptry,Msg,wrapped,nonQuote)}},
+        &out <= Out,
+        &ptry <= Ptry,
+        outputFilter(In).
+msg([Msg|In]) --> vector_element(Msg,0,putwtq),
+    vector(Msg,N),(2=<N,N=<6) |
+        &op <<= [do(DoOp)],
+        {{output_term(&penv,DoOp,&atom,&out,Out,&ptry,Ptry,Msg,wrapped,quote)}},
+        &out <= Out,
+        &ptry <= Ptry,
+        outputFilter(In).
+
+msg([Msg|In]) --> vector_element(Msg,0,printt),
+    &v={DoBuf} |
+        &op <<= [do(DoOp)],
+        &v <= {[In|DoBuf]},
+        {{print_term(&penv,DoOp,&atom,NIn,[],&ptry,Ptry,Msg,nonVariable,nonQuote)}},
+        &ptry <= Ptry,
+        outputFilter(NIn).
+msg([Msg|In]) --> vector_element(Msg,0,printtq),
+    &v={DoBuf} |
+        &op <<= [do(DoOp)],
+        &v <= {[In|DoBuf]},
+        {{print_term(&penv,DoOp,&atom,NIn,[],&ptry,Ptry,Msg,nonVariable,quote)}},
+        &ptry <= Ptry,
+        outputFilter(NIn).
+msg([Msg|In]) --> vector_element(Msg,0,printwt),
+    &v={DoBuf} |
+        &op <<= [do(DoOp)],
+        &v <= {[In|DoBuf]},
+        {{print_term(&penv,DoOp,&atom,NIn,[],&ptry,Ptry,Msg,wrapped,nonQuote)}},
+        &ptry <= Ptry,
+        outputFilter(NIn).
+msg([Msg|In]) --> vector_element(Msg,0,printwtq),
+    &v={DoBuf} |
+        &op <<= [do(DoOp)],
+        &v <= {[In|DoBuf]},
+        {{print_term(&penv,DoOp,&atom,NIn,[],&ptry,Ptry,Msg,wrapped,quote)}},
+        &ptry <= Ptry,
+        outputFilter(NIn).
+
+msg([print_error(Info)|In]) -->
+    &v={DoBuf} |
+        &v <= {[In|DoBuf]},
+        {{unparse:printError(S,[],Info)}},
+        outputFilter(S).
+msg([print_text(Info)|In]) -->
+    &v={DoBuf} |
+        &v <= {[In|DoBuf]},
+        {{unparse:printText(S,[],Info)}},
+        outputFilter(S).
+
+msg([do(S)|In]) --> &v={DoBuf} |
+        {{merge(S,S1)}},
+        &v <= {[In|DoBuf]},
+        outputFilter(S1).
+
+msg([Msg|In]) -->
+    (Msg=flush(_) ;
+     Msg=flush ;                        % for private use
+     Msg=mkflush(_)) |                  % for private use (for interaction_filter)
+        &out=[Msg|Out],
+        &out <= Out,
+        outputFilter(In).
+
+msg([nl|In]) --> true |
+        &out=[key#lf|Out],
+        &out <= Out,
+        outputFilter(In).
+msg([tab(N)|In]) --> N>=0 |
+        {{put_msgs(&out,Out,#" ",N)}},
+        &out <= Out,
+        outputFilter(In).
+
+msg([Msg|In]) --> Msg=reset(_) |
+        &out=[flush,Msg|Out],
+        &out <= Out,
+        outputFilter(In).
+
+msg([Msg|In]) -->
+    (Msg=resend(_,_) ;
+     Msg=cancel(_,_) ;
+     Msg=next_attention(_)) |
+        &out=[Msg|Out],
+        &out <= Out,
+        outputFilter(In).
+
+msg([Msg|In]) -->
+    (Msg=print_depth(D0) ; Msg=print_depth(D,D0)) |
+        {{set_vector_element(&penv,0,D,D1,Penv)}},
+        &penv <= Penv,
+        {{check_print_param(D,D0,D1,Msg)}},
+        outputFilter(In).
+msg([Msg|In]) -->
+    (Msg=print_length(D0) ; Msg=print_length(D,D0)) |
+        {{set_vector_element(&penv,1,D,D1,Penv)}},
+        &penv <= Penv,
+        {{check_print_param(D,D0,D1,Msg)}},
+        outputFilter(In).
+msg([Msg|In]) -->
+    (Msg=print_string_length(D0) ; Msg=print_string_length(D,D0)) |
+        {{set_vector_element(&penv,2,D,D1,Penv)}},
+        &penv <= Penv,
+        {{check_print_param(D,D0,D1,Msg)}},
+        outputFilter(In).
+msg([Msg|In]) -->
+    (Msg=print_atom_length(D0) ; Msg=print_atom_length(D,D0)) |
+        {{set_vector_element(&penv,3,D,D1,Penv)}},
+        &penv <= Penv,
+        {{check_print_param(D,D0,D1,Msg)}},
+        outputFilter(In).
+msg([Msg|In]) -->
+    (Msg=print_integer_radix(PIR0) ; Msg=print_integer_radix(PIR,PIR0)) |
+        {{set_vector_element(&penv,4,PIR,PIR1,Penv)}},
+        &penv <= Penv,
+        {{check_pir(PIR,PIR0,PIR1,Msg)}},
+        outputFilter(In).
+
+msg([Msg|In]) -->
+    (Msg=operator(OpName,Def) ;
+     Msg=operator(All) ;
+     Msg=add_op(Prec,Type,OpName) ;
+     Msg=remove_op(Prec,Type,OpName)) |
+        &op <<= [Msg],
+        outputFilter(In).
+
+msg(Penv,Op,Atom,Out,Ptry,V,ErrIn,[Msg|In]) :- Msg=replace_op_pool(Old,New) |
+        Old=Op,
+        outputFilter(Penv,New,Atom,Out,Ptry,V,ErrIn,In).
+msg(Penv,Op,Atom,Out,Ptry,V,ErrIn,[Msg|In]) :- Msg=change_op_pool(New) |
+        Op=[],
+        outputFilter(Penv,New,Atom,Out,Ptry,V,ErrIn,In).
+
+msg(Penv,Op,Atom,Out,Ptry,V,_,[Msg|In]) :- Msg=change_portray(New),Ptry=default |
+        portray_monitor:init(ErrIn,New,Ptry1),
+        outputFilter(Penv,Op,Atom,Out,Ptry1,V,ErrIn,In).
+msg(Penv,Op,Atom,Out,Ptry,V,ErrIn,[Msg|In]) :- Msg=change_portray(New),Ptry={_,_,P,_} |
+        P=[],
+        Op={Op0,Op1},
+        Atom={Atom0,Atom1},
+        terminate_portray(Penv,Op0,Atom0,Out,Out1,default,_,ErrIn),
+        portray_monitor:init(NewErrIn,New,Ptry1),
+        outputFilter(Penv,Op1,Atom1,Out1,Ptry1,V,NewErrIn,In).
+
+/*
+msg([Msg|In]) -->
+    (Msg=operator(OpName,Def) ;
+     Msg=operator(All)) |
+        &op <<= [Msg],
+        outputFilter(In).
+
+msg(Penv,DoOp,Atom,Out,Ptry,V,ErrIn,[Msg|In]) :-
+    (Msg=add_op(Prec,Type,OpName) ;
+     Msg=remove_op(Prec,Type,OpName)),
+    V={DoBuf,Op} |
+        DoOp=[],
+        Op=[Msg,do(DoOp1)|Op1],
+        outputFilter(Penv,DoOp1,Atom,Out,Ptry,{DoBuf,Op1},ErrIn,In).
+
+msg(Penv,DoOp,Atom,Out,Ptry,V,ErrIn,[Msg|In]) :-
+    Msg=replace_op_pool(Old,New) |
+        DoOp=[],
+        Old=Op,
+        New=[do(DoOp1)|New1],
+        outputFilter(Penv,DoOp1,Atom,Out,Ptry,{DoBuf,New1},ErrIn,In).
+msg(Penv,DoOp,Atom,Out,Ptry,V,ErrIn,[Msg|In]) :-
+    Msg=change_op_pool(New),
+    V={DoBuf,Op} |
+        DoOp=[],
+        Op=[],
+        New=[do(DoOp1)|New1],
+        outputFilter(Penv,DoOp1,Atom,Out,Ptry,{DoBuf,New1},ErrIn,In).
+*/
+
+msg(Penv,DoOp,Atom,Out,Ptry,V,ErrIn,[Msg|In]) :-
+    Msg=replace_atom_table(Old,New) |
+        Old=Atom,
+        outputFilter(Penv,DoOp,New,Out,Ptry,V,ErrIn,In).
+msg(Penv,DoOp,Atom,Out,Ptry,V,ErrIn,[Msg|In]) :-
+    Msg=change_atom_table(New) |
+        Atom=[],
+        outputFilter(Penv,DoOp,New,Out,Ptry,V,ErrIn,In).
+
+%msg([Msg|In]) --> Msg=change_buffer(_) |
+%        &out=[Msg|Out],
+%        &out <= Out,
+%        outputFilter(In).
+msg([Msg|In]) --> Msg=replace_buffer(_,_) |        % for character_pool
+        &out=[Msg|Out],
+        &out <= Out,
+        outputFilter(In).
+
+msg([Msg|In]) --> Msg=abandon_pool |
+        &out=[flush,Msg|Out],
+        &out <= Out,
+        outputFilter(In).
+
+otherwise.
+msg([Msg|In]) --> true |
+        &out=[flush,Msg|Out],
+        &out <= Out,
+        outputFilter(In).
+
+
+check_print_param(_,New0,New,_) :- New0>=0 | New0=New.
+otherwise.
+check_print_param(Old,_,New,Msg) :- true |
+        Old=New,
+        raise_error("illegal_parameter",Msg).
+
+check_pir(_,New0,New,_) :- 2=<New0,New0=<36 | New0=New.
+otherwise.
+check_pir(Old,_,New,Msg) :- true |
+        Old=New,
+        raise_error("illegal_parameter",Msg).
+
+:- local_implicit.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% output_term(&penv,&op,&atom,Out,Out1,Ptry,Ptry1,+Msg,+TermMode,+Qtd)
+
+output_term(Out,Out1,Ptry,Ptry1,Msg,TM,Qtd) --> Ptry=default |
+        Ptry=Ptry1,
+        {{set_vector_element(Msg,1,Term,0,Msg1)}},
+        {{getenv(Msg1,&penv,TmpPenv)}},
+        &penv <= TmpPenv,
+        unparse:unparse0(TM,Qtd,1200,_,normal,_,Out,Out1,Term).
+output_term(Out,Out1,Ptry,Ptry1,Msg,TM,Qtd) --> Ptry={_,_,P,Ab} |
+        Ptry1={1200,normal,P,Ab},
+        {{set_vector_element(Msg,1,Term,0,Msg1)}},
+        {{getenv(Msg1,&penv,TmpPenv)}},
+        &penv <= TmpPenv,
+        unparse:unparse0(TM,Qtd,1200,_,normal,_,Out,Out1,Term).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% print_term(&penv,&op,&atom,Out,Out1,Ptry,Ptry1,+Msg,+TermMode,+Qtd)
+
+print_term(Out,Out1,Ptry,Ptry1,Msg,TM,Qtd) --> true |
+        {{set_vector_element(Msg,1,Term,0,Msg1)}},
+        {{getenv(Msg1,&penv,TmpPenv)}},
+        &penv <= TmpPenv,
+        unparse:portray0(TM,Qtd,Ptry,Ptry1,Out,Out1,Term).
+
+getenv(Msg,E,E1) :- vector(Msg,2) | E=E1.
+getenv(Msg,E,E1) :- Msg={_,_,EnvList} |
+        getenv_list(EnvList,E,E1).
+getenv(Msg,E,E1) :- Msg={_,_,D,L},D>=0,L>=0,
+    E={_,_,SL,AL,PIR} |
+        E1={D,L,SL,AL,PIR}.
+getenv(Msg,E,E1) :- Msg={_,_,D,L,SL},D>=0,L>=0,SL>=0,
+    E={_,_,_,AL,PIR} |
+        E1={D,L,SL,AL,PIR}.
+getenv(Msg,E,E1) :- Msg={_,_,D,L,SL,AL},D>=0,L>=0,SL>=0,AL>=0,
+    E={_,_,_,_,PIR} |
+        E1={D,L,SL,AL,PIR}.
+otherwise.
+getenv(Msg,E,E1) :- true |
+        E=E1,
+        set_vector_element(Msg,1,_,_,Msg1),
+        raise_error("illegal_print_parameter",Msg1).
+
+getenv_list([print_depth(D)|L],E,E1) :- D>=0 |
+        set_vector_element(E,0,_,D,E0),
+        getenv_list(L,E0,E1).
+getenv_list([print_length(D)|L],E,E1) :- D>=0 |
+        set_vector_element(E,1,_,D,E0),
+        getenv_list(L,E0,E1).
+getenv_list([print_string_length(D)|L],E,E1) :- D>=0 |
+        set_vector_element(E,2,_,D,E0),
+        getenv_list(L,E0,E1).
+getenv_list([print_atom_length(D)|L],E,E1) :- D>=0 |
+        set_vector_element(E,3,_,D,E0),
+        getenv_list(L,E0,E1).
+getenv_list([print_integer_radix(D)|L],E,E1) :- D>=0 |
+        set_vector_element(E,4,_,D,E0),
+        getenv_list(L,E0,E1).
+getenv_list([],E,E1) :- true | E=E1.
+otherwise.
+getenv_list([Msg|L],E,E1) :- true |
+        raise_error("illegal_print_parameter in put(w)t(q)/3",Msg),
+        getenv_list(L,E,E1).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% putf0(&penv,&op,&atom,Out,Out1,Ptry,Ptry1,+Fmt,+Args,+Pos,+FmtStringSize)
+
+putf0(Out,Out1,default,Ptry1,Fmt,Args,I,N) --> true |
+        Ptry1=default,
+        putf(Out,Out1,1200,normal,Fmt,Args,I,N).
+putf0(Out,Out1,{Pr,Pt,P,Ab},Ptry1,Fmt,Args,I,N) --> true |
+        Ptry1={1200,normal,P,Ab},
+        putf(Out,Out1,Pr,Pt,Fmt,Args,I,N).
+
+:- local_implicit out:oldnew,pr:shared,pt:shared.
+
+putf(Fmt,Args,I,N) --> I<N,string_element(Fmt,I,C),C\= #"~" |
+        &out <<= [C],
+        &pr <= 1200,
+        &pt <= normal,
+        putf(Fmt,Args,~(I+1),N).
+putf(Fmt,Args,I,N) --> I<N,string_element(Fmt,I,#"~"),
+    I1:=I+1,I1<N,string_element(Fmt,I1,C),#"0"=<C,C=< #"9" |
+        {{get_num(Fmt,Fmt1,~(I1+1),I2,N,~(C- #"0"),Num)}},
+        putf_control_times(Fmt1,Args,I2,N,Num).
+putf(Fmt,Args,I,N) --> I<N,string_element(Fmt,I,#"~"),
+    I1:=I+1,I1<N,string_element(Fmt,I1,C),(C< #"0" ; #"9"<C) |
+        putf_args(C,Args,Args1),
+        &pr <= 1200,
+        &pt <= normal,
+        putf(Fmt,Args1,~(I1+1),N).
+putf(Fmt,Args,I,N) --> I<N,string_element(Fmt,I,#"~"),
+    I1:=I+1,I1=:=N |
+        {{raise_error("no_format_character_after '~' in_putf",putf(Fmt,Args))}}.
+putf(_,_,N,N) --> true | true.
+
+get_num(Fmt,Fmt1,I,I1,N,Num,Num1) :- I<N,string_element(Fmt,I,C),#"0"=<C,C=< #"9" |
+        get_num(Fmt,Fmt1,~(I+1),I1,N,~(Num*10+C- #"0"),Num1).
+get_num(Fmt,Fmt1,I,I1,N,Num,Num1) :- I<N,string_element(Fmt,I,C),(C< #"0" ; #"9"<C) |
+        Fmt=Fmt1,I=I1,Num=Num1.
+get_num(Fmt,Fmt1,N,I1,N,Num,Num1) :- true |
+        Fmt=Fmt1,N=I1,Num=Num1.
+
+putf_control_times(Fmt,Args,I,N,Num) --> I<N,string_element(Fmt,I,C) |
+        putf_args_times(C,Args,Args1,Num),
+        &pr <= 1200,
+        &pt <= normal,
+        putf(Fmt,Args1,~(I+1),N).
+putf_control_times(Fmt,Args,N,N,Num) --> true |
+        {{buffer_utility:integer_to_string(Num,10,NumS)}},
+        {{builtin#append_string(["no_format_character_after '~",NumS,"' in_putf"],Str)}},
+        {{raise_error(Str,putf(Fmt,Args))}}.
+
+putf_args(#"~",Args,Args1) --> true |
+        &out <<= [#"~"],
+        Args=Args1.
+putf_args(#"c",[C|Args],Args1) --> true |
+        &out <<= [C],
+        Args=Args1.
+putf_args(#"s",[Str|Args],Args1) --> string(Str,_,_) |
+        &out <<= [putb(Str)],
+        Args=Args1.
+
+putf_args(#"t",[Term|Args],Args1) --> true |
+        Args=Args1,
+        {{unparse:unparse0(&penv,&op,&atom,nonVariable,nonQuote,&pr,_,&pt,_,&out,Term)}}.
+putf_args(#"T",[Term|Args],Args1) --> true |
+        Args=Args1,
+        {{unparse:unparse0(&penv,&op,&atom,nonVariable,quote,&pr,_,&pt,_,&out,Term)}}.
+putf_args(#"w",[Term|Args],Args1) --> true |
+        Args=Args1,
+        {{unparse:unparse0(&penv,&op,&atom,wrapped,nonQuote,&pr,_,&pt,_,&out,Term)}}.
+putf_args(#"W",[Term|Args],Args1) --> true |
+        Args=Args1,
+        {{unparse:unparse0(&penv,&op,&atom,wrapped,quote,&pr,_,&pt,_,&out,Term)}}.
+putf_args(#"b",Args,Args1) --> true |
+        &out <<= [#" "],
+        Args=Args1.
+putf_args(#"n",Args,Args1) --> true |
+        &out <<= [key#lf],
+        Args=Args1.
+otherwise.
+putf_args(C,Args,Args1) --> true |
+        {{putf_error(C,Args,Args1)}}.
+
+putf_args_times(#"c",[C|Args],Args1,Num) --> 0=<C,C=<16#"ffff" |
+        Args=Args1,
+        {{put_msgs(&out,C,Num)}}.
+putf_args_times(#"s",[Str|Args],Args1,Num) --> string(Str,Size,_),
+    Num=<Size |
+        &out <<= [putb(Str1)],
+        Args=Args1,
+        {{builtin#substring(Str,0,Num,Str1,_)}}.
+putf_args_times(#"s",[Str|Args],Args1,Num) --> string(Str,Size,_),
+    Num>Size |
+        &out <<= [putb(Str)],
+        Args=Args1,
+        {{put_msgs(&out,#" ",~(Num-Size))}}.
+putf_args_times(#"t",[Term|Args],Args1,Num) --> true |
+        Args=Args1,
+        {{unparse:unparse0(&penv,&op,&atom,nonVariable,nonQuote,&pr,_,&pt,_,H,[],Term)}},
+        {{copy_string_code(&out,H,Num)}}.
+putf_args_times(#"T",[Term|Args],Args1,Num) --> true |
+        Args=Args1,
+        {{unparse:unparse0(&penv,&op,&atom,nonVariable,quote,&pr,_,&pt,_,H,[],Term)}},
+        {{copy_string_code(&out,H,Num)}}.
+putf_args_times(#"w",[Term|Args],Args1,Num) --> true |
+        Args=Args1,
+        {{unparse:unparse0(&penv,&op,&atom,wrapped,nonQuote,&pr,_,&pt,_,H,[],Term)}},
+        {{copy_string_code(&out,H,Num)}}.
+putf_args_times(#"W",[Term|Args],Args1,Num) --> true |
+        Args=Args1,
+        {{unparse:unparse0(&penv,&op,&atom,wrapped,quote,&pr,_,&pt,_,H,[],Term)}},
+        {{copy_string_code(&out,H,Num)}}.
+putf_args_times(#"b",Args,Args1,Num) --> true |
+        Args=Args1,
+        {{put_msgs(&out,#" ",Num)}}.
+putf_args_times(#"n",Args,Args1,Num) --> true |
+        Args=Args1,
+        {{put_msgs(&out,key#lf,Num)}}.
+otherwise.
+putf_args_times(C,Args,Args1,_) --> true |
+        {{putf_error(C,Args,Args1)}}.
+
+putf_error(C,[],Args1) :-
+    (C= #"c";C= #"s";C= #"t";C= #"T";C= #"w";C= #"W") |
+        Args1=[],
+        set_string_element("missing argument for format_character   in putf",38,C,Str),
+        raise_error(Str,putf(_,[])). 
+putf_error(C,Args,Args1) :- list(Args),
+    (C= #"c";C= #"s") |
+        Args=Args1,
+        set_string_element("format_character   does not match with argument in putf",17,C,Str),
+        raise_error(Str,putf(_,Args)).
+otherwise.
+putf_error(C,Args,Args1) :-
+    (C= #"c";C= #"s";C= #"t";C= #"T";C= #"w";C= #"W") |
+        Args=Args1,
+        raise_error("illegal_argument list in putf",Args).
+otherwise.
+putf_error(C,Args,Args1) :- true |
+        Args=Args1,
+        set_string_element("illegal format character   in putf",25,C,Str),
+        raise_error(Str,putf(_,Args)).
+
+copy_string_code(Out,Out1,H,Num) :- Num>0 |
+        cp_cod(Out,Out0,H,H1),
+        copy_string_code(Out0,Out1,H1,~(Num-1)).
+copy_string_code(Out,Out1,_,0) :- true | Out=Out1.
+
+cp_cod(Out,Out1,[C|H],H1) :- true |
+        Out=[C|Out0],
+        H1=[C|H2],
+        cp_cod(Out0,Out1,H,H2).
+cp_cod(Out,Out1,[],H) :- true |
+        Out=Out1,H=[].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% put_msgs(Out,Out1,+Msg,+Count)
+%%      Buf,Buf1        :: Output stream to buffer-process
+
+put_msgs(Out,Out1,Msg,N) :- N>0 |
+        Out=[Msg|Out0],
+        put_msgs(Out0,Out1,Msg,~(N-1)).
+put_msgs(Out,Out1,_,0) :- true | Out=Out1.
+
+/*
+terminate_portray(default) :- true | true.
+terminate_portray({_,_,Ptry,_}) :- true | Ptry=[].
+*/
+
+:- local_implicit out:oldnew,ptry:shared,v:shared.
+
+terminate_portray([putb(B)|Err]) --> true |
+        &out <=[putb(B)],
+        terminate_portray(Err).
+terminate_portray([putf(Fmt,Args)|Err]) --> string(Fmt,N,16) |
+        {{putf0(&penv,&op,&atom,&out,&ptry,Ptry,Fmt,Args,0,N)}},
+        &ptry <= Ptry,
+        terminate_portray(Err).
+terminate_portray([Msg|Err]) --> Msg=putwt(WT) |
+        &op <<= [do(DoOp)],
+        {{output_term(&penv,DoOp,&atom,&out,&ptry,Ptry,Msg,wrapped,nonQuote)}},
+        &ptry <= Ptry,
+        terminate_portray(Err).
+terminate_portray([Msg|Err]) --> Msg=putt(T) |
+        &op <<= [do(DoOp)],
+        {{output_term(&penv,DoOp,&atom,&out,&ptry,Ptry,Msg,nonVariable,nonQuote)}},
+        &ptry <= Ptry,
+        terminate_portray(Err).
+terminate_portray([]) --> true | true.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% buffer(In,I,N,Out,BufStr)
+
+buffer([],P,_,Out,Buf) :- true |
+        flush_last(Buf,P,Out).
+
+buffer([C|In],P,N,Out,Buf) :- integer(C),P1:=P+1,P1<N |
+        set_string_element(Buf,P,C,Buf1),
+        buffer(In,P1,N,Out,Buf1).
+buffer([C|In],P,N,Out,Buf) :- integer(C),P1:=P+1,P1=N |
+        set_string_element(Buf,P,C,Buf1),
+        Out=[putb(Buf1,_)|Out1],
+        new_string(NBuf,N,16),
+        buffer(In,0,N,Out1,NBuf).
+
+buffer([putb(Str)|In],P,N,Out,Buf) :- string(Str,M,16) |
+        putb(Str,P,N,Out,Buf,0,M,P1,Out1,Buf1),
+        buffer(In,P1,N,Out1,Buf1).
+buffer([putb(Str,Q,M)|In],P,N,Out,Buf) :- true |
+        putb(Str,P,N,Out,Buf,Q,M,P1,Out1,Buf1),
+        buffer(In,P1,N,Out1,Buf1).
+
+buffer([flush(Status)|In],P,N,Out,Buf) :- true |
+        flush(Status,P,P1,Out,Buf,Out1,Buf1),
+        buffer(In,P1,N,Out1,Buf1).
+buffer([mkflush(Status)|In],P,N,Out,Buf) :- true |
+        mkflush(Status,P,P1,Out,Buf,Out1,Buf1),
+        buffer(In,P1,N,Out1,Buf1).
+buffer([flush|In],P,N,Out,Buf) :- true |
+        '$flush'(P1,P,Out1,Out,Buf,Buf1),
+        buffer(In,P1,N,Out1,Buf1).
+
+%buffer([changeBuffer({Buf,P,N})|In],_,_,Out,_) :- true |
+%        buffer(In,P,N,Out,Buf).
+buffer([replaceBuffer(OLD,{NBuf,NP,NN})|In],P,N,Out,Buf) :- true |      % for character_pool
+        OLD={Buf,P,N},
+        buffer(In,NP,NN,Out,NBuf).
+
+otherwise.
+buffer([Msg|In],P,N,Out,Buf) :- true |
+        Out=[Msg|Out1],
+        buffer(In,P,N,Out1,Buf).
+
+flush(Status,P,P1,Out,Buf,Out1,Buf1) :- P=0 |
+        P=P1,Buf=Buf1,
+        Out=[flush(Status)|Out1].
+flush(Status,P,P1,Out,Buf,Out1,Buf1) :- P>0 |
+        P1=0,
+        Out=[putb(Sub,Status)|Out1],
+        builtin#substring(Buf,0,P,Sub,Buf1).
+
+mkflush(Status,P,P1,Out,Buf,Out1,Buf1) :- P=0 |
+        P=P1,Buf=Buf1,
+        Out=[flush(Status)|Out1].
+mkflush(Status,P,P1,Out,Buf,Out1,Buf1) :- P>0 |
+        P1=0,
+        Out=[putb(Sub,_),mkflush(Status)|Out1],
+        builtin#substring(Buf,0,P,Sub,Buf1).
+
+'$flush'(P1,P,Out1,Out,Buf,Buf1) :- P=0 |
+        P=P1,Out=Out1,Buf=Buf1.
+'$flush'(P1,P,Out1,Out,Buf,Buf1) :- P>0 |
+        P1=0,
+        Out=[putb(Sub,_)|Out1],
+        builtin#substring(Buf,0,P,Sub,Buf1).
+
+flush_last(_,0,Out) :- true | Out=[].
+flush_last(Buf,I,Out) :- I>0 |
+        Out=[putb(Sub,_)],
+        builtin#substring(Buf,0,I,Sub,_).
+
+putb(Str,P,N,Out,Buf,J,M,P1,Out1,Buf1) :- P0:=P+M,P0<N |
+        P0=P1,Out=Out1,
+        binary_string_operation(string_operation#s2,Buf,P,M,Str,J,Buf1,_).
+putb(Str,P,N,Out,Buf,J,M,P1,Out1,Buf1) :- P0:=P+M,P0=N |
+        P1=0,
+        new_string(Buf1,N,16),
+        Out=[putb(Sub,_)|Out1],
+        binary_string_operation(string_operation#s2,Buf,P,M,Str,J,Sub,_).
+putb(Str,P,N,Out,Buf,J,M,P1,NOut,NBuf) :- P0:=P+M,P0>N |
+        M0:=N-P,
+        new_string(Buf1,N,16),
+        Out=[putb(Buf0,_)|Out1],
+        binary_string_operation(string_operation#s2,Buf,P,M0,Str,J,Buf0,Str1),
+        putb(Str1,0,N,Out1,Buf1,~(J+M0),~(M-M0),P1,NOut,NBuf).
+

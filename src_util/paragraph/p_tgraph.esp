@@ -1,0 +1,548 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%
+%%  #time_graph
+%%  1991.11.18
+%%
+
+class time_graph has
+:create(Class,APX,APY,TagBuf,TG):-
+    :new(Class,TG),
+    :create(#time_graph_window,
+        [size(800,400),
+         position(APX-400,APY-150),
+         title(" Execution time"),
+         permission(show),
+         border_flag(off),
+         margin_flag(off)],Win),
+    :draw_init(Win),
+    TG!buffer:=TagBuf,
+    TG!window:=Win;
+instance
+attribute   window,
+            buffer;
+:go(Obj,Hid):-
+    get_time_data(Obj!buffer,Data),
+    :draw(Obj!window,Data,Hid),
+    :activate(Obj!window),
+    repeat,
+    :read_com(Obj!window,Code),
+    Code==exit,!,
+    :deactivate(Obj!window),
+    :clear_inside(Obj!window);
+
+local
+
+get_time_data(Buf,Data):-!,
+    Data={MaxHis,MaxTime,MaxPe,L},
+    :count(Buf,MaxHis),
+    :get_contents_with_key(Buf,L0),
+    make_data_list(L0,L,0,0,MaxTime,MaxPe);
+
+make_data_list([],[],MT,MP,MT,MP):-!;
+make_data_list([{Hv,Hid}|L0],[{Hid,Pe,Time}|L],T,P,MT,MP):-
+    vector_element(Hv,1,Time),
+    vector_element(Hv,2,Pe),
+    (number(Time),T<Time,!,NT=Time;NT=T),
+    (number(Pe)  ,P<Pe  ,!,NP=Pe  ;NP=P),
+    make_data_list(L0,L,NT,NP,MT,MP);
+
+end.
+
+%% :draw(Win,{MaxHis,MaxTime,MaxPe,[{Hid,Pe,ExeTime},..]})
+
+class time_graph_window has
+nature  labeled_sash,
+        as_mouse_input,
+        as_graphics,
+        inferior_window;
+:go(Class):-
+    :create(Class,
+        [size(800,400),
+         title(" Execution time"),
+         permission(show),
+         border_flag(off),
+         margin_flag(off)],Win),
+    :activate(Win),
+    :draw_init(Win),
+    :set_max(Win,234,64),
+    :draw_bars(Win,234,5,[97,190,34,234,140],3),
+        TestL=[{1,32,97},{32,16,190},{45,32,34},
+               {56,8,234},{123,64,140}],
+    :draw_point(Win,234,64,TestL,45,32,34),
+    :read(Win,_),
+    :kill(Win);
+
+after:create(_,_,Obj):-
+    :create(#font,"font:test_11.font",Font),
+    Obj!icon_font:=Font;
+
+instance
+attribute   icon_font,
+            (display_pos:=L :- :create(#list_index,L));
+
+:read_com(Win,Code):-
+    :read(Win,_,_,Click,X,Y),
+    Click==mouse#l,
+    exit(X0,Y0,W0,H0),
+    X0<X,X0+W0>X,Y0<Y,Y0+H0>Y,!,
+    Code=exit;
+
+:set_max(Win,T,P):-!,
+    Pool=Win!display_pos,
+    F=Win!icon_font,
+    :get_at(Pool,T1,time1),
+    :get_at(Pool,T2,time2),
+    :get_at(Pool,Pe,pe),
+    draw_max(Win,T1,T,F,time1),
+    draw_max(Win,T2,T,F,time2),
+    draw_max(Win,Pe,P,F,pe);
+
+%% :draw_bars(Win,MaxTime,MaxHis,[ExeTime,..])
+
+:draw_bars(Win,Max,HMax0,L,Num):-
+    (HMax0=<11,!,HMax=11,Start=11-HMax0;HMax=HMax0,Start=0),
+    :get_at(Win!display_pos,Hv,win1),
+    Margin=2,
+    vector_element(Hv,0,X0),
+    vector_element(Hv,1,Y0),
+    vector_element(Hv,2,W0),
+    vector_element(Hv,3,H0),
+    W=W0-Margin,
+    H=(H0-Margin*2)/HMax,
+    X=X0,
+    Y=Y0+Start*H+((H0-Margin*2) mod HMax),
+    draw_bars(Max,HMax,X,Y,W,H,L,Out,1,Num),
+    :execute_graphics_command(Win,Out);
+
+%% :draw_point(Win,MaxTime,MaxPe,[{Hid,Pe,ExeTime},..])
+
+:draw_point(Win,Max,MaxPe,L,Hid,Pe,Time):-
+    :get_at(Win!display_pos,Hv,win2),
+    vector_element(Hv,0,X0),
+    vector_element(Hv,1,Y0),
+    vector_element(Hv,2,W0),
+    vector_element(Hv,3,H0),
+    :standard_line_and_base(Win!icon_font,FH,_),
+    :get_max_size(Win!icon_font,FW,_),
+    Ymargin=FH/2+1,
+    Xmargin=FW*3/2+1+2,
+    X=X0+Xmargin,
+    Y=Y0+Ymargin,
+    W=W0-Xmargin*2,
+    H=H0-Ymargin*2,
+    Data={Hid,Pe,Time},
+    reverse(L,[],RL),
+    draw_point(RL,Max,MaxPe,X,Y,W,H,FW,FH,Win!icon_font,Out,Data),
+    :execute_graphics_command(Win,Out);
+
+%% :draw(Win,{MaxHis,MaxTime,MaxPe,[{Hid,Pe,ExeTime},..]})
+
+:draw(Win,Data,Hid):-!,
+    Data={MaxHis,MaxTime,MaxPe,PL},
+    pick_up_time(PL,TL),
+    pick_up_current(PL,1,Hid,Num,Pe,Time),
+    :set_max(Win,MaxTime,MaxPe),
+    :draw_bars(Win,MaxTime,MaxHis,TL,Num),
+    :draw_point(Win,MaxTime,MaxPe,PL,Hid,Pe,Time);
+
+:clear_inside(Win):-
+    :get_at(Win!display_pos,H1,win1),
+    :get_at(Win!display_pos,H2,win2),
+    clear_inside(Win,H1),
+    clear_inside(Win,H2);
+
+:draw_init(Win):-!,
+    Font=Win!icon_font,
+    :get_size(Win,W,Height),
+    H=Height-24,
+    :draw_filled_rectangle(Win,0,0,W,H,0,fix,set),
+    :draw_filled_rectangle(Win,0,0,W,H,0,light_paint,reset),
+
+%%% up
+    :draw_line(Win,0,1,W,1,2,solid,reset),
+%%% left
+    :draw_line(Win,0,0,0,H,2,solid,reset),
+%%% under
+    :draw_line(Win,1,H-2,W,H-2,1,solid,set),
+    :draw_line(Win,0,H-1,W,H-1,1,solid,set),
+%%% right
+    :draw_line(Win,W-2,1,W-2,H,1,solid,set),
+    :draw_line(Win,W-1,0,W,H-1,1,solid,set),
+
+    exit(EX,EY,EW,EH),
+    box(Win,EX,EY,EW,EH,"exit",Font),
+
+    IX1=10,   %%20,
+    IX2=400, %%400+10,
+    IY=10,    %%20,
+    IW=W/2+10,
+    IH=H,    %%H-20,
+
+    %draw_string(Win,IX2+(IW-40)/2-1,IY+(IH-40)+5,20,"PE",Font),
+    %draw_string(Win,IX1-40+2,IY+(IH-40)/2,20,"Hid",Font),
+    %draw_string(Win,IX1+(IW-40)/2-20-1,IY-20,20,"Time",Font),
+    %draw_string(Win,IX2-50+2,IY+(IH-40)/2,20,"Time",Font),
+
+    %window(Win,IX1+(IW-40)-40,IY-30,60,20,time1),
+    %window(Win,IX2-20,IY-30,60,20,time2),
+    %window(Win,IX2+(IW-40)-30,IY+(IH-40)+10,40,20,pe),
+
+%%% Inside rectangle x 2
+
+    :draw_filled_rectangle(Win,IX1,IY,IW-40,IH-40,0,fix,reset),
+    :draw_line(Win,IX1-2,IY-1,IX1+IW-40,IY-1,2,solid,set),
+    :draw_line(Win,IX1-2,IY-2,IX1-2,IY+IH-40,2,solid,set),
+
+    :draw_filled_rectangle(Win,IX2,IY,IW-40,IH-40,0,fix,reset),
+    :draw_line(Win,IX2-2,IY-1,IX2+IW-40,IY-1,2,solid,set),
+    :draw_line(Win,IX2-2,IY-2,IX2-2,IY+IH-40,2,solid,set),
+
+    ADJX=50,
+    ADJ2=50, %90,
+    ADJY=25,
+    ADJW=90, %70,
+    ADJH=60, %50,
+    ADJW2=90, %110,
+    TL=90,%% nouse
+
+    graph_fram(Win,IX1+ADJX,IY+ADJY,IW-40-ADJW,IH-40-ADJH,win1),
+    graph_fram(Win,IX2+ADJ2,IY+ADJY,IW-40-ADJW2,IH-40-ADJH,win2),
+
+    window(Win,IX1+(IW-ADJW-40)+ADJX+22,IY+(IH-ADJH-40)+ADJY+10,TL,20,time1),
+    window(Win,IX2+ADJX,IY+ADJY-20,TL,20,time2),
+    window(Win,IX2+(IW-ADJW2-40)+ADJ2+10+22,IY+(IH-ADJH-40)+10+ADJY,40,20,pe),
+
+    :draw_string(Win,IX2+(IW-ADJW2-40)+ADJ2+10,IY+(IH-ADJH-40)+5+ADJY-15,"PE",Font,set),
+    :draw_string(Win,IX1-40+2+ADJX,IY+ADJY,"Hid",Font,set),
+    :draw_string(Win,IX1+(IW-ADJW-40)+ADJX+10,IY+(IH-ADJH-40)+ADJY-10,"T",Font,set),
+    :draw_string(Win,IX2+ADJ2-20,IY+ADJY,"T",Font,set),
+
+    true;
+
+local
+
+%exit(720,348,60,20);
+exit(700,350,60,20);
+
+box(Win,X,Y,W,H,St,F):-
+    string(St,Len,_),
+    X0=(W-Len*11)/2+X,
+    Y0=Y+2,
+%%% string
+    copy(Win,X0,Y0,Len*11,H,St,F),
+%%% up
+    :draw_line(Win,X,Y+1,X+W,Y+1,2,solid,reset),
+%%% left
+    :draw_line(Win,X,Y,X,Y+H,2,solid,reset),
+%%% under
+    :draw_line(Win,X+1,Y+H-1,X+W,Y+H-1,1,solid,set),
+    :draw_line(Win,X,Y+H,X+W,Y+H,1,solid,set),
+%%% right
+    :draw_line(Win,X+W-1,Y+1,X+W-1,Y+H,1,solid,set),
+    :draw_line(Win,X+W,  Y,  X+W,  Y+H,1,solid,set);
+
+copy(W,X,Y,L,H,S,F):-!,
+    draw_label(W,S,X,Y,F);
+
+draw_label(Obj,String,X,Y,Font):-
+    Win=Obj,
+    Work=Obj,
+    AX=50,
+    AY=50,
+    DX=X,
+    DY=Y,
+    SX=AX+10,
+    SY=AY+20,
+    %:get_parameter(#ipl,bmm_size,Dev),
+    :get_parameter(#profiler_ux_patch,Dev),
+    (Dev==16#"07FF",!,Disp=mono;
+     Dev==16#"0FFF",!,Disp=color;
+     Dev==16#"17FF",!,Disp=color,
+     %(#view_selector!color==on,!,
+     % :set_color_pair(Win,0,
+     %   {{45570,56830,60670},{0,0,0}}),!;
+     % true);
+     true;
+     Dev==16#"1FFF",!,Disp=color,
+     %(#view_selector!color==on,!,
+     % :set_color_pair(Win,0,
+     %   {{45570,56830,60670},{0,0,0}}),!;
+     % true);
+     true;
+     Disp=mono),
+    (Disp==mono,!,OP1=copy,OP2=reset;OP1=reverse,OP2=set),
+%%% work
+    :draw_filled_rectangle(Work,AX,AY,200,100,0,fix,reset),
+    :draw_string(Work,SX,SY,String,Font,set),
+    :draw_filled_rectangle(Work,SX,SY,67,22,0,light_paint,exclusive_or),
+%%% copy 1
+    :transfer(Win,SX+1,SY+1,DX+1,DY+1,63,20,OP1),
+%%% dist
+    :draw_filled_rectangle(Win,DX,DY,65,22,0,light_paint,OP2),
+%%% copy 2
+    %:transfer(Win,SX+1,SY+1,DX+1,DY+1,63,20,exclusive_or);
+    (Dev==16#"1FFF",!,
+     :transfer(Win,SX,SY,DX,DY,65,22,exclusive_or);
+     :transfer(Win,SX+1,SY+1,DX+1,DY+1,63,20,exclusive_or)),
+    %:confirm(#messenger,"copy 2 End"),
+    true;
+
+
+draw_string(Win,X,Y,H,St,F):-
+    string(St,Len,_),
+    copy(Win,X,Y,Len*11,H,St,F);
+
+window(Win,X,Y,W,H,Type):-
+    new_heap_vector(Hv,4),
+    :add_at(Win!display_pos,Hv,Type),
+    set_subvector(Hv,0,4,{X,Y,W,H}),
+    %:draw_filled_rectangle(Win,X,Y,W,H,0,fix,reset),
+    %:draw_line(Win,X-2,Y-1,X+W,Y-1,2,solid,set),
+    %:draw_line(Win,X-2,Y-2,X-2,Y+H,2,solid,set),
+    true;
+
+draw_max(Win,Hv,Num,Font,Type):-
+    vector_element(Hv,0,X),
+    vector_element(Hv,1,Y),
+    vector_element(Hv,2,W),
+    vector_element(Hv,3,H),
+    :get_number_string(#symbolizer,Num,String),
+    :standard_line_and_base(Font,FH,_),
+    :get_max_size(Font,FW,_),
+    string(String,Len,_),
+    %MaxLen=(W-4)/FW,
+    %make_num_string(String,MaxLen,New),
+    %:draw_string(Win,X+2,Y+(H-FH)/2,New,Font,set);
+    ((Type==time1,!;
+      Type==pe,!),!,
+      X1=X-(FW*Len),
+      Y1=Y;
+     Type==time2,!,
+      (Len=<5,!,
+       X1=X-(FW*Len)/2;
+       X1=X-(FW*3)),
+      Y1=Y
+    ),
+    :draw_string(Win,X1,Y1,String,Font,set);
+
+make_num_string(S,L,N):-
+    new_string(N,L,16),
+    string(S,L1,_),
+    (L<L1,!;
+     tab(N,0,L-L1),
+     set_substring(N,L-L1,L1,S));
+
+tab(S,N,N):-!;
+tab(S,C,N):-
+    set_string_element(S,C,#" "),
+    tab(S,C+1,N);
+    
+graph_fram(Win,X,Y,W,H,Type):-
+    %:draw_rectangle(Win,X,Y,W,H),
+    :draw_line(Win,X,Y+H,X+W,Y+H,1,solid,set),
+    :draw_line(Win,X-1,Y,X-1,Y+H,1,solid,set),
+    new_heap_vector(Hv,4),
+    set_subvector(Hv,0,4,{X,Y,W,H}),
+    :add_at(Win!display_pos,Hv,Type);
+
+draw_bars(Max,HMax,X,Y,W,H,[],[],_,_):-!;
+draw_bars(Max,HMax,X,Y,W0,H,[nil|L],Out,C,N):-!,
+    draw_bars(Max,HMax,X,Y+H,W0,H,L,Out,C+1,N);
+draw_bars(Max,HMax,X,Y,W0,H,[Len|L],Out,C,N):-!,
+    W=(W0*Len)/Max,
+    (C=\=N,!,half_gray(Pat),Adj=0;Adj=0,black_paint(Pat)),%Pat=light_paint),
+    Out=[
+      {draw_filled_rectangle,{X+2-1+Adj,Y+2-1+Adj,W-2+1-Adj,H-2+1-Adj,0,Pat,set}},
+      {draw_line,{X+1,Y+H-1,X+W-1,Y+H-1,1,solid,set}},%%u
+      {draw_line,{X,Y+H,X+W-1,Y+H,1,solid,set}},      %%u
+
+      {draw_line,{X+W-1,Y,X+W-1,Y+H,1,solid,set}},    %%r
+      {draw_line,{X+W-2,Y+1,X+W-2,Y+H,1,solid,set}}   %%r
+      |Res],
+    Y1=Y+H,
+    draw_bars(Max,HMax,X,Y1,W0,H,L,Res,C+1,N);
+
+draw_point([],Max,MaxPe,X0,Y0,W,H,FW,FH,F,Out,Data):-!,
+    Data={Hid,Pe,Time},
+    (Time==nil,!,Out=[];
+     :get_number_string(#symbolizer,Hid,HS),
+     string(HS,Len,_),
+     X=X0+W*Pe/MaxPe-FW*Len/2,
+     Y=Y0+H-(H*Time/Max)-FH/2,
+     Out=[
+%       {draw_filled_rectangle,{X-1,Y,FW*Len+2,FH,1,fix,set}},
+       {draw_string,{X,Y,HS,F,reset}}
+        ]);
+draw_point([{_,_,nil}|L],Max,MaxPe,X,Y,W,H,FW,FH,F,Out,Data):-!,
+    draw_point(L,Max,MaxPe,X,Y,W,H,FW,FH,F,Out,Data);
+draw_point([{Hid,Pe,Time}|L],Max,MaxPe,X0,Y0,W,H,FW,FH,F,Out,Data):-
+    :get_number_string(#symbolizer,Hid,HS),
+    string(HS,Len,_),
+    X=X0+W*Pe/MaxPe-FW*Len/2,
+    Y=Y0+H-(H*Time/Max)-FH/2,
+    Out=[
+       {draw_string,{X,Y,HS,F,set}},
+       {draw_rectangle,{X-1,Y,FW*Len+2,FH,1,solid,set}}
+       |Res],
+    draw_point(L,Max,MaxPe,X0,Y0,W,H,FW,FH,F,Res,Data);
+
+pick_up_time([],[]):-!;
+pick_up_time([{_,_,T}|L],[T|L1]):-
+    pick_up_time(L,L1);
+
+clear_inside(Win,Hv):-
+    vector_element(Hv,0,X),
+    vector_element(Hv,1,Y),
+    vector_element(Hv,2,W),
+    vector_element(Hv,3,H),
+    :draw_filled_rectangle(Win,X,Y,W,H,0,fix,reset);
+
+pick_up_current([],_,_,0,nil,nil):-!;
+pick_up_current([Sv|_],C,Hid,C,Pe,Time):-
+    first(Sv,Hid),!,
+    vector_element(Sv,1,Pe),
+    vector_element(Sv,2,Time);
+pick_up_current([_|L],C,Hid,N,P,T):-
+    pick_up_current(L,C+1,Hid,N,P,T);
+
+half_gray(St):-
+    St=double_bytes#{
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA",
+        16#"5555",16#"5555",16#"5555",16#"5555",
+        16#"AAAA",16#"AAAA",16#"AAAA",16#"AAAA"
+        };
+
+black_paint(St):-
+    St=double_bytes#{
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"7777",16#"7777",16#"7777",16#"7777",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF",
+        16#"DDDD",16#"DDDD",16#"DDDD",16#"DDDD",
+        16#"FFFF",16#"FFFF",16#"FFFF",16#"FFFF"
+        };
+
+reverse([],L,L):-!;
+reverse([F|L],S,R):-
+    reverse(L,[F|S],R);
+end.

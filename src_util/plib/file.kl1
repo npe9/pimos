@@ -1,0 +1,68 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>file.kl1.2, 12-Jan-90 15:59:19, Edit by yashiro
+:- with_macro pimos.
+:- module file_lib.
+:- public request/1, read_open/2, write_open/2, append_open/2, directory_open/2 .
+
+request(Result) :-
+    true |
+        shoen:raise(pimos_tag#task, general_request, GRD ),
+        GRD = [ file( Status ) ],
+        check_device_request_only( Status, Result ).
+
+check_device_request_only( normal( DEVICE_REQUEST, _, _), Result ) :-
+    true |
+        DEVICE_REQUEST = [ file(Result) ].
+check_device_request_only( abnormal, Result ) :-
+    true |
+        Result = abnormal(cannot_get_device_request).
+
+
+read_open( Pathname, Result ) :-
+    true | 
+        shoen:raise(pimos_tag#task, general_request, GRD ),
+        GRD = [ file( Status ) ],
+        check_device_request( Status, open( Pathname, read(Result)) ).
+
+write_open( Pathname, Result ) :-
+    true | 
+        shoen:raise(pimos_tag#task, general_request, GRD ),
+        GRD = [ file( Status ) ],
+        check_device_request( Status, open( Pathname, write(Result)) ).
+
+append_open( Pathname, Result ) :-
+    true | 
+        shoen:raise(pimos_tag#task, general_request, GRD ),
+        GRD = [ file( Status ) ],
+        check_device_request( Status, open( Pathname, append(Result)) ).
+
+directory_open( Pathname, Result) :-
+        shoen:raise(pimos_tag#task, general_request, GRD ),
+        GRD = [ file( Result ) ],
+        check_device_request( Status, directory( Pathname, Result) ).
+
+check_device_request( normal( DEVICE_REQUEST, _, _), open(Pathname, read(Result)) ) :-
+    true |
+        DEVICE_REQUEST = [ open(Pathname,read(Result)) ].
+check_device_request( normal( DEVICE_REQUEST, _, _), open(Pathname, write(Result)) ) :-
+    true |
+        DEVICE_REQUEST = [ open(Pathname,write(Result)) ].
+check_device_request( normal( DEVICE_REQUEST, _, _), open(Pathname, append(Result)) ) :-
+    true |
+        DEVICE_REQUEST = [ open(Pathname,append(Result)) ].
+check_device_request( normal( DEVICE_REQUEST, _, _), directory(Pathname, Result) ) :-
+    true |
+        DEVICE_REQUEST = [ directory(Pathname,Result) ].
+check_device_request( abnormal, open(Pathname, read(Result)) ) :-
+    true |
+        Result = abnormal(cannot_open_by_read).
+check_device_request( abnormal, open(Pathname, write(Result)) ) :-
+    true |
+        Result = abnormal(cannot_open_by_write).
+check_device_request( abnormal, open(Pathname, append(Result)) ) :-
+    true |
+        Result = abnormal(cannot_open_by_append).
+check_device_request( abnormal, directory(Pathname, Result) ) :-
+    true |
+        Result = abnormal(cannot_open_directory).

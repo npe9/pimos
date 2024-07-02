@@ -1,0 +1,50 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module listener_io_switch.
+:- public create/2.
+:- with_macro pimos.
+
+create(Ctr,IO) :- true|
+    pool:keyed_sorted_bag(S),
+    switch(Ctr,S,IO).
+
+% Create Fore Task
+switch([fore(ID,MSG,Done)|Ctr],S,IO) :- true| fore(Ctr,S,IO,ID,MSG,Done).
+% Back -> Fore
+switch([fore(ID,Done)|Ctr],S,IO) :- true|
+    IO=[change_varpool(ID)|IO1],
+    S=[get(ID,MSG)|S1],
+    fore(Ctr,S1,IO1,ID,MSG,Done).
+% Create Back Task
+switch([back(ID,MSG)|Ctr],S,IO) :- true| 
+    S=[put(ID,MSG)|S1],
+    switch(Ctr,S1,IO).
+% Kill Task
+switch([kill(ID)|Ctr],S,IO) :- true| 
+    S=[get_if_any(ID,_)|S1],
+    switch(Ctr,S1,IO).
+switch([],S,IO) :- true| S=[], IO=[].
+otherwise.
+switch([X|Ctr],S,IO) :- true|
+    IO=[X|IO1],
+    switch(Ctr,S,IO1).
+
+fore(Ctr,S,IO,ID,[back(Detach)|MSG],Done) :- wait(Detach)|
+    S=[put(ID,MSG)|S1],
+    IO=[put_varpool(ID)|IO1],
+    Done=done,
+    switch(Ctr,S1,IO1).
+fore(Ctr,S,IO,_ID,[exit(Detach)|_],Done) :- wait(Detach)|
+    Done=exit,
+    switch(Ctr,S,IO).
+otherwise.
+fore(Ctr,S,IO,ID,[X|MSG],Done) :- true|
+    IO=[X|IO1],
+    fore(Ctr,S,IO1,ID,MSG,Done).
+fore(Ctr,S,IO,_ID,[],Done) :- true| 
+    Done=done,
+    switch(Ctr,S,IO).

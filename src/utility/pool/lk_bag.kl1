@@ -1,0 +1,456 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module lru_keyed_bag.
+:- with_macro pimos.
+:- public lk_bag/2,lk_set/2.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% lk_bag(Init,In)
+%% lk_set(Init,In)
+%%      Init    :: Initiation parameter (list)
+%%      In      :: Input stream
+
+lk_bag(Init,In) :- true |
+        init(Init,In,In1,W,T,bag),
+        lk_bag([],In1,0,W,1,T).
+
+lk_set(Init,In) :- true |
+        init(Init,In,In1,W,T,set),
+        lk_set([],In1,0,W,1,T).
+
+init(Init,In,In1,W,T,Name) :- true |
+        merge(In,In1),
+        get_param(Init,default,Hasher,1,N,infinite,W,Name),
+        Fmt={key(hashed,[hasher(Hasher),index_size(N)]),data,weight,flag,lru_ptr(ordered)},
+        pool:multiply_keyed_bag(Fmt,N,T).
+
+get_param(W0,H0,H,N0,N,_,W,_) :- W0>0 | H0=H,N0=N,W0=W.
+get_param(infinite,H0,H,N0,N,_,W,_) :- true | H0=H,N0=N,W=infinite.
+get_param([total_weight(W0)|Init],H0,H,N0,N,_,W,Name) :- W0>0 |
+        get_param(Init,H0,H,N0,N,W0,W,Name).
+get_param([total_weight(infinite)|Init],H0,H,N0,N,_,W,Name) :- true |
+        get_param(Init,H0,H,N0,N,infinite,W,Name).
+get_param([hasher(H0)|Init],_,H,N0,N,W0,W,Name) :- code(H0,3,_,_) |
+        get_param(Init,H0,H,N0,N,W0,W,Name).
+get_param([hasher(default)|Init],_,H,N0,N,W0,W,Name) :- true |
+        get_param(Init,default,H,N0,N,W0,W,Name).
+get_param([init_table_size(N0)|Init],H0,H,_,N,W0,W,Name) :- N0>0 |
+        get_table_size(1,N0,N1),
+        get_param(Init,H0,H,N1,N,W0,W,Name).
+get_param([],H0,H,N0,N,W0,W,_) :- true |
+        H0=H,N0=N,W0=W.
+otherwise.
+get_param([Msg|_],_,_,_,_,_,_,Name) :- true |
+        raise_error(Name,"illegal_initiation_parameter",Msg).
+
+get_table_size(I,N0,N) :- I>=N0 | N:=I.
+get_table_size(I,N0,N) :- I<N0 | get_table_size(~(I<<1),N0,N).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% lk_bag(DoBuf,In,V,W,L,T)
+%%      DoBuf   :: Do stream stack
+%%      In      :: Input stream
+%%      T       :: Output stream to the multiply_keyed_bag
+%%      V       :: Current total weight
+%%      W       :: Max weight
+%%      L       :: (ID of the most recently accessed data) +1
+
+lk_bag(Do,[empty(YorN)|In],V,W,L,T) :- true |
+        empty(V,YorN),
+        lk_bag(Do,In,V,W,L,T).
+
+lk_bag(Do,[empty(Key,YorN)|In],V,W,L,T) :- true |
+        empty_with_key(Key,YorN,L,L1,T,T1),
+        lk_bag(Do,In,V,W,L1,T1).
+
+lk_bag(Do,[put(Key,X,Res)|In],V,W,L,T) :- true |
+        put(V,V1,W,T,T1,Res,Key,X,L,L1,put),
+        lk_bag(Do,In,V1,W,L1,T1).
+
+lk_bag(Do,[get(Key,X)|In],V,W,L,T) :- true |
+        get(Key,X,V,V1,T,T1,bag),
+        lk_bag(Do,In,V1,W,L,T1).
+
+lk_bag(Do,[get_oldest(X)|In],V,W,L,T) :- true |
+        get_oldest(X,V,V1,T,T1,bag),
+        lk_bag(Do,In,V1,W,L,T1).
+
+lk_bag(Do,[get_if_any(Key,X)|In],V,W,L,T) :- true |
+        get_if_any(Key,X,V,V1,T,T1),
+        lk_bag(Do,In,V1,W,L,T1).
+
+lk_bag(Do,[get_all(A)|In],_,W,_,T) :- true |
+        get_all(A,T,T1),
+        lk_bag(Do,In,0,W,1,T1).
+
+lk_bag(Do,[get_all(Key,A)|In],V,W,L,T) :- true |
+        get_all_with_key(Key,A,V,V1,T,T1),
+        lk_bag(Do,In,V1,W,L,T1).
+
+lk_bag(Do,[get_and_put(Key,X,Y,Res)|In],V,W,L,T) :- true |
+        get_and_put(V,V1,W,T,T1,Res,Key,X,Y,L,L1,{bag,gp}),
+        lk_bag(Do,In,V1,W,L1,T1).
+
+lk_bag(Do,[get_if_any_and_put(Key,X,Y,Res)|In],V,W,L,T) :- true |
+        get_if_any_and_put(V,V1,W,T,T1,Res,Key,X,Y,L,L1,bag),
+        lk_bag(Do,In,V1,W,L1,T1).
+
+lk_bag(Do,[get_and_put_if_any(Key,X,Y,Y1,Res)|In],V,W,L,T) :- true |
+        get_and_put_if_any(V,V1,W,T,T1,Res,Key,X,Y,Y1,L,L1,{bag,gpi}),
+        lk_bag(Do,In,V1,W,L1,T1).
+
+lk_bag(Do,[carbon_copy(A)|In],V,W,L,T) :- true |
+        carbon_copy(A,L,L1,T,T1),
+        lk_bag(Do,In,V,W,L1,T1).
+
+lk_bag(Do,[carbon_copy(Key,A)|In],V,W,L,T) :- true |
+        carbon_copy_with_key(Key,A,L,L1,T,T1),
+        lk_bag(Do,In,V,W,L1,T1).
+
+lk_bag(Do,[overflow_permission_flag(Key,XF,Y)|In],V,W,L,T) :- true |
+        overflow_permission_flag(Key,XF,Y,T,T1),
+        lk_bag(Do,In,V,W,L,T1).
+
+lk_bag(Do,[do(List)|In],V,W,L,T) :- true |
+        merge(List,List1),
+        lk_bag([In|Do],List1,V,W,L,T).
+
+%lk_bag([get_load_factor(A)|In],V,W,L,T) :- true |
+%lk_bag([get_average_chaining_length(C)|In],V,W,L,T) :- true |
+%lk_bag([clear|In],V,W,L,T) :- true |
+
+lk_bag(Do,[],V,W,L,T) :- Do=[In|Do1] |
+        lk_bag(Do1,In,V,W,L,T).
+lk_bag(Do,[],_,_,_,T) :- Do=[] | T=[].
+
+otherwise.
+lk_bag(_,[Msg|_],_,_,_,T) :- true |
+        T=[],
+        raise_error(bag,"illegal_message_protocol",Msg).
+
+raise_error(bag,Str,X) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(lru_keyed_bag,Str),X).
+raise_error(set,Str,X) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(lru_keyed_set,Str),X).
+
+
+%*** empty ***
+empty(0,YorN) :- true | YorN=yes.
+empty(V,YorN) :- V>0 | YorN=no.
+
+%*** empty_with_key ***
+empty_with_key(Key,YorN,L,L1,T,T1) :- true |
+        T=[getp_and_put_all(key=Key,{lru_ptr},Xs,Ys)|T1],
+        do_empty_with_key(Xs,YorN,L,L1,Ys).
+
+do_empty_with_key([],YorN,L,L1,Ys) :- true |
+        YorN=yes,L=L1,Ys=[].
+do_empty_with_key(Xs,YorN,L,L1,Ys) :- list(Xs) |
+        YorN=no,
+        modify_lru_ptr(Xs,Ys,L,L1).
+
+modify_lru_ptr([_|Xs],Ys,L,L1) :- true |
+        Ys=[{L}|Ys1],
+        modify_lru_ptr(Xs,Ys1,~(L+1),L1).
+modify_lru_ptr([],Ys,L,L1) :- true | Ys=[],L=L1.
+
+%*** put ***
+put(V,V1,W,T,T1,Res,Key,{Data,Wgt,F},L,L1,_) :- Wgt>0,V0:=V+Wgt,V0=<W |
+        V0=V1,L1:=L+1,
+        T=[put({Key,Data,Wgt,{F},L})|T1],
+        Res=normal([]).
+put(V,V1,W,T,T1,Res,Key,{Data,Wgt,F},L,L1,_) :- Wgt>0,V0:=V+Wgt,V0>W |
+        overflow(V0,V1,W,T,T0,Res0,V,A,A,B,B),
+        do_put(Res0,Res,Key,{Data,Wgt,F},T0,T1,L,L1).
+put(V,V1,W,T,T1,Res,Key,{Data,Wgt,F},L,L1,_) :- Wgt>0,V0:=V+Wgt,W=infinite |
+        V0=V1,L1:=L+1,
+        T=[put({Key,Data,Wgt,{F},L})|T1],
+        Res=normal([]).
+otherwise.
+put(V,V1,_,T,T1,Res,Key,X,_,_,Err) :- true |
+        V=V1,T=T1,
+        put_raise_error(Err,Key,X,Res).
+
+put_raise_error(put,Key,X,Res) :- true |
+        raise_error(bag,"illegal_data",put(Key,X,Res)).
+put_raise_error(putS,Key,X,Res) :- true |
+        raise_error(set,"illegal_data",put(Key,X,_,Res)).
+put_raise_error(bag,Key,X,Res) :- true |
+        raise_error(bag,"illegal_data",get_if_any_and_put(Key,_,X,Res)).
+put_raise_error(set,Key,X,Res) :- true |
+        raise_error(set,"illegal_data",get_if_any_and_put(Key,_,X,Res)).
+
+do_put(normal(A),Res,Key,{Data,Wgt,F},T,T1,L,L1) :- true |
+        Res=normal(A),L1:=L+1,
+        T=[put({Key,Data,Wgt,{F},L})|T1].
+do_put(abnormal,Res,_,X,T,T1,L,L1) :- true |
+        Res=abnormal(X),T=T1,L=L1.
+
+overflow(V0,V1,W,T,T1,Res,_,A,A1,B,B1) :- V0=<W |
+        V0=V1,A1=[],B1=[],
+        Res=normal(AA),
+        remove_lru_ptr(A,AA),
+        get_back(B,T,T1).
+overflow(V0,V1,W,T,T1,Res,V,A,A1,B,B1) :- V0>W |
+        T=[min_if_any(lru_ptr,P)|T0],
+        wait_lru(V0,V1,W,T0,T1,Res,V,A,A1,B,B1,P).
+
+wait_lru(V0,V1,W,T,T1,Res,V,A,A1,B,B1,{P}) :- true |
+        T=[get(lru_ptr=P,Y)|T0],
+        if_overflow_permitted(V0,V1,W,T0,T1,Res,V,A,A1,B,B1,Y).
+wait_lru(_,V1,_,T,T1,Res,V,A,A1,B,B1,{}) :- true |
+        V=V1,Res=abnormal,A1=[],B1=[],
+        get_back(A,T,T0),
+        get_back(B,T0,T1).
+
+if_overflow_permitted(V0,V1,W,T,T1,Res,V,A,A1,B,B1,Y) :- vector_element(Y,3,{yes}),
+    vector_element(Y,2,Wgt) |
+        A1=[Y|A2],
+        overflow(~(V0-Wgt),V1,W,T,T1,Res,V,A,A2,B,B1).
+alternatively.
+if_overflow_permitted(V0,V1,W,T,T1,Res,V,A,A1,B,B1,Y) :- vector_element(Y,3,{_}) |
+        B1=[Y|B2],
+        overflow(V0,V1,W,T,T1,Res,V,A,A1,B,B2).
+
+get_back([X|A],T,T1) :- true |
+        T=[put(X)|T0],
+        get_back(A,T0,T1).
+get_back([],T,T1) :- true | T=T1.
+
+%*** get ***
+get(Key,X,V,V1,T,T1,Name) :- true |
+        T=[get_if_any(key=Key,X0)|T1],
+        subtract_weight(Key,X,V,V1,Name,X0).
+
+subtract_weight(_,X,V,V1,_,{_,Data,Wgt,{F},_}) :- true |
+        X={Data,Wgt,F},
+        V1:=V-Wgt.
+subtract_weight(Key,X,_,_,Name,{}) :- true |
+        raise_error(Name,"tried_to_get_nonexistent_element",get(Key,X)).
+
+%*** get_oldest ***
+get_oldest(X,V,V1,T,T1,Name) :- true |
+        T=[min_if_any(lru_ptr,P)|T0],
+        wait_oldest(X,V,V1,T0,T1,Name,P).
+
+wait_oldest(X,V,V1,T,T1,_,{P}) :- true |
+        T=[get(lru_ptr=P,X0)|T1],
+        geto_subtract_weight(X,V,V1,X0).
+wait_oldest(X,V,V1,T,T1,Name,{}) :- true |
+        V=V1,T=T1,
+        raise_error(Name,"tried_to_get_nonexistent_element",get_oldest(X)).
+
+geto_subtract_weight(X,V,V1,{Key,Data,Wgt,{F},_}) :- true |
+        X={Key,Data,Wgt,F},
+        V1:=V-Wgt.
+
+%*** get_if_any ***
+get_if_any(Key,X,V,V1,T,T1) :- true |
+        T=[get_if_any(key=Key,X0)|T1],
+        if_subtract_weight(X0,X,V,V1).
+
+if_subtract_weight({_,Data,Wgt,{F},_},X,V,V1) :- true |
+        X={Data,Wgt,F},
+        V1:=V-Wgt.
+if_subtract_weight({},X,V,V1) :- true |
+        X={},V=V1.
+
+%*** get_all ***
+get_all(A,T,T1) :- true |
+        T=[get_all(A0)|T1],
+        remove_lru_ptr(A0,A).
+
+remove_lru_ptr([{Key,Data,Wgt,{F},_}|A0],A) :- true |
+        A=[{Key,Data,Wgt,F}|A1],
+        remove_lru_ptr(A0,A1).
+remove_lru_ptr([],A) :- true | A=[].
+
+%*** get_all_with_key ***
+get_all_with_key(Key,A,V,V1,T,T1) :- true |
+        T=[get_all(key=Key,A0)|T1],
+        remove_lru_ptr(A0,A,V,V1).
+
+remove_lru_ptr([{_,Data,Wgt,{F},_}|A0],A,V,V1) :- true |
+        A=[{Data,Wgt,F}|A1],
+        remove_lru_ptr(A0,A1,~(V-Wgt),V1).
+remove_lru_ptr([],A,V,V1) :- true | A=[],V=V1.
+
+%*** get_and_put ***
+get_and_put(V,V1,W,T,T1,Res,Key,X,Y,L,L1,Err) :- true |
+        T=[get_if_any(key=Key,X0)|T0],
+        gp(V,V1,W,T0,T1,Res,Key,X,Y,L,L1,Err,X0).
+
+gp(V,V1,W,T,T1,Res,_,X,Y,L,L1,Err,{Key,Data,Wgt,{F},_}) :- true |
+        X={Data,Wgt,F},
+        gp_put(~(V-Wgt),V1,W,T,T1,Res,Y,{Key,_,_,{_},_},L,L1,Err).
+gp(V,V1,_,T,T1,Res,Key,X,Y,L,L1,{Name,_},{}) :- true |
+        V=V1,T=T1,L=L1,
+        raise_error(Name,"tried_to_get_nonexistent_element",get_and_put(Key,X,Y,Res)).
+
+gp_put(V,V1,W,T,T1,Res,{Data,Wgt,F},Y1,L,L1,_) :- Wgt>0,V0:=V+Wgt,V0=<W,
+    Y1={Key,_,_,{_},_} |
+        V0=V1,L1:=L+1,
+        T=[put({Key,Data,Wgt,{F},L})|T1],
+        Res=normal([]).
+gp_put(V,V1,W,T,T1,Res,{Data,Wgt,F},Y1,L,L1,_) :- Wgt>0,V0:=V+Wgt,V0>W |
+        overflow(V0,V1,W,T,T0,Res0,V,A,A,B,B),
+        do_gp_put(Res0,Res,{Data,Wgt,F},Y1,T0,T1,L,L1).
+gp_put(V,V1,W,T,T1,Res,{Data,Wgt,F},Y1,L,L1,_) :- Wgt>0,V0:=V+Wgt,W=infinite,
+    Y1={Key,_,_,{_},_} |
+        V0=V1,L1:=L+1,
+        T=[put({Key,Data,Wgt,{F},L})|T1],
+        Res=normal([]).
+otherwise.
+gp_put(V,V1,_,T,T1,Res,Y,{Key,_,_,{_},_},_,_,{Name,Msg}) :- true |
+        V=V1,T=T1,
+        raise_error(Name,"illegal_data",{Msg,Key,_,Y,Res}).
+
+do_gp_put(normal(A),Res,{Data,Wgt,F},{Key,_,_,{_},_},T,T1,L,L1) :- true |
+        Res=normal(A),L1:=L+1,
+        T=[put({Key,Data,Wgt,{F},L})|T1].
+do_gp_put(abnormal,Res,X,_,T,T1,L,L1) :- true |
+        Res=abnormal(X),T=T1,L=L1.
+
+%*** get_if_any_and_put ***
+get_if_any_and_put(V,V1,W,T,T1,Res,Key,X,Y,L,L1,Name) :- true |
+        T=[get_if_any(key=Key,X0)|T0],
+        gip(V,V1,W,T0,T1,Res,Key,X,Y,L,L1,Name,X0).
+
+gip(V,V1,W,T,T1,Res,_,X,Y,L,L1,Name,{Key,Data,Wgt,{F},_}) :- true |
+        X={Data,Wgt,F},
+        gp_put(~(V-Wgt),V1,W,T,T1,Res,Y,{Key,_,_,{_},_},L,L1,{Name,gip}).
+gip(V,V1,W,T,T1,Res,Key,X,Y,L,L1,Name,{}) :- true |
+        X={},
+        put(V,V1,W,T,T1,Res,Key,Y,L,L1,Name).
+
+%*** get_and_put_if_any ***
+get_and_put_if_any(V,V1,W,T,T1,Res,Key,X,Y,Y1,L,L1,Err) :- true |
+        T=[get_if_any(key=Key,X0)|T0],
+        gpi(V,V1,W,T0,T1,Res,X0,X,Y,Y1,L,L1,Err).
+
+gpi(V,V1,W,T,T1,Res,{Key,Data,Wgt,{F},_},X,Y,Y1,L,L1,Err) :- true |
+        X={Data,Wgt,F},Y1={},
+        gp_put(~(V-Wgt),V1,W,T,T1,Res,Y,{Key,_,_,{_},_},L,L1,Err).
+gpi(V,V1,_,T,T1,Res,{},X,Y,Y1,L,L1,_) :- true |
+        X={},Y=Y1,
+        V=V1,T=T1,L=L1,
+        Res=normal([]).
+
+%*** carbon_copy ***
+carbon_copy(A,L,L1,T,T1) :- true |
+        T=[get_and_put_all(true,Xs,Ys)|T1],
+        update_lru_ptr(Xs,Ys,A,L,L1).
+
+update_lru_ptr([{Key,Data,Wgt,{F},_}|Xs],Ys,A,L,L1) :- true |
+        Ys=[{Key,Data,Wgt,{F},L}|Ys1],
+        A=[{Key,Data,Wgt,F}|A1],
+        update_lru_ptr(Xs,Ys1,A1,~(L+1),L1).
+update_lru_ptr([],Ys,A,L,L1) :- true | Ys=[],A=[],L=L1.
+
+%*** carbon_copy_with_key ***
+carbon_copy_with_key(Key,A,L,L1,T,T1) :- true |
+        T=[getp_and_put_all(key=Key,{data,weight,flag,lru_ptr},Xs,Ys)|T1],
+        update_lru_with_key(Xs,Ys,A,L,L1).
+
+update_lru_with_key([{Data,Wgt,{F},_}|Xs],Ys,A,L,L1) :- true |
+        Ys=[{Data,Wgt,{F},L}|Ys1],
+        A=[{Data,Wgt,F}|A1],
+        update_lru_with_key(Xs,Ys1,A1,~(L+1),L1).
+update_lru_with_key([],Ys,A,L,L1) :- true |
+        Ys=[],A=[],L=L1.
+
+%*** overflow_permission_flag ***
+overflow_permission_flag(Key,X,Y,T,T1) :- true |
+        T=[getp_and_put_if_any(key=Key,{flag},X0,Y0,_)|T1],
+        change_flag(X0,X,Y,Y0).
+
+change_flag({{F}},X,Y,Y0) :- true | X={F},Y0={Y}.
+change_flag({},X,_,_) :- true | X={}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% lk_set(DoBuf,In,V,W,L,T)
+%%      DoBuf   :: Do stream stack
+%%      In      :: Input stream
+%%      T       :: Output stream to the multiply_keyed_bag
+%%      V       :: Current total weight
+%%      W       :: Max weight
+%%      L       :: (ID of the most recently accessed data) +1
+
+lk_set(Do,[empty(YorN)|In],V,W,L,T) :- true |
+        empty(V,YorN),
+        lk_set(Do,In,V,W,L,T).
+
+lk_set(Do,[empty(Key,YorN)|In],V,W,L,T) :- true |
+        empty_with_key(Key,YorN,L,L1,T,T1),
+        lk_set(Do,In,V,W,L1,T1).
+
+lk_set(Do,[put(Key,X,OldX,Res)|In],V,W,L,T) :- true |
+        get_if_any_and_put(V,V1,W,T,T1,Res,Key,OldX,X,L,L1,putS),
+        lk_set(Do,In,V1,W,L1,T1).
+
+lk_set(Do,[get(Key,X)|In],V,W,L,T) :- true |
+        get(Key,X,V,V1,T,T1,set),
+        lk_set(Do,In,V1,W,L,T1).
+
+lk_set(Do,[get_oldest(X)|In],V,W,L,T) :- true |
+        get_oldest(X,V,V1,T,T1,bag),
+        lk_set(Do,In,V1,W,L,T1).
+
+lk_set(Do,[get_if_any(Key,X)|In],V,W,L,T) :- true |
+        get_if_any(Key,X,V,V1,T,T1),
+        lk_set(Do,In,V1,W,L,T1).
+
+lk_set(Do,[get_all(A)|In],_,W,_,T) :- true |
+        get_all(A,T,T1),
+        lk_set(Do,In,0,W,1,T1).
+
+lk_set(Do,[get_all(Key,A)|In],V,W,L,T) :- true |
+        get_all_with_key(Key,A,V,V1,T,T1),
+        lk_set(Do,In,V1,W,L,T1).
+
+lk_set(Do,[get_and_put(Key,X,Y,Res)|In],V,W,L,T) :- true |
+        get_and_put(V,V1,W,T,T1,Res,Key,X,Y,L,L1,{set,gp}),
+        lk_set(Do,In,V1,W,L1,T1).
+
+lk_set(Do,[get_if_any_and_put(Key,X,Y,Res)|In],V,W,L,T) :- true |
+        get_if_any_and_put(V,V1,W,T,T1,Res,Key,X,Y,L,L1,{set,gip}),
+        lk_set(Do,In,V1,W,L1,T1).
+
+lk_set(Do,[get_and_put_if_any(Key,X,Y,Y1,Res)|In],V,W,L,T) :- true |
+        get_and_put_if_any(V,V1,W,T,T1,Res,Key,X,Y,Y1,L,L1,{set,gpi}),
+        lk_set(Do,In,V1,W,L1,T1).
+
+lk_set(Do,[carbon_copy(A)|In],V,W,L,T) :- true |
+        carbon_copy(A,L,L1,T,T1),
+        lk_set(Do,In,V,W,L1,T1).
+
+lk_set(Do,[carbon_copy(Key,A)|In],V,W,L,T) :- true |
+        carbon_copy_with_key(Key,A,L,L1,T,T1),
+        lk_set(Do,In,V,W,L1,T1).
+
+lk_set(Do,[overflow_permission_flag(Key,XF,Y)|In],V,W,L,T) :- true |
+        overflow_permission_flag(Key,XF,Y,T,T1),
+        lk_set(Do,In,V,W,L,T1).
+
+lk_set(Do,[do(List)|In],V,W,L,T) :- true |
+        merge(List,List1),
+        lk_set([In|Do],List1,V,W,L,T).
+
+%lk_set([get_load_factor(A)|In],V,W,L,T) :- true |
+%lk_set([get_average_chaining_length(C)|In],V,W,L,T) :- true |
+%lk_set([clear|In],V,W,L,T) :- true |
+
+lk_set(Do,[],V,W,L,T) :- Do=[In|Do1] |
+        lk_set(Do1,In,V,W,L,T).
+lk_set(Do,[],_,_,_,T) :- Do=[] | T=[].
+
+otherwise.
+lk_set(_,[Msg|_],_,_,_,T) :- true |
+        T=[],
+        raise_error(set,"illegal_message_protocol",Msg).

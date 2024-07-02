@@ -1,0 +1,107 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_stdio_manager.
+:- public id/4, std_mes/3, std_mes_device/2.
+:- with_macro pimos.
+
+id(normal(MES),DevSt,StdSt,St) :- true | id1(mes(MES),DevSt,StdSt,St).
+id(listener,   DevSt,StdSt,St) :- true | id1(listener,DevSt,StdSt,St).
+otherwise.
+id(Abnormal,   _,    _,    St) :- true | St=Abnormal.
+
+id1(MES,[],                normal(ID,Info),St) :- true | id2(MES,Info,ID,St).
+id1(MES,[{_,normal}|DevSt],StdSt,          St) :- true | id1(MES,DevSt,StdSt,St).
+otherwise.
+id1(MES,[{Type,_}|_],      _,              St) :- true |
+    St=abnormal(FS,Arg),
+    FS=" Cannot create standard ~t device.~n", Arg=[Type],
+    close_std_mes(MES).
+id1(MES,[],                Abnormal,       St) :- true | 
+    St=abnormal(FS,Arg),
+    FS=" Standard IO device is ~t.~n", Arg=[Abnormal],
+    close_std_mes(MES).
+
+id2(MES,[{Type,Status}|Info],ID,St) :- wait(Type), wait(Status) | id2(MES,Info,ID,St).
+id2(MES,[],                  ID,St) :- true | St=normal(ID,MES).
+
+close_std_mes(listener) :- true | true.
+close_std_mes(mes(MES)) :- true | MES=[].
+
+std_mes_device(listener,Status) :- true | Status=listener.
+std_mes_device({window_request,Param,_},Status) :- true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[window(St)],
+    winreq(St,Param,Status).
+std_mes_device({file_request,Param,_},Status) :- true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[file(St)],
+    filereq(St,Param,Status).
+
+winreq(normal(WR,_,_),Param,Status) :- true |
+    WR=[create(St)],
+    window(St,Param,Status).
+otherwise.
+winreq(Abnormal,_,Status) :- true |
+    Status=abnormal(FS,Arg),
+    FS=" Cannot get window_request_device for standard mes.~n The status is ~t.~n", 
+    Arg=[Abnormal].
+
+window(normal(W,_,_),{Name,At,Char},Status) :- true |
+    W=[set_title(Name,S1), activate(S3), reshape(At,Char,S4)|W1],
+    window_status(S1,normal,S3,S4,W1,Status).
+window(normal(W,_,_),{Name,At,Char,Font},Status) :- true |
+    W=[set_title(Name,S1), set_font(Font,S2), activate(S3), reshape(At,Char,S4)|W1],
+    window_status(S1,S2,S3,S4,W1,Status).
+otherwise.
+window(Abnormal,_,Status) :- true |
+    Status=abnormal(FS,Arg),
+    FS=" Cannot create standard mes window because of ~t.~n", Arg=[Abnormal].
+
+window_status(normal,normal,normal,normal,W,Status) :- true | 
+    merge(W1,W),
+    Status=normal(W1).
+window_status(Abnormal,_,_,_,W,Status) :- Abnormal\=normal|
+    W=[], Status=abnormal(FS,Arg),
+    FS=" Illegal standard mes window title.~n The status is ~t.~n", Arg=[Abnormal].
+window_status(_,Abnormal,_,_,W,Status) :- Abnormal\=normal|
+    W=[], Status=abnormal(FS,Arg),
+    FS=" Illegal standard mes window font.~n The status is ~t.~n", Arg=[Abnormal].
+window_status(_,_,Abnormal,_,W,Status) :- Abnormal\=normal|
+    W=[], Status=abnormal(FS,Arg),
+    FS=" Cannot activate standard mes window.~n The status is ~t.~n", Arg=[Abnormal].
+window_status(_,_,_,Abnormal,W,Status) :- Abnormal\=normal|
+    W=[], Status=abnormal(FS,Arg),
+    FS=" Cannot reshape standard mes window.~n The status is ~t.~n", Arg=[Abnormal].
+
+
+filereq(normal(FR,_,_),Path,Status) :- string(Path,_,_) |
+    FR=[open(Path,write(St))],
+    file(St,Status).
+filereq(normal(FR,_,_),{(^),Path},Status) :- true |
+    FR=[open(Path,append(St))],
+    file(St,Status).
+otherwise.
+filereq(Abnormal,_,Status) :- true |
+    Status=abnormal(FS,Arg),
+    FS=" Cannot get file_request_device for standard mes.~n The status is ~t.~n", 
+    Arg=[Abnormal].
+
+file(normal(F,_,_),Status) :- true | 
+    merge(F1,F),
+    Status=normal(F1).
+otherwise.
+file(Abnormal,Status) :- true | 
+    Status=abnormal(FS,Arg),
+    FS=" Cannot open standard mes file. The status is ~t.~n", Arg=[Abnormal].
+
+
+std_mes(IN,OUT,ATM) :- true |
+    merge(ATM2,ATM1),
+    buffer:output_filter([atom_table(ATM2)],IN,OUT1),
+    listener_atom_manager:filter(ATM1,ATM),
+    std_io_filter:std_io_filter(OUT1,OUT).

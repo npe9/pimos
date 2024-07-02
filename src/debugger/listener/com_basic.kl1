@@ -1,0 +1,283 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+:- module listener_cmd_basic.
+:- public do_command/1.
+:- with_macro pimos.
+
+do_command(commands) :- true| listener_help:commands.
+do_command(commands(Type)) :- true| listener_help:commands(Type).
+do_command(help) :- true| listener_help:help.
+do_command(help(Type)) :- true| listener_help:help(Type).
+
+do_command(display(T)) :- true |
+    listener_utility:buffer([do([write(T),nl])]).
+do_command(display(T,D,L)) :- D>=0, L>=0 |
+    listener_utility:buffer([do([write(T,D,L),nl])]).
+
+do_command(take(File)) :- true | listener_take_command:go(File,normal).
+do_command(take      ) :- true | listener_take_command:go.
+
+do_command(prompt(New)) :- string(New,_,16) |
+    format_string(New,L),
+    format_check(L,Status,Prompt),
+    (
+    Status=illegal_end ->
+        listener_utility:out(OUT),
+        OUT=[putf(" No format character after ""\"".~n",[])];
+    Status=illegal_character(Char) ->
+        listener_utility:out(OUT),
+        OUT=[putf(" Illegal format character: ""~c""~n",[Char])];
+    otherwise;
+    true ->
+        listener_utility:resource([environment(ENV)]),
+        ENV=[set(prompt,{New,Prompt},_)]
+    ).
+do_command(prompt(Old,New)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(prompt,{Old,_})],
+    do_command(prompt(New)).
+
+do_command(history) :- true |
+    listener_utility:resource([command(COM)]),
+    listener_utility:out([do(OUT)]),
+    COM=[history(His,Max)],
+    history(His,Max,Max,OUT).
+do_command(history(N)) :- N>0 |
+    listener_utility:resource([command(COM)]),
+    listener_utility:out([do(OUT)]),
+    COM=[history(His,Max)],
+    history(His,Max,N,OUT).
+
+do_command(history_length) :- true |
+    listener_utility:resource([command(COM)]),
+    COM=[get_history_length(L)],
+    listener_utility:read_term(" History length: ~t => ",[L],L,N),
+    do_command(history_length(N)).
+do_command(history_length(NEW)) :- NEW>=0 |
+    listener_utility:resource([command(COM)]),
+    COM=[history_length(NEW)].
+do_command(history_length(OLD,NEW)) :- true |
+    listener_utility:resource([command(COM)]),
+    COM=[do(DO)],
+    DO=[get_history_length(OLD), history_length(NEW)].
+
+do_command(date) :- true |
+    listener_utility:resource([timer(TIM)]),
+    TIM=[get_date_time(normal(Date,Time))],
+    timer_utility:get_date_value(Date,_,_,_,W),
+    timer_utility:get_date_string(Date,Date1),
+    timer_utility:day(W,Week,_,_),
+    timer_utility:get_time_string(Time,Time1),
+    listener_utility:out([putf(" ~s ~s ~s~n",[Date1,Week,Time1])]).
+
+do_command(starting_time) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(starting_time,normal(Date,Time))],
+    timer_utility:get_date_value(Date,_,_,_,W),
+    timer_utility:get_date_string(Date,Date1),
+    timer_utility:day(W,Week,_,_),
+    timer_utility:get_time_string(Time,Time1),
+    listener_utility:out([putf(" ~s ~s ~s~n",[Date1,Week,Time1])]).
+
+do_command(alias(Goal,NewGoal)) :- true |
+    listener_utility:resource([alias(ALI)]),
+    ALI=[alias(Goal,NewGoal,Status)],
+    display_alias(alias,Status).
+do_command(alias(Goal)) :- true |
+    listener_utility:resource([alias(ALI)]),
+    ALI=[alias(Goal,Alias)],
+    display_alias(alias,Alias).
+do_command(alias) :- true |
+    listener_utility:resource([alias(ALI)]),
+    ALI=[alias(Alias)],
+    atom_table:cache_table(Atom),
+    atom_key_to_string(Alias,Alias1,Atom),
+    sorter:key_sort(Alias1,ascending,Alias2),
+    list_alias(Alias2).
+do_command(unalias(Goal)) :- true |
+    listener_utility:resource([alias(ALI)]),
+    ALI=[unalias(Goal,Alias)],
+    display_alias(unalias,Alias).
+
+do_command(alias_expansion) :- true |
+    listener_utility:resource([alias(ALI)]),
+    ALI=[get_counter(OLD)],
+    listener_utility:read_term(" Alias expansion: ~t times => ",[OLD],OLD,N),
+    do_command(alias_expansion(N)).
+do_command(alias_expansion(N)) :- N>=0 |
+    listener_utility:resource([alias(ALI)]),
+    ALI=[set_counter(N,_)].
+do_command(alias_expansion(OLD,NEW)) :- true |
+    listener_utility:resource([alias(ALI)]),
+    ALI=[get_counter(OLD)],
+    do_command(alias_expansion(NEW)).
+
+do_command(version) :- true |
+    pimos_version:version(Ver),
+    pimos_version:date(Date),
+    listener_utility:out([putf(" Version ~s ~s~n",[Ver,Date])]).
+
+do_command(suspend) :- true |
+    shoen:raise(pimos_tag#listener,buffer,[switch(Status)]),
+    listener_utility:dummy(Status).
+
+do_command(errors) :- true |
+    shoen:raise(pimos_tag#listener,list_errors(all),_).
+do_command(last_error) :- true |
+    shoen:raise(pimos_tag#listener,list_errors(last),_).
+do_command(error_queue_length) :- true |
+    listener_utility:resource([error(ERR)]),
+    ERR=[get_queue_length(L)],
+    listener_utility:read_term(" Error queue length: ~t => ",[L],L,N),
+    do_command(error_queue_length(N)).
+do_command(error_queue_length(NEW)) :- NEW>=0 |
+    listener_utility:resource([error(ERR)]),
+    ERR=[queue_length(NEW)].
+do_command(error_queue_length(OLD,NEW)) :- true |
+    listener_utility:resource([error(ERR)]),
+    ERR=[do(DO)],
+    DO=[get_queue_length(OLD), queue_length(NEW)].
+
+otherwise.
+do_command(Goal) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(macro#module_name,"Illegal argument"),Goal).
+
+
+history(His,Max,N,OUT) :- Max<10           | his(His,~(Max-N),1,OUT).
+history(His,Max,N,OUT) :- Max>9, Max<100   | his(His,~(Max-N),2,OUT).
+history(His,Max,N,OUT) :- Max>99, Max<1000 | his(His,~(Max-N),3,OUT).
+otherwise.
+history(His,Max,N,OUT) :- his(His,~(Max-N),4,OUT).
+
+his([{Num,_   }|L],N,Tab,OUT) :- Num=<N | his(L,N,Tab,OUT).
+his([{Num,Data}|L],N,Tab,OUT) :- Num> N |
+    (
+    Num<10           -> NTab=Tab;
+    Num>9, Num<100   -> NTab := Tab-1;
+    Num>99, Num<1000 -> NTab := Tab-2;
+    otherwise;
+    true             -> NTab=0
+    ),
+    OUT=[tab(NTab),putt(Num),putb("  ")|OUT1],
+    print_event(Data,OUT1,OUT2), 
+    his(L,N,Tab,OUT2).
+his([],            _,_,  OUT) :- OUT=[].
+
+print_event(normal(empty),  OUT,OUT1) :- OUT=[putb("."),nl|OUT1].
+print_event(abnormal(Error),OUT,OUT1) :- OUT=[print_text(Error),nl|OUT1].
+otherwise.
+%print_event({_,WT},        OUT,OUT1) :- OUT=[print_text(WT),nl|OUT1].
+print_event({_,WT},         OUT,OUT1) :- OUT=[putwtq(WT,10000,10000),nl|OUT1].
+
+format_check([illegal_end|_],            Status,_) :- Status=illegal_end.
+format_check([illegal_character(Char)|_],Status,_) :- Status=illegal_character(Char).
+format_check([],                         Status,L) :- Status=normal, L=[].
+otherwise.
+format_check([X|Y],                      Status,L) :- L=[X|L1], format_check(Y,Status,L1).
+
+format_string("",L) :-  L=[].
+format_string(S,L) :- string(S,Size,16), Size>0 |
+    End := Size-1,
+    search_character(S,0,End,#"\",P,NS),
+    escape(P,0,End,NS,L).
+
+escape(-1,Start,End,S,L) :- 
+    Size := End-Start+1,
+    new_string(NS,Size,16),
+    builtin#copy_string_elements(NS,0,Size,S,Start,NS1,_),
+    L=[NS1].
+escape(P, _,    P,  _,L) :- L=[illegal_end].
+escape(P, Start,End,S,L) :- End := P+1 |
+    Size := P-Start,
+    new_string(NS,Size,16),
+    builtin#copy_string_elements(NS,0,Size,S,Start,NS1,S1),
+    string_element(S1,End,E,_),
+    format(E,F),
+    L=[NS1,F].
+otherwise.
+escape(P, Start,End,S,L) :- 
+    Size := P-Start,
+    new_string(NS,Size,16),
+    builtin#copy_string_elements(NS,0,Size,S,Start,NS1,S1),
+
+    string_element(S1,~(P+1),E,S2),
+    format(E,F),
+
+    L=[NS1,F|L1],
+    Start1 := P+2,
+    search_character(S2,Start1,End,#"\",P1,S3),
+    escape(P1,Start1,End,S3,L1).
+
+format(#"!",F) :- F=event_number.
+format(#"d",F) :- F=current_directory.
+format(#"p",F) :- F=default_package.
+format(#"m",F) :- F=default_module.
+format(#"M",F) :- F=macro_module.
+format(#"n",F) :- F=nl.
+format(#"\",F) :- F="\".
+otherwise.
+format(Char,F) :- F=illegal_character(Char).
+
+
+display_alias(_,normal({Goal,New},{})) :- true |
+    listener_utility:out([putf(" alias: ~W => ~W~n",[Goal,New])]).
+display_alias(_,normal({Goal,New},{{OldG,OldA}})) :- true |
+    listener_utility:out(
+        [putf(" unalias: ~W => ~W~n alias  : ~W => ~W~n",[OldG,OldA,Goal,New])]).
+display_alias(Alias,normal({Goal,New})) :- true |
+    listener_utility:out([putf(" ~t: ~W => ~W~n",[Alias,Goal,New])]).
+display_alias(Alias,non_existent(Goal)) :- true |
+    listener_utility:out([putf(" ~t: ~W nonexistent~n",[Alias,Goal])]).
+display_alias(Alias,abnormal(Goal)) :- true |
+    listener_utility:out([putf(" ~t: ~W abnormal~n",[Alias,Goal])]).
+
+list_alias([]) :- true | true.
+list_alias(Alias) :- list(Alias) |
+    listener_utility:out([do(OUT)]),
+    list_alias(Alias,OUT,[]).
+
+list_alias([{_,{G,NG}}|Alias],OUT,OUT2) :-
+    OUT=[putf(" alias: ~W => ~W~n",[G,NG])|OUT1],
+    list_alias(Alias,OUT1,OUT2).
+list_alias([],OUT,OUT1) :- OUT1=OUT.
+
+
+atom_key_to_string([{Name,D}|Alias],New,AT) :- atom(Name) |
+    AT=[get_atom_name(Name,{_,Key})|AT1],
+    New=[{{Key,0},D}|New1],
+    atom_key_to_string(Alias,New1,AT1).
+atom_key_to_string([{{Name,Sz},D}|Alias],New,AT) :- atom(Name) |
+    AT=[get_atom_name(Name,{_,Key})|AT1],
+    New=[{{Key,Sz},D}|New1],
+    atom_key_to_string(Alias,New1,AT1).
+atom_key_to_string([],New,AT) :- New=[], AT=[].
+otherwise.
+atom_key_to_string([{Key,D}|Alias],New,AT) :-
+    New=[{Key,D}|New1],
+    atom_key_to_string(Alias,New1,AT).
+
+
+:- if_equal(string_operation,yes).
+search_character(Str,S,E,C,P,NStr) :- true | builtin:search_character(Str,S,E,C,P,NStr).
+:- else.
+search_character(Str,S,E,C,P,NStr) :- 
+  string(Str,Size,_),
+  S>=0, S<Size,
+  E>=0, E<Size |
+    search_char(Str,S,E,C,P,NStr).
+
+search_char(Str,S,S,C,P,NStr) :-      string_element(Str,S,C) | P=S, NStr=Str.
+search_char(Str,S,E,C,P,NStr) :- S<E, string_element(Str,S,C) | P=S, NStr=Str.
+search_char(Str,S,E,C,P,NStr) :- S>E, string_element(Str,E,C) | P=E, NStr=Str.
+otherwise.
+search_char(Str,S,S,_,P,NStr) :- true| P= -1, NStr=Str.
+search_char(Str,S,E,C,P,NStr) :- S<E | search_char(Str,~(S+1),E,C,P,NStr).
+search_char(Str,S,E,C,P,NStr) :- S>E | search_char(Str,S,~(E+1),C,P,NStr).
+:- end_if.

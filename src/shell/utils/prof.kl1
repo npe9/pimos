@@ -1,0 +1,572 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module prof.
+:- public go/0, go/4, go/3, go/2, go/1.
+:- public sort/5, apply_goals/1, dummy/0, usage/1.
+
+%%%%%%%%%%%
+% TOP LEVEL
+go :- true | usage:go(prof).
+go(Goals) :- true | go(Goals,call).
+go(Goals,CorS) :- true | 
+    shoen:raise(pimos_tag#task,general_request,
+        [getenv(profile:interval,Time), getenv(profile:threshold,Disp)]),
+    go(Goals,Time,Disp,CorS).
+go(Goals,Time,CorS) :- true | 
+    shoen:raise(pimos_tag#task,general_request,
+        [getenv(profile:threshold,Disp)]),
+    go(Goals,Time,Disp,CorS).
+
+go(Goals,Time,Disp,CorS) :- true | 
+    current_node(_,Total),
+    numberOfList(Disp,Disp1),
+    interval(Time,Time1),
+    shoen:raise(pimos_tag#task,get_std(io),IO),
+    buffer:output_filter([reset(Reset)|OUT],IO),
+    profile(Reset,Goals,Time1,Disp1,CorS,Total,OUT).
+
+numberOfList(D,D1) :- D>0  | D1=D.
+numberOfList(D,D1) :- D<0  | D1=(-1).
+numberOfList(all,D1) :- D1=(-1).
+numberOfList(normal(D),D1) :- D>0  | D1=D.
+numberOfList(normal(D),D1) :- D<0  | D1=(-1).
+numberOfList(normal(all),D1) :- D1=(-1).
+otherwise.
+numberOfList(_,D1) :- true | D1=10.
+
+interval(T,               NT) :- T>0 | NT=T.
+interval(infinite,        NT) :- true| NT=infinite.
+interval(normal(T),       NT) :- T>0 | NT=T.
+interval(normal(infinite),NT) :- true| NT=infinite.
+otherwise.
+interval(_,NT) :- true| NT=2000.
+
+
+profile(normal(_,At,ID),Goals,Time,Disp,CorS,Total,OUT) :- true|
+    OUT=[resend(ID,_)|OUT1],
+    prof(Goals,Time,At,Status),
+    status_check(Status,Data,ExeTime,Reductions,CorS,OUT1,OUT2),
+    call_data(Data,DATA,_,Suspensions,Total,CorS),
+    display(1,ExeTime,Reductions,Suspensions,DATA,Disp,OUT2).
+otherwise.
+profile(_,Goals,Time,Disp,CorS,Total,OUT) :- true|
+    prof(Goals,Time,_At,Status),
+    status_check(Status,Data,ExeTime,Reductions,CorS,OUT,OUT1),
+    call_data(Data,DATA,_,Suspensions,Total,CorS),
+    display(1,ExeTime,Reductions,Suspensions,DATA,Disp,OUT1).
+
+
+status_check(normal(D,T,R),Data,ExeTime,Reductions,call,OUT,OUT1) :- true |
+    Data=D, ExeTime=T, Reductions=R,
+    OUT=[putf("Ranking/Red/Susp/Node/Type/Depth~n",[])|OUT1].
+status_check(abnormal(D,T,R,E),Data,ExeTime,Reductions,call,OUT,OUT2) :- true |
+    Data=D, ExeTime=T, Reductions=R,
+    disp_exception(E,OUT,OUT1),
+    OUT1=[putf("Ranking/Red/Susp/Node/Type/Depth~n",[])|OUT2].
+status_check(normal(D,T,R),Data,ExeTime,Reductions,susp,OUT,OUT1) :- true |
+    Data=D, ExeTime=T, Reductions=R,
+    OUT=[putf("Ranking/Susp/Red/Node/Type/Depth~n",[])|OUT1].
+status_check(abnormal(D,T,R,E),Data,ExeTime,Reductions,susp,OUT,OUT2) :- true |
+    Data=D, ExeTime=T, Reductions=R,
+    disp_exception(E,OUT,OUT1),
+    OUT1=[putf("Ranking/Susp/Red/Node/Type/Depth~n",[])|OUT2].
+
+disp_exception([{K,I}|Excep],OUT,OUT2) :- atom(K) |
+    variable:wrap(I,{_,E},100,100),
+    OUT=[putf("!EXCEPTION: ~t~n  ~w~n",[K,E])|OUT1],
+    disp_exception(Excep,OUT1,OUT2).
+disp_exception([],OUT,OUT1) :- true | OUT=[nl|OUT1].
+
+
+
+%%%%%%
+% MAIN
+prof(Goals,Time,At,Status) :- true | 
+    translate_goals(Goals,GLIST,[]),
+    predicate_to_code(module#prof,apply_goals,1,Code),
+    Tag=16#"FFFFBFFF",
+    shoen:raise(pimos_tag#task,general_request,[GRM,timer(normal(TR,_,_))]),
+    GRM = profile(Code,{GLIST},"profile",0,4000,Tag,normal(Ctr,Rpt)),
+%    shoen:profile(Code,{GLIST},0,4000,Tag,Ctr,Rpt),
+    TR=[create(normal(TIMER,_,_))],
+    TIMER = [get_count(Start)|TIMER1],
+    prof1(Rpt,Ctr,At,Time,TIMER1,Start,Status).
+
+prof1(Rpt,Ctr,At,Time,TIMER,normal(Start),Status) :-
+    Ctr=[add_resource(0,100000000)|Ctr1],
+    on_after(Time,Now,TIMER,TIMER1),
+    monitor(Rpt,Ctr1,At,Now,Time,TIMER1,{_,_,[]},Data,Data,Start,success,Status).
+
+
+on_after(Time,Now,T,T1) :- Time>0 | T=[on_after(Time,normal(Now))|T1].
+on_after(infinite,_,T,T1) :- T1=T.
+otherwise.
+on_after(_,Now,T,T1) :- T=[on_after(2000,normal(Now))|T1].
+
+translate_goals((G1,G2),GLIST,GLIST2) :- true |
+    translate_goals(G1,GLIST,GLIST1),
+    translate_goals(G2,GLIST1,GLIST2).
+otherwise.
+translate_goals({@,Goal,node(Node)},GLIST,GLIST1) :- true |
+    get_code(Goal,Node,GLIST,GLIST1).
+otherwise.
+translate_goals(Goal,GLIST,GLIST1) :- true |
+    get_code(Goal,current,GLIST,GLIST1).
+
+get_code((M:G),Node,GL,GL1) :- atom(M), atom(G) |
+    module:get_code(M,G,0,Status),
+    exist_code(Status,M,G,Cde),
+    GL=[{Cde,{},Node}|GL1].
+get_code((M:G),Node,GL,GL1) :- 
+  atom(M), 
+  vector(G,Size), 
+  vector_element(G,0,P), 
+  atom(P) |
+    Arity := Size-1,
+    break_up_goal(G,_P,ArgV),
+    module:get_code(M,P,Arity,Status),
+    exist_code(Status,M,G,Cde),
+    GL=[{Cde,ArgV,Node}|GL1].
+get_code((Pac::M:G),Node,GL,GL1) :- atom(Pac), atom(M), atom(G) |
+    module:get_code(Pac::M,G,0,Status),
+    exist_code(Status,Pac::M,G,Cde),
+    GL=[{Cde,{},Node}|GL1].
+get_code((Pac::M:G),Node,GL,GL1) :- 
+  atom(Pac), atom(M),
+  vector(G,Size), 
+  vector_element(G,0,P), 
+  atom(P) |
+    Arity := Size-1,
+    break_up_goal(G,_P,ArgV),
+    module:get_code(Pac::M,P,Arity,Status),
+    exist_code(Status,Pac::M,G,Cde),
+    GL=[{Cde,ArgV,Node}|GL1].
+otherwise.
+% Shell Utility
+get_code((Pac::M),Node,GL,GL1) :- atom(Pac), atom(M) |
+    module:get_code(Pac::M,go,0,Status),
+    exist_code(Status,Pac::M,go,Cde),
+    GL=[{Cde,{},Node}|GL1].
+get_code((Pac::G),Node,GL,GL1) :- 
+  atom(Pac),
+  vector(G,Size), 
+  vector_element(G,0,M), 
+  atom(M) |
+    Arity := Size-1,
+    break_up_goal(G,_P,ArgV),
+    module:get_code(Pac::M,go,Arity,Status),
+    exist_code(Status,Pac::M,G,Cde),
+    GL=[{Cde,ArgV,Node}|GL1].
+otherwise.
+get_code(G,Node,GL,GL1) :- atom(G) |
+    module:get_code(G,go,0,Status),
+    exist_code(Status,G,go,Cde),
+    GL=[{Cde,{},Node}|GL1].
+get_code(G,Node,GL,GL1) :- 
+  vector(G,Size),
+  vector_element(G,0,M), 
+  atom(M), M \= (:), M \= (::) |
+    Arity := Size-1,
+    break_up_goal(G,_P,ArgV),
+    module:get_code(M,go,Arity,Status),
+    exist_code(Status,M,G,Cde),
+    GL=[{Cde,ArgV,Node}|GL1].
+otherwise.
+get_code(G,_,_,_) :-
+    shoen:raise(pimos_tag#error,'$PIMOS$'(prof,"illegal_goal"),G).
+
+exist_code(Cde,_,_,CODE) :- code(Cde,_,_,_) | CODE=Cde.
+exist_code(Pac::M,_,_,_) :- atom(Pac), atom(M) | 
+    shoen:raise(pimos_tag#error,'$PIMOS$'(prof,"non-existent module"),Pac::M).
+exist_code(protection_violation,M,_,_) :-
+    shoen:raise(pimos_tag#error,'$PIMOS$'(prof,"protection_violation"),M).
+otherwise.
+exist_code(M,_,_,_) :- atom(M) | 
+    shoen:raise(pimos_tag#error,'$PIMOS$'(prof,"non-existent module"),M).
+exist_code({Mdl,P,A},_,_,_) :- 
+    module:get_module_name(Mdl,M),
+    shoen:raise(pimos_tag#error,'$PIMOS$'(prof,"non-existent predicate"),(M:P/A)).
+otherwise.
+exist_code(_,M,G,_) :-
+    shoen:raise(pimos_tag#error,'$PIMOS$'(prof,"illegal_goal"),(M:G)).
+
+
+apply_goals([{Code,ArgV,current}|GOALS]) :- wait(Code), wait(ArgV) |
+    apply(Code,ArgV),
+    apply_goals(GOALS).
+apply_goals([]) :- true | true.
+otherwise.
+apply_goals([{Code,ArgV,Node}|GOALS]) :-
+    apply_with_pgm(Code,ArgV)@node(Node),
+    apply_goals(GOALS).
+
+apply_with_pgm(Code,ArgV) :- wait(Code), wait(ArgV) | apply(Code,ArgV).
+
+
+%%%%%%%%%
+% Monitor
+monitor(Rpt,Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result) :- wait(At) |
+    Ctr=[abort(_)|Ctr1],
+    monitor(Rpt,Ctr1,_At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result).
+
+alternatively.
+monitor(Rpt,Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result) :- wait(Now) |
+    Ctr=[profile|Ctr1],
+    TIMER=[on_after(Time,normal(NewNow))|TIMER1],
+    monitor(Rpt,Ctr1,At,NewNow,Time,TIMER1,Inf,DATA,Dat,Start,Status,Result).
+
+alternatively.
+monitor([profiling_started|Rpt],Ctr,At,Now,Time,TIMER,{_,_,Inf},DATA,Dat,Start,Status,Result) :- true |
+    TIMER=[get_count(normal(ST))|TIMER1],
+    monitor(Rpt,Ctr,At,Now,Time,TIMER1,{~(ST-Start),_,Inf},DATA,Dat,Start,Status,Result).
+monitor([profiling_rejected|Rpt],Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result) :- true |
+    Ctr=[profile|Ctr1],
+    monitor(Rpt,Ctr1,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result).
+monitor([profiling_completed|Rpt],Ctr,At,Now,Time,TIMER,{ST,_,Inf},DATA,Dat,Start,Status,Result) :- true |
+    TIMER=[get_count(normal(ET))|TIMER1],
+    End := ET-Start,
+    DATA=[{ST,End,Inf}|DATA1],
+    monitor(Rpt,Ctr,At,Now,Time,TIMER1,{_,_,[]},DATA1,Dat,Start,Status,Result).
+monitor([profiling_information(Node,Type,Depth,Data)|Rpt],Ctr,
+                                    At,Now,Time,TIMER,{ST,ET,Inf},DATA,Dat,Start,Status,Result) :- true |
+    Inf1=[{Node,Type,Depth,Data}|Inf],
+    monitor(Rpt,Ctr,At,Now,Time,TIMER,{ST,ET,Inf1},DATA,Dat,Start,Status,Result).
+
+monitor([terminated|Rpt],Ctr,_,_,_,TIMER,{_,_,Inf},DATA,Dat,Start,Status,Result) :- true |
+    Ctr=[statistics], TIMER=[get_count(normal(End))], DATA=[{ExeTime,ExeTime,Inf}],
+    ExeTime := End-Start,
+    status(Rpt,Status,Dat,ExeTime,Result).
+monitor([resource_low|Rpt],Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result) :- true |
+    Ctr=[add_resource(0,100000000)|Ctr1],
+    monitor(Rpt,Ctr1,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result).
+monitor([resource_added|Rpt],Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result) :- true |
+    Ctr=[allow_resource_report|Ctr1],
+    monitor(Rpt,Ctr1,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result).
+monitor([started|Rpt],Ctr,At,_,infinite,TIMER,Inf,DATA,Dat,Start,Status,Result) :- true |
+    TIMER=[get_count(normal(Start))|TIMER1],
+    monitor(Rpt,Ctr,At,_,_,TIMER1,Inf,DATA,Dat,Start,Status,Result).
+monitor([started|Rpt],Ctr,At,_,Time,TIMER,Inf,DATA,Dat,Start,Status,Result) :- Time > 0 |
+    TIMER=[get_count(normal(Start)), on_after(Time,normal(Now))|TIMER1],
+    monitor(Rpt,Ctr,At,Now,Time,TIMER1,Inf,DATA,Dat,Start,Status,Result).
+monitor([resource_report_allowed|Rpt],Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result) :- true |
+    monitor(Rpt,Ctr,Now,At,Time,TIMER,Inf,DATA,Dat,Start,Status,Result).
+
+monitor([exception(K,I,NC,NA)|Rpt],Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,success,Result) :- true |
+    predicate_to_code(module#prof,dummy,0,NC), NA={},
+    Ctr=[profile,abort([],_)|Ctr1],
+    monitor(Rpt,Ctr1,At,Now,Time,TIMER,Inf,DATA,Dat,Start,[{K,I}],Result).
+monitor([exception(K,I,NC,NA)|Rpt],Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Excep,Result) :- list(Excep) |
+    predicate_to_code(module#prof,dummy,0,NC), NA={},
+    monitor(Rpt,Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,[{K,I}|Excep],Result).
+monitor([aborted|Rpt],Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result) :- true |
+    monitor(Rpt,Ctr,At,Now,Time,TIMER,Inf,DATA,Dat,Start,Status,Result).
+
+
+status([statistics(U,L)|_],success,Dat,ExeTime,Result) :- true |
+    Result=normal(Dat,ExeTime,{U,L}).
+otherwise.
+status([statistics(U,L)|_],Excep,  Dat,ExeTime,Result) :- true |
+    Result=abnormal(Dat,ExeTime,{U,L},Excep).
+otherwise.
+status([_|Rpt],Status,Dat,ExeTime,Result) :- true | status(Rpt,Status,Dat,ExeTime,Result).
+
+
+% Data = [ {Start,End,[{Node,Type,Depth,Inf}, {...}, ...]}, {S,E,[{...}, {...}, ...]}, ... ]
+% Inf  = [ {Code,Dequeue,Susp},
+%          {Mod,Offset,Name,Dequeue,Susp},
+%          {Opcode,Name,Dequeue,Susp}, ... ]
+
+% CALL
+call_data([],DATA,Red,Sus,_,_) :- true | DATA = [], Red={0,0}, Sus={0,0}.
+call_data([{S,E,Data}|Data1],DATA,Red,Sus,Total,CorS) :- true | 
+    Red={Ru,Rl}, Sus={Su,Sl},
+    pool:keyed_bag(KB,128),
+    data(Data,KB,DATA1,{Ru1,Rl1},{Su1,Sl1},Total,CorS),
+    call_data(Data1,DATA2,{Ru2,Rl2},{Su2,Sl2},Total,CorS),
+    double_num:add(Ru1,Rl1,Ru2,Rl2,Ru,Rl),
+    double_num:add(Su1,Sl1,Su2,Sl2,Su,Sl),
+    DATA = [{S,E,{Ru1,Rl1},{Su1,Sl1},DATA1}|DATA2].
+
+data([{{Node,_},Type,Depth,Inf}|Data],KB,DATA,{Ru,Rl},{Su,Sl},Total,CorS) :- 
+  0=<Node, Node<Total |
+    translate_profiling_data(Inf,Node,Type,Depth,KB,KB1,{Ru1,Rl1},{Su1,Sl1})@node(Node),
+    double_num:add(Ru1,Rl1,Ru2,Rl2,Ru,Rl),
+    double_num:add(Su1,Sl1,Su2,Sl2,Su,Sl),
+    data(Data,KB1,DATA,{Ru2,Rl2},{Su2,Sl2},Total,CorS).
+data([],KB,DATA,{Ru,Rl},{Su,Sl},_,call) :- true | Ru=0,Rl=0, Su=0,Sl=0,
+    KB=[get_all(Data)],
+    predicate_to_code(module#prof,sort,5,Code),
+    pool:keyed_sorted_bag(Code,SB),
+    swap(Data,SB,DATA).
+data([],KB,DATA,{Ru,Rl},{Su,Sl},_,susp) :- true | Ru=0,Rl=0, Su=0,Sl=0,
+    KB=[get_all(Data)],
+    predicate_to_code(module#prof,sort,5,Code),
+    pool:keyed_sorted_bag(Code,SB),
+    swap_s(Data,SB,DATA).
+otherwise.
+data([{{Node,_},Type,Depth,Inf}|Data],KB,DATA,{Ru,Rl},{Su,Sl},Total,CorS) :- true |
+    translate_profiling_data(Inf,Node,Type,Depth,KB,KB1,{Ru1,Rl1},{Su1,Sl1}),
+    double_num:add(Ru1,Rl1,Ru2,Rl2,Ru,Rl),
+    double_num:add(Su1,Sl1,Su2,Sl2,Su,Sl),
+    data(Data,KB1,DATA,{Ru2,Rl2},{Su2,Sl2},Total,CorS).
+
+
+translate_profiling_data(Data,Node,Type,Depth,KB,KB1,Red,Sus):- true |
+    exception_table:translate_profiling_data(Data,Inf),
+    call_data1(Inf,Node,Type,Depth,KB,KB1,Red,Sus).
+    
+call_data1([{Code,Deq,Sus}|Inf],P,T,D,KB,KB2,{Ru,Rl},{Su,Sl}) :- code(Code,_,_,_) |
+    KB=[get_if_any_and_put({Code,P,T,D},C,NewC)|KB1],
+    Red := Deq-Sus,
+    count(C,Red,Sus,NewC),
+    double_num:add(0,Red,Ru1,Rl1,Ru,Rl),
+    double_num:add(0,Sus,Su1,Sl1,Su,Sl),
+    call_data1(Inf,P,T,D,KB1,KB2,{Ru1,Rl1},{Su1,Sl1}).
+call_data1([{Name,Deq,_}|Inf],P,T,D,KB,KB2,{Ru,Rl},Susp) :- atom(Name) |
+    KB=[get_if_any_and_put({Name,P,T,D},C,NewC)|KB1],
+    count(C,Deq,0,NewC),
+    double_num:add(0,Deq,Ru1,Rl1,Ru,Rl),
+    call_data1(Inf,P,T,D,KB1,KB2,{Ru1,Rl1},Susp).
+call_data1([],_,_,_,KB,KB1,{Ru,Rl},{Su,Sl}) :- true | KB1=KB, Ru=0, Rl=0, Su=0, Sl=0.
+otherwise.
+call_data1([{Pred,Deq,_}|Inf],P,T,D,KB,KB2,{Ru,Rl},{Su,Sl}) :- true |
+    KB=[get_if_any_and_put({Pred,P,T,D},C,NewC)|KB1],
+    count(C,Deq,Deq,NewC),
+    double_num:add(0,Deq,Ru1,Rl1,Ru,Rl),
+    double_num:add(0,Deq,Su1,Sl1,Su,Sl),
+    call_data1(Inf,P,T,D,KB1,KB2,{Ru1,Rl1},{Su1,Sl1}).
+
+
+count({{C1,C2}},C3,C4,C5) :- true | C6 := C1+C3, C7 := C2+C4, C5={C6,C7}.
+count({},       C1,C2,C3) :- true | C3={C1,C2}.
+
+swap([{{Pred,P,T,D},{C1,C2}}|Data],SB,DATA) :- true |
+    SB=[put(C1,{C2,Pred,P,T,D})|SB1],
+    swap(Data,SB1,DATA).
+swap([{{M,O,P,T,D},{C1,C2}}|Data],SB,DATA) :- true |
+    SB=[put(C1,{C2,M,O,P,T,D})|SB1],
+    swap(Data,SB1,DATA).
+swap([],SB,DATA) :- true | SB=[get_all(DATA)].
+
+swap_s([{{Pred,P,T,D},{C1,C2}}|Data],SB,DATA) :- true |
+    SB=[put(C2,{C1,Pred,P,T,D})|SB1],
+    swap_s(Data,SB1,DATA).
+swap_s([{{M,O,P,T,D},{C1,C2}}|Data],SB,DATA) :- true |
+    SB=[put(C2,{C1,M,O,P,T,D})|SB1],
+    swap_s(Data,SB1,DATA).
+swap_s([],SB,DATA) :- true | SB=[get_all(DATA)].
+
+
+display(C,Time,Red,Sus,Data,N,OUT) :- true |
+    shoen:raise(pimos_tag#task,general_request,
+        [getenv(task:package,Status),
+         getenv(profile:module,MStatus)]),
+    default_package(Status,Pac),
+    module_list(MStatus,ML),
+    maximum(MM),
+    display(C,Time,Red,Sus,Data,N,OUT,MM,Pac,ML).
+
+default_package(normal(P),Pac) :- atom(P) | Pac=P.
+otherwise.
+default_package(_,        Pac) :- Pac=user.
+
+module_list(normal(M),ML) :- mod_chk(M,ML).
+otherwise.
+module_list(_,        ML) :- ML=[{*,*}].
+
+mod_chk([{P,M}     |L],ML) :- atom(P), atom(M) | ML=[{P,M}|ML1], mod_chk(L,ML1).
+mod_chk([{(::),P,M}|L],ML) :- atom(P), atom(M) | ML=[{P,M}|ML1], mod_chk(L,ML1).
+mod_chk({P,M},         ML) :- atom(P), atom(M) | ML=[{P,M}].
+mod_chk({(::),P,M},    ML) :- atom(P), atom(M) | ML=[{P,M}].
+mod_chk([],            ML) :- ML=[].
+otherwise.
+mod_chk([_|L],ML) :- mod_chk(L,ML).
+
+display(_,Time,{U,L},{Su,Sl},[],_,OUT,MM,_,_) :- true | 
+    MM=[],
+    half(U,L,U1,L1),
+    integer_to_string(U1,L1,Red),
+    integer_to_string(Su,Sl,Susp),
+    OUT=[putf("~n  ~s suspensions~n",[Susp]),
+            putf("  ~s reductions~n",[Red]),
+            putf("  ~t msec~n",[Time])].
+otherwise.
+display(C,Time,Red,Sus,[{S,_,_,_,[]}|Cdr],N,OUT,MM,Pac,ML):- true |
+    OUT=[putf("[~t] ~t msec~n",[C,S])|OUT1],
+    display(~(C+1),Time,Red,Sus,Cdr,N,OUT1,MM,Pac,ML).
+otherwise.
+display(C,Time,Red,Sus,[{S,_,{Ru,Rl},{Su,Sl},Car}|Cdr],N,OUT,MM,Pac,ML):- true |
+    MM={MM1,MM2},
+    OUT=[putf("[~t] ~t msec  ~s red.  ~s susp.~n",[C,S,Rs,Ss])|OUT1],
+    integer_to_string(Ru,Rl,Rs),
+    integer_to_string(Su,Sl,Ss),
+    display1(Car,N,OUT1,OUT2,MM1,Pac,ML,1),
+    display(~(C+1),Time,Red,Sus,Cdr,N,OUT2,MM2,Pac,ML).
+
+display1([],_,OUT,OUT1,MM,_,_,_) :- true | OUT=OUT1, MM=[].
+display1(_, 0,OUT,OUT1,MM,_,_,_) :- true | OUT=OUT1, MM=[].
+otherwise.
+display1([{C1,{C2,{Name,Caller},Node,Type,Depth}}|Data],N,OUT,OUT2,MM,Pac,ML,T) :- true |
+    module:get_predicate_info(Caller,Pac1,M,P,A,_),
+    member(Pac1,M,ML,YN),
+    ( YN=yes ->
+    MM=[{0,C1,Tab0,C11},{1,C2,Tab1,C22},{2,Node,Tab2,Node1}|MM1],
+    module_name(Pac,Pac1,M,PM),
+    ranking_tab(T,Ttab),
+    OUT=[putt(T),putb(Ttab),
+         tab(2),tab(Tab0),putb(C11),tab(2),tab(Tab1),putb(C22),tab(2),tab(Tab2),putb(Node1),
+         tab(2),putt(Type),tab(2),putt(Depth),
+         tab(2),putt(Name),putb(" <= "),putt((PM:P/A)),nl|OUT1],
+    N1 := N-1   ;
+      YN=no ->
+    MM1=MM, OUT1=OUT, N1=N ),
+    display1(Data,N1,OUT1,OUT2,MM1,Pac,ML,~(T+1)).
+display1([{C1,{C2,Name,Node,Type,Depth}}|Data],N,OUT,OUT2,MM,Pac,ML,T) :- atom(Name) |
+    MM=[{0,C1,Tab0,C11},{1,C2,Tab1,C22},{2,Node,Tab2,Node1}|MM1],
+    ranking_tab(T,Ttab),
+    OUT=[putt(T),putb(Ttab),
+         tab(2),tab(Tab0),putb(C11),tab(2),tab(Tab1),putb(C22),tab(2),tab(Tab2),putb(Node1),
+         tab(2),putt(Type),tab(2),putt(Depth),tab(2),putt(Name),nl|OUT1],
+    display1(Data,~(N-1),OUT1,OUT2,MM1,Pac,ML,~(T+1)).
+otherwise.
+display1([{C1,{C2,Code,Node,Type,Depth}}|Data],N,OUT,OUT2,MM,Pac,ML,T) :- true |
+    module:get_predicate_info(Code,Pac1,M,P,A,_),
+    member(Pac1,M,ML,YN),
+    ( YN=yes ->
+    MM=[{0,C1,Tab0,C11},{1,C2,Tab1,C22},{2,Node,Tab2,Node1}|MM1],
+    module_name(Pac,Pac1,M,PM),
+    ranking_tab(T,Ttab),
+    OUT=[putt(T),putb(Ttab),
+         tab(2),tab(Tab0),putb(C11),tab(2),tab(Tab1),putb(C22),tab(2),tab(Tab2),putb(Node1),
+         tab(2),putt(Type),tab(2),putt(Depth),tab(2),putt((PM:P/A)),nl|OUT1],
+    N1 := N-1   ;
+      YN=no ->
+    MM1=MM, OUT1=OUT, N1=N ),
+    display1(Data,N1,OUT1,OUT2,MM1,Pac,ML,~(T+1)).
+
+module_name(P,P,M,PM) :- PM=M.
+module_name(Pa,P,M,PM) :- P\=Pa | PM=P::M.
+
+ranking_tab(T,Tab) :- T<10         | Tab="   :".
+ranking_tab(T,Tab) :- T>9, T<100   | Tab="  :".
+ranking_tab(T,Tab) :- T>99, T<1000 | Tab=" :".
+otherwise.
+ranking_tab(_,Tab) :-                Tab=":".
+
+
+maximum(MM) :- true |
+    merge(MM,MM1),
+    buffer:character_pool(IO),
+    maximum(MM1,IO,{0,0,0},{_,_,_}).
+
+maximum([{N,I,Tab,IB1}|MM],IO,Max,Max1) :- true |
+    IO=[putt(I), nl, getl(IB)|IO1],
+    string(IB,S,_,IB1),
+    max(N,S,Tab,Max,Max1,Max2,Max3),
+    maximum(MM,IO1,Max2,Max3).
+maximum([],IO,Max,Max1) :- true | IO=[], Max1=Max.
+
+max(N,S,Tab,Max,Max1,Max2,Max3) :- true |
+    set_vector_element(Max,N, A,A1,Max2),
+    set_vector_element(Max1,N,B,B ,Max3),
+    max(S,A,A1),
+    Tab := B-S.
+
+max(S,A,A1) :- S>A  | A1=S.
+otherwise.
+max(_,A,A1) :- true | A1=A.
+
+
+%%%%%%%%%
+% Utility
+sort(X,Y,S,L,Sw):- X < Y | S = Y, L = X, Sw = yes.
+otherwise.
+sort(X,Y,S,L,Sw):- true  | S = X, L = Y, Sw = no.
+
+
+member(_,_,[{*,*}|_],YorN) :- YorN=yes.
+member(_,M,[{*,M}|_],YorN) :- YorN=yes.
+member(P,_,[{P,*}|_],YorN) :- YorN=yes.
+member(P,M,[{P,M}|_],YorN) :- YorN=yes.
+otherwise.
+member(P,M,[_|L],    YorN) :- member(P,M,L,YorN).
+member(_,_,[],       YorN) :- YorN=no.
+
+half(U,L,Up,Lo) :-
+    U0 := U/\1,
+    Up := U>>1,
+    L1 := L>>1,
+    low(U0,L1,Lo).
+
+low(0,L1,Lo) :- true | Lo=L1.
+low(1,L1,Lo) :- true | Lo := L1\/16#"80000000".
+
+integer_to_string(U,L,String) :-
+    double_num:xtod(U,L,List),
+    int_list(List,NewList),
+    builtin#append_string(NewList,String).
+
+int_list([],   Str) :- true | Str=["0"].
+int_list([H|T],Str) :- true | 
+    Str=[S|Str1],
+    buffer_utility:integer_to_string(H,10,S),
+    int_list1(T,Str1).
+
+int_list1([N|L],Str) :- N < 10 | 
+    Str=["000",S|Str1],
+    buffer_utility:integer_to_string(N,10,S),
+    int_list1(L,Str1).
+int_list1([N|L],Str) :- N >=10, N < 100 | 
+    Str=["00",S|Str1],
+    buffer_utility:integer_to_string(N,10,S),
+    int_list1(L,Str1).
+int_list1([N|L],Str) :- N >= 100, N < 1000 | 
+    Str=["0",S|Str1],
+    buffer_utility:integer_to_string(N,10,S),
+    int_list1(L,Str1).
+int_list1([N|L],Str) :- N >= 1000 | 
+    Str=[S|Str1],
+    buffer_utility:integer_to_string(N,10,S),
+    int_list1(L,Str1).
+int_list1([],Str) :- true | Str=[].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% break_up_goal(Goal,^Func,^ArgV) %
+%  Goal -> Functor + ArgV         %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+break_up_goal(Goal,Func,ArgV) :- atom(Goal) | Func=Goal, ArgV={}.
+break_up_goal(Goal,Func,ArgV) :- vector(Goal,Size) |
+    Arity := Size-1,
+    new_vector(V,Arity),
+    set_vector_element(Goal,0,Func,0,Goal1),
+    get_args(Arity,Goal1,V,ArgV).
+
+get_args(N,G,V,Av) :- N =\=0 |
+    N1 := N-1,
+    set_vector_element(G,N, A,0,G1),
+    set_vector_element(V,N1,_,A,V1),
+    get_args(N1,G1,V1,Av).
+get_args(0,_G,V,Av) :- true | Av=V.
+
+dummy :- true| true.
+
+%%%%%%%%
+% Usage
+usage(X) :- true |
+    X=[ {" prof(Goals,Interval,Threshold,CallOrSusp)~n",[]},
+        {" prof(Goals,Interval,CallOrSusp)~n",[]},
+        {" prof(Goals,CallOrSusp)~n",[]},
+        {" prof(Goals)~n",[]},
+      {"~n   Interval   (2000msec) := Msec | infinite~n",[]},
+        {"   Threshold  (10 preds) := NumberOfPredicates | all~n",[]},
+        {"   CallOrSusp (call)     := call | susp~2n",[]},
+        {" setenv profile:interval  = Interval.~n",[]},
+        {" setenv profile:threshold = Threshold.",[]}
+        ].
+    

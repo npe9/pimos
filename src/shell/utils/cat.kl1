@@ -1,0 +1,49 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is 'cat' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module cat.
+:- public usage/1, go/0.
+
+usage(Usage) :- true | Usage = [{string#"~s", [S1]}],
+    S1 = string#"Usage : cat".
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Create the 'cat'  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+go :- true |
+    shoen:raise(pimos_tag#shell, get_std_in, StdIn),
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    StdIn = [prompt(string#"CAT>"), getl(Line) | NewStdIn],
+    loop(Line, NewStdIn, StdOut).
+
+loop(Line, StdIn, StdOut) :- string(Line, 0, _) |    %%% pseudo_eof %%%
+    StdOut = [flush(Stat)], StdIn = [], waitStat(Stat).
+loop(Line, StdIn, StdOut) :- string(Line, L, _), L>0 |    %%% normal %%%
+    StdOut = [putl(Line) | NewStdOut],
+    StdIn = [prompt(string#"CAT>"), getl(NewLine) | NewStdIn],
+    loop(NewLine, NewStdIn, NewStdOut).
+loop(Line, StdIn, StdOut) :- integer(Line), Line = -1 |    %%% end_of_file %%%
+    StdOut = [flush(Stat)], StdIn = [], waitStat(Stat).
+otherwise.
+loop(_, StdIn, StdOut) :- true | StdIn = [], StdOut = [].  %%% abnormal %%%
+
+waitStat(Stat) :- wait(Stat) | true .
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                       %%%%%
+%%%%%  End of 'cat' module. %%%%%
+%%%%%                       %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+

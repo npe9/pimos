@@ -1,0 +1,578 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a 'taskOnShell' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module tos.
+:- public createTos/5, createFirst/6, createMed/7, createLast/6,
+    makeMesFilter/3, makeMesDevFilter/2, get_stdio/2.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% createTos(+TaskInfo, -TaskCnt, -TaskRpt)    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Tos Creation (One) %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+createTos(TaskInfo, TosCnt, TosRpt, Info, G) :- true |
+    shellParser:mesParser(TaskInfo, GoalInfo, StdMes),
+    tos(TaskCnt, TaskRpt, TosCnt, TosRpt, StdMes, Atom),
+    analTask(GoalInfo, Module, Goal, Args, Status),
+    tosCheck1({Status,normal},Module,Goal,Args,TaskCnt,TaskRpt,Info,Atom,[],G).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Tos Creation (First) %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+createFirst(TaskInfo, TosCnt, TosRpt, Post, G, Info) :- true |
+    shellParser:mesParser(TaskInfo, GoalInfo, StdMes),
+%    pipe:create(PipeIn, PipeOut, Rpt),
+%    merge(NewPipeIn, PipeIn),
+%    merge(Post, PipeOut),
+%    pipeHandler(TaskCnt, TaskRpt, PTaskCnt, PTaskRpt, Rpt, ready),
+%%% NewPipeIn
+    get_pipe_id(G,NG,ID,CNT,PStat), Post=ID,
+    pipe_handler(TaskCnt, TaskRpt, PTaskCnt, PTaskRpt, CNT),
+    tos(PTaskCnt, PTaskRpt, TosCnt, TosRpt, StdMes, Atom),
+    analTask(GoalInfo, Module, Goal, Args, Status),
+    IO_info = [out({pipe_request,Post,_})],
+    tosCheck1({Status,PStat},
+                    Module,Goal,Args,TaskCnt,TaskRpt,Info,Atom,IO_info,NG).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Tos Creation (Med) %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+createMed(TaskInfo, TosCnt, TosRpt, Prev, Post, G, Info) :- true |
+    shellParser:mesParser(TaskInfo, GoalInfo, StdMes),
+%    pipe:create(PipeIn, PipeOut, Rpt),
+%    merge(NewPipeIn, PipeIn),
+%    merge(Post, PipeOut),
+%    pipeHandler(TaskCnt, TaskRpt, PTaskCnt, PTaskRpt, Rpt, ready),
+%%% Prev, NewPipeIn
+    get_pipe_id(G,NG,ID,CNT,PStat), Post=ID,
+    pipe_handler(TaskCnt, TaskRpt, PTaskCnt, PTaskRpt, CNT),
+    tos(PTaskCnt, PTaskRpt, TosCnt, TosRpt, StdMes, Atom),
+    analTask(GoalInfo, Module, Goal, Args, Status),
+    IO_info = [in({pipe_request,Prev,_}),out({pipe_request,Post,_})],
+    tosCheck1({Status,PStat},
+                    Module,Goal,Args,TaskCnt,TaskRpt,Info,Atom,IO_info,NG).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Tos Creation (Last) %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+createLast(TaskInfo, TosCnt, TosRpt, Prev, G, Info) :- true |
+    shellParser:mesParser(TaskInfo, GoalInfo, StdMes),
+%%% Prev
+    check_pipe_exist(G,NG,PStat),
+    tos(TaskCnt, TaskRpt, TosCnt, TosRpt, StdMes, Atom),
+    analTask(GoalInfo, Module, Goal, Args, Status),
+    IO_info = [in({pipe_request,Prev,_})],
+    tosCheck1({Status,PStat},
+                    Module,Goal,Args,TaskCnt,TaskRpt,Info,Atom,IO_info,NG).
+
+check_pipe_exist(G,NG,PStat) :- true |
+    G = [request(pipe_request,_,PIPE)|NG],
+    check_pipe_exist0(PIPE,PStat).
+
+check_pipe_exist0(normal(normal(PR)), PStat) :- true | PR=[], PStat=normal.
+otherwise.
+check_pipe_exist0(_, PStat) :- true | PStat = abnormal.
+
+get_pipe_id(G, NG, ID, CNT, PStat) :- true |
+    G = [request(pipe_request,_,PIPE)|NG],
+    get_pipe_id0(PIPE, ID, CNT, PStat).
+
+get_pipe_id0(normal(normal(PR)), ID, NCNT, PStat) :-  true | PStat = normal,
+    PR=[make(normal(CNT))],
+    CNT=[get_id(normal(ID))|NCNT].
+otherwise.
+get_pipe_id0(_, ID, CNT, PStat) :- true | ID = 0, CNT = _, PStat = abnormal.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Tos Create Check  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+tosCheck1(Status,Module,Pred,Args,TosCnt,TosRpt,Info,Atom2,IO_info,G) :-
+    Status = {normal, normal}, vector(Args, ArgsLen) |
+    module_table:cache_table([get_code(Module, Pred, ArgsLen, GoalWithStat)]),
+    atom_table:cache_table(Atom), merge({Atom1, Atom2}, Atom),
+    buffer:character_pool([atom_table(Atom1)], IO),
+    IO = [putt(Module),putb(string#":"),putt(Pred),nl,flush(_),getl(Name)],
+    tosCheck2(GoalWithStat,Args,TosCnt,TosRpt,Name,G,Info,IO_info).
+otherwise.
+tosCheck1({Stat1,Stat2}, _, _, _, TosCnt, TosRpt, _, _, _, G) :- true | G=[],
+    ( Stat1=normal, Stat2\=normal -> TosRpt = [pipe_server_error | TosCnt] ;
+      Stat1\=normal, Stat2=normal -> TosRpt = [illegal_goal_name | TosCnt] ;
+     otherwise ;
+      true -> TosRpt = [illegal_goal_name, pipe_server_error | TosCnt] ).
+
+tosCheck2(normal(Goal),Args,TosCnt,TosRpt,Name,GEN,{Min,Max},IO_info) :- true |
+    tosCheck3(Goal,Args,TosCnt,TosRpt,Name,GEN,{Min,Max},IO_info).
+%    shoen:raise(pimos_tag#task, get_std(switch), [detach(MAKE)|SW]),
+%    tosCheck3(Goal,Args,TosCnt,TosRpt,Name,GEN,{Min,Max},MAKE,SW,IO_info).
+otherwise.
+tosCheck2(Status, _, TosCnt, TosRpt, Name, GEN, _, _) :- true | GEN = [],
+    TosRpt = [undefined_code(Name,Status) | TosCnt].
+
+tosCheck3(Goal,Args,TosCnt,TosRpt,Name,GEN,{Min,Max},IO_info) :-
+    GEN = [execute(Goal, Args, Name, Min, Max, shell_tag#tos,
+            [stdio(IO_info,normal(ID, ELSE))], normal(Control, Report))|NG],
+    Report = TosRpt,
+    check_stdio(ELSE, Stat),
+    release_pipe(Stat, IO_info, NG),
+%%%%%  if PIPED then stdio isn't []
+    Control = [add_resource(0, 1000000000), allow_resource_report | TosCnt].
+
+release_pipe(Stat, IO_info, G) :- wait(Stat) |
+    release_pipe0(IO_info, G).
+
+release_pipe0([],G) :- true | G=[].
+release_pipe0([IO|REM],G) :- true |
+    ( IO = in({pipe_request,ID,Stat}) ->
+        waitStat(Stat, G, [request(pipe_request,_,normal(normal(PR)))|NG]),
+        PR = [release(in(ID),_)] ;
+      IO = out({pipe_request,ID,Stat}) ->
+        waitStat(Stat, G, [request(pipe_request,_,normal(normal(PR)))|NG]),
+        PR = [release(out(ID),_)] ;
+     otherwise ;
+      true -> NG = G ),
+    release_pipe0(REM,NG).
+
+%tosCheck3(Goal,Args,TosCnt,TosRpt,Name,GEN,{Min,Max},MAKE,SW,IO_info) :-
+%        wait(MAKE) |
+%    GEN = [execute(Goal, Args, Name, Min, Max, shell_tag#tos,
+%                [stdio(IO_info,normal(ID, ELSE))], normal(Control, Report))],
+%    Report = TosRpt,
+%    check_stdio(ELSE, Stat),
+%%%%%  if PIPED then stdio isn't []
+%    Control = [add_resource(0, 1000000000), allow_resource_report | TosCnt],
+%    waitStat(Stat, SW, [attach(ID,_,Detect)|NSW]),
+%    check_attention(ID, Detect, NSW).
+%%%%% if PIPED then SW isn't fore(ID,_)
+
+%check_attention(ID, Detect, SW) :- wait(Detect) |
+%    ( Detect = detected ->
+%        shoen:raise(pimos_tag#tos, attention_detected, []),
+%        SW=[attach(ID,_,NDetect)|NSW], check_attention(ID,NDetect,NSW) ;
+%      Detect = disconnected ->
+%        SW=[attach(ID,_,NDetect)|NSW], check_attention(ID,NDetect,NSW) ;
+%      Detect = closed -> SW = [] ;
+%      Detect = deserted -> SW = [] ;
+%      Detect = non_existent -> SW = [] ;
+%      Detect = error -> SW = []).
+
+check_stdio([], Status) :- Status = normal.
+check_stdio([{_,Stat}|ELSE], Status) :- true |
+    ( Stat=normal -> check_stdio(ELSE, Status) ;
+     otherwise ;
+      true -> Status = abnormal).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Pipe Handler (Wait Detected)  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+pipe_handler(TaskCnt,TaskRpt,PTaskCnt,PTaskRpt,CNT) :- true |
+    CNT = [attach(ATTACH,DETECT)|NCNT],
+    pipeHandlerF(TaskCnt,TaskRpt,PTaskCnt,PTaskRpt,NCNT,ready,ATTACH,DETECT).
+
+%%%  Message from Pipe  %%%
+pipeHandler(TaskCnt,TaskRpt,PTaskCnt,PTaskRpt,CNT,Stat,DT) :- wait(DT) |
+    ( DT = full ->
+        TaskCnt = [stop | NTaskCnt], CNT = [attach(AT,NDT)|NCNT],
+        pipeHandlerF(NTaskCnt,TaskRpt,PTaskCnt,PTaskRpt,NCNT,Stat,AT,NDT) ;
+      DT = [] -> 
+        TaskCnt = [stop | NTaskCnt], CNT = [attach(AT,NDT)|NCNT],
+        pipeHandlerF(NTaskCnt,TaskRpt,PTaskCnt,PTaskRpt,NCNT,Stat,AT,NDT) ;
+      DT = broken -> releaseStop(Stat),
+        PTaskRpt=[pipeBroken|TaskRpt], TaskCnt=PTaskCnt, CNT=[] ;
+      DT = closed ->
+        releaseStop(Stat), PTaskRpt=TaskRpt, TaskCnt=PTaskCnt, CNT=[] ).
+
+%%%  Message from Task Report  %%%
+pipeHandler(TaskCnt, [], _, PTaskRpt, CNT, Stat,DT) :- true |
+    TaskCnt = [], PTaskRpt = [], CNT = [], releaseStop(Stat).
+pipeHandler(TaskCnt,[M|TaskRpt],PTaskCnt,PTaskRpt,CNT,Stat,DT) :- true |
+    ( M = stopped(Reason,Release) -> NPTaskRpt=PTaskRpt, Reason=[pipe_full],
+        releaseStop(Stat), NStat=stop(Release) ;
+     otherwise ;
+      true -> PTaskRpt = [M | NPTaskRpt], NStat = Stat ),
+    pipeHandler(TaskCnt,TaskRpt,PTaskCnt,NPTaskRpt,CNT,NStat,DT).
+
+%%%  Message from Parent Control  %%%
+pipeHandler(TaskCnt,TaskRpt,[],PTaskRpt,CNT,Stat,_) :- true |
+    releaseStop(Stat), TaskCnt = [], CNT = [], PTaskRpt = TaskRpt.
+pipeHandler(TaskCnt,TaskRpt,[M |PTaskCnt],PTaskRpt,CNT,Stat,DT) :-
+    TaskCnt = [M | NTaskCnt],
+    pipeHandler(NTaskCnt,TaskRpt,PTaskCnt,PTaskRpt,CNT,Stat,DT).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Pipe Handler (Wait Attached)  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%  Message from Pipe  %%%
+pipeHandlerF(TaskCnt,TaskRpt,PTaskCnt,PTaskRpt,CNT,Stat,AT,DT) :- wait(AT) |
+    releaseStop(Stat),
+    pipeHandler(TaskCnt,TaskRpt,PTaskCnt,PTaskRpt,CNT,ready,DT).
+
+alternatively.
+%%%  Message from Task Report  %%%
+pipeHandlerF(TaskCnt, [], _, PTaskRpt, CNT, Stat,_,_) :- true |
+    TaskCnt = [], PTaskRpt = [], releaseStop(Stat), CNT = [].
+pipeHandlerF(TaskCnt,[M|TaskRpt],PTaskCnt,PTaskRpt,CNT,Stat,AT,DT) :- true |
+    ( M = stopped(Reason,Release) -> NPTaskRpt=PTaskRpt, Reason=[pipe_full],
+        releaseStop(Stat), NStat = stop(Release) ;
+     otherwise ;
+      true -> PTaskRpt = [M | NPTaskRpt], NStat = Stat ),
+    pipeHandlerF(TaskCnt,TaskRpt,PTaskCnt,NPTaskRpt,CNT,NStat,AT,DT).
+
+%%%  Message from Parent Control  %%%
+pipeHandlerF(TaskCnt,TaskRpt,[],PTaskRpt,CNT,Stat,_,_) :- true |
+    releaseStop(Stat), TaskCnt = [], CNT = [], PTaskRpt = TaskRpt.
+pipeHandlerF(TaskCnt,TaskRpt,[M|PTaskCnt],PTaskRpt,CNT,Stat,AT,DT) :- true |
+    TaskCnt = [M | NTaskCnt],
+    pipeHandlerF(NTaskCnt,TaskRpt,PTaskCnt,PTaskRpt,CNT,Stat,AT,DT).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% tos(+[+Mes | TaskCnt], +[-Mes | Report], +[-Mes | TosCnt],    %
+%        +[+Mes | TosRpt], StdIn, StdOut, StdMes, Stat)    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% task controlling process %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%  Message from TOS(Control)  %%%%%
+tos(TaskCnt, TaskRpt, [], TosRpt, StdMes, Atom) :- true |
+    closeStdMes(StdMes), Atom = [], TaskCnt = [], tosTerm(TaskRpt, TosRpt).
+
+%%%%%  Message from Task(Report)  %%%%%
+tos(TaskCnt, [], TosCnt, TosRpt, StdMes, Atom) :- true |
+    closeStdMes(StdMes), Atom = [], TosRpt = TosCnt, TaskCnt = [].
+tos(TaskCnt, [terminated | _], TosCnt, TosRpt, StdMes, Atom) :- true |
+    closeStdMes(StdMes), Atom = [], TosRpt = [terminated | TosCnt], TaskCnt = [].
+tos(TaskCnt, [pipeBroken | TaskRpt], TosCnt, TosRpt, StdMes, Atom) :- true |
+%    waitCloseAtPipe(Status, TaskCnt, NTaskCnt),
+%    shoen:raise(pimos_tag#tos, pipeBroken, {Status}),
+    shoen:raise(pimos_tag#tos, pipeBroken, _), NTaskCnt = TaskCnt,
+    NTaskCnt = [abort([], _)],
+    tos(_, TaskRpt, TosCnt, TosRpt, StdMes, Atom).
+tos(TaskCnt, [resource_low | TaskRpt], TosCnt, TosRpt, StdMes, Atom) :- true |
+    TaskCnt = [add_resource(0, 1000000000),
+            allow_resource_report | NewTaskCnt],
+    tos(NewTaskCnt, TaskRpt, TosCnt, TosRpt, StdMes, Atom).
+%%%  Close_Std_Io  %%%
+tos(TaskCnt, [exception(raised, {_, close_std_io, _}, NC, NA) | TaskRpt],
+        TosCnt, TosRpt, StdMes, Atom) :- true |
+    closeStdMes(StdMes),
+    getCode(module#shellUtils, terminate, 0, Code),    Args = {},
+    invokeFilter(Code, NC, Args, NA, nop, TosRpt, NewTosRpt),
+    NewTosRpt = [close_std_io | NTosRpt],
+    tos(TaskCnt, TaskRpt, TosCnt, NTosRpt, StdMes, Atom).
+%%%  Get_Std_Io  %%%
+tos(TaskCnt, [exception(raised, {_, get_std_io, User}, NC, NA) | TaskRpt],
+        TosCnt, TosRpt, StdMes, Atom) :- true |
+    getCode(module#tos, get_stdio, 2, NC), NA = {io, User},
+    tos(TaskCnt, TaskRpt, TosCnt, TosRpt, StdMes, Atom).
+%%%  Get_Std_In  %%%
+tos(TaskCnt, [exception(raised, {_, get_std_in, User}, NC, NA) | TaskRpt],
+        TosCnt, TosRpt, StdMes, Atom) :- true |
+    getCode(module#tos, get_stdio, 2, NC), NA = {in, User},
+    tos(TaskCnt, TaskRpt, TosCnt, TosRpt, StdMes, Atom).
+%%%  Get_Std_Out  %%%
+tos(TaskCnt, [exception(raised, {_, get_std_out, User}, NC, NA) | TaskRpt],
+        TosCnt, TosRpt, StdMes, Atom) :- true |
+    getCode(module#tos, get_stdio, 2, NC), NA = {out, User},
+    tos(TaskCnt, TaskRpt, TosCnt, TosRpt, StdMes, Atom).
+%%%  Get_Std_Inter  %%%
+tos(TaskCnt, [exception(raised, {_, get_std_inter, User}, NC, NA) | TaskRpt],
+        TosCnt, TosRpt, StdMes, Atom) :- true |
+    getCode(module#tos, get_stdio, 2, NC), NA = {inter, User},
+    tos(TaskCnt, TaskRpt, TosCnt, TosRpt, StdMes, Atom).
+%%%  Get_Std_Mes  %%%
+tos(TaskCnt, [exception(raised, {_, get_std_mes, Info}, NC, NA) | TaskRpt],
+        TosCnt, TosRpt, StdMes, Atom) :- true |
+    (StdMes = shell ->
+        invokeFilter(Code, NC, Args, NA, std_mes(Strm), TosRpt, NTosRpt),
+        Strm = {S1, S2}, NStdMes = stream(S2) ;
+     StdMes = stream(Strm) ->
+        invokeFilter(Code, NC, Args, NA, nop, TosRpt, NTosRpt),
+        Strm = {S1, S2}, NStdMes = stream(S2) ;
+     StdMes = file(File) ->
+        invokeFilter(Code, NC, Args, NA, nop, TosRpt, NTosRpt),
+        makeDevice(file(File), Strm),
+        merge({S1, S2}, Strm), NStdMes = stream(S2) ;
+     vector(StdMes, Size), Size > 1,
+     vector_element(StdMes, 0, V1), V1 = window ->
+        invokeFilter(Code, NC, Args, NA, nop, TosRpt, NTosRpt),
+        makeDevice(StdMes, Strm),
+        merge({S1, S2}, Strm), NStdMes = stream(S2) ),
+    Atom = {Atom1, Atom2}, Args = {Info, S1, Atom1},
+    getCode(module#tos, makeMesFilter, 3, Code),
+    tos(TaskCnt, TaskRpt, TosCnt, NTosRpt, NStdMes, Atom2).
+%%%  Get_Std_Mes_Dev  %%%
+tos(TaskCnt, [exception(raised, {_, get_std_mes_dev, Info}, NC, NA) | TaskRpt],
+        TosCnt, TosRpt, StdMes, Atom) :- true |
+    (StdMes = shell ->
+        invokeFilter(Code, NC, Args, NA, std_mes(Strm), TosRpt, NTosRpt),
+        Strm = {S1, S2}, NStdMes = stream(S2) ;
+     StdMes = stream(Strm) ->
+        invokeFilter(Code, NC, Args, NA, nop, TosRpt, NTosRpt),
+        Strm = {S1, S2}, NStdMes = stream(S2) ;
+     StdMes = file(File) ->
+        invokeFilter(Code, NC, Args, NA, nop, TosRpt, NTosRpt),
+        makeDevice(file(File), Strm),
+        merge({S1, S2}, Strm), NStdMes = stream(S2) ;
+     vector(StdMes, Size), Size > 1,
+     vector_element(StdMes, 0, V1), V1 = window ->
+        invokeFilter(Code, NC, Args, NA, nop, TosRpt, NTosRpt),
+        makeDevice(StdMes, Strm),
+        merge({S1, S2}, Strm), NStdMes = stream(S2) ),
+    Args = {Info, S1},
+    getCode(module#tos, makeMesDevFilter, 2, Code),
+    tos(TaskCnt, TaskRpt, TosCnt, NTosRpt, NStdMes, Atom).
+%%%  Raised (other)  %%%
+tos(TaskCnt, [exception(raised, {PE, Type, _}, NC, NA) | TaskRpt],
+        TosCnt, TosRpt, StdMes, Atom) :-
+    Type \= get_std_io, Type \= get_std_in, Type \= get_std_out,
+    Type \= get_std_inter, Type \= get_std_mes, Type \= get_std_mes_dev |
+    getCode(module#shellUtils, terminate, 0, NC), NA = {},
+    shoen:raise(pimos_tag#tos, raised(PE, Type), _),
+    tos(TaskCnt, TaskRpt, TosCnt, TosRpt, StdMes, Atom).
+%otherwise.
+%%%%%  Message from Task(Report)  %%%%%
+tos(TaskCnt, [Report | TaskRpt], TosCnt, TosRpt, StdMes, Atom) :-
+        atom(Report), Report \= terminated, Report \= resource_low |
+    TosRpt = [Report | NewTosRpt],
+    tos(TaskCnt, TaskRpt, TosCnt, NewTosRpt, StdMes, Atom).
+tos(TaskCnt, [Report | TaskRpt], TosCnt, TosRpt, StdMes, Atom) :-
+     vector_element(Report, 0, V), V \= exception |
+    TosRpt = [Report | NewTosRpt],
+    tos(TaskCnt, TaskRpt, TosCnt, NewTosRpt, StdMes, Atom).
+tos(TaskCnt, [Report | TaskRpt], TosCnt, TosRpt, StdMes, Atom) :-
+        vector_element(Report, 0, V0), V0 = exception,
+        vector_element(Report, 1, V1), V1 \= raised |
+    vector_element(Report, 1, Type, R1),
+    vector_element(R1, 3, NC, R2),
+    vector_element(R2, 4, NA, _),
+%    Report = exception(Type, _, NC, NA),
+    getCode(module#shellUtils, terminate, 0, NC), NA = {},
+    shoen:raise(pimos_tag#tos, raised(-1, Type), _),
+    tos(TaskCnt, TaskRpt, TosCnt, TosRpt, StdMes, Atom).
+%%%%%  Message from TOS(Control)  %%%%%
+tos(TaskCnt, TaskRpt, [Control | NewTosCnt], TosRpt, StdMes, Atom) :- true |
+    TosRpt = [Control | NewTosRpt],
+    tos(TaskCnt, TaskRpt, NewTosCnt, NewTosRpt, StdMes, Atom).
+
+tosTerm([terminated | _], TosRpt) :- true | TosRpt = [terminated].
+tosTerm([], TosRpt) :- true | TosRpt = [terminated].
+otherwise.
+tosTerm([Message | TaskRpt], TosRpt) :- true |
+    TosRpt = [Message | NewTosRpt],
+    tosTerm(TaskRpt, NewTosRpt).
+
+%%%  Wait until Closing the Io-Stream  %%%
+
+%waitCloseAtPipe(Status, Old, New) :- wait(Status) | Old = New.
+
+%%%  Release Stop Reason  %%%
+
+releaseStop(Stop) :- Stop = stop(Release) | Release = release.
+otherwise.
+releaseStop(_) :- true | true.
+
+%%%  Close StdIn Device Stream  %%%
+
+%closeStdIn(pipe(S)) :- true | S = [].
+%closeStdIn(shell) :- true | true.
+
+%%%  Close StdOut Device Stream  %%%
+
+%closeStdOut(pipe(S)) :- true | S = [].
+%closeStdOut(shell) :- true | true.
+
+%%%  Close StdMes Device Stream  %%%
+
+closeStdMes(file(_)) :- true | true.
+closeStdMes(window(_)) :- true | true.
+closeStdMes(window(_, _, _, _, _)) :- true | true.
+closeStdMes(window(_, _, _, _, _, _)) :- true | true.
+closeStdMes(shell) :- true | true.
+closeStdMes(stream(S)) :- true | S = [].
+
+%%%  Make Mes Filter  %%%
+makeMesFilter(In, Out, Atom) :- true |
+    setup_buffer_param(In,In1,Init),
+    append(Init,[atom_table(Atom)],NInit),
+    buffer:output_filter(NInit, In1, Med),
+%    buffer:output_filter([atom_table(Atom)], In, Med),
+%    std_io_filter:std_io_filter(Med, Out).
+    std_out_filter:std_out_filter(Med, Out).
+makeMesDevFilter(In, Out) :- true |
+%    std_io_filter:std_io_filter(In, Out).
+    std_out_filter:std_out_filter(In, Out).
+
+setup_buffer_param(User,Pimos,Init) :- true |
+    Param1 = [print_depth,print_length,
+                        print_string_length,print_atom_length],
+    shoen:raise(pimos_tag#task,general_request,GEN),
+    Param2 = [size],
+    make_buffer_param(GEN,GEN1,Param1,[],Init1),
+    make_buffer_param(GEN1,[],Param2,[],Init),
+    append(Init1,User,Pimos).
+
+make_buffer_param(G,NG,[],Tmp,Init) :- true | NG=G, Init=Tmp.
+make_buffer_param(G,NG,[P|Param],Tmp,Init) :- true |
+    G = [getenv({':',stdio,P},Env)|G1],
+    check_buffer_param(G1,NG,Param,Tmp,Init,P,Env).
+
+check_buffer_param(G,NG,Param,Tmp,Init,P,Env) :- true |
+    ( Env = normal(Value) ->
+        make_buffer_param(G,NG,Param,[{P,Value}|Tmp],Init) ;
+     otherwise;
+      true ->
+        make_buffer_param(G,NG,Param,Tmp,Init) ).
+
+append([],Z,W) :- true | W=Z.
+append([X|Y],Z,W) :- true | W=[X|NW], append(Y,Z,NW).
+
+%%%  Make Device  %%%
+makeDevice(file(FileID), SS) :- true |
+    (string(FileID, _, _) -> File = FileID, Mode = write,
+        shoen:raise(pimos_tag#task, general_request, [file(FilDevWithStat)]),
+        makeFileDevReq(FilDevWithStat, File, Mode, SS) ;
+     FileID = {('^'), File}, string(File, _, _) -> Mode = append,
+        shoen:raise(pimos_tag#task, general_request, [file(FilDevWithStat)]),
+        makeFileDevReq(FilDevWithStat, File, Mode, SS) ;
+    otherwise ;
+     true -> %%shellUtils:suspender(_, SS),
+        shoen:raise(pimos_tag#tos, illegal_filename(mes, FileID), _) ).
+makeDevice(WinReq, SS) :- vector(WinReq,_), vector_element(WinReq,0,window) |
+    (WinReq = window(Window), string(Window,_,_) ->
+        S = [reshape(mouse, mouse, _), set_title(Window,_),show(_) | S1],
+        shoen:raise(pimos_tag#task, general_request, [window(WinDevWithStat)]),
+        makeWinDevReq(WinDevWithStat, Window, S), merge(SS, S1) ;
+     WinReq = window(Window,X,Y,W,H), string(Window, _, _),
+        integer(X),integer(Y),integer(W),integer(H), X>=0,Y>=0,W>0,H>0 ->
+        S = [reshape(at(X,Y),char(W,H),_), set_title(Window,_), show(_) | S1],
+        shoen:raise(pimos_tag#task, general_request, [window(WinDevWithStat)]),
+        makeWinDevReq(WinDevWithStat, Window, S), merge(SS, S1) ;
+     WinReq = window(Window, At, Char), string(Window, _, _) ->
+        shellUtils:posCheck(At, Pos), shellUtils:sizeCheck(Char, Size),
+        S = [reshape(Pos,Size,_), set_title(Window,_), show(_) | S1],
+        shoen:raise(pimos_tag#task, general_request, [window(WinDevWithStat)]),
+        makeWinDevReq(WinDevWithStat, Window, S), merge(SS, S1) ;
+     WinReq = window(Window,X,Y,W,H,Font),string(Window,_,_),string(Font,_,_),
+        integer(X),integer(Y),integer(W),integer(H), X>=0,Y>=0,W>0,H>0 ->
+        S = [reshape(at(X, Y), char(W, H), _), set_title(Window, _),
+                    set_font(Font, _), show(_) | S1],
+        shoen:raise(pimos_tag#task, general_request, [window(WinDevWithStat)]),
+        makeWinDevReq(WinDevWithStat, Window, S), merge(SS, S1) ;
+     WinReq = window(Window,At,Char,Font),string(Window,_,_),string(Font,_,_)->
+        shellUtils:posCheck(At, Pos), shellUtils:sizeCheck(Char, Size),
+        S = [reshape(Pos, Size, _), set_title(Window, _),
+                    set_font(Font, _), show(_) | S1],
+        shoen:raise(pimos_tag#task, general_request, [window(WinDevWithStat)]),
+        makeWinDevReq(WinDevWithStat, Window, S), merge(SS, S1) ;
+    otherwise ;
+     true -> %%shellUtils:suspender(_, SS),
+        shoen:raise(pimos_tag#tos, illegal_window_parameter(mes, WinReq), _) ).
+otherwise.
+makeDevice(Device, SS) :- true | %%shellUtils:suspender(_, SS),
+    shoen:raise(pimos_tag#tos, illegal_device_name(mes, Device), _).
+
+makeFileDevReq(normal(FilDev, _, _), File, Type, SS) :- true |
+    FilDev = [open(File, {Type, SWithStat})],
+    makeFileDev(SWithStat, File, mes, SS).
+otherwise.
+makeFileDevReq(_, File, Type, SS) :- %%shellUtils:suspender(_, SS),
+    shoen:raise(pimos_tag#tos, cannot_create_file_request(Type, File), _).
+
+makeFileDev(normal(S, _, _), _, _, SS) :- true | merge(SS, S).
+otherwise.
+makeFileDev(_, File, Type, SS) :- true | %%shellUtils:suspender(_, SS),
+    shoen:raise(pimos_tag#tos, cannot_create_file(Type, File), _).
+
+makeWinDevReq(normal(WinDev, _, _), Window, S) :- true |
+    WinDev = [create(SWithStat)],
+    makeWinDev(SWithStat, Window, S).
+otherwise.
+makeWinDevReq(_, Window, _) :- true |
+    shoen:raise(pimos_tag#tos, cannot_create_window_request(Window), _).
+
+makeWinDev(normal(Strm, _, _), _, S) :- true | Strm = S.
+otherwise.
+makeWinDev(_, Window, _) :- true |
+    shoen:raise(pimos_tag#tos, cannot_create_window(Window), _).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% analize task information %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+analTask(TaskInfo, Module, Goal, Args, Status) :-   %%%%% [Pkg::]Mod:Pred
+        TaskInfo = {:, M, G}, atom(G) |
+    Module = M, Goal = G, Args = {}, Status = normal.
+analTask(TaskInfo, Module, Goal, Args, Status) :-   %%%%% [Pkg::]Mod:Pred(Arg)
+        TaskInfo = {:, M, GoalWithArgs}, vector(GoalWithArgs, Size),
+        vector_element(GoalWithArgs, 0, G) |
+    ArgSize := Size - 1, new_vector(NewVector, ArgSize),
+    Module = M, Goal = G, Status = normal,
+    setArgs(GoalWithArgs, NewVector, 1, Size, Args).
+analTask(TaskInfo, Module, Goal, Args, Status) :-   %%%%% Pkg::Mod
+        TaskInfo = {'::', Pkg, Mod}, atom(Mod) |
+    Module = TaskInfo, Goal = go, Args = {}, Status = normal.
+analTask(TaskInfo, Module, Goal, Args, Status) :-   %%%%% Pkg::Mod(Arg)
+        TaskInfo = {'::', Pkg, ModWithArgs}, vector(ModWithArgs, Size),
+        vector_element(ModWithArgs, 0, Mod) |
+    ArgSize := Size - 1, new_vector(NewVector, ArgSize),
+    Module = {'::', Pkg, Mod}, Goal = go, Status = normal,
+    setArgs(ModWithArgs, NewVector, 1, Size, Args).
+analTask(TaskInfo, Module, Goal, Args, Status) :- atom(TaskInfo) |  %%%%% Mod
+    Module = TaskInfo, Goal = go, Args = {}, Status = normal.
+otherwise.
+analTask(TaskInfo, Module, Goal, Args, Status) :-   %%%%% Mod(Arg)
+        vector(TaskInfo, Size), vector_element(TaskInfo, 0, M) |
+    Module = M, Goal = go, Status = normal,
+    ArgSize := Size - 1, new_vector(NewVector, ArgSize),
+    setArgs(TaskInfo, NewVector, 1, Size, Args).
+otherwise.
+analTask(_, _, _, _, Status) :- true | Status = abnormal.
+
+setArgs(_, New, Pos, Max, Args) :- Pos = Max | New = Args.
+otherwise.
+setArgs(Old, New, Pos, Max, Args) :- true |
+    vector_element(Old, Pos, Arg, Old1),
+    Pos0 := Pos - 1, Pos1 := Pos + 1,
+    set_vector_element(New, Pos0, _, Arg, New1),
+    setArgs(Old1, New1, Pos1, Max, Args).
+
+getCode(Module, Pred, Arity, Goal) :- true |
+    predicate_to_code(Module, Pred, Arity, Goal).
+
+invokeFilter([], NC, _, NA, _, TosRpt, NewTosRpt) :- true |
+    getCode(module#shellUtils, terminator, 0, NC),
+    NA = {}, TosRpt = NewTosRpt.
+otherwise.
+invokeFilter(Code, NC, Args, NA, Mes, TosRpt, NewTosRpt) :- true |
+    NC = Code, NA = Args, TosRpt = [Mes | NewTosRpt].
+
+get_stdio(Type, S) :- true | shoen:raise(pimos_tag#task, get_std(Type), S).
+
+waitStat(Stat, In, Out) :- wait(Stat) | In = Out.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                        %%%%%
+%%%%%  End of 'tos' module.  %%%%%
+%%%%%                        %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

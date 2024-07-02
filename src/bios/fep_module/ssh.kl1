@@ -1,0 +1,259 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi523::>sys>user>pimos>RELEASE>src>bios>boot>ssh.kl1.2, 12-Nov-91 15:49:21, Edit by yashiro
+:- module scsi_string_io.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public create/2.
+
+
+%%
+%% create <TOP>
+%%
+create(SCSI_ID,Result):- true |
+                Result=normal(Stringio),
+                protocol(Stringio,SCSI_ID,0,0).
+
+
+%%
+%% protocol
+%%
+protocol([],SCSI_ID,0,0):- true | true.
+protocol([],SCSI_ID,exist(S1),0):- true | S1 = [].
+protocol([],SCSI_ID,0,exist(S2)):- true | S2 = [].
+protocol([],SCSI_ID,exist(S1),exist(S2)):- true | S1 = [], S2 = [].
+
+protocol([processor(7,0,Result)|Next],SCSI_ID,0,R):- true |
+                protocol(Next,SCSI_ID,Result1,R),
+                shoen:raise(pimos_tag#task,general_request(SCSI_ID),GRD),
+                GRD=[string_io(SRD)],
+                send1(SRD,Result0),
+                check_result(Result0,Result1,Result).
+protocol([processor(7,0,Result)|Next],SCSI_ID,exist(SCSI),R):- true |
+                protocol(Next,SCSI_ID,exist(SCSI1),R),
+                SCSI = {SCSI1,SCSI2},
+                Result = normal(SCSI2).
+protocol([processor(7,1,Result)|Next],SCSI_ID,S,0):- true |
+                protocol(Next,SCSI_ID,S,Result1),
+                shoen:raise(pimos_tag#task,general_request(SCSI_ID),GRD),
+                GRD=[string_io(SRD)],
+                receive1(SRD,Result0),
+                check_result(Result0,Result1,Result).
+protocol([processor(7,1,Result)|Next],SCSI_ID,S,exist(SCSI)):- true |
+                protocol(Next,SCSI_ID,S,exist(SCSI1)),
+                SCSI = {SCSI1,SCSI2},
+                Result = normal(SCSI2).
+protocol([processor(Unit,0,Result)|Next],SCSI_ID,S,R):- Unit =\= 7 |
+                protocol(Next,SCSI_ID,S,R),
+                Result = abnormal.
+protocol([processor(Unit,1,Result)|Next],SCSI_ID,S,R):- Unit =\= 7 |
+                protocol(Next,SCSI_ID,S,R),
+                Result = abnormal.
+protocol([processor(_,7,0,Result)|Next],SCSI_ID,0,R):- true |
+                protocol(Next,SCSI_ID,Result1,R),
+                shoen:raise(pimos_tag#task,general_request(SCSI_ID),GRD),
+                GRD=[string_io(SRD)],
+                send1(SRD,Result0),
+                check_result(Result0,Result1,Result).
+protocol([processor(_,7,0,Result)|Next],SCSI_ID,exist(SCSI),R):- true |
+                protocol(Next,SCSI_ID,exist(SCSI1),R),
+                SCSI = {SCSI1,SCSI2},
+                Result = normal(SCSI2).
+protocol([processor(_,7,1,Result)|Next],SCSI_ID,S,0):- true |
+                protocol(Next,SCSI_ID,S,Result1),
+                shoen:raise(pimos_tag#task,general_request(SCSI_ID),GRD),
+                GRD=[string_io(SRD)],
+                receive1(SRD,Result0),
+                check_result(Result0,Result1,Result).
+protocol([processor(_,7,1,Result)|Next],SCSI_ID,S,exist(SCSI)):- true |
+                protocol(Next,SCSI_ID,S,exist(SCSI1)),
+                SCSI = {SCSI1,SCSI2},
+                Result = normal(SCSI2).
+protocol([processor(_,Unit,0,Result)|Next],SCSI_ID,S,R):- Unit =\= 7 |
+                protocol(Next,SCSI_ID,S,R),
+                Result = abnormal.
+protocol([processor(_,Unit,1,Result)|Next],SCSI_ID,S,R):- Unit =\= 7 |
+                protocol(Next,SCSI_ID,S,R),
+                Result = abnormal.
+protocol([get_info(Result)|Next],SCSI_ID,S,R):- true |
+                Result=normal(7,16384),
+%                Result=normal(7,32768),
+                protocol(Next,SCSI_ID,S,R).
+protocol([direct_access(_,_,Result)|Next],SCSI_ID,S,R):- true |
+                Result=abnormal(not_implemented),
+                protocol(Next,SCSI_ID,S,R).
+protocol([sequential_access(_,_,Result)|Next],SCSI_ID,S,R):- true |
+                Result=abnormal(not_implemented),
+                protocol(Next,SCSI_ID,S,R).
+protocol([printer(_,_,Result)|Next],SCSI_ID,S,R):- true |
+                Result=abnormal(not_implemented),
+                protocol(Next,SCSI_ID,S,R).
+protocol([write_once_multiple_read(_,_,Result)|Next],SCSI_ID,S,R):- true |
+                Result=abnormal(not_implemented),
+                protocol(Next,SCSI_ID,S,R).
+protocol([read_only_direct_access(_,_,Result)|Next],SCSI_ID,S,R):- true |
+                Result=abnormal(not_implemented),
+                protocol(Next,SCSI_ID,S,R).
+otherwise.
+protocol([Error|Next],SCSI_ID,S,R):- true |
+                variable:wrap(Error,{_,Wrapped},4,10),
+                shoen:raise(pimos_tag#error,
+                        '$PIMOS$'(invalid_protocol_to_SCSI_STRING_IO,
+                            "scsi_string_io: protocol /4"),
+                        [Wrapped]).
+
+check_result(normal(SCSI),Result0,Result) :-
+    true |
+        merge({SCSI1,SCSI2},SCSI),
+        Result = normal(SCSI1),
+        Result0= exist(SCSI2).
+otherwise.
+check_result(_,Result0,Result) :-
+    true |
+        Result = abnormal,
+        Result0= 0.
+
+%%
+%% send1
+%%
+send1(normal(S,_,_),Result):- true |
+%                S=[create("pseudo_scsi",SD)],
+                S=[create("mpsicsp##nise_scsi",SD)],
+                send2(SD,Result).
+otherwise.
+send1(_,Result):- true | Result=abnormal.
+
+
+%%
+%% send2
+%%
+send2(normal(S,_,_),Result):- true |
+                S=[io(0,"send",Return)|NS],
+                send3(Return,Result,NS).
+otherwise.
+send2(_,Result):- true | Result=abnormal.
+
+
+%%
+%% send3
+%%
+send3(normal(_),Result,NS):- true |
+                Result=normal(Send),
+                get_command(Send,NS).
+otherwise.
+send3(_,Result,NS):- true |
+                Result=abnormal,NS=[].
+
+
+%%
+%% receive1
+%%
+receive1(normal(S,_,_),Result):- true |
+%                S=[create("pseudo_scsi",SD)],
+                S=[create("mpsicsp##nise_scsi",SD)],
+                receive2(SD,Result).
+otherwise.
+receive1(_,Result):- true | Result=abnormal.
+
+
+%%
+%% receive2
+%%
+receive2(normal(S,_,_),Result):- true |
+                S=[io(0,"receive",Return)|NS],
+                receive3(Return,Result,NS).
+otherwise.
+receive2(_,Result):- true | Result=abnormal.
+
+
+%%
+%% receive3
+%%
+receive3(normal(_),Result,NS):- true |
+                Result=normal(Receive),
+                put_command(Receive,NS).
+otherwise.
+receive3(_,Result,NS):- true | Result=abnormal,NS=[].
+
+
+%%
+%% get_command
+%%
+get_command([],Sio):- true | Sio=[].
+get_command([send(FromBuffer,Size,Result)|Next],Sio)
+        :- string(FromBuffer,Len,_) |
+                builtin#substring(FromBuffer,0,Size,Buffer2,Buffer1),
+                change_element_size(Buffer2,16,ToFep),
+                Sio=[io(1,ToFep,FromFep)|NSio],
+                wait_Sio(FromFep,Buffer1,Size,Result),
+                get_command(Next,NSio).
+get_command([test_unit_ready(Result)|Next],Sio):- true |
+                Result=normal,
+                get_command(Next,Sio).
+get_command([inquiry(Result)|Next],Sio):- true |
+                Result=normal(processor,not_removable,0,{1,0,0}),
+                get_command(Next,Sio).
+otherwise.
+get_command([Error|Next],Sio):- true |
+                Sio=[],
+                variable:wrap(Error,{_,Wrapped},4,10),
+                shoen:raise(pimos_tag#error,
+                        '$PIMOS$'(invalid_protocol_to_SCSI_STRING_IO,
+                            "scsi_string_io: get_command /2"),
+                        [Wrapped]).
+
+
+%%
+%% wait_Sio
+%%
+wait_Sio(normal(_),Buffer,Size,Result):- true |
+                Result=normal(Size,Buffer).
+otherwise.
+wait_Sio(_,Buffer,Size,Result):- true |
+                Result=abnormal(undefined,Size,Buffer).
+
+%%
+%% put_command    no check ==> Buffer Size
+%%
+put_command([],Rio):- true | Rio=[].
+put_command([receive(FromBuffer,Size,Result)|Next],Rio)
+        :- string(FromBuffer,Len,_) |
+%                builtin#substring(FromBuffer,0,Len,Buffer2,Buffer1),
+%                change_element_size(Buffer2,16,ToFep),
+                ToFep = string#"",
+                Rio=[io(2,ToFep,FromFep)|NRio],
+                wait_Rio(FromFep,FromBuffer,Result),
+                put_command(Next,NRio).
+put_command([test_unit_ready(Result)|Next],Rio)
+        :- true |
+                Result=normal,
+                put_command(Next,Rio).
+put_command([inquiry(Result)|Next],Rio)
+        :- true |
+                Result=normal(processor,not_removable,0,{1,0,0}),
+                put_command(Next,Rio).
+otherwise.
+put_command([Error|Next],Rio):- true |
+                Rio=[],
+                variable:wrap(Error,{_,Wrapped},4,10),
+                shoen:raise(pimos_tag#error,
+                        '$PIMOS$'(invalid_protocol_to_SCSI_STRING_IO,
+                            "scsi_string_io: put_command /2"),
+                        [Wrapped]).
+
+
+%%
+%% wait_Rio
+%%
+wait_Rio(normal(FromFep),Buffer,Result):- true |
+                change_element_size(FromFep,8,Fep1),
+                string(Fep1,Size,_,Fep2),
+                convert:copy_str_to_str(Fep2,Buffer,NBuffer),
+                Result=normal(Size,NBuffer).
+otherwise.
+wait_Rio(_,Buffer,Result):- true |
+                Result=abnormal(undefined,0,Buffer).

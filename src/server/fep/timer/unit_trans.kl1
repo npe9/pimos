@@ -1,0 +1,65 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module time_unit_translator.
+:- with_macro pimos.
+:- public trans/2,a_day/1.
+
+trans({U,X},{U,Y}) :- true | X=Y.
+
+trans(sec(X),msec(Y)) :- true |
+        bignum:multiply(X,1000,Y).
+trans(sec(X),msec16(Y)) :- true |
+        bignum:multiply(X,16000,Y).
+trans(sec(X),usec(Y)) :- true |
+        bignum:multiply(X,1000000,Y).
+trans(sec(X),usec15(Y)) :- true |
+        bignum:multiply(X,15000000,Y).
+
+trans(msec(X),sec(Y)) :- true |
+        bignum:divide(X,1000,Y).
+trans(msec(X),msec16(Y)) :- true |
+        bignum:shift_left_abs(X,4,Y).
+trans(msec(X),usec(Y)) :- true |
+        bignum:multiply(X,1000,Y).
+trans(msec(X),usec15(Y)) :- true |
+        bignum:multiply(X,15000,Y).
+
+trans(msec16(X),sec(Y)) :- true |
+        bignum:divide(X,16000,Y).
+trans(msec16(X),msec(Y)) :- true |
+        bignum:shift_right_abs(X,4,Y).
+trans(msec16(X),usec(Y)) :- true |
+        bignum:multiply(X,1000,X0),
+        bignum:shift_right_abs(X0,4,Y).
+trans(msec16(X),usec15(Y)) :- true |
+        bignum:multiply(X,15000,X0),
+        bignum:shift_right_abs(X0,4,Y).
+
+trans(usec(X),sec(Y)) :- true |
+        bignum:divide(X,1000000,Y).
+trans(usec(X),msec(Y)) :- true |
+        bignum:divide(X,1000,Y).
+trans(usec(X),msec16(Y)) :- true |
+        bignum:shift_left_abs(X,4,X0),
+        bignum:divide(X0,1000,Y).
+trans(usec(X),usec15(Y)) :- true |
+        bignum:multiply(X,15,Y).
+
+otherwise.
+trans(X,Y) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(time_unit_translator,
+                "illegal_time_unit"),trans(X,Y)).
+
+a_day(sec(Day)) :- true | Day:=24*60*60.
+a_day(msec(Day)) :- true | Day:=24*60*60*1000.
+a_day(msec16(Day)) :- true | Day:=24*60*60*1000*16.
+a_day(usec(Day)) :- true |
+        D:=24*60*60*1000,
+        bignum:multiply(D,1000,Day).
+a_day(usec15(Day)) :- true |
+        D:=24*60*60*1000,
+        bignum:multiply(D,15000,Day).

@@ -1,0 +1,113 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module sorter.
+:- include("pimos.h").
+
+:- switch(user_defined_macro).
+:- case(yes).
+:- with_macro pimos_utility.
+:- case(no).
+:- with_macro pimos.
+:- end_switch.
+
+:- public sort/2,sort/3,key_sort/2,key_sort/3,
+        merge/3,merge/4,key_merge/3,key_merge/4,
+        usage/1.
+
+usage(L) :- true |
+        pool_usage:sorter(L).
+
+:- switch(user_defined_macro).
+:- case(yes).
+
+sort(In,Out) :- true | sort#ascending(In,Out).
+
+sort(In,ascending,Out) :- true | sort#ascending(In,Out).
+sort(In,descending,Out) :- true | sort#descending(In,Out).
+sort(In,Cod,Out) :- code(Cod,_,_,_) | sorter_old:sort(In,Cod,Out).
+
+key_sort(In,Out) :- true | key_sort#ascending(In,Out).
+
+key_sort(In,ascending,Out) :- true | key_sort#ascending(In,Out).
+key_sort(In,descending,Out) :- true | key_sort#descending(In,Out).
+key_sort(In,Cod,Out) :- code(Cod,_,_,_) | sorter_old:key_sort(In,Cod,Out).
+
+merge(In,In1,Out) :- true | merge#ascending(In,In1,Out).
+
+merge(In,In1,ascending,Out) :- true | merge#ascending(In,In1,Out).
+merge(In,In1,descending,Out) :- true | merge#descending(In,In1,Out).
+merge(In,In1,Cod,Out) :- code(Cod,_,_,_) | sorter_old:merge(In,In1,Cod,Out).
+
+key_merge(In,In1,Out) :- true | key_merge#ascending(In,In1,Out).
+
+key_merge(In,In1,ascending,Out) :- true | key_merge#ascending(In,In1,Out).
+key_merge(In,In1,descending,Out) :- true | key_merge#descending(In,In1,Out).
+key_merge(In,In1,Cod,Out) :- code(Cod,_,_,_) | sorter_old:key_merge(In,In1,Cod,Out).
+
+comparator#ascending(X,Y,Sml,Lag,YorN) :- X=<Y | X=Sml,Y=Lag,YorN=no.
+comparator#ascending(X,Y,Sml,Lag,YorN) :- X>Y | X=Lag,Y=Sml,YorN=yes.
+:- switch(floating_point).
+:- case(yes).
+comparator#ascending(X,Y,Sml,Lag,YorN) :- X$=<Y | X=Sml,Y=Lag,YorN=no.
+comparator#ascending(X,Y,Sml,Lag,YorN) :- X$>Y | X=Lag,Y=Sml,YorN=yes.
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+comparator#ascending(X,Y,Sml,Lag,YorN) :- X$$=<Y | X=Sml,Y=Lag,YorN=no.
+comparator#ascending(X,Y,Sml,Lag,YorN) :- X$$>Y | X=Lag,Y=Sml,YorN=yes.
+:- end_switch.
+comparator#ascending(X,Y,Sml,Lag,YorN) :- atom(X),atom(Y),
+    tag_and_value(X,_,U),tag_and_value(Y,_,V),U=<V | X=Sml,Y=Lag,YorN=no.
+comparator#ascending(X,Y,Sml,Lag,YorN) :- atom(X),atom(Y),
+    tag_and_value(X,_,U),tag_and_value(Y,_,V),U>V | X=Lag,Y=Sml,YorN=yes.
+comparator#ascending(X,Y,Sml,Lag,YorN) :- string_not_less_than(Y,X) | X=Sml,Y=Lag,YorN=no.
+comparator#ascending(X,Y,Sml,Lag,YorN) :- string_less_than(Y,X) | X=Lag,Y=Sml,YorN=yes.
+comparator#otherwise.
+comparator#ascending(X,Y,Sml,Lag,YorN) :- true |
+        comparator:sort(X,Y,Sml,Lag,YorN).
+
+comparator#descending(X,Y,Sml,Lag,YorN) :- X>=Y | X=Sml,Y=Lag,YorN=no.
+comparator#descending(X,Y,Sml,Lag,YorN) :- X<Y | X=Lag,Y=Sml,YorN=yes.
+:- switch(floating_point).
+:- case(yes).
+comparator#descending(X,Y,Sml,Lag,YorN) :- X$>=Y | X=Sml,Y=Lag,YorN=no.
+comparator#descending(X,Y,Sml,Lag,YorN) :- X$<Y | X=Lag,Y=Sml,YorN=yes.
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+comparator#descending(X,Y,Sml,Lag,YorN) :- X$$>=Y | X=Sml,Y=Lag,YorN=no.
+comparator#descending(X,Y,Sml,Lag,YorN) :- X$$<Y | X=Lag,Y=Sml,YorN=yes.
+:- end_switch.
+comparator#descending(X,Y,Sml,Lag,YorN) :- atom(X),atom(Y),
+    tag_and_value(X,_,U),tag_and_value(Y,_,V),U>=V | X=Sml,Y=Lag,YorN=no.
+comparator#descending(X,Y,Sml,Lag,YorN) :- atom(X),atom(Y),
+    tag_and_value(X,_,U),tag_and_value(Y,_,V),U<V | X=Lag,Y=Sml,YorN=yes.
+comparator#descending(X,Y,Sml,Lag,YorN) :- string_not_less_than(X,Y) | X=Sml,Y=Lag,YorN=no.
+comparator#descending(X,Y,Sml,Lag,YorN) :- string_less_than(X,Y) | X=Lag,Y=Sml,YorN=yes.
+comparator#otherwise.
+comparator#descending(X,Y,Sml,Lag,YorN) :- true |
+        comparator:descending_sort(X,Y,Sml,Lag,YorN).
+
+pimos_utility#here.
+
+
+:- case(no).
+
+sort(In,Out) :- true | sorter_old:sort(In,ascending,Out).
+sort(In,Comp,Out) :- true | sorter_old:sort(In,Comp,Out).
+
+key_sort(In,Out) :- true | sorter_old:key_sort(In,ascending,Out).
+key_sort(In,Comp,Out) :- true | sorter_old:key_sort(In,Comp,Out).
+
+merge(In,In1,Out) :- true | sorter_old:merge(In,In1,ascending,Out).
+merge(In,In1,Comp,Out) :- true | sorter_old:merge(In,In1,Comp,Out).
+
+key_merge(In,In1,Out) :- true | sorter_old:key_merge(In,In1,ascending,Out).
+key_merge(In,In1,Comp,Out) :- true | sorter_old:key_merge(In,In1,Comp,Out).
+
+:- end_switch.

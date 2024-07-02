@@ -1,0 +1,96 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% protection filter for profiling_device.
+% Top level protocol> profreq_filter.
+% Module name> profiling_device_filter.
+
+profreq_filter = stream(profreq_command)##profiling_request.
+
+profreq_command = {
+    create( interval#, profiling_items#, nodes#, time_unit#, 
+                                         -profstream(profiling_command)##profiling_device)# ;
+    create( interval#, profiling_items#, time_unit#, 
+                                         -profstream(profiling_command)##profiling_device)# ;
+    create( interval#, profiling_items#, -profstream(profiling_command)##profiling_device)# ;
+    get_interval_range(time_unit#, -status(min,max))# ;
+    get_interval_range(-status(min,max))#
+}.
+
+profiling_command = aa_command & {
+    get(-status(data))# ;
+    stop(-status)#
+}.
+
+aa_command = {                
+        reset(-status(-abort, attention# , msgid# ))# ;
+        next_attention( -status(attention))# ;
+        resend( msgid# , -status)# ;
+        cancel( msgid# , -status)#
+}.
+
+profstream(p) = {
+        normal(-stream(p), -abort, attention) ;
+        abnormal(reason) ;
+        aborted 
+}.
+
+profiling_items = list(item).
+
+item = {
+    idling_time ;
+    idling_time(length)# ;
+    gevc ;
+    gevc(length)# ;
+    encoded_message_frequency ;
+    decoded_message_frequency ;
+    local_gc ;
+    local_gc(length)# ;
+    log_event ;
+    log_event(length)# ;
+    message_handling_time
+}.
+
+status = {
+        normal ;
+        abnormal(reason) ;
+        aborted
+}.
+status(p) = {
+        normal(p) ;
+        abnormal(reason) ;
+        aborted
+}.
+
+status(x,y) = {
+        normal(x,y) ;
+        abnormal(reason) ;
+        aborted
+}.
+
+status(x,y,z) = {
+        normal(x,y,z) ;
+        abnormal(reason) ;
+        aborted
+}.
+
+interval = integer.
+nodes = list(node).
+node = integer.
+min = integer.
+max = integer.
+length = integer.
+data = ground.
+
+time_unit = { msec ; msec16 ; usec }.
+
+abort = any.
+
+attention = { attention ; [] }.
+
+msgid = integer.
+
+reason = ground.

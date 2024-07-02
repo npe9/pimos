@@ -1,0 +1,561 @@
+% icpsi573::>sys>user>yashiro>V36>PATHNAME>pathname.kl1.12, 16-Apr-93 18:10:29, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>user>yashiro>pathname.kl1.20, 08-Nov-91 16:43:07, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   utility for pimos file system.                                          %
+%   It is convenient to handle pimos pathname                               %
+% << syntax for pathname Representation >>                                  %
+%   Pathname ::= [DirPathname]Filename                                      %
+%   DirPathname ::= [[ Nodename NodeDelimiter ] DirDelimiter] SimpleDirname %
+%   SimpleDirname ::= [ Dirname DirDelimiter ]                              %
+%   NodeDelimiter ::= "::"                                                  %
+%   DirDelimiter ::= ">"                                                    %
+% << rule for pathname expansion >>                                         %
+%   (1) if "Nodename" is specified, "Pathname" is given pathname.           %
+%   (2) if "Nodename" is not specified, "Nodename" is given by default as   %
+%       login directory.                                                    %
+%   (3) if the top of the given pathname is not "DirDelimiter", it returns  %
+%       full pathname with default Nodename and default directory.          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module pathname.
+:- with_macro pimos.
+:- public expandPathname/2.
+    
+expandPathname( A, B) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[fep_attributes(Result)],
+        check_file_system_type(Result,A,B).
+
+check_file_system_type(normal(Code,OS,NODE,FEP_VERSION,Directory,FileVersion,Comment),A,B) :-
+    Directory="/" |
+        expandUNIXPathname(A,B).
+check_file_system_type(normal(Code,OS,NODE,FEP_VERSION,Directory,FileVersion,Comment),A,B) :-
+    Directory=">" |
+        expandSIMPOSPathname(A,B).
+otherwise.
+check_file_system_type(_,A,B) :-
+    true |
+        expandSIMPOSPathname(A,B).
+
+expandUNIXPathname(A,B) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[file(Result)],
+        check_file_request_result(Result,A,B).
+
+check_file_request_result(normal(FR,_,_),A,B) :-
+    true |
+        FR=[directory(".",DR)],
+        check_unix_current_directory(DR,A,B).
+otherwise.
+check_file_request_result(_,A,B) :-
+    true |
+        B=[].
+
+check_unix_current_directory(normal(DR,_,_),A,B) :-
+    true |
+        merge(DR1,DR),
+        merge(B1,B),
+        expandUNIXPathname(A,B1,DR1).
+otherwise.
+check_unix_current_directory(_,A,B) :-
+    true |
+        B=[].
+
+expandUNIXPathname([Car|Cdr],B,DR) :-
+    true |
+        B={B1,B2},
+        DR={DR1,DR2},
+        expandUNIXPathname(Car,B1,DR1),
+        expandUNIXPathname(Cdr,B2,DR2).
+expandUNIXPathname([],B,DR) :-
+    true |
+        B=[], DR=[].
+otherwise.
+expandUNIXPathname(Pathname,Result,DR) :-
+    string(Pathname,_,16) |
+        DR=[listing(Pathname,Result0)],
+        check_expandUNIXPathname_result(Result0,Result).
+
+check_expandUNIXPathname_result(normal(Result0),Result):-
+    true |
+        wrap_result(Result0,Result).
+otherwise.
+check_expandUNIXPathname_result(_,Result):-
+    true |
+        Result=[].
+
+wrap_result([H|T],Result) :-
+    string(H,Length,_),
+    Length > 0,
+    string_element(H,~(Length-1),#"/") |
+        Result=[directory(H)|Result1],
+        wrap_result(T,Result1).
+wrap_result([],Result) :- 
+    true |
+        Result=[].
+otherwise.
+wrap_result([H|T],Result) :-
+    true |
+        Result=[file(H)|Result1],
+        wrap_result(T,Result1).
+
+expandSIMPOSPathname( [Car|Cdr], PathnameList) :-
+    true |
+        merge({CarPathnameList,CdrPathnameList},PathnameList),
+        expandSIMPOSPathname( Car, CarPathnameList),
+        expandSIMPOSPathname( Cdr, CdrPathnameList).
+expandSIMPOSPathname( [], PathnameList) :-
+    true |
+        PathnameList=[].
+otherwise.
+expandSIMPOSPathname( Pathname, PathnameList) :-
+    true |
+        analyzePathname( Pathname, AnalyzedPathname ),
+        optimizePathname(AnalyzedPathname,OptimizedPathname),
+        expandSIMPOSPathname2( OptimizedPathname, PathnameList).
+
+expandSIMPOSPathname2( [Nodename,DirPathnameList], PathnameList ) :-
+    true |
+        shoen:raise( pimos_tag#task, general_request, GRD),
+        GRD=[file(normal(File,_,_))],
+        checkDirPathname( File, Nodename, DirPathnameList, PathnameList).
+
+checkDirPathname( File, NodeName, [Head|CdrDirPathnameList], RPathnameList) :-
+    string(Head,Length,_),
+    Length = 1,
+    string_element(Head,0,#">") |
+        checkPathnameList( File, absolute, string#">", CdrDirPathnameList,
+                            RPathnameList ).
+otherwise.
+checkDirPathname( File, NodeName, [Head|CdrDirPathnameList], RPathnameList) :-
+    string(Head,Length,_),
+    Length =\= 0 |
+        DirPathnameList=[Head|CdrDirPathnameList],
+        File=[current_directory(DirS)|File1],
+        checkDirPathname1(File1, DirS, DirPathnameList, RPathnameList).
+checkDirPathname( File, NodeName, [Head|CdrDirPathnameList], RPathnameList) :-
+    string(Head,Length,_),
+    Length =:= 0,
+    string(NodeName,NodeLength,_),
+    NodeLength =\= 0 |
+        builtin_utility:append_string(NodeName,string#"::>",NHead),
+        checkPathnameList( File, absolute, NHead, CdrDirPathnameList,
+                            RPathnameList ).
+checkDirPathname( File, NodeName, [Head|CdrDirPathnameList], RPathnameList) :-
+    string(Head,Length,_),
+    Length =:= 0,
+    string(NodeName,NodeLength,_),
+    NodeLength =:= 0 |
+        checkPathnameList( File, absolute, string#">", CdrDirPathnameList,
+                            RPathnameList ).
+
+checkDirPathname1( File, normal(DirS), DirPathnameList, RPathnameList) :-
+    true |
+        File=[directory(DirS1,Dir)|File1],
+        extract_rub(DirS,DirS1),
+        checkDirPathname2(File1,DirS,Dir,DirPathnameList,RPathnameList).
+otherwise.
+checkDirPathname1( File,_,_,RPathnameList) :-
+    true |
+        File=[],
+        RPathnameList=[].
+
+checkDirPathname2( File, DirS, normal(Dir,_,_), DirPathnameList, RPathnameList) :-
+    true |
+        checkPathnameList( File, relative(Dir), DirS, DirPathnameList,
+                            RPathnameList ).
+otherwise.
+checkDirPathname2( File,_,_,_, RPathnameList) :-
+    true |
+        File=[],
+        RPathnameList=[].
+
+checkPathnameList( File, relative(Dir), _, DirPathnameList, RPathnameList) :-
+    true|
+        checkNode( relative(Dir), File, DirPathnameList, RPathnameList).
+checkPathnameList( File, absolute, Head, DirPathnameList, RPathnameList) :-
+    true |
+        copy:copy(Head,Head1,Head2),
+        is_directory_or_file( File, File1, Head1, directory(FileName)),
+        File1=[directory(FileName,normal(Dir,_,_))|File2],
+        checkNode( root(Dir,Head2), File2, DirPathnameList, 
+                    RPathnameList).
+otherwise.
+checkPathnameList( File, _, Head, DirPathnameList, RPathnameList) :-
+    true |
+        is_directory_or_file( File, File1, Head, Status ),
+        checkNode( Status, File1, DirPathnameList, RPathnameList).
+
+is_directory_or_file( File,FileR,FileName,Status) :-
+    string(FileName,2,_) |  % ".." is a parent directory.
+        File=FileR,
+        Status=directory(FileName).
+is_directory_or_file( File,FileR,FileName,Status) :-
+    string(FileName,Len,_),
+    Len =\= 2 |  % ".." is a parent directory.
+        count_periods(Len,FileName,0,Result),
+        check_count(Result,FileName,File,FileR,Status).
+
+count_periods(0,FileName,Count,Result) :-
+    true |
+        Count = Result.
+count_periods(Pos,FileName,Count,Result) :-
+    Pos =\= 0,
+    Pos1 := Pos - 1,
+    string_element(FileName,Pos1,#">") |
+        Count=Result.
+count_periods(Pos,FileName,Count,Result) :-
+    Pos =\= 0,
+    Pos1 := Pos - 1,
+    string_element(FileName,Pos1,#".") |
+        count_periods(Pos1,FileName,~(Count+1),Result).
+otherwise.
+count_periods(Pos,FileName,Count,Result) :-
+    Pos =\= 0,
+    Pos1 := Pos - 1 |
+%    string_element(FileName,Pos1,Elem),
+%    Elem =\= #"." |
+        count_periods(Pos1,FileName,Count,Result).
+
+check_count(Count,FileName,File,FileR,Status) :-
+    Count = 0 |
+        File=FileR,
+        Status=directory(FileName).
+check_count(Count,FileName,File,FileR,Status) :-
+    Count = 1 |
+        File=FileR,
+        Status=directory(FileName).
+check_count(Count,FileName,File,FileR,Status) :-
+    Count = 2 |
+        File=FileR,
+        Status=file(FileName).
+check_count(Count,FileName,File,FileR,Status) :-
+    Count >= 3 ,
+    and(1,Count,0)  |
+        Status=directory(FileName),
+        File=FileR.
+check_count(Count,FileName,File,FileR,Status) :-
+    Count >= 3 ,
+    and(1,Count,1)  |
+        File=FileR,                     % 
+        Status=file(FileName).
+
+checkNode( file(FullPath), File, [], RPathnameList ) :-
+    true |
+        File=[],
+        RPathnameList=[file(FullPath)].
+checkNode( directory(FullPath), File, [], RPathnameList ) :-
+    true |
+        RPathnameList=[directory(FullPath)],
+        File=[].
+checkNode( root(Dir,Head), File, [], RPathnameList ) :-
+    true |
+        RPathnameList=[directory(Head)],
+        File=[].
+checkNode( directory(FullPath), File, [Car|Cdr], RPathnameList) :-
+    string(FullPath,Length,_),
+    Length > 0,
+    Last := Length - 1,
+    string_element(FullPath,Last,LastElem),
+    LastElem =:= #">" |
+        builtin_utility:append_string( [FullPath,Car], NodeRoot),
+        File=[directory(FullPath,normal(Dir,_,_))|File1],
+        Dir=[listing(Car,Status)],
+        checkDirList( Status, File1, FullPath, NodeRoot, Cdr, RPathnameList).
+otherwise.
+checkNode( directory(FullPath), File, [Car|Cdr], RPathnameList) :-
+    string(FullPath,Length,_),
+    Length =\= 0 |
+        builtin_utility:append_string( [FullPath,string#">",Car], NodeRoot),
+        File=[directory(FullPath,normal(Dir,_,_))|File1],
+        Dir=[listing(Car,Status)],
+        checkDirList( Status, File1, FullPath, NodeRoot, Cdr, RPathnameList).
+checkNode( directory(FullPath), File, [Car|Cdr], RPathnameList) :-
+    string(FullPath,Length,_), Length =:= 0 |
+        File=[directory(FullPath,normal(Dir,_,_))|File1],
+        Dir=[listing(Car,Status)],
+        checkDirList( Status, File1, FullPath, NodeRoot, Cdr, RPathnameList).
+checkNode(file(Pathname),File, _, RPathnameList) :-
+    true |          
+    RPathnameList=[],File=[].
+checkNode(abnormal(Pathname),File, _, RPathnameList) :-
+    true |
+    RPathnameList=[abnormal(Pathname)],
+    File=[].
+checkNode( relative(Dir), File, [Car|Cdr], RPathnameList ) :-
+    true |
+        Dir=[listing(Car,Status)],
+        shoen:raise(pimos_tag#task,general_request,[getenv(task:directory,normal(Prefix))]),
+        checkDirList( Status, File, Prefix, Car, Cdr, RPathnameList).
+checkNode( root(Dir,Head), File, [Car|Cdr], RPathnameList) :-
+    true |
+        Dir=[listing(Car,Status)],
+        checkDirList( Status, File, Head, Car, Cdr, RPathnameList).
+
+checkDirList( normal(DirList), File, PrevHead, _, Tail, RPathnameList) :-
+    true |
+        loop( DirList, File, PrevHead, Tail, RPathnameList).
+checkDirList( abnormal, File, _, Head, Tail, RPathnameList) :-
+    true |
+    File=[],RPathnameList=[non_existent(Head)].
+%    checkPathnameList(File, inter, Head, Tail, RPathnameList ).
+
+loop( [], File, _, _, RPathnameList) :-
+    true |
+    RPathnameList = [], File=[].
+loop( [Car|Cdr], File, Node, DirPathnameList, RPathnameList ) :-
+    string(Node,Length,_),
+    Length = 0 |
+        merge({File1,File2},File),
+        merge({RPathnameList1, RPathnameList2}, RPathnameList),
+        checkPathnameList( File2, inter, Car, DirPathnameList, RPathnameList1),
+        loop( Cdr, File1, Node, DirPathnameList, RPathnameList2).
+
+loop( [Car|Cdr], File, Node, DirPathnameList, RPathnameList ) :-
+    string(Node,Length,_),
+    Length > 0,
+    Last := Length - 1,
+    string_element(Node,Last,Element),
+    Element =:= #">" |
+        builtin_utility:append_string([ Node,Car], NewNode),
+        merge({File1,File2},File),
+        merge({RPathnameList1, RPathnameList2}, RPathnameList),
+        checkPathnameList( File2, inter, NewNode, DirPathnameList, RPathnameList1),
+        loop( Cdr, File1, Node, DirPathnameList, RPathnameList2).
+otherwise.
+loop( [Car|Cdr], File, Node, DirPathnameList, RPathnameList ) :-
+    true |
+%    string(Node,Length,_),
+%    Length \= 0 |
+        builtin_utility:append_string([ Node,string#">",Car], NewNode),
+        merge({File1,File2},File),
+        merge({RPathnameList1, RPathnameList2}, RPathnameList),
+        checkPathnameList( File2, inter, NewNode, DirPathnameList, RPathnameList1),
+        loop( Cdr, File1, Node, DirPathnameList, RPathnameList2).
+
+%   analyzePathname( Pahthname, ^AnalyzedPathname)
+%
+%   analyzePathname( Pahthname, NodeDelimiter, DirectoryDelimiter,
+%                        ^AnalyzedPathname)
+%
+analyzePathname( Pathname, AnalyzedPathname) :- 
+    true |
+        analyzePathname( Pathname, string#"::", string#">", AnalyzedPathname).
+
+analyzePathname( Pathname, NodeDelimiter, DirDelimiter, AnalyzedPathname) :- % 
+    string( Pathname,LPathname,_),
+    string( NodeDelimiter,LNodeDelimiter,_) |
+        AnalyzedPathname=[Nodename,DirPathList],
+        search( NodeDelimiter, Pathname, LNodeDelimiter, LPathname, 0, Stat,
+                NPathname),
+        extractString1( Stat, LNodeDelimiter, LPathname, NPathname, Nodename0,
+                         Tail),
+        extract_SIMPOS_Node(Nodename0,Nodename),
+        expandDirPath( Tail, DirDelimiter, DirPathList).
+    
+search(Ptn, Line, _, Max, Cnt, Stat, NL) :- 
+    string(Ptn, PtnLen,_),
+    (Cnt+PtnLen) >= Max |
+        Stat = no, NL = Line.
+search(Ptn, Line, _, _, _, Stat, NL) :-
+    string( Ptn, PtnLen, _), PtnLen = 0 |
+        Stat = no, NL = Line.
+otherwise.
+search(Ptn, Line, LPtn, Max, Cnt, Stat1, NL) :-
+    true |
+        builtin_utility:substring(Line, Cnt, LPtn, Sub, NLine),
+        compare(Sub, Ptn, 0, LPtn, Stat2),
+        check(Stat2, Ptn, NLine, LPtn, Max, Cnt, Stat1, NL).
+
+compare(_, _, Cnt, Len, Stat) :-
+    Cnt = Len |
+         Stat = yes.
+compare(Src, Dst, Cnt, Len, Stat) :-
+    string_element(Src, Cnt, ESrc),
+    string_element(Dst, Cnt, EDst),
+    ESrc = EDst |
+        add(Cnt, 1, NCnt),
+        compare(Src, Dst, NCnt, Len, Stat).
+otherwise.
+compare(_, _, _, _, Stat) :-
+    true |
+        Stat = no.
+
+check(yes, _, Line, _, _, Cnt, Stat, NL) :-
+    true |
+        Stat = yes(Cnt), NL = Line.
+check(no, Ptn, Line, LPtn, Max, Cnt, Stat, NL) :-
+    true |
+        add(Cnt, 1, NCnt),
+        search(Ptn, Line, LPtn, Max, NCnt, Stat, NL).
+    
+extractString( yes(From), ELen, Len, String, HeadString, TailString) :-
+    From1:=From+ELen, To1:=Len-From1, To1 > 0 |
+        builtin_utility:substring( String, 0, From, HeadString, String1),
+        builtin_utility:substring( String1, From1, To1, TailString, _).
+extractString( yes(From), ELen, Len, String, HeadString, TailString) :-
+    From1:=From+ELen, To1:=Len-From1, To1 =< 0 |
+        builtin_utility:substring( String, 0, ~(Len-ELen), HeadString,_),
+        TailString = string#"".
+extractString( no, _, _, String, HeadString, TailString) :-
+    string( String, _, ElementSize) |
+        new_string( TailString, 0, ElementSize),
+        HeadString=String.
+
+extractString1( yes(From), ELen, Len, String, HeadString, TailString) :-
+    From1:=From+ELen, To1:=Len-From1, To1 > 0 |
+        builtin_utility:substring( String, 0, From, HeadString, String1),
+        builtin_utility:substring( String1, From1, To1, TailString, _).
+extractString1( yes(From), ELen, Len, String, HeadString, TailString) :-
+    From1:=From+ELen, To1:=Len-From1, To1 =< 0 |
+        builtin_utility:substring( String, 0, ~(Len-ELen), HeadString,_),
+        TailString = string#">".
+extractString1( no, _, _, String, HeadString, TailString) :-
+    string( String, _, ElementSize) |
+        new_string( HeadString, 0, ElementSize),
+        TailString=String.
+
+expandDirPath( Pathname, DirDelimiter, DirPathList) :-
+    string( Pathname, LPathname, _),
+    LPathname \= 0,
+    string( DirDelimiter, LDirDelimiter, _) |
+        DirPathList=[DirName|TailList],
+        search( DirDelimiter, Pathname, LDirDelimiter, LPathname, 0, Stat,
+                 NPathname),
+        extractString( Stat, LDirDelimiter, LPathname, NPathname, DirName, Tail),
+        expandDirPath( Tail, DirDelimiter, TailList).
+expandDirPath( Pathname, _, DirPathList) :-
+    string( Pathname, LPathname, _),
+    LPathname = 0 |
+        DirPathList=[].
+
+extract_rub(DirS,DirS1) :-
+    string( DirS, Length, _),
+    L1 := Length - 1,
+    L1 > 0,
+    string_element(DirS, L1, #">") |
+        builtin_utility:substring( DirS, 0, L1, DirS1,_).
+otherwise.
+extract_rub(DirS,DirS1) :-
+    true |
+        DirS = DirS1.
+
+append([ACar|ACdr],B,C) :- true | C=[ACar|NewACdr],append(ACdr,B,NewACdr).
+append([],B,C) :- true | B=C.
+
+optimizePathname([NodeName,DirPathnameList],Ans) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,[getenv(task:home,A),getenv(task:directory,B)]),
+        Ans=[NodeName,OptimizedPathnameList],
+        pool:stack(Stack),
+        optimizePathname1(A,B,DirPathnameList,OptimizedPathnameList,Stack).
+
+optimizePathname1(normal(Home),normal(Current),DirPathnameList,OptimizedPathnameList,Stack) :-
+    true |
+        analyzePathname( Home, [_,AnalyzedHome]),
+        analyzePathname( Current, [_,AnalyzedCurrent]),
+        optimizePathname2(DirPathnameList, AnalyzedHome,AnalyzedCurrent, OptimizedPathnameList,Stack).
+otherwise.
+optimizePathname1(_,_,DirPathnameList,OptimizedPathnameList,Stack) :-
+    true |
+        AnalyzedHome = [string#"", string#"sys",string#"user",string#"me"],
+        AnalyzedCurrent = [string#"", string#"sys",string#"user",string#"me"],
+        optimizePathname2(DirPathnameList, AnalyzedHome,AnalyzedCurrent, OptimizedPathnameList,Stack).
+
+optimizePathname2([],_,_,OptimizedPathnameList,Stack) :-
+    true |
+        Stack = [get_all(A)],
+        reverse(A,OptimizedPathnameList).
+optimizePathname2([Car|Cdr],AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack) :-
+    true |
+        check_special(Car,Result),
+        optimizePathname3(Result,Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack).
+
+check_special(Car,Result) :-
+    string(Car,Length,_),
+    Length =:= 2,
+    string_element(Car,0,#"."),
+    string_element(Car,1,#".") |
+        Result = parent.
+check_special(Car,Result) :-
+    string(Car,Length,_),
+    Length =:= 1,
+    string_element(Car,0,#"~") |
+        Result = home.
+otherwise .
+check_special(Car,Result) :-
+    true |
+        Car = Result.
+
+optimizePathname3(parent,Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack) :-
+    true |
+        Stack = [get_if_any(A) |Stack1],
+        check_overhang(A,Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack1).
+optimizePathname3(home,Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack) :-
+    true |
+        Stack = [get_all(_) |Stack1],
+        copy:copy(AnalyzedHome,AnalyzedHome1,AnalyzedHome2),
+        put_home(AnalyzedHome1,Stack1,Stack2),
+        optimizePathname2(Cdr,AnalyzedHome2,AnalyzedCurrent,OptimizedPathnameList,Stack2).
+otherwise.
+optimizePathname3(Filename,Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack) :-
+    true |
+        Stack = [put(Filename) |Stack1],
+        optimizePathname2(Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack1).
+
+check_overhang({},Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack) :-
+    true |
+        copy:copy(AnalyzedCurrent,AnalyzedCurrent1,AnalyzedCurrent2),
+        put_home(AnalyzedCurrent1,Stack,Stack1),
+        optimizePathname3(parent,Cdr,AnalyzedHome,AnalyzedCurrent2,OptimizedPathnameList,Stack1).
+check_overhang({String},Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack) :-
+    string(String,Length,_),
+    Length =:= 0 |
+        Stack = [put(string#"")|Stack1],
+        optimizePathname2(Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack1).
+otherwise.
+check_overhang({_},Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack) :-
+    true |
+        optimizePathname2(Cdr,AnalyzedHome,AnalyzedCurrent,OptimizedPathnameList,Stack).
+
+put_home([],Stack,NStack) :-
+    true |
+        Stack = NStack.
+put_home([A|Tail],Stack,NStack) :-   % 
+    true |
+        Stack = [put(A)|Stack1],
+        put_home(Tail,Stack1,NStack).
+
+reverse(A,B) :-
+    true |
+        reverse(A,[],B).
+
+reverse([],B,A) :-
+    true |
+        B=A.
+reverse([Elem|Tail],Tmp,Ans) :-
+    true |
+        reverse(Tail,[Elem|Tmp],Ans).
+
+extract_SIMPOS_Node(Nodename0,Nodename) :-
+    string(Nodename0,Length,_),
+    Length > 8 |
+        builtin#substring(Nodename0,~(Length-8),8,Nodename,_).
+otherwise.
+extract_SIMPOS_Node(Nodename0,Nodename) :-
+    true |
+        Nodename0=Nodename.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                               %%%%%
+%%%%%  End of  pathname  module.    %%%%%
+%%%%%                               %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,0 +1,630 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module window_device.
+:- with_macro pimos.
+:- public driver/4.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver(CAbort,DS,F,If)
+%%      CAbort  :: Termination variable from the client task
+%%                 = abort ; []
+%%      DS      :: Input stream from the client task
+%%      F       :: Output stream to scsi_fep_module (vector stream)
+%%      If      :: ={0,Conf,SCont,SAbort}
+%%                 Conf  :: Output stream to confirmation device (merged)
+%%                 SCont :: Server control stream
+%%                 SAbort:: Server control abortion variable
+
+driver(CAbort,DS,F,If) :- true |
+        id_table:id_table(T),
+        driver_0(CAbort,DS,F,T,If,dummy_attention,A,A,{0,_},_).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_0(CAb,DS,F,T,If,AtF,A,A1,G,Att)
+%%      T       :: Output stream to the keyed_bag which is used to store the
+%%                      list of the aborted requests with the key ID.
+%%      AtF     :: Attention line from fep
+%%      A,A1    :: d-list for aborted messages
+%%      G       :: Rest string information for getb (which has been input from windows
+%%                  but has not been returned to users. )
+%%                 = {Length,String}
+%%      Att     :: Attention line to OS
+
+driver_0(CAb,_,F,T,If,_,_,_,_,_) :- wait(CAb) |
+        device_driver:abort(If,F,T,fep#normal,_).
+driver_0(CAb,DS,F,T,If,fep#attention,A,A1,G,Att) :- true |
+        Att=attention,
+        driver_0(CAb,DS,F,T,If,dummy_attention,A,A1,G,_).
+alternatively.
+driver_0(CAb,[reset(Args)|DS],F,T,If,AtF,A,A1,G,Att) :- true |
+        F={fep#reset,AbF1,AtF1,S,F1},
+        wait_01(CAb,DS,F1,T,If,AtF,A,A1,G,Att,Args,AbF1,AtF1,S).
+driver_0(_,[close(S)|_],F,T,If,_,A,A1,_,Att) :- true |
+        terminate(If,S,F,T,Att,_,A,A1,fep#normal).
+driver_0(CAb,[Req|DS],F,T,If,AtF,A,A1,G,Att) :-
+    vector_element(Req,0,MsgName),MsgName\=reset,MsgName\=close |
+        A1=[Req|A2],
+        driver_0(CAb,DS,F,T,If,AtF,A,A2,G,Att).
+driver_0(_,[],F,T,If,_,A,A1,_,Att) :- true |
+        terminate(If,_,F,T,Att,_,A,A1,fep#normal).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_01(CAb,DS,F,T,If,AtF,A,A1,G,Att,Args,AbF1,AtF1,S)
+%%      Args    :: = normal(Ab,Att,ID)
+%%                      Ab      :: New abort line from OS
+%%                      Att     :: New attention line to OS
+%%                      ID      :: Id number for aborted messages
+%%                 ; abnormal
+%%                 ; disconnected
+%%      AbF1    :: New abort line to fep
+%%      AtF1    :: New attention line from fep
+
+wait_01(CAb,DS,F,T,If,fep#attention,A,A1,G,Att,Args,AbF1,AtF1,S) :- true |
+        Att=attention,
+        wait_01(CAb,DS,F,T,If,_,A,A1,G,_,Args,AbF1,AtF1,S).
+wait_01(CAb,DS,F,T,If,_,A,A1,G,Att,Args,AbF1,AtF1,fep#normal) :- true |
+        Att=[],
+        A1=[],
+        T=[put_with_new_id(ID,{A,G})|T1],
+        Args=normal(Ab1,Att1,ID),
+        driver_1(CAb,DS,F,T1,If,AtF1,Ab1,B,B,{0,_},Att1,AbF1).
+wait_01(CAb,DS,F,T,If,AtF,A,A1,G,Att,Args,AbF1,_,fep#abnormal) :- true |
+        Args=abnormal,
+        AbF1=fep#nil,
+        driver_0(CAb,DS,F,T,If,AtF,A,A1,G,Att).
+wait_01(CAb,DS,F,T,If,_,A,A1,_,Att,Args,AbF1,_,fep#disconnected) :- true |
+        Args=disconnected,
+        AbF1=fep#nil,
+        disconnected(CAb,DS,F,T,If,A,A1,Att,_).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF)
+%%      Ab      :: Abort line from OS
+%%      AbF     :: Abort line to fep
+
+driver_1(CAb,_,F,T,If,_,_,_,_,_,_,AbF) :- wait(CAb) |
+        device_driver:abort(If,F,T,fep#normal,AbF).
+driver_1(CAb,DS,F,T,If,fep#attention,Ab,A,A1,G,Att,AbF) :- true |
+        Att=attention,
+        driver_1(CAb,DS,F,T,If,_,Ab,A,A1,G,_,AbF).
+driver_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF) :- wait(Ab) |
+        AbF=fep#abort,
+        driver_0(CAb,DS,F,T,If,AtF,A,A1,G,Att).
+alternatively.
+driver_1(CAb,[Req|DS],F,T,If,AtF,Ab,A,A1,G,Att,AbF) :- true |
+        io_req(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req).
+driver_1(_,[],F,T,If,_,_,A,A1,_,Att,AbF) :- true |
+        F={fep#flush,S,F1},
+        terminate(If,_,F1,T,Att,AbF,A,A1,S).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% io_req(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req)
+%%      Req     :: Io_request message
+
+io_req(CAb,DS,F,T,If,AtF,_,A,A1,G,Att,AbF,{reset,Args}) :- true |
+        AbF=fep#abort,
+%        F={fep#reset,AbF1,AtF1,S,F1},                              % patch for fep
+%        wait_01(CAb,DS,F1,T,If,AtF,A,A1,G,Att,Args,AbF1,AtF1,S).
+        fep_patch(CAb,DS,F,T,If,AtF,_,A,A1,G,Att,_,Args).
+io_req(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,{next_attention,Args}) :- true |
+        F={fep#next_attention,AtF1,S,F1},
+        wait_1(CAb,DS,F1,T,If,AtF,Ab,A,A1,G,Att,AbF,Args,AtF1,S).
+io_req(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,{resend,ID,S}) :- true |
+        resend(DS,DS1,T,T1,ID,G,G1,S),
+        driver_1(CAb,DS1,F,T1,If,AtF,Ab,A,A1,G1,Att,AbF).
+io_req(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,{cancel,ID,S}) :- true |
+        cancel(T,T1,ID,S),
+        driver_1(CAb,DS,F,T1,If,AtF,Ab,A,A1,G,Att,AbF).
+
+/*
+% never receives from NEW resource tree
+io_req(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,{change_processor,PE,S}) :- true |
+        change_processor(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,S)@processor(PE).
+*/
+
+io_req(_,_,F,T,If,_,_,A,A1,_,Att,AbF,{close,S}) :- true |
+        F={fep#flush,S0,F1},
+        terminate(If,S,F1,T,Att,AbF,A,A1,S0).
+
+otherwise.
+io_req(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req) :- true |
+        send_message(Req,Req1,G,G1,F,Val,S,F1),
+        driver_2(CAb,DS,F1,T,If,AtF,Ab,A,A1,G1,Att,AbF,Req1,Val,S).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Args,AtF1,S).
+%%      AtF1    :: New attention line from fep
+
+wait_1(CAb,DS,F,T,If,fep#attention,Ab,A,A1,G,Att,AbF,Args,AtF1,S) :- true |
+        Att=attention,
+        wait_1(CAb,DS,F,T,If,_,Ab,A,A1,G,_,AbF,Args,AtF1,S).
+wait_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Args,AtF1,S) :- wait(Ab) |
+        AbF=fep#abort,
+        wait_10(CAb,DS,F,T,If,AtF,A,A1,G,Att,Args,AtF1,S).
+alternatively.
+wait_1(CAb,DS,F,T,If,_,Ab,A,A1,G,Att,AbF,Args,AtF1,fep#normal) :- true |
+        Att=[],
+        Args=normal(Att1),
+        driver_1(CAb,DS,F,T,If,AtF1,Ab,A,A1,G,Att1,AbF).
+wait_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Args,_,fep#abnormal) :- true |
+        Args=abnormal,
+        driver_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF).
+wait_1(CAb,DS,F,T,If,_,_,A,A1,_,Att,AbF,Args,_,fep#disconnected) :- true |
+        Args=disconnected,
+        disconnected(CAb,DS,F,T,If,A,A1,Att,AbF).
+wait_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Args,_,fep#aborted) :- true |
+        A1=[{next_attention,Args}|A2],
+        driver_1(CAb,DS,F,T,If,AtF,Ab,A,A2,G,Att,AbF).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_10(CAb,DS,F,T,If,AtF,A,A1,G,Att,Args,AtF1,S)
+%%      AtF1    :: New attention line from fep
+
+wait_10(CAb,DS,F,T,If,fep#attention,A,A1,G,Att,Args,AtF1,S) :- true |
+        Att=attention,
+        wait_10(CAb,DS,F,T,If,_,A,A1,G,_,Args,AtF1,S).
+alternatively.
+wait_10(CAb,DS,F,T,If,_,A,A1,G,Att,Args,AtF1,fep#normal) :- true |
+        Att=[],
+        Args=normal(Att1),
+        driver_0(CAb,DS,F,T,If,AtF1,A,A1,G,Att1).
+wait_10(CAb,DS,F,T,If,_,A,A1,_,Att,Args,_,fep#disconnected) :- true |
+        Args=disconnected,
+        disconnected(CAb,DS,F,T,If,A,A1,Att,_).
+wait_10(CAb,DS,F,T,If,AtF,A,A1,G,Att,Args,_,fep#aborted) :- true |
+        A1=[{next_attention,Args}|A2],
+        driver_0(CAb,DS,F,T,If,AtF,A,A2,G,Att).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% resend(DS,DS1,T,T1,ID,G,G1,S)
+%% cancel(T,T1,ID,S)
+%%      ID      :: ID number for aborted messages
+
+resend(DS,DS1,T,T1,ID,G,G1,S) :- true |
+        T=[get_if_any(ID,X)|T1],
+        if_resend(X,DS,DS1,G,G1,S).
+
+if_resend({{Req,G}},DS,DS1,_,G1,S) :- true |
+        S=normal,
+        G1=G,
+        prepend(Req,DS,DS1).
+if_resend({},DS,DS1,G,G1,S) :- true |
+        S=abnormal,
+        G=G1,DS=DS1.
+
+prepend([Req|R],DS,DS1) :- true |
+        DS1=[Req|DS2],
+        prepend(R,DS,DS2).
+prepend([],DS,DS1) :- true | DS1=DS.
+
+cancel(T,T1,ID,S) :- true |
+        T=[get_if_any(ID,X)|T1],
+        if_cancel(X,S).
+
+if_cancel({{Req,_}},S) :- true |
+        S=normal,
+        device_driver:abort_msg(Req,_,_).
+if_cancel({},S) :- true | S=abnormal.
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% change_processor(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,S)
+
+change_processor(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,S) :- true |
+        S=normal,
+        driver_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF).
+*/
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_2(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req,Val,S)
+%%      Req     :: Io_request message that is processing now
+%%      Val     :: Values from fep (vector)
+
+driver_2(CAb,_,F,T,If,_,_,_,_,_,_,AbF,_,_,S) :- wait(CAb) |
+        device_driver:abort(If,F,T,S,AbF).
+driver_2(CAb,DS,F,T,If,fep#attention,Ab,A,A1,G,Att,AbF,Req,Val,S) :- true |
+        Att=attention,
+        driver_2(CAb,DS,F,T,If,_,Ab,A,A1,G,_,AbF,Req,Val,S).
+driver_2(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req,Val,S) :- wait(Ab) |
+        AbF=fep#abort,
+        wait_20(CAb,DS,F,T,If,AtF,A,A1,G,Att,Req,Val,S).
+alternatively.
+driver_2(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req,Val,fep#normal) :- true |
+        driver_20(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req,Val).
+driver_2(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req,_,fep#abnormal) :- true |
+        device_driver:return_ab_status(Req,abnormal),
+        driver_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF).
+driver_2(CAb,DS,F,T,If,_,_,A,A1,_,Att,AbF,Req,_,fep#disconnected) :- true |
+        device_driver:return_ab_status(Req,disconnected),
+        disconnected(CAb,DS,F,T,If,A,A1,Att,AbF).
+driver_2(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req,_,fep#aborted) :- true |
+        driver_21(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req).
+
+
+driver_21(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,{get_attributes,_,Args}):- true |
+        A1=[{get_attributes,Args}|A2],
+        driver_1(CAb,DS,F,T,If,AtF,Ab,A,A2,G,Att,AbF).
+otherwise.
+driver_21(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req):- true |
+        A1=[Req|A2],
+        driver_1(CAb,DS,F,T,If,AtF,Ab,A,A2,G,Att,AbF).
+
+
+driver_20(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,
+                {get_attributes,size,Args},V0):- true |
+        send_message({get_attributes,position,Args},Req1,G,G1,F,V1,S,F1),
+        driver_2(CAb,DS,F1,T,If,AtF,Ab,A,A1,G1,Att,AbF,Req1,{V0,V1},S).
+driver_20(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,
+                {get_attributes,position,Args},{V0,V1}):- true |
+        send_message({get_attributes,title,Args},Req1,G,G1,F,V2,S,F1),
+        driver_2(CAb,DS,F1,T,If,AtF,Ab,A,A1,G1,Att,AbF,Req1,{V0,V1,V2},S).
+driver_20(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,
+                {get_attributes,title,Args},{V0,V1,V2}):- true |
+        send_message({get_attributes,font,Args},Req1,G,G1,F,V3,S,F1),
+        driver_2(CAb,DS,F1,T,If,AtF,Ab,A,A1,G1,Att,AbF,Req1,{V0,V1,V2,V3},S).
+driver_20(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,
+                {get_attributes,font,Args},{V0,V1,V2,V3}):- true |
+        send_message({get_attributes,buffer,Args},Req1,G,G1,F,V4,S,F1),
+        driver_2(CAb,DS,F1,T,If,AtF,Ab,A,A1,G1,Att,AbF,Req1,{V0,V1,V2,V3,V4},S).
+otherwise.
+driver_20(CAb,DS,F,T,If,AtF,Ab,A,A1,G,Att,AbF,Req,Val):- true |
+        return_values(Req,G,G1,Val),
+        driver_1(CAb,DS,F,T,If,AtF,Ab,A,A1,G1,Att,AbF).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_20(CAb,DS,F,T,If,AtF,A,A1,G,Att,Req,Val,S)
+
+wait_20(CAb,DS,F,T,If,AtF,A,A1,G,Att,Req,Val,fep#normal) :- true |
+        wait_200(CAb,DS,F,T,If,AtF,A,A1,G,Att,Req,Val).
+wait_20(CAb,DS,F,T,If,AtF,A,A1,G,Att,Req,_,fep#abnormal) :- true |
+        device_driver:return_ab_status(Req,abnormal),
+        driver_0(CAb,DS,F,T,If,AtF,A,A1,G,Att).
+wait_20(CAb,DS,F,T,If,_,A,A1,_,Att,Req,_,fep#disconnected) :- true |
+        device_driver:return_ab_status(Req,disconnected),
+        disconnected(CAb,DS,F,T,If,A,A1,Att,_).
+wait_20(CAb,DS,F,T,If,AtF,A,A1,G,Att,Req,_,fep#aborted) :- true |
+        wait_201(CAb,DS,F,T,If,AtF,A,A1,G,Att,Req).
+
+
+wait_201(CAb,DS,F,T,If,AtF,A,A1,G,Att,{get_attributes,_,Args}):- true |
+        A1=[{get_attributes,Args}|A2],
+        driver_0(CAb,DS,F,T,If,AtF,A,A2,G,Att).
+otherwise.
+wait_201(CAb,DS,F,T,If,AtF,A,A1,G,Att,Req):- true |
+        A1=[Req|A2],
+        driver_0(CAb,DS,F,T,If,AtF,A,A2,G,Att).
+
+
+wait_200(CAb,DS,F,T,If,AtF,A,A1,G,Att,{get_attributes,_,Args},Val):- true |
+        A1=[{get_attributes,Args}|A2],
+        driver_0(CAb,DS,F,T,If,AtF,A,A2,G,Att).
+otherwise.
+wait_200(CAb,DS,F,T,If,AtF,A,A1,G,Att,Req,Val):- true |
+        return_values(Req,G,G1,Val),
+        driver_0(CAb,DS,F,T,If,AtF,A,A1,G1,Att).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% send_message(Req,Req1,G,G1,F,Val,S,F1)
+%%      Req     :: Io_request message
+%%      Req1    :: New io_request message
+%%      F,F1    :: Output stream to fep (vector)
+%%      Val     :: Values from fep (vector)
+%%      S       :: Status from fep
+
+%% put type messages
+send_message({putb,Str,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#putb,Str,S,F1},
+        Req={putb,Str,Args},
+        Val={},
+        G=G1.
+send_message({prompt,Str,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#putb,Str,S,F1},
+        Req={prompt,Str,Args},
+        Val={},
+        G=G1.
+send_message({flush,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#flush,S,F1},
+        Req={flush,Args},
+        Val={},
+        G=G1.
+send_message({ungetb,Str,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#ungetb,Str,S,F1},
+        Req={ungetb,Str,Args},
+        Val={},
+        G=G1.
+send_message({set_size,char(C,L),Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#set_inside_size,C,L,S,F1},
+        Req={set_size,char(C,L),Args},
+        Val={},
+        G=G1.
+send_message({set_size,mouse,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#set_size,S,F1},
+        Req={set_size,mouse,Args},
+        Val={},
+        G=G1.
+send_message({set_position,at(X,Y),Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#set_position,X,Y,S,F1},
+        Req={set_position,at(X,Y),Args},
+        Val={},
+        G=G1.
+send_message({set_position,mouse,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#set_position_by_mouse,S,F1},
+        Req={set_position,mouse,Args},
+        Val={},
+        G=G1.
+send_message({set_title,Title,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#set_title,Title,S,F1},
+        Req={set_title,Title,Args},
+        Val={},
+        G=G1.
+send_message({reshape,Pos,Size,Args},Req,G,G1,F,Val,S,F1) :- true |
+        send_reshape_messages(Pos,Size,F,S,F1),
+        Req={reshape,Pos,Size,Args},
+        Val={},
+        G=G1.
+send_message({set_font,Path,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#set_font,Path,S,F1},
+        Req={set_font,Path,Args},
+        Val={},
+        G=G1.
+send_message({select_buffer,B,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#select_buffer,B,S,F1},
+        Req={select_buffer,B,Args},
+        Val={},
+        G=G1.
+send_message({beep,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#beep,S,F1},
+        Req={beep,Args},
+        Val={},
+        G=G1.
+send_message({activate,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#activate,S,F1},
+        Req={activate,Args},
+        Val={},
+        G=G1.
+send_message({deactivate,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#deactivate,S,F1},
+        Req={deactivate,Args},
+        Val={},
+        G=G1.
+send_message({show,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#show,S,F1},
+        Req={show,Args},
+        Val={},
+        G=G1.
+send_message({hide,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#hide,S,F1},
+        Req={hide,Args},
+        Val={},
+        G=G1.
+send_message({clear,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#clear,S,F1},
+        Req={clear,Args},
+        Val={},
+        G=G1.
+
+%% get type messages
+send_message({getb,Size,Args},Req,G,G1,F,Val,S,F1) :- true |
+        Req={getb,Size,Args},
+        send_getl_message(Size,G,G1,F,Val,S,F1).
+send_message({get_char_size,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#get_inside_size,C,L,S,F1},
+        Req={get_char_size,Args},
+        Val={C,L},
+        G=G1.
+send_message({get_position,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#get_position,X,Y,S,F1},
+        Req={get_position,Args},
+        Val={X,Y},
+        G=G1.
+send_message({get_title,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#get_title,Title,S,F1},
+        Req={get_title,Args},
+        Val={Title},
+        G=G1.
+send_message({get_font,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#get_font,Path,S,F1},
+        Req={get_font,Args},
+        Val={Path},
+        G=G1.
+send_message({get_buffer_name,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#buffer_name,B,S,F1},
+        Req={get_buffer_name,Args},
+        Val={B},
+        G=G1.
+
+%% get_attributes
+send_message({get_attributes,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#get_inside_size,C,L,S,F1},
+        Req={get_attributes,size,Args},
+        Val={C,L},
+        G=G1.
+send_message({get_attributes,position,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#get_position,X,Y,S,F1},
+        Req={get_attributes,position,Args},
+        Val={X,Y},
+        G=G1.
+send_message({get_attributes,title,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#get_title,Title,S,F1},
+        Req={get_attributes,title,Args},
+        Val={Title},
+        G=G1.
+send_message({get_attributes,font,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#get_font,Path,S,F1},
+        Req={get_attributes,font,Args},
+        Val={Path},
+        G=G1.
+send_message({get_attributes,buffer,Args},Req,G,G1,F,Val,S,F1) :- true |
+        F={fep#buffer_name,B,S,F1},
+        Req={get_attributes,Args},
+        Val={B},
+        G=G1.
+
+otherwise.
+send_message(Req1,Req,G,G1,F,Val,S,F1) :- true |
+        F=F1,
+        S=fep#abnormal,
+        Req=Req1,
+        Val={},
+        G=G1.
+
+send_getl_message(Size,{0,_},G,F,Val,S,F1) :- Size>=0 |
+        F={fep#getl,Line,S,F1},
+        G={0,_},
+        Val={Line}.
+send_getl_message(Size,{N,RStr},G,F,Val,S,F1) :- N>0,Size>=0 |
+        F=F1,
+        G={N,RStr},
+        Val={},
+        S=fep#normal.
+send_getl_message(Size,G,G1,F,Val,S,F1) :- Size<0 |
+        F=F1,
+        G=G1,
+        Val={},
+        S=fep#abnormal.
+
+send_reshape_messages(mouse,mouse,F,S,F1) :- true |
+        F={fep#reshape_by_mouse,S,F1}.
+send_reshape_messages(at(X,Y),char(C,L),F,S,F1) :- true |
+        F={fep#reshape,X,Y,C,L,S,F1}.
+send_reshape_messages(at(X,Y),mouse,F,S,F1) :- true |
+        F={fep#set_position,X,Y,S0,F0},
+        set_size_by_mouse(at(X,Y),S0,F0,S,F1).
+send_reshape_messages(mouse,char(C,L),F,S,F1) :- true |
+        F={fep#set_inside_size,C,L,S0,F0},
+        set_position_by_mouse(char(C,L),S0,F0,S,F1).
+
+set_size_by_mouse(_,fep#normal,F,S,F1) :- true |
+        F={fep#set_size,S,F1}.
+set_size_by_mouse(Pos,fep#abnormal,F,S,F1) :- true |
+        F={fep#set_size,S0,F0},
+        set_pos_again(Pos,S0,F0,S,F1).
+set_size_by_mouse(_,fep#disconnected,F,S,F1) :- true |
+        S=fep#disconnected,F=F1.
+
+set_pos_again(Pos,fep#normal,F,S,F1) :- Pos=at(X,Y) |
+        F={fep#set_position,X,Y,S,F1}.
+set_pos_again(_,fep#abnormal,F,S,F1) :- true |
+        S=fep#abnormal,F=F1.
+set_pos_again(_,fep#disconnected,F,S,F1) :- true |
+        S=fep#disconnected,F=F1.
+
+set_position_by_mouse(_,fep#normal,F,S,F1) :- true |
+        F={fep#set_position_by_mouse,S,F1}.
+set_position_by_mouse(Size,fep#abnormal,F,S,F1) :- true |
+        F={fep#set_position_by_mouse,S0,F0},
+        set_size_again(Size,S0,F0,S,F1).
+set_position_by_mouse(_,fep#disconnected,F,S,F1) :- true |
+        S=fep#disconnected,F=F1.
+
+set_size_again(Size,fep#normal,F,S,F1) :- Size=char(C,L) |
+        F={fep#set_inside_size,C,L,S,F1}.
+set_size_again(_,fep#abnormal,F,S,F1) :- true | S=fep#abnormal,F=F1.
+set_size_again(_,fep#disconnected,F,S,F1) :- true | S=fep#disconnected,F=F1.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_values(Req,G,G1,Val)
+%%      Req     :: io_request message
+%%      Val     :: Values from fep (vector)
+
+return_values({getb,Size,Args},G,G1,Val) :- true |
+        return_getb_values(Size,G,G1,Val,Args).
+return_values({get_attributes,Args},G,G1,{{C,L},{X,Y},{Title},{Path},{B}})
+:- true |
+        G=G1,
+        Args=normal(window,[char_size(C,L),position(X,Y),
+                            title(Title),font(Path),buffer_name(B)]).
+otherwise.
+return_values(Req,G,G1,Val) :- true |
+        G=G1,
+        device_driver:return_values(Req,Val).
+
+return_getb_values(Size,G,G1,{L0},Args) :- string(L0,Size0,_) |
+        lf(LF),
+        builtin#append_string([L0,LF],Line0),
+        getb_substring(Size,~(Size0+1),G,G1,Line0,Args).
+return_getb_values(Size,G,G1,{},Args) :- true |
+        getb_rest_substring(Size,G,G1,Args).
+
+getb_substring(N,N0,G,G1,Line,Args) :- N>=N0 |
+        Args=normal(Line),
+        G=G1.
+getb_substring(N,N0,_,G,Line,Args) :- N<N0 |
+        N1:=N0-N,
+        builtin#substring(Line,0,N,SubStr,Line0),
+        builtin#substring(Line0,N,N1,Line1,_),
+        Args=normal(SubStr),
+        G={N1,Line1}.
+
+getb_rest_substring(Size,{N,RStr},G,Args) :- Size>=N |
+        Args=normal(RStr),
+        G={0,_}.
+getb_rest_substring(Size,{N,RStr},G,Args) :- Size<N |
+        N1:=N-Size,
+        builtin#substring(RStr,0,Size,SubStr,RStr0),
+        builtin#substring(RStr0,Size,N1,RStr1,_),
+        Args=normal(SubStr),
+        G={N1,RStr1}.
+
+lf(LF) :- true |
+        builtin#new_string(LF0,1),
+        set_string_element(LF0,0,10,LF).
+
+%% same as device_driver:terminate/8,
+%% except (1) it runs after 'flush' has completed,
+%%        (2) data format of id_table is different from that of default.
+terminate({_,Conf,SCont,_},Status,F,T,Att,AbF,A,A1,S0) :- wait(S0) |
+        Conf=[],
+        F={fep#reset,AbF1,AtF1,S1,F1},
+        T=[get_all(A2)],
+        Att=[],
+        AbF=fep#nil,
+        A1=[],
+        abort_all_msg(A2,SS,SS1),
+        device_driver:abort_msg(A,SS1,normal),
+        device_driver:terminate_fep(SCont,Status,SS,AbF1,AtF1,S1,F1).
+
+abort_all_msg([{_,{A,_}}|A1],S,S1) :- true |
+        device_driver:abort_msg(A,S,S0),
+        abort_all_msg(A1,S0,S1).
+abort_all_msg([],S,S1) :- true | S=S1.
+
+disconnected(CAb,DS,F,T,{_,Conf,SCont,_},A,A1,Att,AbF) :- true |
+        Conf=[],
+        F=fep#nil,
+        AbF=fep#nil,
+        T=[get_all(A2)],
+        A1=[],
+        abort_all_msg(A2,S,S1),
+        device_driver:abort_msg(A,S1,normal),
+        return_disconnected(CAb,DS,SCont,Att,S).
+
+return_disconnected(CAb,_,SCont,_,_) :- wait(CAb) | SCont=[].
+alternatively.
+return_disconnected(CAb,[Req|DS],SCont,Att,S) :- true |
+        device_driver:return_ab_status(Req,disconnected,S,S1),
+        return_disconnected(CAb,DS,SCont,Att,S1).
+return_disconnected(_,[],SCont,Att,normal) :- true | SCont=[],Att=[].
+
+
+%% Patch for fep_bug: 'abort' and 'reset' message crossing each other
+%%                    when the device is used by remote control.
+fep_patch(CAb,DS,F,T,If,AtF,_,A,A1,G,Att,_,Args) :- true |
+        F={fep#next_attention,AtF1,S,F1},
+        now_reset(CAb,DS,F1,T,If,AtF,_,A,A1,G,Att,_,Args,S).
+
+now_reset(CAb,DS,F,T,If,AtF,_,A,A1,G,Att,_,Args,S) :- wait(S) |
+        F={fep#reset,AbF1,AtF1,S1,F1},
+        wait_01(CAb,DS,F1,T,If,AtF,A,A1,G,Att,Args,AbF1,AtF1,S1).
+

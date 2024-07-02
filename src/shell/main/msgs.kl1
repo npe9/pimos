@@ -1,0 +1,638 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi277::>sys>user>pimos>V25A>src>shell>main>msgs.kl1.3, 06-Dec-90 16:09:18, Edit by pimos
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%  This is a 'shellMsgs' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module shellMsgs.
+:- public messageTranslator/4.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% message translator process %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+messageTranslator(I,O,P,IO) :- true |
+    hold_last(I, M1, flush(_)), msgTrns(M1,M2,P,IO), msgExpnd(M2,O).
+
+%%%%%  Hold last Exception-message  %%%%%
+hold_last([], O, _) :- true | O = [].
+hold_last([last_error(Stat) | I], O, Last) :- true |
+    O = [Last, flush(Stat) | NO], hold_last(I ,NO, Last).
+hold_last([get_last_error(Error) | I], O, Last) :- true |
+    (Last = flush(_) -> Error = [] ;
+    otherwise ;
+     true -> Error = Last),
+    hold_last(I, O, Last).
+otherwise.
+hold_last([Mes | I],O,Last) :- atom(Mes) | O=[Mes|NO], hold_last(I,NO,Last).
+hold_last([Mes | I],O,Last) :- 
+        vector(Mes,_), vector_element(Mes,0,V0), V0 \= exception |
+    O = [Mes | NO], hold_last(I, NO, Last).
+otherwise.
+hold_last([Mes | I],O,_) :- true | O = [Mes | NO], hold_last(I, NO, Mes).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% msgTrns(+[+Mes | I], +[-Mes | O])     %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+msgTrns([], O, P, IO) :- true | O = [], P = [], IO = [].
+msgTrns([flush(Stat) | I], O, P, IO) :- true |
+    O = [flush(Stat) | NO], msgTrns(I, NO, P, IO).
+msgTrns([exception(JobNo, Kind, ExpArgv) | I], OO, P, IO) :- true |
+    P = [get_and_put(pl,Prtl,Prtl), get_and_put(pd,Prtd,Prtd),
+         get_and_put(psl,Prtsl,Prtsl), get_and_put(pal,Prtal,Prtal) | NP],
+    IO = [do([abandon_pool, print_length(Prtl), print_depth(Prtd),
+            print_atom_length(Prtal), print_string_length(Prtsl)]) | NIO],
+    OO = [do([print_length(Prtl), print_depth(Prtd),
+            print_atom_length(Prtal), print_string_length(Prtsl)]) | O],
+    (Kind = deadlock, ExpArgv = {PE, Pred, Argv, Type} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Deadlock detected !! ~n", []),
+                  jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Pred, Argv),
+                      NIO, NNIO, DO1, [dtype(Type), flush(_)], Prtd, Prtl) ;
+     Kind = deadlock, ExpArgv = {PE, Pred, Argv, Type, Clctr} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Deadlock detected !! ~n", []),
+                  jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Pred, Argv),
+                      NIO, NIO1, DO1, [dtype(Type) | DO2], Prtd, Prtl),
+         makePredMsgs(collector(Clctr),
+                      NIO1, NNIO, DO2, [flush(_)], Prtd, Prtl) ;
+     Kind = merger_deadlock, ExpArgv = {PE, Bltn, _, Type} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Merger-deadlock detected !! ~n", []),
+                  jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Bltn),
+                      NIO, NNIO, DO1, [dtype(Type), flush(_)], Prtd, Prtl) ;
+     Kind = merger_deadlock, ExpArgv = {PE, Bltn, _, Type, Clctr} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Merger-deadlock detected !! ~n", []),
+                  jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Bltn),
+                      NIO, NIO1, DO1, [dtype(Type) | DO2], Prtd, Prtl),
+         makePredMsgs(collector(Clctr),
+                      NIO1, NNIO, DO2, [flush(_)], Prtd, Prtl) ;
+     Kind = reduction_failure, ExpArgv = {PE, Pred, Argv} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Reduction failure occurred !! ~n", []),
+                  jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Pred, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = unification_failure, ExpArgv = {PE,Term1,Term2} ->
+         NNIO = NIO,
+%%%%%  Until release the exception of Illegal_merger_input !!  %%%%%
+         variable:wrap(Term1, {_, WT1}, Prtd, Prtl),
+         variable:wrap(Term2, {_, WT2}, Prtd, Prtl),
+         O = [do([putf(string#" Unification failure occurred !! ~n", []),
+                jobNoPe(JobNo,PE),term1(WT1),term2(WT2),flush(_)])|NO] ;
+     Kind = unification_failure, ExpArgv = {PE,Term1,Term2,Caller} ->
+         O = [do(DO) | NO],
+%%%%%  Until release the exception of Illegal_merger_input !!  %%%%%
+         variable:wrap(Term1, {_, WT1}, Prtd, Prtl),
+         variable:wrap(Term2, {_, WT2}, Prtd, Prtl),
+         DO = [putf(string#" Unification failure occurred !! ~n", []),
+                jobNoPe(JobNo,PE),term1(WT1),term2(WT2) | DO1],
+         makePredMsgs(caller(Caller),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = illegal_input, ExpArgv = {PE, Bltn, Argv, Pos} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Illegal input occurred !! ~n", []),
+                jobNoPe(JobNo,PE), pos(Pos) | DO1],
+         makePredMsgs(predicate(Bltn, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = range_overflow, ExpArgv = {PE, Bltn, Argv} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Range overflow occurred !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Bltn, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = range_overflow, ExpArgv = {PE, Bltn, Argv, Pos} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Range overflow occurred !! ~n", []),
+                jobNoPe(JobNo,PE), pos(Pos) | DO1],
+         makePredMsgs(predicate(Bltn, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = out_of_bounds, ExpArgv = {PE, Bltn, Argv} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Out of bounds occurred !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Bltn, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = out_of_bounds, ExpArgv = {PE, Bltn, Argv, Pos} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Out of bounds occurred !! ~n", []),
+                jobNoPe(JobNo,PE), pos(Pos) | DO1],
+         makePredMsgs(predicate(Bltn, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = integer_overflow, ExpArgv = {PE, Bltn, Argv} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Integer overflow occurred !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Bltn, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = integer_zero_division, ExpArgv = {PE, Bltn, Argv} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Integer zero division occurred !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Bltn, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = invalid_floating_point_operation, ExpArgv={PE,Bltn,Argv} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Invalid floating-point operation occurred !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Bltn, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = arity_mismatch, ExpArgv = {PE, Bltn, Argv} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Arity mismatch occurred !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Bltn, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = undefined_module, ExpArgv = {PE, Undef, Argv} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Undefined Module Detected !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(undef_mod(Undef, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = undefined_predicate, ExpArgv = {PE, Undef, Argv} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Undefined Predicate Detected !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(undef_pred(Undef, Argv),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = illegal_merger_input, ExpArgv = {PE, Bltn, _, _} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Illegal merger input occurred !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(predicate(Bltn),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = trace, ExpArgv = {PE, _, _} -> NNIO = NIO,
+         O = [do([putf(string#" Trace exception detected !! ~n", []),
+                jobNoPe(JobNo,PE), flush(_)]) | NO] ;
+     Kind = trace, ExpArgv = {PE, _, _, _} -> NNIO = NIO,
+         O = [do([putf(string#" Trace exception detected !! ~n", []),
+                jobNoPe(JobNo,PE), flush(_)]) | NO] ;
+     Kind = spy, ExpArgv = {PE, _, _, Caller} ->
+         O = [do(DO) | NO],
+         DO = [putf(string#" Spy exception detected !! ~n", []),
+                jobNoPe(JobNo,PE) | DO1],
+         makePredMsgs(caller(Caller),
+                      NIO, NNIO, DO1, [flush(_)], Prtd, Prtl) ;
+     Kind = reserved_7, ExpArgv = {firmware} -> NNIO = NIO,
+         O = [do([putf(string#" Firmware error occurred (reserved_7) !! ~n",
+                []), jobNo(JobNo), flush(_)]) | NO] ;
+     Kind = reserved_14, ExpArgv = {firmware} -> NNIO = NIO,
+         O = [do([putf(string#" Firmware error occurred (reserved_14) !! ~n",
+                []), jobNo(JobNo), flush(_)]) | NO] ;
+     Kind = etc, ExpArgv = {PE, ExpID, _} -> NNIO = NIO,
+         O = [do([putf(string#" Special exception detected !! ~n",
+                []), jobNoPe(JobNo,PE), subCode(ExpID), flush(_)]) | NO] ;
+     Kind = raised, ExpArgv = {_,Info,_}, Info = raised(PE,Type) ->
+         NNIO = NIO,
+%         O = [do([putf(string#" Illegal situation occurred !! ~n",
+%                []), jobNoPe(JobNo,PE), e_type(Info), flush(_)]) | NO] ;
+         O = [do([e_type(Type), jobNoPe(JobNo,PE), flush(_)]) | NO] ;
+     Kind = raised, ExpArgv = {PE,Info,Data},
+             Info = '$PIMOS$'(ID,Message), string(Message,_,_) ->
+         NNIO = NIO,
+         variable:wrap(Data, {_, WData}, Prtd, Prtl),
+         O = [do([putf(string#" Error reported !! ~n", []), jobNoPe(JobNo,PE),
+                id(ID), info(Message), data(WData), flush(_)]) | NO] ;
+    otherwise ;
+     Kind = raised, ExpArgv = {PE,Info,_} ->
+         NNIO = NIO,
+%         O = [do([putf(string#" Illegal situation occurred !! ~n",
+%                []), jobNoPe(JobNo,PE), e_type(Info), flush(_)]) | NO] ;
+         O = [do([e_type(Info), jobNoPe(JobNo,PE), flush(_)]) | NO] ;
+    otherwise ;
+     true -> NNIO = NIO,
+         O = [do([putf(string#" Unknown exception detected !! ~n", []),
+                jobNo(JobNo), type(Kind), flush(_)]) | NO] ),
+    msgTrns(I, NO, NP, NNIO).
+
+otherwise.
+msgTrns([Mes | I], OO, P, IO) :- true |
+    P = [get_and_put(pl,Prtl,Prtl), get_and_put(pd,Prtd,Prtd),
+         get_and_put(psl,Prtsl,Prtsl), get_and_put(pal,Prtal,Prtal) | NP],
+    IO = [do([abandon_pool, print_length(Prtl), print_depth(Prtd),
+            print_atom_length(Prtal), print_string_length(Prtsl)]) | NIO],
+    OO = [do([print_length(Prtl), print_depth(Prtd),
+            print_atom_length(Prtal), print_string_length(Prtsl)]) | O],
+%%%%%  Delete message  %%%%%
+    (Mes = jobStarted(_) -> NO = O, NNIO = NIO ;
+     Mes = jobCreated(_) -> NO = O, NNIO = NIO ;
+     Mes = jobTerminated(_,_) -> NO = O, NNIO = NIO ;
+     Mes = jobStopped(_) -> NO = O, NNIO = NIO ;
+     Mes = jobAttentioned(_) -> NO = O, NNIO = NIO ;
+     Mes = jobNotStopped(_) -> NO = O, NNIO = NIO ;
+     Mes = jobAlreadyStopped(_) -> NO = O, NNIO = NIO ;
+%%%%%  for Secret Command  %%%%%
+     Mes = def(W, Dir) -> NNIO = NIO,
+        O = [putf(string#" Define : ~t => ~t~n", [W, Dir]) | NO] ;
+     Mes = noDef(W, Dir, Stat) -> NNIO = NIO,
+        O = [do([putf(string#" Illegal Define-data , ~t or ~t !!~n", [W, Dir]),
+                flush(Stat)]) | NO] ;
+%%%%%  Command Alias  %%%%%
+     Mes = alias(X, Y) -> NNIO = NIO,
+        O = [putf(string#" Alias : ~t => ~t~n", [X, Y]) | NO] ;
+     Mes = noAlias(X, Y, Stat) -> NNIO = NIO,
+        O = [do([putf(string#" Illegal Alias-data , ~t or ~t !!~n", [X, Y]),
+                flush(Stat)]) | NO] ;
+     Mes = unalias(X, Stat) -> NNIO = NIO,
+        O = [do([putf(string#" Un-alias : ~t~n", [X]),
+                flush(Stat)]) | NO] ;
+     Mes = noAlias(X, Stat) -> NNIO = NIO,
+        O = [do([putf(string#" No alias existed for ~t !!~n", [X]),
+                flush(Stat)]) | NO] ;
+%%%%%  Translate message  %%%%%
+     Mes = jobAborted(JobNo) -> NNIO = NIO,
+         O = [do([putf(string#" Job ~t was aborted . ~n", [JobNo]),
+                flush(_)]) | NO] ;
+     Mes = jobResourceIncrement(JobNo, Inc, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Resource-increment in job ~t is ~t . ~n",
+                [JobNo, Inc]), flush(Stat)]) | NO] ;
+     Mes = jobStatus(StatusList, Stat) -> NNIO = NIO,
+         makeStatusMessages(StatusList, O, NO, Stat) ;
+     Mes = history(History, Stat) ->
+         NNIO = NIO, printHistoryList(History, O, NO, Stat, infinite) ;
+     Mes = history(History, N, Stat) ->
+         NNIO = NIO, printHistoryList(History, O, NO, Stat, N) ;
+     Mes = not_in_history(Cmd, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" ~t can't find in history . ~n", [Cmd]),
+                flush(Stat)]) | NO] ;
+     Mes = future_spec(Cmd, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Sorry !! : ~t is future spec. ~n", [Cmd]),
+                flush(Stat)]) | NO] ;
+     Mes = syntax_error(Stat) ->  NNIO = NIO,
+         O = [do([putf(string#" Syntax-error !!~n", []), flush(Stat)]) | NO] ;
+     Mes = include_var(Stat) ->  NNIO = NIO, S1 = string#"Syntax error !!",
+         S2 = string#"( Variable(s) found in Command-line . )",
+         O = [do([putf(string#" ~s~n  ~s~n", [S1, S2]), flush(Stat)]) | NO] ;
+     Mes = syntax_error(Info, Stat) ->  NNIO = NIO,
+         O = [do([print_error(Info), flush(Stat)]) | NO] ;
+     Mes = end_of_take(Stat) -> NNIO = NIO,
+         O = [do([putf(string#" End of take ~n", []), flush(Stat)]) | NO] ;
+     Mes = illegal_take_device(File, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Unable to open take-file ~t .~n  ( can't get the file-request-device )~n",
+                [File]), flush(Stat)]) | NO] ;
+     Mes = illegal_take_file(File, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Unable to open take-file ~t .~n", [File]),
+                flush(Stat)]) | NO] ;
+     Mes = illegal_directory_name(CWD, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Unable to change directory ~t .~n", [CWD]),
+                flush(Stat)]) | NO] ;
+     Mes = empty_dir(Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Empty directory-stack .~n", []),
+                flush(Stat)]) | NO] ;
+     Mes = not_exchange(Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Unable to exchange directory .~n", []),
+                flush(Stat)]) | NO] ;
+     Mes = dir(Dir) -> NNIO = NIO, O = [putf(string#" ~s~n", [Dir]) | NO] ;
+     Mes = illegal_job_no(JobNo, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Non existent job-number ~t .~n", [JobNo]),
+                flush(Stat)]) | NO] ;
+     Mes = illegal_variable_name(Name, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Illegal variable name ~t .~n", [Name]),
+                flush(Stat)]) | NO] ;
+     Mes = illegal_value(Name, Value, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Illegal value ~t of ~t .~n", [Value, Name]),
+                flush(Stat)]) | NO] ;
+     Mes = shell_var(Key, {}) -> NNIO = NIO,
+         O = [putf(string#" Non existent value ~t .~n", [Key]) | NO] ;
+     Mes = shell_var(Key, {Value}) -> NNIO = NIO,
+         O = [putf(string#" The value of ~t is ~t .~n", [Key, Value]) | NO] ;
+     Mes = environment(non_existent_all, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" No environment variable . ~n", []),
+                flush(Stat)]) | NO] ;
+     Mes = environment(non_existent, Key) -> NNIO = NIO,
+         O = [putf(string#" Non existent value ~t .~n", [Key]) | NO] ;
+     Mes = environment(Key, Value),
+            Key \= non_existent_all, Key \= non_existent -> NNIO = NIO,
+         O = [putf(string#" The value of ~t is ~t . ~n", [Key, Value]) | NO] ;
+     Mes = unsetenv(Key) -> NNIO = NIO,
+         O = [putf(string#" Environment variable removed ~t .~n", [Key]) | NO] ;
+     Mes = cannot_connect(Node) -> NNIO = NIO,
+         O = [putf(string#" Can't connect to the io_node ~t .~n", [Node]) | NO] ;
+     Mes = cannot_unsetenv(Key, Stat) -> NNIO = NIO,
+         O = [do([putf(string#" Can't remove the environment variable  ~t .~n",
+                [Key]), flush(Stat)]) | NO] ;
+     Mes = resourceLow(JobNo,_) -> NNIO = NIO,
+         O = [do([putf(string#" Resource-low occurred in job ~t . ~n",
+                [JobNo]), flush(_)]) | NO] ;
+     Mes = resourceAdded(JobNo, Inc) -> NNIO = NIO,
+         O = [do([putf(string#" Resource-increment ~t added into job ~t . ~n",
+                [Inc, JobNo]), flush(_)]) | NO] ;
+     Mes = command_line(Line) -> NNIO = NIO,
+         O = [do([putl(Line), flush(_)]) | NO] ;
+     Mes = illegal_stdio(JobNo) -> NNIO = NIO,
+         O = [do([putf(string#" Illegal Stdio Specification in job ~t . ~n",
+                [JobNo]), flush(_)]) | NO] ;
+     Mes = do(Msgs) -> NNIO = NIO, O = [do(Msgs) | NO] ;
+     Mes = help(Stat) -> NNIO = NIO, O = [do([
+            putl(string#" stop | stop JobNo"),
+            putl(string#" kill , kill JobNo , kill all ,"),
+            putl(string#" fore , fore JobNo ,"),
+            putl(string#" back , back JobNo ,"),
+            putl(string#" status  ,  exit  ,  help ,"),
+            putl(string#" history [ N ] ,"),
+            putl(string#"  ( N must be a positive integer. ) ,"),
+            putl(string#" last_error , inspect ,"),
+            putl(string#" alias Key [ = Value ] , unalias Key , alias ,"),
+            putl(string#"  ( Key must be a atom. ) ,"),
+            putl(string#"  ( Value must be a string. ) ,"),
+            putl(string#" cd Directory , popd , dirs ,"),
+            putl(string#" pushd [ Directory | Number ] ,"),
+            putl(string#" take FileName ,"),
+%            putl(string#" clear_stack ,"),
+%            putl(string#" do_stack ,"),
+            putl(string#" do [ CmdLine1, CmdLine2, ... ] ,"),
+            putl(string#"  ( Each CmdLine must be a string. ) ,"),  nl,
+            putl(string#" getenv , getenv Key ,"),
+            putl(string#" unsetenv Key ,"),
+            putl(string#" setenv Key = Value ,"), nl,
+            putl(string#" get , get Key ,"),
+            putl(string#" unset Key ,"),
+            putl(string#"  ( Key = rscinc | rscinc(JobNo) | prompt | echo"),
+            putl(string#"          | node | minprio | maxprio | hl"),
+            putl(string#"          | pl | pd | pal | psl | dir )"),
+            putl(string#" set Key = Value ,"),
+            putl(string#"    rscinc = Inc | rscinc(JobNo) = Inc"),
+            putl(string#"      ( Inc = N | {High, Low} | infinite )"),
+            putl(string#"      ( 1000000000 >= N, High, Low > 0 )"),
+            putl(string#"  | prompt = Prompt"),
+            putl(string#"  | echo = on | off"),
+            putl(string#"  | node = NodeNo      ( NodeNo > 0 )"),
+            putl(string#"  | minprio = Min | maxprio = Max"),
+            putl(string#"      ( 4000 >= Min, Max > 0 )"),
+            putl(string#"  | hl = Length"),
+            putl(string#"      ( Length >= 0  |  Length = infinite )"),
+            putl(string#"  | pl = Length      | pd = Depth"),
+            putl(string#"  | pal = Length     | psl = Length"),
+            putl(string#"      ( Length >= 0  ,  Depth >= 0 )"),
+         flush(Stat)]) | NO] ;
+    otherwise ;
+     string(Mes, _, _) -> NNIO = NIO, O = [do([putl(Mes), flush(_)]) | NO] ;
+    otherwise ;
+     true -> NNIO = NIO, O = [do([putt(Mes), nl, flush(_)]) | NO] ),
+    msgTrns(I, NO, NP, NNIO).
+
+msgExpnd([], O) :- true | O = [].
+msgExpnd([do(Messages) | I], O) :- true |
+    msgExpnd1(Messages, NewMessages),
+    O = [do(NewMessages) | NO],
+    msgExpnd(I, NO).
+otherwise.
+msgExpnd([Mes | I], O) :- true | O = [Mes | NO], msgExpnd(I, NO).
+
+msgExpnd1([], O) :- true | O = [].
+msgExpnd1([Mes | I], O) :- true |
+    (Mes = jobNoPe(JobNo,{Node,PE}) ->
+        O = [putf(string#"  [ Job#~t, Node#~t, PE#~t ]~n", [JobNo,Node,PE]) | NO] ;
+     Mes = jobNo(JobNo) ->
+        O = [putf(string#"  [ Job#~t ]~n", [JobNo]) | NO] ;
+     Mes = pred(Pred) ->
+        O = [putf(string#"  Predicate    : ~s ~n", [Pred]) | NO] ;
+     Mes = bltn(Bltn) ->
+        O = [putf(string#"  Builtin      : ~s ~n", [Bltn]) | NO] ;
+     Mes = pos(Pos) ->
+        O = [putf(string#"  Position     : ~t ~n", [Pos]) | NO] ;
+     Mes = caller(Caller) ->
+        O = [putf(string#"  Called by    : ~s ~n", [Caller]) | NO] ;
+     Mes = collector(Collector) ->
+        O = [putf(string#"  Collected by : ~s ~n", [Collector]) | NO] ;
+     Mes = undef(Undef) ->
+        O = [putf(string#"  Undefined    : ~s ~n", [Undef]) | NO] ;
+     Mes = type(Type) ->
+        O = [putf(string#"  Type         : ~t ~n", [Type]) | NO] ;
+     Mes = e_type(Type) ->
+        errorType(Type,O,NO) ;
+     Mes = dtype(Type) -> deadlockType(Type, DType),
+        O = [putf(string#"  Type         : ~t ~n", [DType]) | NO] ;
+     Mes = term1(Term1) ->
+        O = [putf(string#"  Term1        : ~w ~n", [Term1]) | NO] ;
+     Mes = term2(Term2) ->
+        O = [putf(string#"  Term2        : ~w ~n", [Term2]) | NO] ;
+     Mes = subCode(SubCode) ->
+        O = [putf(string#"  Sub code     : ~t ~n", [SubCode]) | NO] ;
+     Mes = id(ID) ->
+        O = [putf(string#"  Error ID     : ~t ~n", [ID]) | NO] ;
+     Mes = info(Info) ->
+        O = [putf(string#"  Error Info   : ~s ~n", [Info]) | NO] ;
+     Mes = data(WData) ->
+        O = [putf(string#"  Error Data   : ~w ~n", [WData]) | NO] ;
+    otherwise ;
+     true -> O = [Mes | NO] ),
+    msgExpnd1(I, NO).
+
+errorType(Type,O,NO) :- true |
+    ( Type = undefined_code(Name,abnormal) ->
+        O = [putf(string#" Command not found !! ( ~s ) ~n", [Name]) | NO] ;
+      Type = undefined_code(Name,non_existent) ->
+        O = [putf(string#" Module not found !! ( ~s ) ~n", [Name]) | NO] ;
+      Type = undefined_code(Name,non_existent(code(_,_,_))) ->
+        O = [putf(string#" Predicate not found !! ( ~s ) ~n", [Name]) | NO] ;
+      Type = undefined_code(Name,protection_violation) ->
+        O = [putf(string#" Protection Violation !! ( ~s ) ~n", [Name]) | NO] ;
+      Type = raised(PE,ErrorType) ->
+        O = [putf(string#" Unknown raise occured !! ~n", [ErrorType]) | NO] ;
+% Direction = in, out, mes 
+      Type = illegal_filename(Direction, File) ->
+        O = [putf(string#" Illegal file-name in std-~t ( ~s ) !! ~n",
+                  [Direction, File]) | NO] ;
+      Type = illegal_window_parameter(Direction, Param) ->
+        O = [putf(string#" Illegal window-parameter in std-~t ( ~s ) !! ~n",
+                  [Direction, Param]) | NO] ;
+      Type = illegal_device_name(Direction, Device) ->
+        O = [putf(string#" Illegal device-name used in std-~t ( ~s ) !! ~n",
+                  [Direction, Device]) | NO] ;
+      Type = cannot_create_file_request(Mode, File) ->
+        O = [putf(string#" Unable to open file ~s .~n  ( Can't get the file-request-device )~n",
+                  [File]) | NO] ;
+      Type = cannot_create_file(Mode, File) ->
+        O = [putf(string#" Unable to open file ~s .~n",
+                  [File]) | NO] ;
+      Type = cannot_create_window_request(Window) ->
+        O = [putf(string#" Unable to make window ~s .~n  ( Can't get the window-request-device )~n",
+                  [Window]) | NO] ;
+      Type = cannot_create_window(Window) ->
+        O = [putf(string#" Unable to make window ~s .~n",
+                  [Window]) | NO] ;
+      Type = pipeBroken ->
+        O = [putf(string#" Broken pipe occured !! ~n", []) | NO] ;
+      Type = illegal_goal_name ->
+        O = [putf(string#" Illegal goal-name !! ~n", []) | NO] ;
+      Type = undefined_code ->
+        O = [putf(string#" Undefined code !! ~n", []) | NO] ;
+     otherwise ;
+        true -> O = [putf(string#"  Type         : ~t ~n", [Type]) | NO] ).
+%        O = [putf(string#"  Type         : ~s ~n", [Name]) | NO] ;
+
+deadlockType(Type, DType) :- true |
+    (Type = 0 -> DType = "[0] Copying GC" ;
+     Type = 1 -> DType = "[1] Copying GC ( in Tracing )" ;
+     Type = 2 -> DType = "[2] Copying GC ( in Spying )" ;
+     Type = 10 -> DType = "[10] MRB-GC ( Collect Value )" ;
+     Type = 11 -> DType = "[11] MRB-GC ( Suspend )" ;
+     Type = 12 -> DType = "[12] MRB-GC ( Active Unify )" ;
+     Type = 13 -> DType = "[13] MRB-GC ( Suspend )" ;
+     Type = 14 -> DType = "[14] MRB-GC ( Active Unify )" ;
+     Type = 15 -> DType = "[15] MRB-GC ( Release )" ;
+    otherwise ;
+     true -> DType = Type).
+
+makeStatusMessages([], O, NO, Stat) :- true | O = [flush(Stat) | NO].
+makeStatusMessages([{JobNo, Status, JobName} | Rest], O, NO, Stat) :- true |
+    O = [putf(string#"  ~t --> ~t ~s ~n", [JobNo, Status, JobName]) | NNO],
+    makeStatusMessages(Rest, NNO, NO, Stat).
+
+printHistoryList(History, StdIo, NStdIo, Stat, Lmt) :- true |
+    ( integer(Lmt), Lmt >= 0 -> reshapeHistory(History, NHistory, Lmt) ;
+    otherwise ;
+      true -> NHistory = History ),
+    printHistory(NHistory, StdIo, NStdIo, Stat).
+
+reshapeHistory(History, NHistory, Lmt) :- true |
+    shellUtils:reverse(History, History1),
+    setSize(History1, History2, Lmt),
+    shellUtils:reverse(History2, NHistory).
+
+setSize([], NH, _) :- true | NH = [].
+setSize([X|H], NH, Lmt) :- true |
+    ( Lmt > 0 -> NH = [X|NNH], setSize(H, NNH, ~(Lmt - 1)) ;
+      Lmt =< 0 -> NH = [] ).
+
+printHistory([],StdIo,NStdIo,Stat) :- true | StdIo = [flush(Stat)|NStdIo].
+printHistory([{No,Line} | History], StdIo, NStdIo, Stat) :- true |
+    StdIo = [putf(string#"  ~t : ~s ~n", [No, Line]) | StdIo1],
+    printHistory(History, StdIo1, NStdIo, Stat).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% ext
+makePredMsgs(Info, IO, NIO, O, NO, Prtd, Prtl) :- true |
+    (Info = predicate(Code, Argv), code(Code,_,_,_) ->
+         getExtInfo(Code, Argv, IO, NIO, Prtd, Prtl, Str),
+         O = [pred(Str) | NO] ;
+     Info = predicate({Code, Caller}, Argv), code(Code,_,_,_) ->
+         getExtInfo(Code, Argv, IO, IO1, Prtd, Prtl, Str1),
+         getPredInfo(Caller, IO1, NIO, Str2),
+         O = [bltn(Str1), caller(Str2) | NO] ;
+     Info = predicate({Name, Caller}, Argv), atom(Name) ->
+         getBltnInfo(Name, Argv, IO, IO1, Prtd, Prtl, Str1),
+         getPredInfo(Caller, IO1, NIO, Str2),
+         O = [bltn(Str1), caller(Str2) | NO] ;
+     Info = predicate({Name, Caller1, Caller2}, Argv) ->
+         getBltnInfo(Name, Argv, IO, IO1, Prtd, Prtl, Str1),
+         getPredInfo(Caller, IO1, IO2, Str2),
+         getPredInfo(Caller, IO2, NIO, Str3),
+         O = [bltn(Str1), caller(Str2), caller(Str3) | NO] ;
+%     Info = predicate(Code), code(Code,_,_,_) ->
+%         getPredInfo(Caller, IO, NIO, Str),
+%         O = [pred(Str) | NO] ;
+     Info = predicate({Code, Caller}), code(Code,_,_,_) ->
+         getPredInfo(Code, IO, IO1, Str1),
+         getPredInfo(Caller, IO1, NIO, Str2),
+         O = [pred(Str1), caller(Str2) | NO] ;
+     Info = predicate({Name, Caller}), atom(Name) ->
+         IO = [abandon_pool, putt(Name), nl, flush(_), getl(Str1) | IO1],
+         getPredInfo(Caller, IO1, NIO, Str2),
+         O = [pred(Str1), caller(Str2) | NO] ;
+     Info = predicate({Name, Caller1, Caller2}) ->
+         IO = [abandon_pool, putt(Name), nl, flush(_), getl(Str1) | IO1],
+         getPredInfo(Caller, IO1, IO2, Str2),
+         getPredInfo(Caller, IO2, NIO, Str3),
+         O = [pred(Str1), caller(Str2), caller(Str3) | NO] ;
+     Info = undef_mod({{Pack, Mod, Pred, Arity}, Caller}, Argv) ->
+         getInfo(Pred, Argv, WPred, Prtd, Prtl),
+         IO = [abandon_pool, putt(Pack), putb(string#"::"),
+               putt(Mod), putb(string#":"), putwt(WPred),
+               nl, flush(_), getl(Str1) | IO1],
+         getPredInfo(Caller, IO1, NIO, Str2),
+         O = [undef(Str1), caller(Str2) | NO] ;
+     Info = undef_mod({{Mod, Pred, Arity}, Caller}, Argv) ->
+         getInfo(Pred, Argv, WPred, Prtd, Prtl),
+         IO = [abandon_pool,
+               putt(Mod), putb(string#":"), putwt(WPred),
+               nl, flush(_), getl(Str1) | IO1],
+         getPredInfo(Caller, IO1, NIO, Str2),
+         O = [undef(Str1), caller(Str2) | NO] ;
+     Info = undef_pred({{Module, Pred, Arity}, Caller}, Argv) ->
+         getInfo(Pred, Argv, WPred, Prtd, Prtl),
+         module:get_module_name(Module, Pack, Mod),
+         IO = [abandon_pool, putt(Pack), putb(string#"::"),
+               putt(Mod), putb(string#":"), putwt(WPred),
+               nl, flush(_), getl(Str1) | IO1],
+         getPredInfo(Caller, IO1, NIO, Str2),
+         O = [undef(Str1), caller(Str2) | NO] ;
+     Info = collector(Code), code(Code,_,_,_) ->
+         getPredInfo(Code, IO, NIO, Str),
+         O = [collector(Str) | NO] ;
+     Info = collector({Code, Caller}), code(Code,_,_,_) ->
+         getPredInfo(Code, IO, IO1, Str1),
+         getPredInfo(Caller, IO1, NIO, Str2),
+         O = [collector(Str1), caller(Str2) | NO] ;
+     Info = collector({Name, Caller}), atom(Name) ->
+         IO = [abandon_pool, putt(Name), nl, flush(_), getl(Str1) | IO1],
+         getPredInfo(Caller, IO1, NIO, Str2),
+         O = [collector(Str1), caller(Str2) | NO] ;
+     Info = collector({Name, Caller1, Caller2}) ->
+         IO = [abandon_pool, putt(Name), nl, flush(_), getl(Str1) | IO1],
+         getPredInfo(Caller1, IO1, IO2, Str2),
+         getPredInfo(Caller2, IO2, NIO, Str3),
+         O = [collector(Str1), caller(Str2), caller(Str3) | NO] ;
+     Info = caller(Caller) ->
+         getPredInfo(Caller, IO, NIO, Str),
+         O = [collector(Str) | NO] ;
+    otherwise ;
+     true -> IO = NIO, variable:wrap(Info, {_, WInfo}, Prtd, Prtl),
+         O = [WInfo | NO] ).
+
+%%%%% ext
+getExtInfo(Builtin, Argv, IO, NIO, Prtd, Prtl, Str) :- true |
+    module:get_predicate_info(Builtin, Pack, Mod, Pred, Arty, _),
+    getInfo(Pred, Argv, WPred, Prtd, Prtl),
+    IO = [abandon_pool, putt(Pack), putb(string#"::"),
+          putt(Mod), putb(string#":"),
+          putwt(WPred), nl, flush(_), getl(Str) | NIO].
+%%%%% ext
+getBltnInfo(Name, Argv, IO, NIO, Prtd, Prtl, Str) :- true |
+    getInfo(Name, Argv, WPred, Prtd, Prtl),
+    IO = [abandon_pool, putwt(WPred), nl, flush(_), getl(Str) | NIO].
+%%%%% ext
+getPredInfo(Caller, IO, NIO, Str) :- true |
+    module:get_predicate_info(Caller, Pack, Mod, Pred, Arty, _),
+    IO = [abandon_pool, putt(Pack), putb(string#"::"),
+          putt(Mod), putb(string#":"), putt(Pred), putb(string#"/"),
+          putt(Arty), nl, flush(_), getl(Str) | NIO].
+
+%%%%% common
+getInfo(PredName, Argv, WPred, Prtd, Prtl) :- vector(Argv, L) |
+    getInfo1(L, PredName, Argv, Pred),
+    variable:wrap(Pred, {_, WPred}, Prtd, Prtl).
+
+getInfo1(0, PredName, _, Pred) :- true | PredName = Pred.
+otherwise.
+getInfo1(X, PredName, Argv, Pred) :- true |
+    add(X, 1, Size),
+    new_vector(NPred, Size),
+    set_vector_element(NPred, 0, _, PredName, NPred1),
+    getInfo2(1, Size, Argv, NPred1, Pred).
+
+getInfo2(Size, Size, _, NPred, Pred) :- true | NPred = Pred.
+otherwise.
+getInfo2(X, Size, Argv, NPred, Pred) :-
+        subtract(X, 1, X0), add(X, 1, X1), vector_element(Argv, X0, Elmnt) |
+    set_vector_element(NPred, X, _, Elmnt, NPred1),
+    getInfo2(X1, Size, Argv, NPred1, Pred).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                              %%%%%
+%%%%%  End of 'shellMsgs' module.  %%%%%
+%%%%%                              %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

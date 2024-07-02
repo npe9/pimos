@@ -1,0 +1,135 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module privilege.
+:- with_macro pimos.
+
+:- public execute/3, error/0 .
+
+execute(':'(Mod,PredArgs),{InitH,InitL},{IncH,IncL}):-
+    integer(InitH),
+    integer(InitL),
+    integer(IncH),
+    integer(IncL),
+    atom(Mod),
+    vector(PredArgs,N),
+    N > 1,
+    N1 := N - 1,
+    vector_element(PredArgs,0,Pd),
+    atom(Pd)|
+    make_args(N,PredArgs,Pred,Args),
+    shoen:raise(pimos_tag#task,general_request,GR),
+    exec(Mod,Pred,N1,Args,InitH,InitL,C,R,GR),
+    task_monitor(R,C,{IncH,IncL},Shut).
+
+execute(':'(Mod,Pred),{InitH,InitL},{IncH,IncL}):-
+    integer(InitH),
+    integer(InitL),
+    integer(IncH),
+    integer(IncL),
+    atom(Mod),
+    atom(Pred)|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    exec(Mod,Pred,0,{},InitH,InitL,C,R,GR),
+    task_monitor(R,C,{IncH,IncL},Shut).
+
+task_monitor([terminated|R],C,Inc,Shut):- true|
+        C = [],
+        task_monitor(R,_,Inc,Shut).
+
+task_monitor([started|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([aborted|R],C,Inc,Shut):-
+        true|
+        C = [],
+        task_monitor(R,_,Inc,Shut).
+
+task_monitor([resource_low|R],C,{IncH,IncL},Shut):-
+        IncL \= 0|
+        C = [add_resource(IncH,IncL),allow_resource_report|CN],
+        task_monitor(R,CN,{IncH,IncL},Shut).
+
+task_monitor([resource_low|R],C,{IncH,IncL},Shut):-
+        IncL = 0,
+        IncH \= 0|
+        C = [add_resource(IncH,IncL),allow_resource_report|CN],
+        task_monitor(R,CN,{IncH,IncL},Shut).
+
+task_monitor([resource_low|R],C,{IncH,IncL},Shut):-
+        IncL = 0,
+        IncH = 0|
+        C = [abort],
+        Shut = shut.
+
+task_monitor([resource_added|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([return_resource(_,_)|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([resource_report_allowed|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([statistics_started|R],C,Inc,Shut):- true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([statistics(ResH,ResL)|R],C,Inc,Shut):-
+        true|
+        task_monitor(R,C,Inc,Shut).
+
+task_monitor([exception(Code,Info,NewCode,NewArgv)|R],C,Inc,Shut):-
+        true|
+        predicate_to_code(module#privilege,error,0,NewCode),
+        NewArgv = {},
+        shoen:raise(pimos_tag#error,privilege_usage,[]),
+        C = [],
+        task_monitor(R,_,Inc,Shut).
+
+
+task_monitor([],C,Inc,Shut):-
+        true|
+        Shut = shut,
+        C = [].
+
+otherwise.
+task_monitor([R|Rest],C,Inc,Shut):-
+        true|
+        task_monitor(Rest,C,Inc,Shut).
+
+
+exec(Mod,Pred,Arity,Args,InitH,InitL,C,R,GR):-
+    true|
+    GR = [execute_super(Mod,Pred,Arity,Args,"privilege",
+                                0,4096,0,{InitH,InitL},Task)],
+    wait_exec(Task,C,R).
+
+wait_exec(normal(C0,R0),C,R):-
+    true|
+    C0 = C,
+    R0 = R.
+otherwise.
+wait_exec(_,C,R):-
+    true|
+    R = [].
+
+make_args(N,PredArgs,Pred,Args):-
+    N1 := N - 1|
+    set_vector_element(PredArgs,0,Pred,0,PA2),
+    new_vector(Vec,N1),
+    make_args2(N1,PA2,Vec,Args).
+
+make_args2(0,PA,V,A):-
+    true|
+    V = A.
+otherwise.
+make_args2(N,PA,V,A):-
+    N1 := N - 1|
+    set_vector_element(PA,N,E,0,PA2),
+    set_vector_element(V,N1,_,E,V2),
+    make_args2(N1,PA2,V2,A).
+
+error:- true| true.

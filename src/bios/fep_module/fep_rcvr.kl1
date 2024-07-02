@@ -1,0 +1,140 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module fep_receiver.
+:- with_macro pimos.
+:- public reply_with_attention/6.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% reply_with_attention(AtMsg, AtF, Attention, FepLine, Reply, Receive)
+%%      AtMsg      ::  reset message of attention line
+%%      AtF        ::  flag for close attention line
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      Reply      ::  reply of I/O message
+%%      Receive    ::  result of I/O message
+
+reply_with_attention([reset(Old, New)|AtMsg], AtF, Attention, FepLine, Reply,
+                     Receive) :-
+    true |
+        reset_attention(AtMsg, AtF, Attention, Old, New, FepLine, Reply,
+                        Receive).
+alternatively.
+reply_with_attention([], fep#nil, Attention, _, _, []) :-
+    true |
+        Attention = fep#nil.
+reply_with_attention([], fep#attention, Attention, _, _, []) :-
+    true |
+        Attention = fep#attention.
+reply_with_attention(AtMsg, AtF, Attention, FepLine, [normal(Value)|Replys],
+                     Receive) :-
+    true |
+        receive_value(AtMsg, AtF, Attention, FepLine, Value, Replys, Receive).
+reply_with_attention(AtMsg, AtF, Attention, FepLine, [abnormal(Value)|Replys],
+                     Receive) :-
+    true |
+        set_scsi_error(AtMsg, AtF, Attention, FepLine, Value, Replys, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% reset_attention(AtMsg, AtF, Attention, Old, New, FepLine, Reply, Receive)
+%%      AtMsg      ::  reset message of attention line
+%%      AtF        ::  flag for close attention line
+%%      Attention  ::  attention line from FEP
+%%      Old        ::  Old attetion line
+%%      New        ::  New attention line
+%%      FepLine    ::  line status of FEP
+%%      Reply      ::  reply of I/O message
+%%      Receive    ::  result of I/O message
+
+reset_attention(AtMsg, fep#attention, fep#attention, Old, New, FepLine, Reply,
+                Receive) :-
+    true |
+        Old = fep#attention,
+        reply_with_attention(AtMsg, fep#nil, New, FepLine, Reply, Receive).
+reset_attention(AtMsg, fep#nil, Attention, Old, New, FepLine, Reply, Receive) :-
+    true |
+        Attention = fep#nil,
+        Old = fep#nil,
+        reply_with_attention(AtMsg, fep#nil, New, FepLine, Reply, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% receive_value(AtMsg, AtF, Attention, FepLine, Value, Reply, Receive)
+%%      AtMsg      ::  reset message of attention line
+%%      AtF        ::  flag for close attention line
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      Value      ::  value of I/O message
+%%      Reply      ::  reply of I/O message
+%%      Receive    ::  result of I/O message
+
+receive_value(AtMsg, _, Attention, FepLine, Value, Reply, Receive) :-
+    vector_element(Value, 1, Response),
+    Response = fep#control_c |
+        Attention = fep#attention,
+        reply_with_attention(AtMsg, fep#attention, Attention, FepLine, Reply,
+                             Receive).
+receive_value(AtMsg, AtF, Attention, FepLine, Value, Reply, Receive) :-
+    vector_element(Value, 1, Response),
+    Response = fep#disconnected |
+        set_disconnected(AtMsg, AtF, Attention, FepLine, Value, Reply, Receive).
+otherwise.
+receive_value(AtMsg, AtF, Attention, FepLine, Value, Reply, 
+              [receive(Vars, Result)|ReceiveTail]) :-
+    true |
+        fep_utility:set_value(Value, Vars),
+        Result = normal,
+        reply_with_attention(AtMsg, AtF, Attention, FepLine, Reply, 
+                             ReceiveTail).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% set_disconnected(AtMsg, AtF, Attention, FepLine, Value, Reply, Receive)
+%%      AtMsg      ::  reset message of attention line
+%%      AtF        ::  flag for close attention line
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      Value      ::  value of I/O message
+%%      Reply      ::  reply of I/O message
+%%      Receive    ::  result of I/O message
+
+set_disconnected(AtMsg, AtF, Attention, FepLine, Value, Reply, 
+                 [receive(Vars, Result)|ReceiveTail]) :-
+    true |
+        FepLine = fep#disconnected,
+        fep_utility:set_value(Value, Vars),
+        Result = normal,
+        reply_with_attention(AtMsg, AtF, Attention, FepLine, Reply,
+                             ReceiveTail).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% set_scsi_error(AtMsg, AtF, Attention, FepLine, Value, Reply, Receive)
+%%      AtMsg      ::  reset message of attention line
+%%      AtF        ::  flag for close attention line
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      Value      ::  value of I/O message
+%%      Reply      ::  reply of I/O message
+%%      Receive    ::  result of I/O message
+
+set_scsi_error(AtMsg, AtF, Attention, FepLine, _, Reply, []) :-
+    true |
+        reply_with_attention(AtMsg, AtF, Attention, FepLine, Reply, []).
+set_scsi_error(AtMsg, AtF, Attention, FepLine, Value, Reply, 
+               [receive(Vars, Result)|ReceiveTail]) :-
+    vector_element(Value,0,Dev),
+    vector_element(Vars,0,Dev) |
+        fep_utility:set_value(Value, Vars),
+        Result = abnormal,
+        reply_with_attention(AtMsg, AtF, Attention, FepLine, Reply,
+                             ReceiveTail).
+otherwise.
+set_scsi_error(AtMsg, AtF, Attention, FepLine, _, Reply, Receive) :-
+    true |
+        reply_with_attention(AtMsg, AtF, Attention, FepLine, Reply, Receive).
+

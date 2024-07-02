@@ -1,0 +1,68 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module check_hostname. 
+:- with_macro pimos.
+:- public check_hostname/2.
+
+check_hostname(A,X):- string(A,Len,16),Len>=7,Len=<15 |
+    End:= Len-1,
+    countp(A,End,Count,A2),
+    checkp(Count,A2,End,X).
+otherwise.
+check_hostname(A,X):- true | A=X. 
+
+countp(A,End,C,A2):- true |
+    search_character(A,0,End,#".",Pos,A3),
+    countp0(A3,End,Pos,0,C,A2).
+
+countp0(A,End,-1,C2,C,A2):- true | A=A2,C=C2.
+otherwise.
+countp0(A,End,Pos,C2,C,A2):- true |
+    countp1(A,End,~(Pos+1),~(C2+1),C,A2).
+
+countp1(A,End,Pos,C2,C,A2):- End>=Pos |
+    search_character(A,Pos,End,#".",Pos2,A3),
+    countp0(A3,End,Pos2,C2,C,A2).
+countp1(A,End,Pos,C2,C,A2):- End<Pos | A=A2,C=C2.
+
+checkp(3,A,End,X):- true |
+    string_element(A,0,Val,A2),
+    make_vector(Val,A2,1,End,0,0,{},X).
+otherwise.
+checkp(_,A,_,X):- true | A=X.
+
+make_vector(Val,A,Next,End,I,N,V,X):- Val>= #"0",Val=< #"9",N=:=3 | A=X.
+make_vector(Val,A,Next,End,I,N,V,X):- Val>= #"0",Val=< #"9",N<3 |
+    I2:= I*10+Val- #"0",
+    N2:= N+1,
+    after_number(A,Next,End,I2,N2,V,X).
+make_vector(Val,A,Next,End,I,N,V,X):- Val=:= #"." |
+    make_vector0(A,Next,End,I,N,V,X).
+otherwise.
+make_vector(Val,A,Next,End,I,N,V,X):- true | A=X.
+
+make_vector0(A,Next,End,I,0,V,X):- true | A=X.
+otherwise.
+make_vector0(A,Next,End,I,N,{},X):- true |
+    after_pri(A,Next,End,{I},X).
+make_vector0(A,Next,End,I,N,{X1},X):- true |
+    after_pri(A,Next,End,{X1,I},X).
+make_vector0(A,Next,End,I,N,{X1,X2},X):- true |
+    after_pri(A,Next,End,{X1,X2,I},X).
+
+after_pri(A,Next,End,V,X):- Next>End | A=X.
+otherwise.
+after_pri(A,Next,End,V,X):- true |
+    string_element(A,Next,Val2,A2),
+    make_vector(Val2,A2,~(Next+1),End,0,0,V,X).
+
+after_number(A,Next,End,I,N,{X1,X2,X3},X):- Next>End | X={X1,X2,X3,I}.
+otherwise.
+after_number(A,Next,End,I,N,V,X):- true |
+    string_element(A,Next,Val2,A2),
+    make_vector(Val2,A2,~(Next+1),End,I,N,V,X).

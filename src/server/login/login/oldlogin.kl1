@@ -1,0 +1,370 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module old_login.
+:- with_macro pimos.
+:- public go/3.
+
+go(Req,Part,Log):- true|
+   shoen:raise(pimos_tag#task,general_request,GR),
+   GR = [number_of_feps(FEPS)|GRN],
+   status1(FEPS,Req,Part,Log,GRN).
+
+status1(normal(Fep),Req,Part,Log,GR):-
+   true|
+   current_node(_,Z),
+   syntax(Req,Part,Log,Fep,Z,Status),
+   status3(Status,GR).
+
+syntax([{Fep,LAN,Proc}|Next],Part,Log,Feps,Procs,Status):-
+   true|
+   requestPool([{Statf,Statl,Statp}|NPool],Out),
+   status3(Out,Part,Log,Feps,Procs,Status),
+   syntax(Next,NPool,Feps,Procs,2),
+   fep(Fep,Feps,Statf,1),
+   lan(LAN,Statl,1),
+   proc(Proc,Procs,Statp,1).
+otherwise.
+syntax(_,_,_,_,_,Status):-
+   true|
+   login_error:e(login,syntax,1),
+   Status = abnormal.
+
+syntax([],Pool,Feps,Procs,N):-
+   true|
+   Pool = [].
+syntax([{Fep,LAN,Proc}|Next],Pool,Feps,Procs,N):-
+   N1 := N + 1|
+   Pool = [{Statf,Statl,Statp}|NPool],
+   fep(Fep,Feps,Statf,N),
+   lan(LAN,Statl,N),
+   proc(Proc,Procs,Statp,N),
+   syntax(Next,NPool,Feps,Procs,N1).
+otherwise.
+syntax(_,Pool,_,_,N):-
+   true|
+   login_error:e(login,syntax,2,N),
+   Pool = [{abnormal,abnormal,abnormal}].
+
+requestPool(In,Out):-
+   true|
+   requestPool(In,Pool,Pool,Out).
+requestPool([{normal(Fep),normal(Lan),normal(Proc)}|Next],
+            Tail,Head,Out):-
+   true|
+   Tail = [{Fep,Lan,Proc}|NTail],
+   requestPool(Next,NTail,Head,Out).
+requestPool([],Tail,Head,Out):-
+   true|
+   Tail = [],
+   Out = normal(Head).
+otherwise.
+requestPool(_,Tail,Head,Out):-
+   true|
+   Out = abnormal.
+
+fep(Fep,Feps,Statf,_):-
+   Fep < Feps,
+   0 =< Fep |
+   Statf = normal(Fep).
+otherwise.
+fep(Fep,Feps,Statf,N):-
+   true|
+   login_error:e(login,fep,1,N),
+   Statf = abnormal.
+
+lan(tcpip,Statl,_):-
+   true|
+   Statl = normal(tcpip).
+lan(lia,Statl,_):-
+   true|
+   Statl = normal(lia).
+lan(local,Statl,_):-
+   true|
+   Statl = normal(local).
+lan(telnet,Statl,_):-
+   true|
+   Statl = normal(telnet).
+otherwise.
+lan(LAN,Statl,N):-
+   true|
+   login_error:e(login,lan,1,N),
+   Statl = abnormal.
+
+proc(Proc,Procs,Statp,_):-
+   Proc < Procs,
+   0 =< Proc |
+   Statp = normal(Proc).
+otherwise.
+proc(Proc,Procs,Statp,N):-
+   true|
+   login_error:e(login,proc,1,N),
+   Statp = abnormal.
+
+status3(normal(Request),Part,Log,Feps,Procs,Status):-
+   true|
+   part(Part,Log,Request,Feps,Procs,Status).
+otherwise.
+status3(_,_,_,_,_,Status):-
+   true|
+   Status = abnormal.
+
+part([],Log,Request,Feps,Procs,Status):-
+%  default whole processors and multiple users
+   true|
+   log(Log,Request,[simple(Procs)],Status).
+part([{Proc,Mode,FepList}*Parts|Next],Log,Req,Feps,Procs,Status):-
+   true|
+   partproc(Proc,Parts,Procs,NProcs,Statp,1),
+   partmode(Mode,Statm,1),
+   partfep(FepList,Feps,Statf,1),
+   partPool([{Statp,Statm,Statf}|NPool],Out),
+   part(Next,NPool,Feps,NProcs,2),
+   status4(Out,Log,Req,Status).
+part([{Proc,Mode,FepList}|Next],Log,Req,Feps,Procs,Status):-
+   Proc \= '*'|
+   partproc(Proc,1,Procs,NProcs,Statp,1),
+   partmode(Mode,Statm,1),
+   partfep(FepList,Feps,Statf,1),
+   partPool([{Statp,Statm,Statf}|NPool],Out),
+   part(Next,NPool,Feps,NProcs,2),
+   status4(Out,Log,Req,Status).
+otherwise.
+part(_,_,_,_,_,Status):-
+   true|
+   login_error:e(login,part,1),
+   Status = abnormal.
+
+part([{Proc,Mode,FepList}*Parts|Next],Pool,Feps,Procs,N):-
+   N1 := N + 1|
+   partproc(Proc,Parts,Procs,NProcs,Statp,N),
+   partmode(Mode,Statm,N),
+   partfep(FepList,Feps,Statf,N),
+   Pool = [{Statp,Statm,Statf}|NPool],
+   part(Next,NPool,Feps,NProcs,N1).
+part([{Proc,Mode,FepList}|Next],Pool,Feps,Procs,N):-
+   N1 := N + 1|
+   partproc(Proc,1,Procs,NProcs,Statp,N),
+   partmode(Mode,Statm,N),
+   partfep(FepList,Feps,Statf,N),
+   Pool = [{Statp,Statm,Statf}|NPool],
+   part(Next,NPool,Feps,NProcs,N1).
+part([],Pool,_,0,_):-
+   true|
+   Pool = [].
+part([],Pool,Feps,Procs,_):-
+   Procs \= 0|
+   login_error:e(login,part,2),
+   make_fep_list(Feps,FepList),
+   Pool = [{normal(Procs,1),normal(multiple),normal(FepList)}].
+otherwise.
+part(_,Pool,_,_,N):-
+   true|
+   login_error:e(login,part,3,N),
+   Pool = [{abnormal,abnormal,abnormal}].
+make_fep_list(Feps,FepList):-
+   true|
+   make_fep_list(Feps,[],FepList).
+make_fep_list(0,Result,FepList):-
+   true|
+   Result = FepList.
+otherwise.
+make_fep_list(N,Result,FepList):-
+   N1 := N - 1|
+   make_fep_list(N1,[N1|Result],FepList).
+
+partproc(Proc,Parts,Procs,NProcs,Statp,N):-
+   Proc > 0,
+   Parts > 0,
+   Procs1 := Proc*Parts,
+   Procs1 =< Procs|
+   NProcs  := Procs - Procs1,
+   Statp = normal(Proc,Parts).
+otherwise.
+partproc(Proc,Parts,Procs,NProcs,Statp,N):-
+   true|
+   login_error:e(login,partproc,1,N),
+   Statp = abnormal,
+   Procs = NProcs.
+partmode(single,Statm,N):-
+   true|
+   Statm = normal(single).
+partmode(multiple,Statm,N):-
+   true|
+   Statm = normal(multiple).
+otherwise.
+partmode(_,Statm,N):-
+   true|
+   login_error:e(login,partmode,1,N),
+   Statm = abnormal.
+partfep([],Feps,Statf,N):-
+   true|
+   Statf = normal([0]).
+otherwise.
+partfep(FepList,Feps,Statf,N):-
+   true|
+   partfep(FepList,Feps,Res,Res,Statf,N).
+partfep([],_,Tail,Top,Statf,_):-
+   true|
+   Tail = [],
+   Statf = normal(Top).
+partfep([F|Next],Feps,Tail,Top,Statf,N):-
+   F >= 0,
+   F < Feps|
+   Tail = [F|TailN],
+   partfep(Next,Feps,TailN,Top,Statf,N).
+otherwise.
+partfep(_,Feps,Tail,Top,Statf,N):-
+   true|
+   login_error:e(login,partfep,1,N),
+   Tail = [],
+   Statf = abnormal.
+
+%partPool([{Statp,Statm,Statf}|NPool],Out),
+partPool(Pool,Out):-
+   true|
+   partPool(Pool,Res,Res,Out).
+partPool([],Tail,Head,Out):-
+   true|
+   Tail = [],
+   Out = normal(Head).
+partPool([{normal(Proc,Parts),normal(Mode),normal(FepList)}|Next],
+         Tail,Head,Out):-
+   true|
+   Tail = [{Proc,Parts,Mode,FepList}|TailN],
+   partPool(Next,TailN,Head,Out).
+otherwise.
+partPool(_,Tail,Head,Out):-
+   true|
+   Tail = [],
+   Out = abnormal.
+
+status4(normal(Procs),Log,Req,Status):-
+   true|
+   log(Log,Req,Procs,Status).
+otherwise.
+status4(_,Log,Req,Status):-
+   true|
+   login_error:e(login,status4,1),
+   Status = abnormal.
+log(on,Req,Procs,Status):-
+   true|
+   Status = normal(Req,Procs,on).
+log(off,Req,Procs,Status):-
+   true|
+   Status = normal(Req,Procs,off).
+otherwise.
+log(_,Req,Procs,Status):-
+   true|
+   login_error:e(login,log,1),
+   Status = abnormal.
+
+%%%%%%%
+status3(abnormal,GR):-
+   true|
+   GR = [],
+   shutdown:go.
+status3(normal(Req,Procs,Log),GR):-
+   true|
+   GR = [user(UR),atom(AR),
+         timer(TR),file(FR)],
+   module_table:cache_table(MT),
+   user(UR,U,G,L,Stu),
+   atom(AR,A,Sta),
+   timer(TR,TR2,Stt),
+   file(FR,FR2,Stf),
+   status5(Stu,Sta,Stt,Stf,U,G,L,A,TR2,FR2,MT,{Req,Procs,Log}).
+
+status5(normal,normal,normal,normal,
+        User,Group,Login,Atom,TR,FR,Module,{Req,Procs,Log}):-
+   true|
+   merge(Login1,Login),
+   merge(Group1,Group),
+   merge({User1,User2},User),
+   merge(LOG1,LOG),
+   merge({Atom1,Atom2,Atom3},Atom),
+   merge({FR1,FR2,FR3},FR),
+   merge({TR1,TR2},TR),
+   merge({Mod1,Mod2},Module),
+   login_request:go(Req,User1,Group1,FR2,TR2,Atom3,Mod1,PART),
+   login_partition:go(Procs,TR1,Login1,Atom2,Mod2,PART,LOG1,User2,FR3),
+   login_logging:go(Log,FR1,Atom1,LOG).
+otherwise.
+status5(Stu,Sta,Stt,Stf,U,G,L,A,TR,FR,MT,_):-
+   true|
+   login_error:e(login,status5,1),
+   U = [], G = [], L = [], A = [],
+   TR = [], FR = [], MT = [].
+
+user(normal(UR,_,_),U,G,L,S):-
+   true|
+   UR = [create(user(UU))|URN],
+   user1(UU,URN,U,G,L,S).
+otherwise.
+user(_,U,G,L,S):-
+   true|
+   S = abnormal.
+user1(normal(UU,_,_),UR,U,G,L,S):-
+   true|
+   UU = U,
+   UR = [create(group(GG))|URN],
+   user1(GG,URN,G,L,S).
+otherwise.
+user1(_,UR,_,_,_,S):-
+   true|
+   UR = [],
+   S = abnormal.
+user1(normal(GG,_,_),UR,G,L,S):-
+   true|
+   GG = G,
+   UR = [create(login(LL))],
+   user1(LL,L,S).
+otherwise.
+user1(_,UR,G,L,S):-
+   true|
+   UR = [],
+   S = abnormal.
+user1(normal(LL,_,_),L,S):-
+   true|
+   LL = L,
+   S = normal.
+otherwise.
+user1(_,L,S):-
+   true|
+   S = abnormal.
+
+atom(normal(AR,_,_),A,S):-
+   true|
+   AR = [create(AA)],
+   atom0(AA,A,S).
+otherwise.
+atom(_,A,S):-
+   true|
+   S = abnormal.
+atom0(normal(AA,_,_),A,S):-
+   true|
+   AA = A,
+   S = normal.
+otherwise.
+atom0(_,A,S):-
+   true|
+   S = abnormal.
+timer(normal(TR,_,_),TRR,S):-
+   true|
+   TR = TRR,
+   S = normal.
+otherwise.
+timer(_,TR,S):-
+   true|
+   S = abnormal.
+file(normal(FR,_,_),FRR,S):-
+   true|
+   FR = FRR,
+   S = normal.
+otherwise.
+file(_,FR,S):-
+   true|
+   S = abnormal.

@@ -1,0 +1,1750 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%
+%%%%%  Arbitary length rational arithmetic package
+%%%%%
+%%%%%  MODULE :: rational
+%%%%%  FILE   :: rational.kl1
+%%%%%
+%%%%%                                   Written by S. Terasaki,  Dec-91,  ICOT 4th laboratry
+%%%%%
+%%%%%  REQUIRED MACRO MODULE :: rational_macro
+%%%%%  REQUIRED MACRO FILE   :: rationa_macro.mac
+%%%%%  REQUIRED MODULE       :: bignum
+%%%%%    
+
+:- module rational.
+%:- with_macro bignum_macro.
+:- with_macro pimos.
+:- public
+    is_number/3, is_rational/3, is_not_real/3, is_fraction/3,
+    real/3, image/3, sign/3, numer/3, denom/3, construct_complex/3, construct/4,
+    negate/2, absolute/2,    add/3, subtract/3, multiply/3, divide/3, divide/4,
+    gcd/5, gcd/3, contents/2, contents/3, power/3,
+    compare/5,    compare/3,  portray/2,  write/2, write/3, 
+    rational_to_bignum/3, rational_to_float/2,    eval/2, copy/3.
+
+%%  <<< REQUIRED MACRO >>>
+%%     Module name :: rational_macro
+%%     File   name :: rational_macro.mac
+%%
+%%  [1] Macro definitions to keep data abstruction 
+%%     bignum#compose(SX,Num,^Out)          Construct a bignum data structure from sign and numeral data
+%%     bignum#bignum(Xin)                   Check "Xin" is a bignum or not
+%%     bignum#wrapped(Xin)                  Check "Xin" is a wrapped bignum or not
+%%     bignum#bignum(Xin,^SX,^Num)          Check and extract its sign and numeral part
+%%     bignum#bignum(Xin,^SX,^XL,^Num)      Check and extract its sign and numeral part
+%%     bignum#numer(Xin,^Num)               Check and extract its numeral part
+%%     bignum#numer(Xin,^XL,^Num)           Check and extract its numeral part and length
+%%     bignum#sign(Xin,^SX)                 Check and extract its sign part
+%%
+%%     rational#compose(Real,Image,^Comp)     Construct a complex data from real and imaginary part
+%%     rational#complex(Xin)                  Check "Xin" is a complex or not
+%%     rational#complex(Xin,^Real,^Image)     Check and extarct real and imaginary parts
+%%     rational#real(Xin,^Real)               Check and extarct real parts
+%%     rational#image(Xin,^Image)             Check and extarct imaginary parts
+%%     rational#compose(Sign,Num,Den,^Rat)    Construct a rational data from its components
+%%     rational#rational(Xin)                 Check "Xin" is a rational or not
+%%     rational#rational(Xin,^Sign,^Num,^Den) Check and extract its sign, numerator and denomirator parts
+%%     rational#sign(Xin,^Sign)               Check and extract its sign part
+%%     rational#numer_denom(Xin,^Num,^Den)    Check and extract its numerator and denomirator parts
+%%     rational#numer(Xin,^Num)               Check and extract its numerator part
+%%     rational#denom(Xin,^Den)               Check and extract its denomirator part
+%%
+%%        where,   Real, Image  ::= rational or bignum 
+%%                 Sign (Sign part)               ::=  0 (+) | 1 (-)       
+%%                 Num  (Numeral/Numerator part)  ::= positive integer | 32bit string
+%%                 Den  (Denomirator part)        ::= positive integer | 32bit string
+%% 
+%%
+%%  [2] Macro definitions to keep machine independence (inherit form pimos)
+%%     mdlib#bignum_less_than(Xin,Yin)                  Equivalent to bignum_less_than/2  
+%%     mdlib#bignum_not_less_than(Xin,Yin)              Equivalent to bignum_not_less_than/2
+%%     mdlib#add_extended(Xin,Yin,^Carry,^Zout)         Equivalent to add_extended/4
+%%     mdlib#subtract_extended(Xin,Yin,^Borrow,^Zout)   Equivalent to subtract_extended/4
+%%     mdlib#multiply_extended(Xin,Yin,^Zhigh,^Zlow)    Equivalent to multiply_extended/4
+%%     mdlib#divide_extended(Xhigh,Xlow,Yin,^Quot,^Rem) Equivalent to divide_extended/5
+%%     mdlib#add_bignum(Xin,Yin,^Zout)                  Equivalent to add_bignum/3
+%%     mdlib#subtract_bignum(Xin,Yin,^Zsign,^Zout)      Equivalent to subtract_bignum/4
+%%     mdlib#multiply_bignum_by_word(Xin,Yword,^Zout)   Equivalent to multiply_bignum_by_word/3
+
+%%
+%%  <<< DESIGN PRINCIPLE >>>
+%% Abstructed data : to keep independency between internal data structure and user interface,
+%%                   methods to extract/construct components of internal data is supported.
+%%                   (real/3, image/3, sign/3, numer/3, denom/3, construct_complex/3, construct/4)
+%% 
+%% <<< USAGE and FUNCTIONS >>>
+%%     Notation :: Xin, Yin and Zout are 'bignum', 'rational', 'complex'  except they have definition.
+%%                 'bignum' ::=  Number which can be represented by 32bit signed integer is
+%%                               always expressed in integer, otherwise it is expressed in bignum integer.
+%%                 'rational' ::=  Number which can be represented in 'bignum' is always expressed
+%%                               in 'bignum', otherwise it is expressed in rational number.
+%%                 'complex'  ::=  Number which can be represented in 'rational/bignum'(imaginary part= 0)
+%%                               is always expressed 'rational/bignum', otherwise it is expressed in
+%%                               'complex' number.
+%% 
+%% [1] Type check 
+%% rational:is_numer(Xin,^Xnew,^Ans)        Is "Xin" complex number ?
+%% rational:is_rational(Xin,^Xnew,^Ans)     Is "Xin" rational number ?
+%% rational:is_not_real(Xin,^Xnew,^Ans)     Is "Xin" not real number (i.e,  imaginary part =\= 0) ?
+%% rational:is_fraction(Xin,^Xnew,^Ans)     Is "Xin" fractional number (neither imaginary nor bignum) ?
+%%     Ans ::=  true | fail     Xnew ::= Xin
+%% 
+%% 
+%% [2] Arithmetic operations
+%% [over COMPLEX field]
+%% rational:negate(Xin,^Zout)            Zout= (-Xin)
+%% rational:add(Xin,Yin,^Zout)           Zout= Xin+Yin
+%% rational:subtract(Xin,Yin,^Zout)      Zout= Xin-Yin
+%% rational:multiply(Xin,Yin,^Zout)      Zout= Xin*Yin
+%% rational:divide(Xin,Yin,^Qout)        Zout= Xin/Yin
+%%
+%% [over RATIONAL field]
+%% rational:absolute(Xin,^Zout)          Zout= |Xin| (the sign of Zout is '+')
+%% rational:divide(Xin,Yin,^Qout,^Rout)  Qout= Xin/Yin, Rout= Xin mod Yin (over rational filed)
+%% rational:power(Xin,Yin,^Zout)         Zout= Xin**Yin  (Yin must be integer)
+%% rational:gcd(Xin,Yin,^GCD,^QX,^QY)    Xin= GCD*QX, Yin= GCD*QY 
+%% rational:gcd(Xin,Yin,^GCD)                    
+%% rational:contents(List,^GCD,^RedNums) Find a GCD of a List of rationals and reduced numbers
+%% rational:contents(List,^GCD)                         
+%% 
+%%     
+%% [5] Comparison [over RATIONAL field]
+%% rational:compare(Xin,Yin,^CMP) 
+%% rational:compare(Xin,Yin,^Xnew,^Ynew,^CMP) 
+%%         CMP ::= > | = | < (atom),  Xnew= Xin,  Ynew= Yin
+%% 
+%% 
+%% [6] Input/Output conversion
+%% [for COMPLEX numbers]
+%% rational:portray(Bignum,^CharStr)      Convert a number to a character string
+%% rational:write(Bignum,^Stream)         Convert a number to a character string and make a output stream
+%%         CharStr ::= 16 bit charcter string which represent numbers in JIS code
+%%         Stream  ::= List whose elements are commands to a output buffer, such as [putb(String)]
+%% 
+%% 
+
+%% [7] Data conversion
+%% rational:rational_to_bignum(Xin,^Bnum,^Rem)  Convert a fractional number to bignum
+%% rational:rational_to_float(Xin,^Bnum,^Rem)  Convert a rational number to floating point number
+%% 
+%% 
+%% [8] Misc. and utilities
+%% rational:copy(Xin,^Xnew,^Copy)         Copy a complex number
+%% rational:eval(Expression,^Result)      Evaluate "Expression" and returns "Result"
+%%     "Expression" is unary arithmetic operations, binary arithmetic operations and
+%%     binary compare operations which are composed of rational(or complex) numbers and
+%%     operators listed below.
+%%     When "Expression" is arithmetic expressions, "Reults" returns their evaluated value.
+%%     When "Expression" is a compare function, "Reults" returns 'true' or 'false'.
+%%     "Expression" can be nested, but the intermediate results must be proper inputs to
+%%     the next operation.
+%%      < Operators >
+%%      Unary  arithmetic ::=   - | abs(X)
+%%      Binary arithmetic ::=   + | - | * | / | div | mod | ** | ^ | ( '**' == '^')
+%%           ('/' is equivalent to rational:divide/3, 'div' and 'mod' are euivalent to rational:divide/4)
+%%      Binary compare    ::=   > | >= | < | =< | =:= | = | =\= | \=
+%%
+%%
+%% [9] Extract/construct compoenets of internal data
+%% [for COMPLEX numbers]
+%% rational:real(Xin,^Xnew,^Real)        Extract real part form complex number
+%% rational:image(Xin,^Xnew,^Imaginary)  Extract imaginary part form complex number
+%% rational:construct_complex(Real,Imaginary,^Complex)  
+%%                                   Construct a complex number from real and imaginary parts
+%%          where, Real,Imaginary ::= rational | bignum | integer
+%%
+%%
+%% [for RATIONAL numbers]
+%% rational:sign(Xin,^Xnew,^SignPart)       Extract sign part form rational number
+%% rational:numer(Xin,^Xnew,^NumerPart)     Extract numerator part form rational number
+%% rational:denom(Xin,^Xnew,^DenomrPart)    Extract denomirator part form rational number
+%% rational:construct(Sign,NumerPart,DenomPart,^Rational)  
+%%                                   Construct a rational number from its components
+%%     SignPart  ::= + | - 
+%%     NumerPart,DenomPart ::= BnumStr | integer (absolute value)
+%%              BnumStr   ::= 32bit string whose elements are 32bit unsigned integer.
+%%                            The MSW(Most Significant Word) is at the 1st element(position 0),
+%%                            and the LSW is at the last.
+%%     <Note>  Specifications of sign/2, numer/2 and construct/3 is not changed
+%%             even if the internal data structure changes. These are external features.
+%% 
+
+%%%%%
+%%%%%   Simple "EVAL" interpreter
+%%%%%
+:- op(300, xfx,div).
+:- op(300, xfy,**).
+:- op(300, xfy,^).
+eval(   abs(X), Out) :- true | eval(X,A), absolute(A,Out).
+eval(    ( -X), Out) :- true | eval(X,A), negate(A,Out).
+eval((X  +  Y), Out) :- true | eval(X,A), eval(Y,B), add(A,B,Out).
+eval((X  -  Y), Out) :- true | eval(X,A), eval(Y,B), subtract(A,B,Out).
+eval((X  *  Y), Out) :- true | eval(X,A), eval(Y,B), multiply(A,B,Out).
+eval((X  /  Y), Out) :- true | eval(X,A), eval(Y,B), divide(A,B,Out).
+eval((X mod Y), Out) :- true | eval(X,A), eval(Y,B), divide(A,B,_,Out). 
+eval((X div Y), Out) :- true | eval(X,A), eval(Y,B), divide(A,B,Out,_). 
+eval((X **  Y), Out) :- true | eval(X,A), eval(Y,B), power(A,B,Out). 
+eval((X ^   Y), Out) :- true | eval(X,A), eval(Y,B), power(A,B,Out). 
+eval((X  >  Y), Out) :- true |
+    eval(X,A), eval(Y,B), compare(A,B,S), (S= (>) -> Out= true   ;   otherwise;true -> Out= false ).
+eval((X  <  Y), Out) :- true |
+    eval(X,A), eval(Y,B), compare(A,B,S), (S= (<) -> Out= true   ;   otherwise;true -> Out= false ).
+eval((X >=  Y), Out) :- true |
+    eval(X,A), eval(Y,B), compare(A,B,S), (S= (<) -> Out= false  ;   otherwise;true -> Out= true ).
+eval((X =<  Y), Out) :- true |
+    eval(X,A), eval(Y,B), compare(A,B,S), (S= (>) -> Out= false  ;   otherwise;true -> Out= true ).
+eval((X  =  Y), Out) :- true | eval(X,A), eval(Y,B), comEQUAL(A,B,Out).
+eval((X =:= Y), Out) :- true | eval(X,A), eval(Y,B), comEQUAL(A,B,Out).
+eval((X =\= Y), Out) :- true | eval(X,A), eval(Y,B), notEQUAL(A,B,Out).
+eval((X  \= Y), Out) :- true | eval(X,A), eval(Y,B), notEQUAL(A,B,Out).
+otherwise.
+eval(Xin,       Out) :- integer(Xin) | Out= Xin.
+eval(Xin,       Out) :- bignum#bignum(Xin) | Out= Xin.
+eval(Xin,       Out) :- rational#rational(Xin) | Out= Xin.
+eval(Xin,       Out) :- rational#complex(Xin) | Out= Xin.
+otherwise.
+eval(Xin,       Out) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be binary/unary arithmetics or compare functions over rational numbers"),
+    rational:eval(Xin,Out) ).
+
+
+%%%%%
+%%%%%   Type check and extract/construct of rational/complex component
+%%%%%
+%%  is_number(Xin,^Xnew,^Ans)      Is Xin integer, bignum, rational or complex number ?
+is_number(Xin,Xnew,Ans) :- rational#complex(Xin,R,I) | is_rational(R,R1,A1), is_rational(I,I1,A2),
+    rational#compose(R1,I1,Xnew), (A1= true, A2= true -> Ans= true  ;  otherwise;true -> Ans= false).
+is_number(Xin,Xnew,Ans) :- rational#rational(Xin) | Xnew= Xin, Ans= true.
+is_number(Xin,Xnew,Ans) :- bignum#bignum(Xin) | Xnew= Xin, Ans= true.
+is_number(Xin,Xnew,Ans) :- integer(Xin) | Xnew= Xin, Ans= true.
+otherwise.
+is_number(Xin,Xnew,Ans) :- true | Xnew= Xin, Ans= false.
+
+
+%%  is_rational(Xin,^Xnew,^Ans)      Is "Xin" integer, bignum, or rational number ? (not complex)
+is_rational(Xin,Xnew,Ans) :- rational#rational(Xin) | Xnew= Xin, Ans= true.
+is_rational(Xin,Xnew,Ans) :- bignum#bignum(Xin) | Xnew= Xin, Ans= true.
+is_rational(Xin,Xnew,Ans) :- integer(Xin) | Xnew= Xin, Ans= true.
+otherwise.
+is_rational(Xin,Xnew,Ans) :- true | Xnew= Xin, Ans= false.
+
+
+%%  is_not_real(Xin,^Xnew,^Ans)      Is Xin not a real number (it can only be expressed in complex)
+is_not_real(Xin,Xnew,Ans) :- rational#complex(Xin) | Xnew= Xin, Ans= true.
+otherwise.
+is_not_real(Xin,Xnew,Ans) :- true | Xnew= Xin, Ans= false.
+
+
+%%  is_fraction(Xin,^Xnew,^Ans)      Is "Xin" fractional number ? (not integer nor bignum)
+is_fraction(Xin,Xnew,Ans) :- rational#rational(Xin) | Xnew= Xin, Ans= ture.
+otherwise.
+is_fraction(Xin,Xnew,Ans) :- true | Xnew= Xin, Ans= false.
+
+
+%%%%%
+%%%%%  Data construct/ Extract component
+%%%%%
+%%  real(Xin,^Xnew,^Real)  Extract real part of complex
+real(Xin,Xnew,Real) :- rational#complex(Xin,R,I) | copy(R,R1,R2), rational#compose(R1,I,Xnew), Real= R2.
+real(Xin,Xnew,Real) :- rational#rational(Xin,S,N,D) | bignum:copybig(N,N1,N2), 
+    bignum:copybig(D,D1,D2), rational#compose(S,N1,D1,Xnew), rational#compose(S,N2,D2,Real).
+real(Xin,Xnew,Real) :- bignum#bignum(Xin) | bignum:copy(Xin,Xnew,Real).
+real(Xin,Xnew,Real) :- integer(Xin) | Xnew= Xin, Real= Xin.
+otherwise.
+real(Xin,Xnew,Real) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be complex number"), rational:real(Xin,Xnew,Real) ).
+
+%%  image(Xin,^Xnew,^Image)  Extract imaginary part of complex
+image(Xin,Xnew,Image) :- rational#complex(Xin,R,I) | copy(I,I1,I2),rational#compose(R,I1,Xnew),Image= I2.
+image(Xin,Xnew,Image) :- rational#rational(Xin) | Xnew= Xin, Image= 0.
+image(Xin,Xnew,Image) :- bignum#bignum(Xin) | Xnew= Xin, Image= 0.
+image(Xin,Xnew,Image) :- integer(Xin) | Xnew= Xin, Image= 0.
+otherwise.
+image(Xin,Xnew,Image) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be complex number"), rational:image(Xin,Xnew,Image) ).
+
+
+%%  sign(Xin,^Xnew,^Sign)  Extract Sign part of integer, bignum or rational number
+sign(Xin,Xnew,Sign) :- rational#sign(Xin,0) | Xnew= Xin, Sign= (+).
+sign(Xin,Xnew,Sign) :- rational#sign(Xin,1) | Xnew= Xin, Sign= (-).
+sign(Xin,Xnew,Sign) :- bignum#sign(Xin,0) | Xnew= Xin, Sign= (+).
+sign(Xin,Xnew,Sign) :- bignum#sign(Xin,1) | Xnew= Xin, Sign= (-).
+sign(Xin,Xnew,Sign) :- Xin>=0 | Xnew= Xin, Sign= (+).
+sign(Xin,Xnew,Sign) :- Xin< 0 | Xnew= Xin, Sign= (-).
+otherwise.
+sign(Xin,Xnew,Sign) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational number"), rational:sign(Xin,Xnew,Sign) ).
+                         
+
+%%  numer(Xin,^Xnew,^Sign)  Extract numerator part of integer, bognum or rational number
+numer(Xin,Xnew,Numer) :- rational#rational(Xin,S,N,D) | 
+    bignum:copybig(N,N1,Numer),rational#compose(S,N1,D,Xnew).
+numer(Xin,Xnew,Numer) :- bignum#bignum(Xin,S,N) | bignum:copybig(N,N1,Numer), bignum#compose(S,N1,Xnew).
+numer(Xin,Xnew,Numer) :- Xin>=0 | Xnew= Xin, Numer= Xin.
+numer(Xin,Xnew,Numer) :- Xin< 0, Xin =\= 16#"80000000" | Xnew= Xin, builtin:subtract(0,Xin,Numer).
+numer(Xin,Xnew,Numer) :- Xin< 0, Xin =:= 16#"80000000" | Xnew= 16#"80000000", 
+    new_string(Str,1,32), set_string_element(Str,0,Xin,Numer).
+otherwise.
+numer(Xin,Xnew,Numer) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational number"), rational:numer(Xin,Xnew,Numer) ).
+
+
+%%  denom(Xin,^Xnew,^Sign)  Extract denominator part of rational number
+denom(Xin,Xnew,Denom) :- rational#rational(Xin,S,N,D) | 
+    bignum:copybig(D,D1,Denom), rational#compose(S,N,D1,Xnew).
+denom(Xin,Xnew,Denom) :- bignum#bignum(Xin) | Xnew= Xin, Denom= 1.
+denom(Xin,Xnew,Denom) :- integer(Xin) | Xnew= Xin, Denom= 1.
+otherwise.
+denom(Xin,Xnew,Denom) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational number"), rational:denom(Xin,Xnew,Denom) ).
+
+
+%%  construct_complex(Real,Image, ^Out)  Construct a complex number form  real and imaginary part
+%%          Sign ::=  +  | -       Numer,Denom ::= positive integer | 32bit string
+construct_complex(Real,Image,Out) :- Image =\= 0 | cons_compSUB(Real,Image,Out).
+construct_complex(Real,Image,Out) :- Image =:= 0 | cons_compZERO(Real,Out).
+construct_complex(Real,Image,Out) :- rational#rational(Image) | cons_compSUB(Real,Image,Out).
+construct_complex(Real,Image,Out) :- bignum#bignum(Image)   | cons_compSUB(Real,Image,Out).
+otherwise.
+construct_complex(R,I,Out) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg2,
+    "Argument must be rational number"),rational:construct_complex(R,I,Out)).
+
+cons_compSUB(Real,Image,Out) :- integer(Real) | rational#compose(Real,Image,Out).
+cons_compSUB(Real,Image,Out) :- rational#rational(Real) | rational#compose(Real,Image,Out).
+cons_compSUB(Real,Image,Out) :- bignum#bignum(Real) | rational#compose(Real,Image,Out).
+otherwise.
+cons_compSUB(R,I,Out) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be rational number"),rational:construct_complex(R,I,Out)).
+
+cons_compZERO(Real,Out) :- integer(Real) | Out= Real.
+cons_compZERO(Real,Out) :- rational#rational(Real) | Out= Real.
+cons_compZERO(Real,Out) :- bignum#bignum(Real) | Out= Real.
+otherwise.
+cons_compZERO(R,Out) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be rational number"),rational:construct_complex(R,0,Out)).
+%%  construct(S,Num,Den, ^Out)  Construct a rational number form Sign, numerator and denomirator
+%%          Sign ::=  +  | -       Numer,Denom ::= positive integer | 32bit string
+construct(+,Numer,Denom,Out) :- Numer>0 | consPLUS(Numer,Denom,Out).
+construct(-,Numer,Denom,Out) :- Numer>0 | consMINUS(Numer,Denom,Out).
+construct(+,Numer,Denom,Out) :- Numer=0 | consZERO(+,Denom,Out).
+construct(-,Numer,Denom,Out) :- Numer=0 | consZERO(-,Denom,Out).
+construct(+,Numer,Denom,Out) :- string(Numer,NL,_), NL>0 | consPLUS(Numer,Denom,Out).
+construct(-,Numer,Denom,Out) :- string(Numer,NL,_), NL>0 | consMINUS(Numer,Denom,Out).
+construct(+,Numer,Denom,Out) :- string(Numer,NL,_), NL=0 | consZERO(+,Denom,Out).
+construct(-,Numer,Denom,Out) :- string(Numer,NL,_), NL=0 | consZERO(-,Denom,Out).
+otherwise.
+construct(+,N,D,Out) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input_at_arg2,
+    "Argument must be positive integer or 32bit string"),rational:construct(+,N,D,Out) ).
+construct(-,N,D,Out) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input_at_arg2,
+    "Argument must be positive integer or 32bit string"),rational:construct(-,N,D,Out) ).
+otherwise.
+construct(S,N,D,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be '+' or '-'"),rational:construct(S,N,D,Out) ).
+
+consPLUS(Numer,Denom,Out) :- Denom>1 | 
+    bignum:gcdbig(Numer,Denom,_,Numer1,Denom1), consSUBp(Numer1,Denom1,Out).
+consPLUS(Numer,Denom,Out) :- Denom=1 | bignum:construct(+,Numer,Out).
+consPLUS(Numer,Denom,Out) :- string(Denom,DL,_),DL>0 | 
+    bignum:gcdbig(Numer,Denom,_,Numer1,Denom1), consSUBp(Numer1,Denom1,Out).
+otherwise.
+consPLUS(Num,Den,Out) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input_at_arg3,
+  "Argument must be positive nonzero integer or non-null 32bit string"),rational:construct(+,Num,Den,Out)).
+
+consMINUS(Numer,Denom,Out) :- Denom>1 | 
+    bignum:gcdbig(Numer,Denom,_,Numer1,Denom1), consSUBm(Numer1,Denom1,Out).
+consMINUS(Numer,Denom,Out) :- Denom=1 | bignum:construct(-,Numer,Out).
+consMINUS(Numer,Denom,Out) :- string(Denom,DL,_),DL>0 |
+    bignum:gcdbig(Numer,Denom,_,Numer1,Denom1), consSUBm(Numer1,Denom1,Out).
+otherwise.
+consMINUS(Num,Den,Out) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input_at_arg3,
+  "Argument must be positive nonzero integer or non-null 32bit string"),rational:construct(-,Num,Den,Out)).
+
+consZERO(_,Denom,Out) :- Denom>0 | Out= 0.
+consZERO(_,Denom,Out) :- string(Denom,DL,_),DL>0 | Out= 0.
+otherwise.
+consZERO(S,Den,Out) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input_at_arg3,
+  "Argument must be positive nonzero integer or non-null 32bit string"),rational:construct(S,0,Den,Out) ).
+
+consSUBp(Numer,Denom,Out) :-  Denom =:= 1 | bignum:construct(+,Numer,Out).
+consSUBp(Numer,Denom,Out) :-  Denom =\= 1 | rational#compose(0,Numer,Denom,Out).
+consSUBp(Numer,Denom,Out) :-  string(Denom,_,_) | rational#compose(0,Numer,Denom,Out).
+
+consSUBm(Numer,Denom,Out) :-  Denom =:= 1 | bignum:construct(-,Numer,Out).
+consSUBm(Numer,Denom,Out) :-  Denom =\= 1 | rational#compose(1,Numer,Denom,Out).
+consSUBm(Numer,Denom,Out) :-  string(Denom,_,_) | rational#compose(1,Numer,Denom,Out).
+
+
+%%  copy(Xin,^Xnew,^Copy)  Make a copy of complex number
+%%
+copy(Xin,Xnew,Copy) :-  integer(Xin) | Xnew= Xin, Copy= Xin.
+copy(Xin,Xnew,Copy) :-  bignum#bignum(Xin,S,N) | 
+    bignum:copybig(N,N1,N2), bignum#compose(S,N1,Xnew), bignum#compose(S,N2,Copy).
+copy(Xin,Xnew,Copy) :-  rational#rational(Xin,S,N,D) | bignum:copybig(N,N1,N2),
+    bignum:copybig(D,D1,D2),rational#compose(S,N1,D1,Xnew),rational#compose(S,N2,D2,Copy).
+copy(Xin,Xnew,Copy) :-  rational#complex(Xin,R,I) | 
+    copy(R,R1,R2), copy(I,I1,I2), rational#compose(R1,I1,Xnew), rational#compose(R2,I2,Copy).
+otherwise.
+copy(Xin,Xnew,Copy) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1, "Argument must be complex number"), rational:copy(Xin,Xnew,Copy)).
+
+
+
+
+%%%
+%%%  ABSOLUTE / NEGATE
+%%%
+
+%%  absolute(In,^Out)
+absolute(In,Out) :- In>=0 | Out= In.
+absolute(In,Out) :- In< 0, In =\= 16#"80000000" | builtin:subtract(0,In,Out).
+absolute(In,Out) :- In< 0, In =:= 16#"80000000" | 
+    new_string(X,1,32), set_string_element(X,0,In,X1), bignum#compose(0,X1,Out).
+absolute(In,Out) :- bignum#numer(In,X) | bignum#compose(0,X,Out).
+absolute(In,Out) :- rational#numer_denom(In,N,D) | rational#compose(0,N,D,Out).
+otherwise.
+absolute(In,Out) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1, 
+    "Argument must be integer, bignum, rational number"), rational:absolute(In,Out)).
+
+
+%%  negate(In,^Out)   Negate a sign part
+negate(In,Out) :- In =\= 16#"80000000" | builtin:subtract(0,In,Out).
+negate(In,Out) :- In =:= 16#"80000000" | 
+    new_string(X,1,32), set_string_element(X,0,In,X1), bignum#compose(0,X1,Out).
+negate(In,Out) :- bignum#bignum(In,S,L,X), L>1 | S1 := S xor 1, bignum#compose(S1,X,Out).
+negate(In,Out) :- bignum#bignum(In,S,L,X), L=1 | string_element(X,0,N,X1), negate_sub(N,S,X1,Out).
+negate(In,Out) :- rational#rational(In,S,N,D) | S1 := S xor 1, rational#compose(S1,N,D,Out).
+negate(In,Out) :- rational#complex(In,R,I) | negate(R,RN), negate(I,IN), rational#compose(RN,IN,Out).
+otherwise.
+negate(In,Out) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be complex number"), rational:negate(In,Out)).
+
+negate_sub(N,0,_,Out) :- N =:= 16#"80000000" | Out= N.
+otherwise.
+negate_sub(_,S,X,Out) :- true | S1 := S xor 1, bignum#compose(S1,X,Out).
+
+
+%%%%%
+%%%%%   ADD
+%%%%%
+add(Xin,Yin,Out) :- rational#complex(Xin,Rx,Ix)     | addCOM(Rx,Ix,Yin,Out).
+add(Xin,Yin,Out) :- rational#rational(Xin,Sx,Nx,Dx) | addRAT(Sx,Nx,Dx,Yin,Out).
+add(Xin,Yin,Out) :- bignum#bignum(Xin,Sx,Nx)      | addBNUM(Sx,Nx,Yin,Out).
+add(Xin,Yin,Out) :- Xin>0 | addINTp(Xin,Yin,Out).
+add(Xin,Yin,Out) :- Xin<0 | addINTm(Xin,Yin,Out).
+add(Xin,Yin,Out) :- Xin=0 | addZERO(Yin,Out).
+otherwise.
+add(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error, 
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be complex number"),rational:add(Xin,Yin,Out)).
+
+addCOM(Rx,Ix,Yin,Out) :- rational#complex(Yin,Ry,Iy) | add(Rx,Ry,Rz), add(Ix,Iy,Iz), normCOM(Rz,Iz,Out).
+addCOM(Rx,Ix,Yin,Out) :- rational#rational(Yin) | add(Rx,Yin,Rz), normCOM(Rz,Ix,Out).
+addCOM(Rx,Ix,Yin,Out) :- bignum#bignum(Yin) | add(Rx,Yin,Rz), normCOM(Rz,Ix,Out).
+addCOM(Rx,Ix,Yin,Out) :- Yin =\= 0 | add(Rx,Yin,Rz), normCOM(Rz,Ix,Out).
+addCOM(Rx,Ix,Yin,Out) :- Yin =:= 0 | rational#compose(Rx,Ix,Out).
+otherwise.
+addCOM(Rx,Ix,Yin,Out) :- true | rational#compose(Rx,Ix,Xin), add_raise(Xin,Yin,Out).
+
+%  <NOTE>  The algorithm written here to add 2 rational numbers is about 2 times faster than 
+%          the below (normal) algorithm
+%             bignum:mulbig(Nx,Dy,Na), bignum:mulbig(Ny,Dx,Nb), bignum:addbig(Sx,Sy,Na,Nb,Sz,Nc),
+%             bignum:mulbig(Dx,Dy,Dc), bignum:gcdbig(Nc,Dc,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+addRAT(Sx,Nx,Dx,Yin,Out) :- rational#complex(Yin,Ry,Iy) | 
+    rational#compose(Sx,Nx,Dx,Rx), add(Rx,Ry,Rz), normCOM(Rz,Iy,Out).
+addRAT(Sx,Nx,Dx,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | bignum:gcdbig(Dx,Dy,G1,Qx,Qy),
+    bignum:mulbig(Nx,Qy,Na),  bignum:mulbig(Ny,Qx,Nb),    bignum:addbig(Sx,Sy,Na,Nb,Sz,Nc),
+    bignum:gcdbig(Nc,G1,G2),  bignum:divbig(Nc,G2,Nz,_),  bignum:divbig(Dy,G2,Dc,_), 
+    bignum:mulbig(Qx,Dc,Dz),  normRAT(Sz,Nz,Dz,Out).
+addRAT(Sx,Nx,Dx,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | bignum:mulbig(Ny,Dx,Nb),
+    bignum:addbig(Sx,Sy,Nx,Nb,Sz,Nc), bignum:gcdbig(Nc,Dx,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+addRAT(Sx,Nx,Dx,Yin,Out) :- Yin>0 | bignum:mulbig(Dx,Yin,Nb),
+    bignum:addbig(Sx,0,Nx,Nb,Sz,Nc), bignum:gcdbig(Nc,Dx,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+addRAT(Sx,Nx,Dx,Yin,Out) :- Yin<0 | mdlib#subtract_extended(0,Yin,_,YN), bignum:mulbig(Dx,YN,Nb),
+    bignum:addbig(Sx,1,Nx,Nb,Sz,Nc), bignum:gcdbig(Nc,Dx,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+addRAT(Sx,Nx,Dx,Yin,Out) :- Yin=0 | rational#compose(Sx,Nx,Dx,Out).
+otherwise.
+addRAT(Sx,Nx,Dx,Yin,Out) :- true | rational#compose(Sx,Nx,Dx,Xin), add_raise(Xin,Yin,Out).
+
+addBNUM(Sx,Nx,Yin,Out) :- rational#complex(Yin,Ry,Iy) |
+    bignum#compose(Sx,Nx,Rx), add(Rx,Ry,Rz), normCOM(Rz,Iy,Out).
+addBNUM(Sx,Nx,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | bignum:mulbig(Nx,Dy,Nb),
+    bignum:addbig(Sx,Sy,Nb,Ny,Sz,Nc), bignum:gcdbig(Nc,Dy,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+addBNUM(Sx,Nx,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | bignum:addbig(Sx,Sy,Nx,Ny,Sz,Nz),normBNUM(Sz,Nz,Out).
+addBNUM(Sx,Nx,Yin,Out) :- Yin>0 | bignum:addbig(Sx,0,Nx,Yin,Sz,Nz), normBNUM(Sz,Nz,Out).
+addBNUM(Sx,Nx,Yin,Out) :- Yin<0 | 
+    mdlib#subtract_extended(0,Yin,_,YN), bignum:addbig(Sx,1,Nx,YN,Sz,Nz), normBNUM(Sz,Nz,Out).
+addBNUM(Sx,Nx,Yin,Out) :- Yin=0 | bignum#compose(Sx,Nx,Out).
+otherwise.
+addBNUM(Sx,Nx,Yin,Out) :- true | bignum#compose(Sx,Nx,Xin), add_raise(Xin,Yin,Out).
+
+
+addINTp(Xin,Yin,Out) :- rational#complex(Yin,Ry,Iy) | add(Xin,Ry,Rz), normCOM(Rz,Iy,Out).
+addINTp(Xin,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | bignum:mulbig(Dy,Xin,Nb),
+    bignum:addbig(0,Sy,Nb,Ny,Sz,Nc), bignum:gcdbig(Nc,Dy,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+addINTp(Xin,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | bignum:addbig(0,Sy,Xin,Ny,Sz,Nz), normBNUM(Sz,Nz,Out).
+addINTp(Xin,Yin,Out) :- Yin>0 | mdlib#add_extended(Xin,Yin,ZH,ZL), normINT(0,ZH,ZL,Out).
+addINTp(Xin,Yin,Out) :- Yin<0 | builtin:add(Xin,Yin,Out).
+addINTp(Xin,Yin,Out) :- Yin=0 | Out= Xin.
+otherwise.
+addINTp(Xin,Yin,Out) :- true | add_raise(Xin,Yin,Out).
+
+addINTm(Xin,Yin,Out) :- rational#complex(Yin,Ry,Iy) | add(Xin,Ry,Rz), normCOM(Rz,Iy,Out).
+addINTm(Xin,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) |
+    mdlib#subtract_extended(0,Xin,_,XN), bignum:mulbig(Dy,XN,Nb),
+    bignum:addbig(1,Sy,Nb,Ny,Sz,Nc), bignum:gcdbig(Nc,Dy,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+addINTm(Xin,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | mdlib#subtract_extended(0,Xin,_,XN),
+    bignum:addbig(1,Sy,XN,Ny,Sz,Nz), normBNUM(Sz,Nz,Out).
+addINTm(Xin,Yin,Out) :- Yin>0 | builtin:add(Xin,Yin,Out).
+addINTm(Xin,Yin,Out) :- Yin<0 | mdlib#subtract_extended(0,Xin,_,XN),
+    mdlib#subtract_extended(0,Yin,_,YN), mdlib#add_extended(XN,YN,ZH,ZL), normINT(1,ZH,ZL,Out).
+addINTm(Xin,Yin,Out) :- Yin=0 | Out= Xin.
+otherwise.
+addINTm(Xin,Yin,Out) :- true | add_raise(Xin,Yin,Out).
+
+addZERO(Yin,Out) :- rational#complex(Yin) | Out= Yin.
+addZERO(Yin,Out) :- rational#rational(Yin) | Out= Yin.
+addZERO(Yin,Out) :- bignum#bignum(Yin) | Out= Yin.
+addZERO(Yin,Out) :- integer(Yin) | Out= Yin.
+otherwise.
+addZERO(Yin,Out) :- true | add_raise(0,Yin,Out).
+
+add_raise(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg2, "Argument must be complex number"), rational:add(Xin,Yin,Out)).
+
+
+%%%%%
+%%%%%  SUBTRACT
+%%%%%
+subtract(Xin,Yin,Out) :- rational#complex(Xin,Rx,Ix)     | subCOM(Rx,Ix,Yin,Out).
+subtract(Xin,Yin,Out) :- rational#rational(Xin,Sx,Nx,Dx) | subRAT(Sx,Nx,Dx,Yin,Out).
+subtract(Xin,Yin,Out) :- bignum#bignum(Xin,Sx,Nx)      | subBNUM(Sx,Nx,Yin,Out).
+subtract(Xin,Yin,Out) :- Xin>0  | subINTp(Xin,Yin,Out).
+subtract(Xin,Yin,Out) :- Xin<0  | subINTm(Xin,Yin,Out).
+subtract(Xin,Yin,Out) :- Xin=0  | subZERO(Yin,Out).
+otherwise.
+subtract(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error, 
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be complex number"),rational:subtract(Xin,Yin,Out)).
+
+subCOM(Rx,Ix,Yin,Out) :- rational#complex(Yin,Ry,Iy) | 
+    subtract(Rx,Ry,Rz), subtract(Ix,Iy,Iz), normCOM(Rz,Iz,Out).
+subCOM(Rx,Ix,Yin,Out) :- rational#rational(Yin) | subtract(Rx,Yin,Rz), normCOM(Rz,Ix,Out).
+subCOM(Rx,Ix,Yin,Out) :- bignum#bignum(Yin) | subtract(Rx,Yin,Rz), normCOM(Rz,Ix,Out).
+subCOM(Rx,Ix,Yin,Out) :- Yin =\= 0 | subtract(Rx,Yin,Rz), normCOM(Rz,Ix,Out).
+subCOM(Rx,Ix,Yin,Out) :- Yin =:= 0 | rational#compose(Rx,Ix,Out).
+otherwise.
+subCOM(Rx,Ix,Yin,Out) :- true | rational#compose(Rx,Ix,Xin), sub_raise(Xin,Yin,Out).
+
+%  <NOTE>  The algorithm written here to subtract 2 rational numbers is about 2 times faster than 
+%          the below (normal) algorithm
+%             bignum:mulbig(Nx,Dy,Na), bignum:mulbig(Ny,Dx,Nb), bignum:subbig(Sx,Sy,Na,Nb,Sz,Nc),
+%             bignum:mulbig(Dx,Dy,Dc), bignum:gcdbig(Nc,Dc,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+subRAT(Sx,Nx,Dx,Yin,Out) :- rational#complex(Yin,Ry,Iy) | 
+    rational#compose(Sx,Nx,Dx,Rx), subtract(Rx,Ry,Rz), normCOM(Rz,Iy,Out).
+subRAT(Sx,Nx,Dx,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | bignum:gcdbig(Dx,Dy,G1,Qx,Qy),
+    bignum:mulbig(Nx,Qy,Na),  bignum:mulbig(Ny,Qx,Nb),    bignum:subbig(Sx,Sy,Na,Nb,Sz,Nc),
+    bignum:gcdbig(Nc,G1,G2),  bignum:divbig(Nc,G2,Nz,_),  bignum:divbig(Dy,G2,Dc,_), 
+    bignum:mulbig(Qx,Dc,Dz),  normRAT(Sz,Nz,Dz,Out).
+subRAT(Sx,Nx,Dx,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | bignum:mulbig(Ny,Dx,Nb),
+    bignum:subbig(Sx,Sy,Nx,Nb,Sz,Nc),bignum:gcdbig(Nc,Dx,_,Nz,Dz),normRAT(Sz,Nz,Dz,Out).
+subRAT(Sx,Nx,Dx,Yin,Out) :- Yin>0 | bignum:mulbig(Yin,Dx,Nb),
+    bignum:subbig(Sx,0,Nx,Nb,Sz,Nc),bignum:gcdbig(Nc,Dx,_,Nz,Dz),normRAT(Sz,Nz,Dz,Out).
+subRAT(Sx,Nx,Dx,Yin,Out) :- Yin<0 | mdlib#subtract_extended(0,Yin,_,YN), bignum:mulbig(YN,Dx,Nb),
+    bignum:subbig(Sx,1,Nx,Nb,Sz,Nc),bignum:gcdbig(Nc,Dx,_,Nz,Dz),normRAT(Sz,Nz,Dz,Out).
+subRAT(Sx,Nx,Dx,Yin,Out) :- Yin=0 | rational#compose(Sx,Nx,Dx,Out).
+otherwise.
+subRAT(Sx,Nx,Dx,Yin,Out) :- true | rational#compose(Sx,Nx,Dx,Xin), sub_raise(Xin,yin,out).
+
+subBNUM(Sx,Nx,Yin,Out) :- rational#complex(Yin,Ry,Iy) |
+    bignum#compose(Sx,Nx,Rx), subtract(Rx,Ry,Rz), normCOM(Rz,Iy,Out).
+subBNUM(Sx,Nx,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | bignum:mulbig(Nx,Dy,Nb),
+    bignum:subbig(Sx,Sy,Nb,Ny,Sz,Nc), bignum:gcdbig(Nc,Dy,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+subBNUM(Sx,Nx,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | bignum:subbig(Sx,Sy,Nx,Ny,Sz,Nz),normBNUM(Sz,Nz,Out).
+subBNUM(Sx,Nx,Yin,Out) :- Yin>0 | bignum:subbig(Sx,0,Nx,Yin,Sz,Nz), normBNUM(Sz,Nz,Out).
+subBNUM(Sx,Nx,Yin,Out) :- Yin<0 | 
+    mdlib#subtract_extended(0,Yin,_,YN), bignum:subbig(Sx,1,Nx,YN,Sz,Nz), normBNUM(Sz,Nz,Out).
+subBNUM(Sx,Nx,Yin,Out) :- Yin=0 | bignum#compose(Sx,Nx,Out).
+otherwise.
+subBNUM(Sx,Nx,Yin,Out) :- true | bignum#compose(Sx,Nx,Xin), sub_raise(Xin,Yin,Out).
+
+
+subINTp(Xin,Yin,Out) :- rational#complex(Yin,Ry,Iy) | subtract(Xin,Ry,Rz), normCOM(Rz,Iy,Out).
+subINTp(Xin,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | bignum:mulbig(Dy,Xin,Nb),
+    bignum:subbig(0,Sy,Nb,Ny,Sz,Nc), bignum:gcdbig(Nc,Dy,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+subINTp(Xin,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | bignum:subbig(0,Sy,Xin,Ny,Sz,Nz),normBNUM(Sz,Nz,Out).
+subINTp(Xin,Yin,Out) :- Yin>0 | builtin:subtract(Xin,Yin,Out).
+subINTp(Xin,Yin,Out) :- Yin<0 | mdlib#subtract_extended(0,Yin,_,Y),
+    mdlib#add_extended(Xin,Y,ZH,ZL), normINT(0,ZH,ZL,Out).
+subINTp(Xin,Yin,Out) :- Yin=0 | Out= Xin.
+otherwise.
+subINTp(Xin,Yin,Out) :- true | sub_raise(Xin,Yin,Out).
+
+subINTm(Xin,Yin,Out) :- rational#complex(Yin,Ry,Iy) | subtract(Xin,Ry,Rz), normCOM(Rz,Iy,Out).
+subINTm(Xin,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) |
+    mdlib#subtract_extended(0,Xin,_,XN), bignum:mulbig(Dy,XN,Nb),
+    bignum:subbig(1,Sy,Nb,Ny,Sz,Nc), bignum:gcdbig(Nc,Dy,_,Nz,Dz), normRAT(Sz,Nz,Dz,Out).
+subINTm(Xin,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | mdlib#subtract_extended(0,Xin,_,XN),
+    bignum:subbig(1,Sy,XN,Ny,Sz,Nz), normBNUM(Sz,Nz,Out).
+subINTm(Xin,Yin,Out) :- Yin>0 | mdlib#subtract_extended(0,Xin,_,X),
+    mdlib#add_extended(X,Yin,ZH,ZL), normINT(1,ZH,ZL,Out).
+subINTm(Xin,Yin,Out) :- Yin<0 | builtin:subtract(Xin,Yin,Out).
+subINTm(Xin,Yin,Out) :- Yin=0 | Out= Xin.
+otherwise.
+subINTm(Xin,Yin,Out) :- true | sub_raise(Xin,Yin,Out).
+
+subZERO(Yin,Out) :- rational#complex(Yin,R,I) | negate(R,RN), negate(I,IN), rational#compose(RN,IN,Out).
+subZERO(Yin,Out) :- rational#rational(Yin,S,N,D) | S1 := S xor 1, rational#compose(S1,N,D,Out).
+subZERO(Yin,Out) :- bignum#bignum(Yin,S,N) | S1 := S xor 1, bignum#compose(S1,N,Out).
+subZERO(Yin,Out) :- Yin =\= 16#"80000000" | builtin:subtract(0,Yin,Out).
+subZERO(Yin,Out) :- Yin =:= 16#"80000000" | 
+    new_string(Str,1,32), set_string_element(Str,0,16#"80000000",Str1), bignum#compose(0,Str1,Out).
+otherwise.
+subZERO(Yin,Out) :- true | sub_raise(0,Yin,Out).
+
+
+sub_raise(Xin,yin,Out) :- true | shoen:raise(pimos_tag#error, 
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be complex number"),rational:subtract(Xin,Yin,Out)).
+
+%%%%%
+%%%%%  MULTIPLY
+%%%%%
+multiply(Xin,Yin,Out) :- rational#complex(Xin,Rx,Ix)     | mulCOM(Rx,Ix,Yin,Out).
+multiply(Xin,Yin,Out) :- rational#rational(Xin,Sx,Nx,Dx) | mulRAT(Sx,Nx,Dx,Yin,Out).
+multiply(Xin,Yin,Out) :- bignum#bignum(Xin,Sx,Nx)      | mulBNUM(Sx,Nx,Yin,Out).
+multiply(Xin,Yin,Out) :- Xin>  1 | mulINTp(Xin,Yin,Out).
+multiply(Xin,Yin,Out) :- Xin< -1 | mulINTm(Xin,Yin,Out).
+multiply(Xin,Yin,Out) :- Xin=  0 | mulZERO(Yin,Out).
+multiply(Xin,Yin,Out) :- Xin=  1 | mul1p(Yin,Out).
+multiply(Xin,Yin,Out) :- Xin= -1 | mul1m(Yin,Out).
+otherwise.
+multiply(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be complex number"),rational:multiply(Xin,Yin,Out)).
+
+mulCOM(Rx,Ix,Yin,Out) :- rational#complex(Yin,Ry,Iy) | multiply(Rx,Ry,Ra), multiply(Ix,Iy,Rb),
+    subtract(Ra,Rb,Rz), multiply(Rx,Iy,Ia), multiply(Ix,Ry,Ib), add(Ia,Ib,Iz), normCOM(Rz,Iz,Out).
+mulCOM(Rx,Ix,Yin,Out) :- rational#rational(Yin) | 
+    multiply(Rx,Yin,Rz),multiply(Ix,Yin,Iz),normCOM(Rz,Iz,Out).
+mulCOM(Rx,Ix,Yin,Out) :- bignum#bignum(Yin) | multiply(Rx,Yin,Rz),multiply(Ix,Yin,Iz),normCOM(Rz,Iz,Out).
+mulCOM(Rx,Ix,Yin,Out) :- Yin>  1 | multiply(Rx,Yin,Rz), multiply(Ix,Yin,Iz), normCOM(Rz,Iz,Out).
+mulCOM(Rx,Ix,Yin,Out) :- Yin< -1 | multiply(Rx,Yin,Rz), multiply(Ix,Yin,Iz), normCOM(Rz,Iz,Out).
+mulCOM(Rx,Ix,Yin,Out) :- Yin=  1 | rational#compose(Rx,Ix,Out).
+mulCOM(Rx,Ix,Yin,Out) :- Yin= -1 | negate(Rx,Rz), negate(Ix,Iz), rational#compose(Rz,Iz,Out).
+mulCOM(_,_,Yin,Out) :- Yin=  0 | Out= 0.
+otherwise.
+mulCOM(Rx,Ix,Yin,Out) :- true | rational#compose(Rx,Ix,Xin), mul_raise(Xin,Yin,Out).
+
+mulRAT(Sx,Nx,Dx,Yin,Out) :- rational#complex(Yin,Ry,Iy) | 
+    rational#compose(Sx,Nx,Dx,Rx), multiply(Rx,Ry,Rz), multiply(Rx,Iy,Iz), normCOM(Rz,Iz,Out).
+mulRAT(Sx,Nx,Dx,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) |
+    bignum:gcdbig(Nx,Dy,_,QNx,QDy), bignum:gcdbig(Ny,Dx,_,QNy,QDx), bignum:mulbig(QNx,QNy,Nz),
+    bignum:mulbig(QDx,QDy,Dz),      Sz := Sx xor Sy,                normRAT(Sz,Nz,Dz,Out).
+mulRAT(Sx,Nx,Dx,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | 
+    bignum:gcdbig(Ny,Dx,_,QNy,QDx), bignum:mulbig(Nx,QNy,Nz), Sz := Sx xor Sy, normRAT(Sz,Nz,QDx,Out).
+mulRAT(Sx,Nx,Dx,Yin,Out) :- Yin>  1 | 
+    bignum:gcdbig(Yin,Dx,_,QNy,QDx), bignum:mulbig(Nx,QNy,Nz), normRAT(Sx,Nz,QDx,Out).
+mulRAT(Sx,Nx,Dx,Yin,Out) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN), 
+    bignum:gcdbig(YN,Dx,_,QNy,QDx),  bignum:mulbig(Nx,QNy,Nz), Sz := Sx xor 1, normRAT(Sz,Nz,QDx,Out).
+mulRAT(Sx,Nx,Dx,Yin,Out) :- Yin=  1 | rational#compose(Sx,Nx,Dx,Out).
+mulRAT(Sx,Nx,Dx,Yin,Out) :- Yin= -1 | Sz := Sx xor 1, rational#compose(Sz,Nx,Dx,Out).
+mulRAT(_,_,_,Yin,Out) :- Yin=  0 | Out= 0.
+otherwise.
+mulRAT(Sx,Nx,Dx,Yin,Out) :- true | rational#compose(Sx,Nx,Dx,Xin), mul_raise(Xin,Yin,Out).
+
+mulBNUM(Sx,Nx,Yin,Out) :- rational#complex(Yin,Ry,Iy) |
+    bignum#compose(Sx,Nx,Rx), multiply(Rx,Ry,Rz), multiply(Rx,Iy,Iz), normCOM(Rz,Iz,Out).
+mulBNUM(Sx,Nx,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | 
+    bignum:gcdbig(Nx,Dy,_,QNx,QDy), bignum:mulbig(Ny,QNx,Nz), Sz := Sx xor Sy, normRAT(Sz,Nz,QDy,Out).
+mulBNUM(Sx,Nx,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) |
+    bignum:mulbig(Nx,Ny,Nz), Sz := Sx xor Sy, normBNUM(Sz,Nz,Out).
+mulBNUM(Sx,Nx,Yin,Out) :- Yin>  1 | bignum:mulbig(Nx,Yin,Nz), normBNUM(Sx,Nz,Out).
+mulBNUM(Sx,Nx,Yin,Out) :- Yin< -1 | 
+    mdlib#subtract_extended(0,Yin,_,YN), bignum:mulbig(Nx,YN,Nz), Sz := Sx xor 1, normBNUM(Sz,Nz,Out).
+mulBNUM(Sx,Nx,Yin,Out) :- Yin=  1 | bignum#compose(Sx,Nx,Out).
+mulBNUM(Sx,Nx,Yin,Out) :- Yin= -1 | Sz := Sx xor 1, bignum#compose(Sz,Nx,Out).
+mulBNUM(_,_,Yin,Out) :- Yin=  0 | Out= 0.
+otherwise.
+mulBNUM(Sx,Nx,Yin,Out) :- true | bignum#compose(Sx,Nx,Xin), mul_raise(Xin,Yin,Out).
+mulINTp(Xin,Yin,Out) :- rational#complex(Yin,Ry,Iy) | 
+    multiply(Xin,Ry,Rz), multiply(Xin,Iy,Iz), normCOM(Rz,Iz,Out).
+mulINTp(Xin,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | 
+    bignum:gcdbig(Xin,Dy,_,QNx,QDy), bignum:mulbig(Ny,QNx,Nz), normRAT(Sy,Nz,QDy,Out).
+mulINTp(Xin,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | bignum:mulbig(Xin,Ny,Nz), normBNUM(Sy,Nz,Out).
+mulINTp(Xin,Yin,Out) :- Yin>  1 | mdlib#multiply_extended(Xin,Yin,ZH,ZL), normINT(0,ZH,ZL,Out).
+mulINTp(Xin,Yin,Out) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y),
+    mdlib#multiply_extended(Xin,Y,ZH,ZL),normINT(1,ZH,ZL,Out).
+mulINTp(Xin,Yin,Out) :- Yin=  1 | Out= Xin.
+mulINTp(Xin,Yin,Out) :- Yin= -1 | builtin:subtract(0,Xin,Out).
+mulINTp(_,Yin,Out) :- Yin=  0 | Out= 0.
+otherwise.
+mulINTp(Xin,Yin,Out) :- true | mul_raise(Xin,Yin,Out).
+
+mulINTm(Xin,Yin,Out) :- rational#complex(Yin,Ry,Iy) | 
+    multiply(Xin,Ry,Rz), multiply(Xin,Iy,Iz), normCOM(Rz,Iz,Out).
+mulINTm(Xin,Yin,Out) :- rational#rational(Yin,S,N,D) | mdlib#subtract_extended(0,Xin,_,XN), Sz := S xor 1,
+    bignum:gcdbig(XN,D,_,QNx,QDz), bignum:mulbig(N,QNx,Nz), normRAT(Sz,Nz,QDz,Out).
+mulINTm(Xin,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | 
+    mdlib#subtract_extended(0,Xin,_,XN), Sz := Sy xor 1, bignum:mulbig(XN,Ny,Nz), normBNUM(Sz,Nz,Out).
+mulINTm(Xin,Yin,Out) :- Yin> 1 | mdlib#subtract_extended(0,Xin,_,X),
+    mdlib#multiply_extended(X,Yin,ZH,ZL), normINT(1,ZH,ZL,Out).
+mulINTm(Xin,Yin,Out) :- Yin< 0 | mdlib#subtract_extended(0,Xin,_,X),
+    mdlib#subtract_extended(0,Yin,_,Y), mdlib#multiply_extended(X,Y,ZH,ZL), normINT(0,ZH,ZL,Out).
+mulINTm(Xin,Yin,Out) :- Yin= 1 | Out= Xin.
+mulINTm(_,Yin,Out) :- Yin= 0 | Out= 0.
+otherwise.
+mulINTm(Xin,Yin,Out) :- true | mul_raise(Xin,Yin,Out).
+
+mul1p(Yin,Out) :- rational#complex(Yin) | Out= Yin.
+mul1p(Yin,Out) :- rational#rational(Yin) | Out= Yin.
+mul1p(Yin,Out) :- bignum#bignum(Yin) | Out= Yin.
+mul1p(Yin,Out) :- integer(Yin) | Out= Yin.
+otherwise.
+mul1p(Yin,Out) :- true | mul_raise(1,Yin,Out).
+
+mul1m(Yin,Out) :- rational#complex(Yin) | negate(Yin,Out).
+mul1m(Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | Sz := Sy xor 1, rational#compose(Sz,Ny,Dy,Out).
+mul1m(Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | Sz := Sy xor 1, bignum#compose(Sz,Ny,Out).
+mul1m(Yin,Out) :- Yin =\= 16#"80000000" | builtin:subtract(0,Yin,Out).
+mul1m(Yin,Out) :- Yin =:= 16#"80000000" | 
+    new_string(Str,1,32), set_string_element(Str,0,Yin,Str1), bignum#compose(0,Str1,Out).
+otherwise.
+mul1m(Yin,Out) :- true | mul_raise(-1,Yin,Out).
+
+mulZERO(Yin,Out) :- rational#complex(Yin) | Out= 0.
+mulZERO(Yin,Out) :- rational#rational(Yin) | Out= 0.
+mulZERO(Yin,Out) :- bignum#bignum(Yin) | Out= 0.
+mulZERO(Yin,Out) :- integer(Yin) | Out= 0.
+otherwise.
+mulZERO(Yin,Out) :- true | mul_raise(0,Yin,Out).
+
+mul_raise(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be complex number"),rational:multiply(Xin,Yin,Out)).
+%%%%%
+%%%%%  DIVIDE/3
+%%%%%
+divide(Xin,Yin,Out) :- rational#complex(Xin,Rx,Ix)     | divCOM(Rx,Ix,Yin,Out).
+divide(Xin,Yin,Out) :- rational#rational(Xin,Sx,Nx,Dx) | divRAT(Sx,Nx,Dx,Yin,Out).
+divide(Xin,Yin,Out) :- bignum#bignum(Xin,Sx,Nx)      | divBNUM(Sx,Nx,Yin,Out).
+divide(Xin,Yin,Out) :- Xin>  1 | divINTp(Xin,Yin,Out).
+divide(Xin,Yin,Out) :- Xin< -1 | divINTm(Xin,Yin,Out).
+divide(Xin,Yin,Out) :- Xin=  1 | div1p(Yin,Out).
+divide(Xin,Yin,Out) :- Xin=  0 | divZERO(Yin,Out).
+divide(Xin,Yin,Out) :- Xin= -1 | div1m(Yin,Out).
+otherwise.
+divide(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be complex number"),rational:divide(Xin,Yin,Out)).
+
+divCOM(Rx,Ix,Yin,Out) :- rational#complex(Yin,Ry,Iy) | 
+    multiply(Ry,Ry,Da), multiply(Iy,Iy,Db), add(Da,Db,Dz), 
+    multiply(Rx,Ry,Ra), multiply(Ix,Iy,Rb), add(Ra,Rb,R0),
+    multiply(Rx,Iy,Ia), multiply(Ix,Ry,Ib), subtract(Ib,Ia,I0),
+    divide(R0,Dz,Rz),   divide(I0,Dz,Iz),   normCOM(Rz,Iz,Out).
+divCOM(Rx,Ix,Yin,Out) :- rational#rational(Yin) | divide(Rx,Yin,Rz),divide(Ix,Yin,Iz),normCOM(Rz,Iz,Out).
+divCOM(Rx,Ix,Yin,Out) :- bignum#bignum(Yin)   | divide(Rx,Yin,Rz), divide(Ix,Yin,Iz), normCOM(Rz,Iz,Out).
+divCOM(Rx,Ix,Yin,Out) :- Yin>  1 | divide(Rx,Yin,Rz), divide(Ix,Yin,Iz), normCOM(Rz,Iz,Out).
+divCOM(Rx,Ix,Yin,Out) :- Yin< -1 | divide(Rx,Yin,Rz), divide(Ix,Yin,Iz), normCOM(Rz,Iz,Out).
+divCOM(Rx,Ix,Yin,Out) :- Yin=  1 | rational#compose(Rx,Ix,Out).
+divCOM(Rx,Ix,Yin,Out) :- Yin= -1 | negate(Rx,Rz), negate(Ix,Iz), rational#compose(Rz,Iz,Out).
+divCOM(Rx,Ix,Yin,Out) :- Yin=  0 | rational#compose(Rx,Ix,Xin), zero_div3(Xin,Out).
+otherwise.
+divCOM(Rx,Ix,Yin,Out) :- true | rational#compose(Rx,Ix,Xin), div3_raise(Xin,Yin,Out).
+
+divRAT(Sx,Nx,Dx,Yin,Out) :- rational#complex(Yin,Ry,Iy) | rational#compose(Sx,Nx,Dx,Rx), 
+    multiply(Ry,Ry,Da), multiply(Iy,Iy,Db), add(Da,Db,Dz), 
+    multiply(Rx,Ry,R0), multiply(Rx,Iy,Ia), negate(Ia,I0),
+    divide(R0,Dz,Rz),   divide(I0,Dz,Iz),   normCOM(Rz,Iz,Out).
+divRAT(Sx,Nx,Dx,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) |
+    bignum:gcdbig(Nx,Ny,_,QNx,QNy), bignum:gcdbig(Dx,Dy,_,QDx,QDy), bignum:mulbig(QNx,QDy,Nz),
+    bignum:mulbig(QDx,QNy,Dz),      Sz := Sx xor Sy,                normRAT(Sz,Nz,Dz,Out).
+divRAT(Sx,Nx,Dx,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | 
+    bignum:gcdbig(Nx,Ny,_,QNx,QNy), bignum:mulbig(Dx,QNy,Dz), Sz := Sx xor Sy, normRAT(Sz,QNx,Dz,Out).
+divRAT(Sx,Nx,Dx,Yin,Out) :- Yin>  1 | 
+    bignum:gcdbig(Nx,Yin,_,QNx,QNy), bignum:mulbig(Dx,QNy,Dz), normRAT(Sx,QNx,Dz,Out).
+divRAT(Sx,Nx,Dx,Yin,Out) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN), 
+    bignum:gcdbig(Nx,YN,_,QNx,QNy), bignum:mulbig(Dx,QNy,Dz), Sz := Sx xor 1, normRAT(Sz,QNx,Dz,Out).
+divRAT(Sx,Nx,Dx,Yin,Out) :- Yin=  1 | rational#compose(Sx,Nx,Dx,Out).
+divRAT(Sx,Nx,Dx,Yin,Out) :- Yin= -1 | Sz := Sx xor 1, rational#compose(Sz,Nx,Dx,Out).
+divRAT(Sx,Nx,Dx,Yin,Out) :- Yin=  0 | rational#compose(Sx,Nx,Dx,Xin), zero_div3(Xin,Out).
+otherwise.
+divRAT(Sx,Nx,Dx,Yin,Out) :- true | rational#compose(Sx,Nx,Dx,Xin), div3_raise(Xin,Yin,Out).
+
+divBNUM(Sx,Nx,Yin,Out) :- rational#complex(Yin,Ry,Iy) | bignum#compose(Sx,Nx,Rx),
+    multiply(Ry,Ry,Da), multiply(Iy,Iy,Db), add(Da,Db,Dz), 
+    multiply(Rx,Ry,R0), multiply(Rx,Iy,Ia), negate(Ia,I0),
+    divide(R0,Dz,Rz),   divide(I0,Dz,Iz),   normCOM(Rz,Iz,Out).
+divBNUM(Sx,Nx,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | 
+    bignum:gcdbig(Nx,Ny,_,QNx,QNy), bignum:mulbig(QNx,Dy,Nz), Sz := Sx xor Sy, normRAT(Sz,Nz,QNy,Out).
+divBNUM(Sx,Nx,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) |
+    bignum:gcdbig(Nx,Ny,_,QNx,QNy), Sz := Sx xor Sy, normRAT(Sz,QNx,QNy,Out).
+divBNUM(Sx,Nx,Yin,Out) :- Yin>  1 | bignum:gcdbig(Nx,Yin,_,Nz,Dz), normRAT(Sx,Nz,Dz,Out).
+divBNUM(Sx,Nx,Yin,Out) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN),
+    bignum:gcdbig(Nx,YN,_,Nz,Dz), Sz := Sx xor 1, normRAT(Sz,Nz,Dz,Out).
+divBNUM(Sx,Nx,Yin,Out) :- Yin=  1 | bignum#compose(Sx,Nx,Out).
+divBNUM(Sx,Nx,Yin,Out) :- Yin= -1 | Sz := Sx xor 1, bignum#compose(Sz,Nx,Out).
+divBNUM(Sx,Nx,Yin,Out) :- Yin=  0 | bignum#compose(Sx,Nx,Xin), zero_div3(Xin,Out).
+otherwise.
+divBNUM(Sx,Nx,Yin,Out) :- true | bignum#compose(Sx,Nx,Xin), div3_raise(Xin,Yin,Out).
+
+divINTp(Xin,Yin,Out) :- rational#complex(Yin,Ry,Iy) | 
+    multiply(Ry,Ry,Da),  multiply(Iy,Iy,Db),  add(Da,Db,Dz), 
+    multiply(Xin,Ry,R0), multiply(Xin,Iy,Ia), negate(Ia,I0),
+    divide(R0,Dz,Rz),    divide(I0,Dz,Iz),    normCOM(Rz,Iz,Out).
+divINTp(Xin,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | 
+    bignum:gcdbig(Xin,Ny,_,QNx,QNy), bignum:mulbig(QNx,Dy,Nz), normRAT(Sy,Nz,QNy,Out).
+divINTp(Xin,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | bignum:gcdbig(Xin,Ny,_,Nz,Dz), normRAT(Sy,Nz,Dz,Out).
+divINTp(Xin,Yin,Out) :- Yin>  1 | bignum:gcdbig(Xin,Yin,_,Nz,Dz), normRAT(0,Nz,Dz,Out).
+divINTp(Xin,Yin,Out) :- Yin< -1 | 
+    mdlib#subtract_extended(0,Yin,_,Y),bignum:gcdbig(Xin,Y,_,N,D),normRAT(1,N,D,Out).
+divINTp(Xin,Yin,Out) :- Yin=  1 | Out= Xin.
+divINTp(Xin,Yin,Out) :- Yin= -1 | builtin:subtract(0,Xin,Out).
+divINTp(Xin,Yin,Out) :- Yin=  0 | zero_div3(Xin,Out).
+otherwise.
+divINTp(Xin,Yin,Out) :- true | div3_raise(Xin,Yin,Out).
+
+divINTm(Xin,Yin,Out) :- rational#complex(Yin,Ry,Iy) | 
+    multiply(Ry,Ry,Da),  multiply(Iy,Iy,Db),  add(Da,Db,Dz), 
+    multiply(Xin,Ry,R0), multiply(Xin,Iy,Ia), negate(Ia,I0),
+    divide(R0,Dz,Rz),    divide(I0,Dz,Iz),    normCOM(Rz,Iz,Out).
+divINTm(Xin,Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | mdlib#subtract_extended(0,Xin,_,XN),
+    bignum:gcdbig(XN,Ny,_,QNx,QNy), bignum:mulbig(QNx,Dy,Nz), Sz := Sy xor 1, normRAT(Sz,Nz,QNy,Out).
+divINTm(Xin,Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | mdlib#subtract_extended(0,Xin,_,XN),
+    bignum:gcdbig(XN,Ny,_,Nz,Dz), Sz := Sy xor 1, normRAT(Sz,Nz,Dz,Out).
+divINTm(Xin,Yin,Out) :- Yin>  1 | mdlib#subtract_extended(0,Xin,_,XN),
+    bignum:gcdbig(XN,Yin,_,Nz,Dz), normRAT(1,Nz,Dz,Out).
+divINTm(Xin,Yin,Out) :- Yin< -1 | mdlib#subtract_extended(0,Xin,_,XN),
+    mdlib#subtract_extended(0,Yin,_,Y), bignum:gcdbig(XN,Y,_,N,D), normRAT(0,N,D,Out).
+divINTm(Xin,Yin,Out) :- Yin=  1 | Out= Xin.
+divINTm(Xin,Yin,Out) :- Yin= -1 | mdlib#subtract_extended(0,Xin,_,XN), normINT(0,0,XN,Out).
+divINTm(Xin,Yin,Out) :- Yin=  0 | zero_div3(Xin,Out).
+otherwise.
+divINTm(Xin,Yin,Out) :- true | div3_raise(Xin,Yin,Out).
+
+div1p(Yin,Out) :- rational#complex(Yin,Ry,Iy) |
+    multiply(Ry,Ry,Da),  multiply(Iy,Iy,Db),  add(Da,Db,Dz), 
+    negate(Iy,I0),       divide(Ry,Dz,Rz),    divide(I0,Dz,Iz),    normCOM(Rz,Iz,Out).
+div1p(Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | rational#compose(Sy,Dy,Ny,Out).
+div1p(Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | rational#compose(Sy,1,Ny,Out).
+div1p(Yin,Out) :- Yin>  1 | rational#compose(0,1,Yin,Out).
+div1p(Yin,Out) :- Yin=  1 | Out=  1.
+div1p(Yin,Out) :- Yin= -1 | Out= -1.
+div1p(Yin,Out) :- Yin< -1 | 
+    mdlib#subtract_extended(0,Yin,_,Y), normINT(0,0,Y,Z), rational#compose(1,1,Z,Out).
+div1p(Yin,Out) :- Yin=0 | zero_div3(1,Out).
+otherwise.
+div1p(Yin,Out) :- true | div3_raise(1,Yin,Out).
+
+div1m(Yin,Out) :- rational#complex(Yin,Ry,Iy) |
+    multiply(Ry,Ry,Da),  multiply(Iy,Iy,Db),  add(Da,Db,Dz), 
+    negate(Ry,R0),       divide(R0,Dz,Rz),    divide(Iy,Dz,Iz),    normCOM(Rz,Iz,Out).
+div1m(Yin,Out) :- rational#rational(Yin,Sy,Ny,Dy) | Sz := Sy xor 1, rational#compose(Sz,Dy,Ny,Out).
+div1m(Yin,Out) :- bignum#bignum(Yin,Sy,Ny) | Sz := Sy xor 1, rational#compose(Sz,1,Ny,Out).
+div1m(Yin,Out) :- Yin>  1 | rational#compose(1,1,Yin,Out).
+div1m(Yin,Out) :- Yin=  1 | Out= -1.
+div1m(Yin,Out) :- Yin= -1 | Out=  1.
+div1m(Yin,Out) :- Yin< -1 | 
+    mdlib#subtract_extended(0,Yin,_,Y), normINT(0,0,Y,Z), rational#compose(0,1,Z,Out).
+div1m(Yin,Out) :- Yin=0 | zero_div3(-1,Out).
+otherwise.
+div1m(Yin,Out) :- true | div3_raise(-1,Yin,Out).
+
+divZERO(Yin,Out) :- rational#complex(Yin) | Out= 0.
+divZERO(Yin,Out) :- rational#rational(Yin) | Out= 0.
+divZERO(Yin,Out) :- bignum#bignum(Yin) | Out= 0.
+divZERO(Yin,Out) :- Yin =\= 0 | Out= 0.
+divZERO(Yin,Out) :- Yin =:= 0 | zero_div3(0,Out).
+otherwise.
+divZERO(Yin,Out) :- true | div3_raise(0,Yin,Out).
+
+
+
+zero_div3(Xin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(zero_division,"Argument must be nonzero complex number"),rational:divide(Xin,0,Out)).
+div3_raise(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be complex number"),rational:divide(Xin,Yin,Out)).
+
+
+%%%%%
+%%%%%  DIVIDE/4 : Divide with remainder of 2 rationals
+%%%%%
+divide(Xin,Yin,Qout,Rem) :- rational#rational(Xin,Sx,Nx,Dx) | divRAT(Sx,Nx,Dx,Yin,Qout,Rem).
+divide(Xin,Yin,Qout,Rem) :- bignum#bignum(Xin,Sx,Nx) | divBNUM(Sx,Nx,Yin,Qout,Rem).
+divide(Xin,Yin,Qout,Rem) :- Xin>  1 | divINTp(Xin,Yin,Qout,Rem).
+divide(Xin,Yin,Qout,Rem) :- Xin< -1 | divINTm(Xin,Yin,Qout,Rem).
+divide(Xin,Yin,Qout,Rem) :- Xin=  1 | div1p(Yin,Qout,Rem).
+divide(Xin,Yin,Qout,Rem) :- Xin=  0 | divZERO(Yin,Qout,Rem).
+divide(Xin,Yin,Qout,Rem) :- Xin= -1 | div1m(Yin,Qout,Rem).
+otherwise.
+divide(Xin,Yin,Q,R) :- true | shoen:raise(pimos_tag#error, 
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational number"),rational:divide(Xin,Yin,Q,R)).
+
+divRAT(Sx,Nx,Dx,Yin,Qout,Rem) :- rational#rational(Yin,Sy,Ny,Dy) | Sz := Sx xor Sy,
+    bignum:mulbig(Nx,Dy,N1), bignum:mulbig(Ny,Dx,D1),      bignum:divbig(N1,D1,Qz,Rz),
+    bignum:mulbig(Dx,Dy,D2), bignum:gcdbig(Rz,D2,_,Nz,Dz), normBNUM(Sz,Qz,Qout), normRAT(Sx,Nz,Dz,Rem).
+divRAT(Sx,Nx,Dx,Yin,Qout,Rem) :- bignum#bignum(Yin,Sy,Ny) | Sz := Sx xor Sy,
+    bignum:mulbig(Ny,Dx,D1),      bignum:divbig(Nx,D1,Qz,Rz),
+    bignum:gcdbig(Rz,Dx,_,Nz,Dz), normBNUM(Sz,Qz,Qout), normRAT(Sx,Nz,Dz,Rem).
+divRAT(Sx,Nx,Dx,Yin,Qout,Rem) :- Yin>  1 | 
+    bignum:mulbig(Yin,Dx,D1),      bignum:divbig(Nx,D1,Qz,Rz),
+    bignum:gcdbig(Rz,Dx,_,Nz,Dz),  normBNUM(Sx,Qz,Qout), normRAT(Sx,Nz,Dz,Rem).
+divRAT(Sx,Nx,Dx,Yin,Qout,Rem) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN), Sz := Sx xor 1,
+    bignum:mulbig(YN,Dx,D1),    bignum:divbig(Nx,D1,Qz,Rz),
+    bignum:gcdbig(Rz,Dx,_,Nz,Dz), normBNUM(Sz,Qz,Qout), normRAT(Sx,Nz,Dz,Rem).
+divRAT(Sx,Nx,Dx,Yin,Qout,Rem) :- Yin=  1 | 
+    bignum:divbig(Nx,Dx,Qz,Rz), normBNUM(Sx,Qz,Qout), normRAT(Sx,Rz,Dx,Rem).
+divRAT(Sx,Nx,Dx,Yin,Qout,Rem) :- Yin= -1 | Sz := Sx xor 1, 
+    bignum:divbig(Nx,Dx,Qz,Rz), normBNUM(Sz,Qz,Qout), normRAT(Sx,Rz,Dx,Rem).
+divRAT(Sx,Nx,Dx,Yin,Qout,Rem) :- Yin=  0 | rational#compose(Sx,Nx,Dx,Xin), zero_div4(Xin,Qout,Rem).
+otherwise.
+divRAT(Sx,Nx,Dx,Yin,Qout,Rem) :- true | rational#compose(Sx,Nx,Dx,Xin), div4_raise(Xin,Yin,Qout,Rem).
+
+divBNUM(Sx,Nx,Yin,Qout,Rem) :- rational#rational(Yin,Sy,Ny,Dy) | Sz := Sx xor Sy,
+    bignum:mulbig(Nx,Dy,N1),    bignum:divbig(N1,Ny,Qz,Rz),
+    bignum:gcdbig(Rz,Dy,_,Nz,Dz), normBNUM(Sz,Qz,Qout), normRAT(Sx,Nz,Dz,Rem).
+divBNUM(Sx,Nx,Yin,Qout,Rem) :- bignum#bignum(Yin,Sy,Ny) | Sz := Sx xor Sy, 
+    bignum:divbig(Nx,Ny,Qz,Rz), normBNUM(Sz,Qz,Qout), normBNUM(Sx,Rz,Rem).
+divBNUM(Sx,Nx,Yin,Qout,Rem) :- Yin>  1 | 
+    bignum:divbig(Nx,Yin,Qz,Rz), normBNUM(0,Qz,Qout), normBNUM(Sx,Rz,Rem).
+divBNUM(Sx,Nx,Yin,Qout,Rem) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN), Sz := Sx xor 1, 
+    bignum:divbig(Nx,YN,Qz,Rz), normBNUM(Sz,Qz,Qout), normBNUM(Sx,Rz,Rem).
+divBNUM(Sx,Nx,Yin,Qout,Rem) :- Yin=  1 | bignum#compose(Sx,Nx,Qout), Rem= 0.
+divBNUM(Sx,Nx,Yin,Qout,Rem) :- Yin= -1 | Sz := Sx xor 1, bignum#compose(Sz,Nx,Qout), Rem= 0.
+divBNUM(Sx,Nx,Yin,Qout,Rem) :- Yin=  0 | bignum#compose(Sx,Nx,Xin), zero_div4(Xin,Qout,Rem).
+otherwise.
+divBNUM(Sx,Nx,Yin,Qout,Rem) :- true | bignum#compose(Sx,Nx,Xin), div4_raise(Xin,Yin,Qout,Rem).
+
+divINTp(Xin,Yin,Qout,Rem) :- rational#rational(Yin,Sy,Ny,Dy) | 
+    bignum:mulbig(Xin,Dy,N1),   bignum:divbig(N1,Ny,Qz,Rz),
+    bignum:gcdbig(Rz,Dy,_,Nz,Dz), normBNUM(Sy,Qz,Qout), normRAT(0,Nz,Dz,Rem).
+divINTp(Xin,Yin,Qout,Rem) :- bignum#bignum(Yin,Sy,Ny) |
+    bignum:divbig(Xin,Ny,Qz,Rz), normBNUM(Sy,Qz,Qout), normBNUM(0,Rz,Rem).
+divINTp(Xin,Yin,Qout,Rem) :- Yin =\= 0 | builtin:divide(Xin,Yin,Qout), builtin:modulo(Xin,Yin,Rem).
+divINTp(Xin,Yin,Qout,Rem) :- Yin =:= 0 | zero_div4(Xin,Qout,Rem).
+otherwise.
+divINTp(Xin,Yin,Qout,Rem) :- true | div4_raise(Xin,Yin,Qout,Rem).
+
+divINTm(Xin,Yin,Qout,Rem) :- rational#rational(Yin,Sy,Ny,Dy) | Sz := Sy xor 1,
+    mdlib#subtract_extended(0,Xin,_,XN), bignum:mulbig(XN,Dy,N1), 
+    bignum:divbig(N1,Ny,Qz,Rz), bignum:gcdbig(Rz,Dy,_,Nz,Dz), normBNUM(Sz,Qz,Qout), normRAT(1,Nz,Dz,Rem).
+divINTm(Xin,Yin,Qout,Rem) :- bignum#bignum(Yin,Sy,Ny) | Sz := Sy xor 1,
+    mdlib#subtract_extended(0,Xin,_,XN), 
+    bignum:divbig(XN,Ny,Qz,Rz), normBNUM(Sz,Qz,Qout), normBNUM(1,Rz,Rem).
+divINTm(Xin,Yin,Qout,Rem) :- Yin =\= 0 | builtin:divide(Xin,Yin,Qout), builtin:modulo(Xin,Yin,Rem).
+divINTm(Xin,Yin,Qout,Rem) :- Yin =:= 0 | zero_div4(Xin,Qout,Rem).
+otherwise.
+divINTm(Xin,Yin,Qout,Rem) :- true | div4_raise(Xin,Yin,Qout,Rem).
+
+div1p(Yin,Qout,Rem) :- rational#rational(Yin,Sy,Ny,Dy) | 
+    bignum:divbig(Dy,Ny,Qz,Rz), normBNUM(Sy,Qz,Qout), normRAT(0,Rz,Ny,Rem).
+div1p(Yin,Qout,Rem) :- bignum#bignum(Yin) | Qout= 0, Rem= Yin.
+div1p(Yin,Qout,Rem) :- Yin =\= 0 | builtin:divide(1,Yin,Qout), builtin:modulo(1,Yin,Rem).
+div1p(Yin,Qout,Rem) :- Yin =:= 0 | zero_div4(Xin,Qout,Rem).
+otherwise.
+div1p(Yin,Qout,Rem) :- true | div4_raise(Xin,Yin,Qout,Rem).
+
+div1m(Yin,Qout,Rem) :- rational#rational(Yin,Sy,Ny,Dy) | 
+    Sz := Sy xor 1, bignum:divbig(Dy,Ny,Qz,Rz), normBNUM(Sz,Qz,Qout), normRAT(1,Rz,Ny,Rem).
+div1m(Yin,Qout,Rem) :- bignum#numer(Yin,Ny) | Qout= 0, bignum#compose(1,Ny,Rem).
+div1m(Yin,Qout,Rem) :- Yin =\= 0 | builtin:divide(-1,Yin,Qout), builtin:modulo(-1,Yin,Rem).
+div1m(Yin,Qout,Rem) :- Yin =:= 0 | zero_div4(Xin,Qout,Rem).
+otherwise.
+div1m(Yin,Qout,Rem) :- true | div4_raise(Xin,Yin,Qout,Rem).
+
+divZERO(Yin,Qout,Rem) :- bignum#bignum(Yin) | Qout= 0, Rem= Yin.
+divZERO(Yin,Qout,Rem) :- Yin =\= 0 | Qout= 0, Rem= Yin.
+divZERO(Yin,Qout,Rem) :- Yin =:= 0 | zero_div4(0,Qout,Rem).
+otherwise.
+divZERO(Yin,Qout,Rem) :- true | div4_raise(Xin,Yin,Qout,Rem).
+
+
+zero_div4(Xin,Q,R) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(zero_division,"Argument must be nonzero complex number"),rational:divide(Xin,0,Q,R)).
+div4_raise(Xin,Yin,Q,R) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be complex number"),rational:divide(Xin,Yin,Q,R)).
+
+
+%%%%%
+%%%%%  POWER :: Out = Xin**Yin, where Xin must be rational, Yin must be integer
+%%%%%
+power(Xin,Yin,Out) :- rational#rational(Xin,Sx,Nx,Dx) | powRAT(Sx,Nx,Dx,Yin,Out).
+power(Xin,Yin,Out) :- bignum#bignum(Xin,Sx,Nx) | powBNUM(Sx,Nx,Yin,Out).
+power(Xin,Yin,Out) :- Xin>  1 | powINTp(Xin,Yin,Out).
+power(Xin,Yin,Out) :- Xin< -1 | powINTm(Xin,Yin,Out).
+power(Xin,Yin,Out) :- Xin=  0 | powZERO(Yin,Out).
+power(Xin,Yin,Out) :- Xin=  1 | pow1p(Yin,Out).
+power(Xin,Yin,Out) :- Xin= -1 | pow1m(Yin,Out).
+otherwise.
+power(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational"),rational:power(Xin,Yin,Out)).
+
+% Assumed Nx,Dx are co-prime. This is true if the "Xin" is nromalized rational
+powRAT(_,Nx,Dx,Yin,Out) :- Yin>1, 0 := Yin/\1 |
+    powBNUMsub(Yin,Nx,1,Nz), powBNUMsub(Yin,Dx,1,Dz), normRAT(0,Nz,Dz,Out).
+powRAT(Sx,Nx,Dx,Yin,Out) :- Yin>1, 1 := Yin/\1 | 
+    powBNUMsub(Yin,Nx,1,Nz), powBNUMsub(Yin,Dx,1,Dz), normRAT(Sx,Nz,Dz,Out).
+powRAT(_,Nx,Dx,Yin,Out) :- Yin< -1, 0 := Yin/\1 | mdlib#subtract_extended(0,Yin,_,YN), 
+    powBNUMsub(YN,Nx,1,Nz), powBNUMsub(YN,Dx,1,Dz), normRAT(0,Dz,Nz,Out).
+powRAT(Sx,Nx,Dx,Yin,Out) :- Yin< -1, 1 := Yin/\1 | mdlib#subtract_extended(0,Yin,_,YN), 
+    powBNUMsub(YN,Nx,1,Nz), powBNUMsub(YN,Dx,1,Dz), normRAT(Sx,Dz,Nz,Out).
+powRAT(Sx,Nx,Dx,Yin,Out) :- Yin=  1 | rational#compose(Sx,Nx,Dx,Out).
+powRAT(_, _, _, Yin,Out) :- Yin=  0 | Out= 1.
+powRAT(Sx,Nx,Dx,Yin,Out) :- Yin= -1 | rational#compose(Sx,Dx,Nx,Out).
+otherwise.
+powRAT(Sx,Nx,Dx,Yin,Out) :- true | rational#compose(Sx,Nx,Dx,Xin), pow_raise(Xin,Yin,Out).
+
+powBNUM(_,Nx,Yin,Out) :- Yin>1, 0 := Yin/\1 | powBNUMsub(Yin,Nx,1,Nz), normBNUM(0,Nz,Out).
+powBNUM(Sx,Nx,Yin,Out) :- Yin>1, 1 := Yin/\1 | powBNUMsub(Yin,Nx,1,Nz), normBNUM(Sx,Nz,Out).
+powBNUM(_,Nx,Yin,Out) :- Yin< -1, 0 := Yin/\1 | 
+    mdlib#subtract_extended(0,Yin,_,YN), powBNUMsub(YN,Nx,1,Nz), normRAT(0,1,Nz,Out).
+powBNUM(Sx,Nx,Yin,Out) :- Yin< -1, 1 := Yin/\1 | 
+    mdlib#subtract_extended(0,Yin,_,YN), powBNUMsub(YN,Nx,1,Nz), normRAT(Sx,1,Nz,Out).
+powBNUM(Sx,Nx,Yin,Out) :- Yin=  1 | bignum#compose(Sx,Nx,Out).
+powBNUM(_, _, Yin,Out) :- Yin=  0 | Out= 1.
+powBNUM(Sx,Nx,Yin,Out) :- Yin= -1 | rational#compose(Sx,1,Nx,Out).
+otherwise.
+powBNUM(Sx,Nx,Yin,Out) :- true | bignum#compose(Sx,Nx,Xin), pow_raise(Xin,Yin,Out).
+
+powINTp(Xin,Yin,Out) :- Yin>  1 | powBNUMsub(Yin,Xin,1,Nz), normBNUM(0,Nz,Out).
+powINTp(Xin,Yin,Out) :- Yin< -1 | 
+    mdlib#subtract_extended(0,Yin,_,YN), powBNUMsub(YN,Xin,1,Nz), normRAT(0,1,Nz,Out).
+powINTp(Xin,Yin,Out) :- Yin=  1 | Out= Xin.
+powINTp(_,  Yin,Out) :- Yin=  0 | Out= 1.
+powINTp(Xin,Yin,Out) :- Yin= -1 | rational#compose(0,1,Xin,Out).
+otherwise.
+powINTp(Xin,Yin,Out) :- true |  pow_raise(Xin,Yin,Out).
+
+powINTm(Xin,Yin,Out) :- Yin>1, 0 := Yin/\1 | 
+    mdlib#subtract_extended(0,Xin,_,XN), powBNUMsub(Yin,XN,1,Nz), normBNUM(0,Nz,Out).
+powINTm(Xin,Yin,Out) :- Yin>1, 1 := Yin/\1 | 
+    mdlib#subtract_extended(0,Xin,_,XN), powBNUMsub(Yin,XN,1,Nz), normBNUM(1,Nz,Out).
+powINTm(Xin,Yin,Out) :- Yin< -1, 0 := Yin/\1 | mdlib#subtract_extended(0,Yin,_,YN),
+    mdlib#subtract_extended(0,Xin,_,XN), powBNUMsub(YN,XN,1,Nz), normRAT(0,1,Nz,Out).
+powINTm(Xin,Yin,Out) :- Yin< -1, 1 := Yin/\1 | mdlib#subtract_extended(0,Yin,_,YN),
+    mdlib#subtract_extended(0,Xin,_,XN), powBNUMsub(YN,XN,1,Nz), normRAT(1,1,Nz,Out).
+powINTm(Xin,Yin,Out) :- Yin=  1 | Out= Xin.
+powINTm(_,  Yin,Out) :- Yin=  0 | Out= 1.
+powINTm(Xin,Yin,Out) :- Yin= -1 | 
+    mdlib#subtract_extended(0,Xin,_,XN), normINT(0,0,XN,Z), rational#compose(1,1,Z,Out).
+otherwise.
+powINTm(Xin,Yin,Out) :- true |  pow_raise(Xin,Yin,Out).
+
+pow1p(Yin,Out) :- integer(Yin) | Out= 1.
+otherwise.
+pow1p(Yin,Out) :- true | pow_raise(1,Yin,Out).
+
+pow1m(Yin,Out) :- 0 := Yin/\1 | Out= 1.
+pow1m(Yin,Out) :- 1 := Yin/\1 | Out= -1.
+otherwise.
+pow1m(Yin,Out) :- true | pow_raise(1,Yin,Out).
+
+powZERO(Yin,Out) :- integer(Yin) | Out= 0.
+otherwise.
+powZERO(Yin,Out) :- true | pow_raise(0,Yin,Out).
+
+pow_raise(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be integer"),rational:power(Xin,Yin,Out)).
+
+
+powBNUMsub(N,_,Ac,Zout) :- N =:= 0 | Zout= Ac.
+powBNUMsub(N,X,Ac,Zout) :- N =\= 0, 0 := N/\1| N1 := N>>1,bignum:mulbig(X,X,X2),powBNUMsub(N1,X2,Ac,Zout).
+powBNUMsub(N,X,Ac,Zout) :- N =\= 0, 1 := N/\1| N1 := N>>1, 
+    bignum:mulbig(X,Ac,Ac1), bignum:mulbig(X,X,X2), powBNUMsub(N1,X2,Ac1,Zout).
+
+
+
+%%%%%
+%%%%%  GCD  :: Greatest common diviser between 2 rationals
+%%%%%
+gcd(Xin,Yin,GCD,QX,QY) :- rational#rational(Xin,Sx,Nx,Dx) | gcdRAT(Sx,Nx,Dx,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- bignum#bignum(Xin,Sx,Nx)        | gcdBNUM(Sx,Nx,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- Xin>  1 | gcdINTp(Xin,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- Xin< -1 | gcdINTm(Xin,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- Xin=  1 | gcd1p(Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- Xin=  0 | gcdZERO(Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- Xin= -1 | gcd1m(Yin,GCD,QX,QY).
+otherwise.
+gcd(Xin,Yin,GCD,QX,QY) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational number"),rational:gcd(Xin,Yin,GCD,QX,QY)).
+
+gcdRAT(Sx,Nx,Dx,Yin,GCD,QX,QY) :- rational#rational(Yin,Sy,Ny,Dy) |
+    bignum:gcdbig(Dx,Dy,_,QDx,QDy), bignum:mulbig(QDy,Nx,Ma), bignum:mulbig(QDx,Ny,Mb),
+    bignum:gcdbig(Ma,Mb,Nz,_,_),    bignum:mulbig(QDy,Dx,Dz), normRAT(0,Nz,Dz,GCD),
+    divRAT(Sx,Nx,Dx,GCD,QX),        divRAT(Sy,Ny,Dy,GCD,QY).
+gcdRAT(Sx,Nx,Dx,Yin,GCD,QX,QY) :- bignum#bignum(Yin,Sy,Ny) | 
+    bignum:mulbig(Dx,Ny,Mb), bignum:gcdbig(Nx,Mb,Nz,_,_), normRAT(0,Nz,Dx,GCD),
+    divRAT(Sx,Nx,Dx,GCD,QX), divBNUM(Sy,Ny,GCD,QY).
+gcdRAT(Sx,Nx,Dx,Yin,GCD,QX,QY) :- Yin>  1 | 
+    bignum:mulbig(Dx,Yin,Mb), bignum:gcdbig(Nx,Mb,Nz,_,_), normRAT(0,Nz,Dx,GCD),
+    divRAT(Sx,Nx,Dx,GCD,QX),  divINTp(Yin,GCD,QY).
+gcdRAT(Sx,Nx,Dx,Yin,GCD,QX,QY) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN), 
+    bignum:mulbig(Dx,YN,Mb), bignum:gcdbig(Nx,Mb,Nz,_,_), normRAT(0,Nz,Dx,GCD),
+    divRAT(Sx,Nx,Dx,GCD,QX), divINTm(Yin,GCD,QY).
+gcdRAT(Sx,Nx,Dx,Yin,GCD,QX,QY) :- Yin=  1 | GCD= 1, rational#compose(Sx,Nx,Dx,QX), QY=  1.
+gcdRAT(Sx,Nx,Dx,Yin,GCD,QX,QY) :- Yin= -1 | GCD= 1, rational#compose(Sx,Nx,Dx,QX), QY= -1.
+gcdRAT(Sx,Nx,Dx,Yin,GCD,QX,QY) :- Yin=  0 | rational#compose(0,Nx,Dx,GCD), normINT(Sx,0,1,QX), QY=  0.
+otherwise.
+gcdRAT(Sx,Nx,Dx,Yin,GCD,QX,QY) :- true | rational#compose(Sx,Nx,Dx,Xin), gcd5_raise(Xin,Yin,GCD,QX,QY).
+
+gcdBNUM(Sx,Nx,Yin,GCD,QX,QY) :- rational#rational(Yin,Sy,Ny,Dy) | 
+    bignum:mulbig(Dy,Nx,Ma), bignum:gcdbig(Ma,Ny,Nz,_,_), normRAT(0,Nz,Dy,GCD),
+    divBNUM(Sx,Nx,GCD,QX),   divRAT(Sy,Ny,Dy,GCD,QY).
+gcdBNUM(Sx,Nx,Yin,GCD,QX,QY) :- bignum#bignum(Yin,Sy,Ny) |
+    bignum:gcdbig(Nx,Ny,Gcd,Qx,Qy), normBNUM(0,Gcd,GCD), normBNUM(Sx,Qx,QX), normBNUM(Sy,Qy,QY).
+gcdBNUM(Sx,Nx,Yin,GCD,QX,QY) :- Yin>  1 | 
+    bignum:gcdbig(Nx,Yin,Gcd,Qx,QY), normBNUM(0,Gcd,GCD), normBNUM(Sx,Qx,QX).
+gcdBNUM(Sx,Nx,Yin,GCD,QX,QY) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN), 
+    bignum:gcdbig(Nx,YN,Gcd,Qx,Qy), normBNUM(0,Gcd,GCD), normBNUM(Sx,Qx,QX), builtin:subtract(0,Qy,QY).
+gcdBNUM(Sx,Nx,Yin,GCD,QX,QY) :- Yin=  1 | GCD= 1, bignum#compose(Sx,Nx,QX), QY=  1.
+gcdBNUM(Sx,Nx,Yin,GCD,QX,QY) :- Yin= -1 | GCD= 1, bignum#compose(Sx,Nx,QX), QY= -1.
+gcdBNUM(Sx,Nx,Yin,GCD,QX,QY) :- Yin=  0 | bignum#compose(0,Nx,GCD), normINT(Sx,0,1,QX), QY= 0.
+otherwise.
+gcdBNUM(Sx,Nx,Yin,GCD,QX,QY) :- true | bignum#compose(Sx,Nx,Xin), gcd5_raise(Xin,Yin,GCD,QX,QY).
+
+gcdINTp(Xin,Yin,GCD,QX,QY) :- rational#rational(Yin,Sy,Ny,Dy) | 
+    bignum:mulbig(Dy,Xin,Ma), bignum:gcdbig(Ma,Ny,Nz,_,_), normRAT(0,Nz,Dy,GCD),
+    divINTp(Xin,GCD,QX),      divRAT(Sy,Ny,Dy,GCD,QY).
+gcdINTp(Xin,Yin,GCD,QX,QY) :- bignum#bignum(Yin,Sy,Ny) |
+    bignum:gcdbig(Xin,Ny,Gcd,QX,Qy), normBNUM(0,Gcd,GCD), normBNUM(Sy,Qy,QY).
+gcdINTp(Xin,Yin,GCD,QX,QY) :- Yin>  1 | 
+    bignum:gcd_int(Xin,Yin,GCD), builtin:divide(Xin,GCD,QX), builtin:divide(Yin,GCD,QY).
+gcdINTp(Xin,Yin,GCD,QX,QY) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y),
+    bignum:gcd_unsigned(Xin,Y,GCD), builtin:divide(Xin,GCD,QX), builtin:divide(Yin,GCD,QY).
+gcdINTp(Xin,Yin,GCD,QX,QY) :- Yin=  1 | GCD= 1, QX= Xin, QY=  1.
+gcdINTp(Xin,Yin,GCD,QX,QY) :- Yin= -1 | GCD= 1, QX= Xin, QY= -1.
+gcdINTp(Xin,Yin,GCD,QX,QY) :- Yin=  0 | GCD= Xin, QX= 1, QY= 0.
+otherwise.
+gcdINTp(Xin,Yin,GCD,QX,QY) :- true | gcd5_raise(Xin,Yin,GCD,QX,QY).
+
+gcdINTm(Xin,Yin,GCD,QX,QY) :- rational#rational(Yin,Sy,Ny,Dy) | mdlib#subtract_extended(0,Xin,_,XN),
+    bignum:mulbig(Dy,XN,Ma), bignum:gcdbig(Ma,Ny,Nz,_,_), normRAT(0,Nz,Dy,GCD),
+    divINTm(Xin,GCD,QX),     divRAT(Sy,Ny,Dy,GCD,QY).
+gcdINTm(Xin,Yin,GCD,QX,QY) :- bignum#bignum(Yin,Sy,Ny) | mdlib#subtract_extended(0,Xin,_,XN),
+    bignum:gcdbig(XN,Ny,Gcd,Qx,Qy), normBNUM(0,Gcd,GCD), builtin:subtract(0,Qx,QX), normBNUM(Sy,Qy,QY).
+gcdINTm(Xin,Yin,GCD,QX,QY) :- Yin>  1 | mdlib#subtract_extended(0,Xin,_,XN),
+    bignum:gcd_unsigned(XN,Yin,GCD), builtin:divide(Xin,GCD,QX), builtin:divide(Yin,GCD,QY).
+gcdINTm(Xin,Yin,GCD,QX,QY) :- Yin< -1 |
+    mdlib#subtract_extended(0,Xin,_,X), mdlib#subtract_extended(0,Yin,_,Y),
+    bignum:gcd_unsigned(X,Y,GCD), builtin:divide(Xin,GCD,QX), builtin:divide(Yin,GCD,QY).
+gcdINTm(Xin,Yin,GCD,QX,QY) :- Yin=  1 | GCD= 1, QX= Xin, QY=  1.
+gcdINTm(Xin,Yin,GCD,QX,QY) :- Yin= -1 | GCD= 1, QX= Xin, QY= -1.
+gcdINTm(Xin,Yin,GCD,QX,QY) :- Yin=  0 | GCD= Xin, QX= 1, QY= 0.
+otherwise.
+gcdINTm(Xin,Yin,GCD,QX,QY) :- true | gcd5_raise(Xin,Yin,GCD,QX,QY).
+
+gcd1p(Yin,GCD,QX,QY) :- rational#rational(Yin) | GCD=1, QX= 1, QY= Yin.
+gcd1p(Yin,GCD,QX,QY) :- bignum#bignum(Yin) | GCD= 1, QX= 1, QY= Yin.
+gcd1p(Yin,GCD,QX,QY) :- integer(Yin) | GCD= 1, QX= 1, QY= Yin.
+otherwise.
+gcd1p(Yin,GCD,QX,QY) :- true | gcd5_raise(1,Yin,GCD,QX,QY).
+
+gcd1m(Yin,GCD,QX,QY) :- rational#rational(Yin) | GCD=1, QX= -1, QY= Yin.
+gcd1m(Yin,GCD,QX,QY) :- bignum#bignum(Yin) | GCD= 1, QX= -1, QY= Yin.
+gcd1m(Yin,GCD,QX,QY) :- integer(Yin) | GCD= 1, QX= -1, QY= Yin.
+otherwise.
+gcd1m(Yin,GCD,QX,QY) :- true | gcd5_raise(-1,Yin,GCD,QX,QY).
+
+gcdZERO(Yin,GCD,QX,QY) :- rational#rational(Yin,S,N,D) | 
+    rational#compose(0,N,D,GCD), QX= 0, normBNUM(S,1,QY).
+gcdZERO(Yin,GCD,QX,QY) :- bignum#bignum(Yin,S,N) | bignum#compose(0,N,GCD), QX= 0, normBNUM(S,1,QY).
+gcdZERO(Yin,GCD,QX,QY) :- Yin>0 | GCD= Yin, QX= 0, QY= 1.
+gcdZERO(Yin,GCD,QX,QY) :- Yin<0 | mdlib#subtract_extended(0,Yin,_,Y), normBNUM(0,Y,GCD), QX= 0, QY= -1.
+gcdZERO(Yin,GCD,QX,QY) :- Yin=0 | GCD= 0, QX= 0, QY= 0.
+otherwise.
+gcdZERO(Yin,GCD,QX,QY) :- true | gcd5_raise(0,Yin,GCD,QX,QY).
+
+gcd5_raise(Xin,Yin,GCD,QX,QY) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be rational number"),rational:gcd(Xin,Yin,GCD,QX,QY)).
+
+%%%%%
+%%%%%  GCD  :: Greatest common diviser between 2 rationals
+%%%%%
+gcd(Xin,Yin,GCD) :- rational#rational(Xin,Sx,Nx,Dx) | gcdRAT(Sx,Nx,Dx,Yin,GCD).
+gcd(Xin,Yin,GCD) :- bignum#bignum(Xin,Sx,Nx) | gcdBNUM(Sx,Nx,Yin,GCD).
+gcd(Xin,Yin,GCD) :- Xin>  1 | gcdINTp(Xin,Yin,GCD).
+gcd(Xin,Yin,GCD) :- Xin< -1 | gcdINTm(Xin,Yin,GCD).
+gcd(Xin,Yin,GCD) :- Xin=  1 | gcd1p(Yin,GCD).
+gcd(Xin,Yin,GCD) :- Xin=  0 | gcdZERO(Yin,GCD).
+gcd(Xin,Yin,GCD) :- Xin= -1 | gcd1m(Yin,GCD).
+otherwise.
+gcd(Xin,Yin,GCD) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational number"), rational:gcd(Xin,Yin,GCD)).
+
+gcdRAT(_,Nx,Dx,Yin,GCD) :- rational#numer_denom(Yin,Ny,Dy) |
+    bignum:gcdbig(Dx,Dy,_,QDx,QDy), bignum:mulbig(QDy,Nx,Ma), bignum:mulbig(QDx,Ny,Mb),
+    bignum:gcdbig(Ma,Mb,Nz,_,_),    bignum:mulbig(QDy,Dx,Dz), normRAT(0,Nz,Dz,GCD).
+gcdRAT(_,Nx,Dx,Yin,GCD) :- bignum#numer(Yin,Ny) | 
+    bignum:mulbig(Dx,Ny,Mb), bignum:gcdbig(Nx,Mb,Nz,_,_), normRAT(0,Nz,Dx,GCD).
+gcdRAT(_,Nx,Dx,Yin,GCD) :- Yin>  1 | 
+    bignum:mulbig(Dx,Yin,Mb), bignum:gcdbig(Nx,Mb,Nz,_,_), normRAT(0,Nz,Dx,GCD).
+gcdRAT(_,Nx,Dx,Yin,GCD) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN), 
+    bignum:mulbig(Dx,YN,Mb), bignum:gcdbig(Nx,Mb,Nz,_,_), normRAT(0,Nz,Dx,GCD).
+gcdRAT(_,_,_,Yin,GCD) :- Yin=  1 | GCD= 1.
+gcdRAT(_,_,_,Yin,GCD) :- Yin= -1 | GCD= 1.
+gcdRAT(_,Nx,Dx,Yin,GCD) :- Yin=  0 | rational#compose(0,Nx,Dx,GCD).
+otherwise.
+gcdRAT(Sx,Nx,Dx,Yin,GCD) :- true | rational#compose(Sx,Nx,Dx,Xin), gcd3_raise(Xin,Yin,GCD).
+
+gcdBNUM(_,Nx,Yin,GCD) :- rational#numer_denom(Yin,Ny,Dy) | 
+    bignum:mulbig(Dy,Nx,Ma), bignum:gcdbig(Ma,Ny,Nz,_,_), normRAT(0,Nz,Dy,GCD).
+gcdBNUM(_,Nx,Yin,GCD) :- bignum#numer(Yin,Ny) | bignum:gcdbig(Nx,Ny,Gcd), normBNUM(0,Gcd,GCD).
+gcdBNUM(_,Nx,Yin,GCD) :- Yin>  1 | bignum:gcdbig(Nx,Yin,Gcd), normBNUM(0,Gcd,GCD).
+gcdBNUM(_,Nx,Yin,GCD) :- Yin< -1 | 
+    mdlib#subtract_extended(0,Yin,_,YN), bignum:gcdbig(Nx,YN,Gcd), normBNUM(0,Gcd,GCD).
+gcdBNUM(_,_, Yin,GCD) :- Yin=  1 | GCD= 1.
+gcdBNUM(_,_, Yin,GCD) :- Yin= -1 | GCD= 1.
+gcdBNUM(_,Nx,Yin,GCD) :- Yin=  0 | bignum#compose(0,Nx,GCD).
+otherwise.
+gcdBNUM(Sx,Nx,Yin,GCD) :- true | bignum#compose(Sx,Nx,Xin), gcd3_raise(Xin,Yin,GCD).
+
+gcdINTp(Xin,Yin,GCD) :- rational#numer_denom(Yin,Ny,Dy) | 
+    bignum:mulbig(Dy,Xin,Ma), bignum:gcdbig(Ma,Ny,Nz,_,_), normRAT(0,Nz,Dy,GCD).
+gcdINTp(Xin,Yin,GCD) :- bignum#numer(Yin,Ny) | bignum:gcdbig(Xin,Ny,Gcd), normBNUM(0,Gcd,GCD).
+gcdINTp(Xin,Yin,GCD) :- Yin>  1 | bignum:gcd_int(Xin,Yin,GCD).
+gcdINTp(Xin,Yin,GCD) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y), bignum:gcd_unsigned(Xin,Y,GCD).
+gcdINTp(_,  Yin,GCD) :- Yin=  1 | GCD= 1.
+gcdINTp(_,  Yin,GCD) :- Yin= -1 | GCD= 1.
+gcdINTp(Xin,Yin,GCD) :- Yin=  0 | GCD= Xin.
+otherwise.
+gcdINTp(Xin,Yin,GCD) :- true | gcd3_raise(Xin,Yin,GCD).
+
+gcdINTm(Xin,Yin,GCD) :- rational#numer_denom(Yin,Ny,Dy) | mdlib#subtract_extended(0,Xin,_,XN),
+    bignum:mulbig(Dy,XN,Ma), bignum:gcdbig(Ma,Ny,Nz,_,_), normRAT(0,Nz,Dy,GCD).
+gcdINTm(Xin,Yin,GCD) :- bignum#numer(Yin,Ny) | 
+    mdlib#subtract_extended(0,Xin,_,XN), bignum:gcdbig(XN,Ny,Gcd), normBNUM(0,Gcd,GCD).
+gcdINTm(Xin,Yin,GCD) :- Yin>  1 | mdlib#subtract_extended(0,Xin,_,XN), bignum:gcd_unsigned(XN,Yin,GCD).
+gcdINTm(Xin,Yin,GCD) :- Yin< -1 | 
+    mdlib#subtract_extended(0,Xin,_,X),mdlib#subtract_extended(0,Yin,_,Y),bignum:gcd_unsigned(X,Y,GCD).
+gcdINTm(_,  Yin,GCD) :- Yin=  1 | GCD= 1.
+gcdINTm(_,  Yin,GCD) :- Yin= -1 | GCD= 1.
+gcdINTm(Xin,Yin,GCD) :- Yin=  0 | GCD= Xin.
+otherwise.
+gcdINTm(Xin,Yin,GCD) :- true | gcd3_raise(Xin,Yin,GCD).
+
+gcd1p(Yin,GCD) :- rational#rational(Yin) | GCD=1.
+gcd1p(Yin,GCD) :- bignum#bignum(Yin) | GCD= 1.
+gcd1p(Yin,GCD) :- integer(Yin) | GCD= 1.
+otherwise.
+gcd1p(Yin,GCD) :- true | gcd3_raise(1,Yin,GCD).
+
+gcd1m(Yin,GCD) :- rational#rational(Yin) | GCD=1.
+gcd1m(Yin,GCD) :- bignum#bignum(Yin) | GCD= 1.
+gcd1m(Yin,GCD) :- integer(Yin) | GCD= 1.
+otherwise.
+gcd1m(Yin,GCD) :- true | gcd3_raise(-1,Yin,GCD).
+
+gcdZERO(Yin,GCD) :- rational#numer_denom(Yin,N,D) | rational#compose(0,N,D,GCD).
+gcdZERO(Yin,GCD) :- bignum#numer(Yin,N) | bignum#compose(0,N,GCD).
+gcdZERO(Yin,GCD) :- Yin>0 | GCD= Yin.
+gcdZERO(Yin,GCD) :- Yin<0 | mdlib#subtract_extended(0,Yin,_,Y), normBNUM(0,Y,GCD).
+gcdZERO(Yin,GCD) :- Yin=0 | GCD= 0.
+otherwise.
+gcdZERO(Yin,GCD) :- true | gcd3_raise(0,Yin,GCD).
+
+gcd3_raise(Xin,Yin,GCD) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be rational number"),rational:gcd(Xin,Yin,GCD)).
+
+%%%%%
+%%%%%  CONTENTS  :: Greatest common diviser between N rationals
+%%%%%
+contents([],  GCD) :- true | GCD= 0.
+contents([X1],GCD) :- integer(X1) | GCD= X1.
+contents([X1],GCD) :- bignum#bignum(X1) | GCD= X1.
+contents([X1],GCD) :- rational#rational(X1) | GCD= X1.
+contents([X1,X2|Tail],GCD) :- true | gcd(X1,X2,G), contentsSUB(G,Tail,GCD).
+otherwise.
+contents(List,GCD) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be a list which consists of rational numbers"), rational:contents(List,GCD) ).
+
+contentsSUB(G, [],  GCD) :- true |  GCD= G.
+contentsSUB(1, _,   GCD) :- true |  GCD= 1.
+contentsSUB(G,[X|T],GCD) :- G =\= 1 | gcd(X,G,G1), contentsSUB(G1,T,GCD).
+contentsSUB(G,[X|T],GCD) :- bignum#bignum(G) | gcd(X,G,G1), contentsSUB(G1,T,GCD).
+contentsSUB(G,[X|T],GCD) :- rational#rational(G) | gcd(X,G,G1), contentsSUB(G1,T,GCD).
+   
+
+
+contents([],  GCD,Qlist) :- true | GCD= 0, Qlist= [].
+contents([X1],GCD,Qlist) :- integer(X1) | GCD= X1, Qlist= [1].
+contents([X1],GCD,Qlist) :- bignum#bignum(X1) | GCD= X1, Qlist= [1].
+contents([X1],GCD,Qlist) :- rational#rational(X1) | GCD= X1, Qlist= [1].
+contents([X1,X2|Tail],GCD,Qlist) :- true | 
+    gcd(X1,X2,G), contentsSUB(G,Tail,GCD), contentsSUB2(GCD,[X1,X2|Tail],Qlist).
+otherwise.
+contents(List,GCD,Qlist) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be a list which consists of rational numbers"), rational:contents(List,GCD,Qlist)).
+
+contentsSUB2(1,List,Out) :- true |  Out= List.
+contentsSUB2(G,List,Out) :- G =\= 1 | contQUOT(List,G,Out).
+contentsSUB2(G,List,Out) :- bignum#bignum(G) | contQUOT(List,G,Out).
+contentsSUB2(G,List,Out) :- rational#rational(G) | contQUOT(List,G,Out).
+   
+contQUOT([],   _,Out) :- true | Out= [].
+contQUOT([X|T],G,Out) :- true | divide(X,G,Q), Out= [Q|Os], contQUOT(T,G,Os).
+
+
+%%%%%
+%%%%%   COMPARE :: Comparison of 2 rationals
+%%%%%
+compare(Xin,Yin,Xnew,Ynew,Ans) :- rational#rational(Xin,0,Nx,Dx) | comRATplus(Nx,Dx,Yin,Xnew,Ynew,Ans).
+compare(Xin,Yin,Xnew,Ynew,Ans) :- rational#rational(Xin,1,Nx,Dx) | comRATminus(Nx,Dx,Yin,Xnew,Ynew,Ans).
+compare(Xin,Yin,Xnew,Ynew,Ans) :- bignum#bignum(Xin,0,Nx) | comBNUMplus(Nx,Yin,Xnew,Ynew,Ans).
+compare(Xin,Yin,Xnew,Ynew,Ans) :- bignum#bignum(Xin,1,Nx) | comBNUMminus(Nx,Yin,Xnew,Ynew,Ans).
+compare(Xin,Yin,Xnew,Ynew,Ans) :- Xin>0 | comINTp(Xin,Yin,Xnew,Ynew,Ans).
+compare(Xin,Yin,Xnew,Ynew,Ans) :- Xin<0 | comINTm(Xin,Yin,Xnew,Ynew,Ans).
+compare(Xin,Yin,Xnew,Ynew,Ans) :- Xin=0 | comZERO(Yin,Xnew,Ynew,Ans).
+otherwise.
+compare(Xin,Yin,Xnew,Ynew,Ans) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be rational number"), rational:compare(Xin,Yin,Xnew,Ynew,Ans)).
+
+comRATplus(Nx,Dx,Yin,Xnew,Ynew,Ans) :- bignum#bignum(Yin,0,Ny) |
+    bignum:copybig(Nx,Nx1,Nx2), bignum:copybig(Dx,Dx1,Dx2), rational#compose(0,Nx2,Dx2,Xnew),
+    bignum:copybig(Ny,Ny1,Ny2), bignum#compose(0,Ny2,Ynew),
+    bignum:mulbig(Ny1,Dx1,Xb),  compSUBplus(Nx1,Xb,Ans).
+comRATplus(Nx,Dx,Yin,Xnew,Ynew,Ans) :- Yin>0 | Ynew= Yin,
+    bignum:copybig(Nx,Nx1,Nx2), bignum:copybig(Dx,Dx1,Dx2), rational#compose(0,Nx2,Dx2,Xnew),
+    bignum:mulbig(Yin,Dx1,Xb),  compSUBplus(Nx1,Xb,Ans).
+comRATplus(N,D,Yin,Xnew,Ynew,Ans) :- rational#sign(Yin,1)| Ans= (>),rational#compose(0,N,D,Xnew),Ynew=Yin.
+comRATplus(N,D,Yin,Xnew,Ynew,Ans) :- bignum#sign(Yin,1) | Ans= (>),rational#compose(0,N,D,Xnew),Ynew= Yin.
+comRATplus(N,D,Yin,Xnew,Ynew,Ans) :- Yin=<0 | Ans= (>), rational#compose(0,N,D,Xnew), Ynew= Yin.
+comRATplus(N,D,Yin,Xnew,Ynew,Ans) :- rational#rational(Yin,0,N,D) |
+    Ans= (=), rational#compose(0,N,D,Xnew), Ynew= Yin.
+otherwise.
+comRATplus(Nx,Dx,Yin,Xnew,Ynew,Ans) :- rational#rational(Yin,0,Ny,Dy) |
+    bignum:copybig(Nx,Nx1,Nx2), bignum:copybig(Dx,Dx1,Dx2), rational#compose(0,Nx2,Dx2,Xnew),
+    bignum:copybig(Ny,Ny1,Ny2), bignum:copybig(Dy,Dy1,Dy2), rational#compose(0,Ny2,Dy2,Ynew),
+    bignum:mulbig(Nx1,Dy1,Xa),  bignum:mulbig(Ny1,Dx1,Xb),  compSUBplus(Xa,Xb,Ans).
+otherwise.
+comRATplus(N,D,Yin,Xnew,Ynew,Ans) :- true | rational#compose(0,N,D,X), comp5_raise(X,Yin,Xnew,Ynew,Ans).
+
+comRATminus(Nx,Dx,Yin,Xnew,Ynew,Ans) :- bignum#bignum(Yin,1,Ny) |
+    bignum:copybig(Nx,Nx1,Nx2), bignum:copybig(Dx,Dx1,Dx2), rational#compose(1,Nx2,Dx2,Xnew),
+    bignum:copybig(Ny,Ny1,Ny2), bignum#compose(1,Ny2,Ynew),
+    bignum:mulbig(Ny1,Dx1,Xb),  compSUBminus(Nx1,Xb,Ans).
+comRATminus(Nx,Dx,Yin,Xnew,Ynew,Ans) :- Yin<0 | Ynew= Yin,
+    bignum:copybig(Nx,Nx1,Nx2), bignum:copybig(Dx,Dx1,Dx2), rational#compose(1,Nx2,Dx2,Xnew),
+    mdlib#subtract_extended(0,Yin,_,YN), bignum:mulbig(YN,Dx1,Xb),  compSUBminus(Nx1,Xb,Ans).
+comRATminus(N,D,Y,Xnew,Ynew,Ans) :- rational#sign(Y,0) | Ans= (<),rational#compose(1,N,D,Xnew),Ynew=Y.
+comRATminus(N,D,Y,Xnew,Ynew,Ans) :- bignum#sign(Y,0) | Ans= (<),rational#compose(1,N,D,Xnew),Ynew= Y.
+comRATminus(N,D,Yin,Xnew,Ynew,Ans) :- Yin>=0 | Ans= (<), rational#compose(1,N,D,Xnew), Ynew= Yin.
+comRATminus(N,D,Yin,Xnew,Ynew,Ans) :- rational#rational(Yin,1,N,D) |
+    Ans= (=), rational#compose(1,Nx,Dx,Xnew), Ynew= Yin.
+otherwise.
+comRATminus(Nx,Dx,Yin,Xnew,Ynew,Ans) :- rational#rational(Yin,1,Ny,Dy) |
+    bignum:copybig(Nx,Nx1,Nx2), bignum:copybig(Dx,Dx1,Dx2), rational#compose(1,Nx2,Dx2,Xnew),
+    bignum:copybig(Ny,Ny1,Ny2), bignum:copybig(Dy,Dy1,Dy2), rational#compose(1,Ny2,Dy2,Ynew),
+    bignum:mulbig(Nx1,Dy1,Xa),  bignum:mulbig(Ny1,Dx1,Xb),  compSUBminus(Xa,Xb,Ans).
+otherwise.
+comRATminus(N,D,Yin,Xnew,Ynew,Ans) :- true | 
+    rational#compose(1,N,D,X), comp5_raise(X,Yin,Xnew,Ynew,Ans).
+
+comBNUMplus(Nx,Yin,Xnew,Ynew,Ans) :- rational#rational(Yin,0,Ny,Dy) |
+    bignum:copybig(Nx,Nx1,Nx2), bignum#compose(0,Nx2,Xnew),
+    bignum:copybig(Ny,Ny1,Ny2), bignum:copybig(Dy,Dy1,Dy2), rational#compose(0,Ny2,Dy2,Ynew),
+    bignum:mulbig(Nx1,Dy1,Xa),  compSUBplus(Xa,Ny1,Ans).
+comBNUMplus(Nx,Yin,Xnew,Ynew,Ans) :- bignum#bignum(Yin,0,Ny) |
+    compSUBplus(Nx,Ny,Nx1,Ny1,Ans), bignum#compose(0,Nx1,Xnew), bignum#compose(0,Ny1,Ynew).
+comBNUMplus(Nx,Yin,Xnew,Ynew,Ans) :- rational#sign(Yin,1) | Ans= (>),bignum#compose(0,Nx,Xnew),Ynew= Yin.
+comBNUMplus(Nx,Yin,Xnew,Ynew,Ans) :- bignum#sign(Yin,1) | Ans= (>),bignum#compose(0,Nx,Xnew),Ynew= Yin.
+comBNUMplus(Nx,Yin,Xnew,Ynew,Ans) :- integer(Yin) | Ans= (>), bignum#compose(0,Nx,Xnew), Ynew= Yin.
+otherwise.
+comBNUMplus(Nx,Yin,Xnew,Ynew,Ans) :- true | bignum#compose(0,Nx,Xin), comp5_raise(Xin,Yin,Xnew,Ynew,Ans).
+
+comBNUMminus(Nx,Yin,Xnew,Ynew,Ans) :- rational#rational(Yin,1,Ny,Dy) |
+    bignum:copybig(Nx,Nx1,Nx2), bignum#compose(1,Nx2,Xnew),
+    bignum:copybig(Ny,Ny1,Ny2), bignum:copybig(Dy,Dy1,Dy2), rational#compose(1,Ny2,Dy2,Ynew),
+    bignum:mulbig(Nx1,Dy1,Xa),  compSUBminus(Xa,Ny1,Ans).
+comBNUMminus(Nx,Yin,Xnew,Ynew,Ans) :- bignum#bignum(Yin,1,Ny) |
+    compSUBminus(Nx,Ny,Nx1,Ny1,Ans), bignum#compose(1,Nx1,Xnew), bignum#compose(1,Ny1,Ynew).
+comBNUMminus(Nx,Yin,Xnew,Ynew,Ans) :- rational#sign(Yin,0) | Ans= (<),bignum#compose(1,Nx,Xnew),Ynew=Yin.
+comBNUMminus(Nx,Yin,Xnew,Ynew,Ans) :- bignum#sign(Yin,0) | Ans= (<),bignum#compose(1,Nx,Xnew),Ynew=Yin.
+comBNUMminus(Nx,Yin,Xnew,Ynew,Ans) :- integer(Yin) | Ans= (<), bignum#compose(1,Nx,Xnew), Ynew= Yin.
+otherwise.
+comBNUMminus(Nx,Yin,Xnew,Ynew,Ans) :- true | bignum#compose(1,Nx,Xin), comp5_raise(Xin,Yin,Xnew,Ynew,Ans).
+
+comINTp(Xin,Yin,Xnew,Ynew,Ans) :- rational#rational(Yin,0,Ny,Dy) | Xnew= Xin,
+    bignum:copybig(Ny,Ny1,Ny2), bignum:copybig(Dy,Dy1,Dy2), rational#compose(0,Ny2,Dy2,Ynew),
+    bignum:mulbig(Xin,Dy1,Xa),  compSUBplus(Xa,Ny1,Ans).
+comINTp(Xin,Yin,Xnew,Ynew,Ans) :- rational#sign(Yin,1) | Ans= (>), Xnew= Xin,Ynew= Yin.
+comINTp(Xin,Yin,Xnew,Ynew,Ans) :- bignum#sign(Yin,0) | Ans= (<), Xnew= Xin, Ynew= Yin.
+comINTp(Xin,Yin,Xnew,Ynew,Ans) :- bignum#sign(Yin,1) | Ans= (>), Xnew= Xin,Ynew= Yin.
+comINTp(Xin,Yin,Xnew,Ynew,Ans) :- Xin>Yin | Ans= (>), Xnew= Xin, Ynew= Yin.
+comINTp(Xin,Yin,Xnew,Ynew,Ans) :- Xin<Yin | Ans= (<), Xnew= Xin, Ynew= Yin.
+comINTp(Xin,Yin,Xnew,Ynew,Ans) :- Xin=Yin | Ans= (=), Xnew= Xin, Ynew= Yin.
+otherwise.
+comINTp(Xin,Yin,Xnew,Ynew,Ans) :- true | comp5_raise(Xin,Yin,Xnew,Ynew,Ans).
+
+comINTm(Xin,Yin,Xnew,Ynew,Ans) :- rational#rational(Yin,1,Ny,Dy) | Xnew= Xin,
+    bignum:copybig(Ny,Ny1,Ny2), bignum:copybig(Dy,Dy1,Dy2), rational#compose(1,Ny2,Dy2,Ynew),
+    mdlib#subtract_extended(0,Xin,_,XN), bignum:mulbig(XN,Dy1,Xa),  compSUBminus(Xa,Ny1,Ans).
+comINTm(Xin,Yin,Xnew,Ynew,Ans) :- rational#sign(Yin,0) | Ans= (<), Xnew= Xin,Ynew= Yin.
+comINTm(Xin,Yin,Xnew,Ynew,Ans) :- bignum#sign(Yin,0) | Ans= (<), Xnew= Xin, Ynew= Yin.
+comINTm(Xin,Yin,Xnew,Ynew,Ans) :- bignum#sign(Yin,1) | Ans= (>), Xnew= Xin,Ynew= Yin.
+comINTm(Xin,Yin,Xnew,Ynew,Ans) :- Xin>Yin | Ans= (>), Xnew= Xin, Ynew= Yin.
+comINTm(Xin,Yin,Xnew,Ynew,Ans) :- Xin<Yin | Ans= (<), Xnew= Xin, Ynew= Yin.
+comINTm(Xin,Yin,Xnew,Ynew,Ans) :- Xin=Yin | Ans= (=), Xnew= Xin, Ynew= Yin.
+otherwise.
+comINTm(Xin,Yin,Xnew,Ynew,Ans) :- true | comp5_raise(Xin,Yin,Xnew,Ynew,Ans).
+
+comZERO(Yin,Xnew,Ynew,Ans) :- rational#sign(Yin,0) | Ans= (<), Xnew= 0, Ynew= Yin.
+comZERO(Yin,Xnew,Ynew,Ans) :- rational#sign(Yin,1) | Ans= (>), Xnew= 0, Ynew= Yin.
+comZERO(Yin,Xnew,Ynew,Ans) :- bignum#sign(Yin,0) | Ans= (<), Xnew= 0, Ynew= Yin.
+comZERO(Yin,Xnew,Ynew,Ans) :- bignum#sign(Yin,1) | Ans= (>), Xnew= 0, Ynew= Yin.
+comZERO(Yin,Xnew,Ynew,Ans) :- Yin>0 | Ans= (<), Xnew= 0, Ynew= Yin.
+comZERO(Yin,Xnew,Ynew,Ans) :- Yin<0 | Ans= (>), Xnew= 0, Ynew= Yin.
+comZERO(Yin,Xnew,Ynew,Ans) :- Yin=0 | Ans= (=), Xnew= 0, Ynew= Yin.
+otherwise.
+comZERO(Yin,Xnew,Ynew,Ans) :- true | comp5_raise(0,Yin,Xnew,Ynew,Ans).
+
+
+compSUBplus(X,Y,Ans) :- mdlib#bignum_less_than(Y,X)  | Ans= (>).
+compSUBplus(X,Y,Ans) :- mdlib#bignum_less_than(X,Y)  | Ans= (<).
+compSUBplus(X,Y,Ans) :- X>Y | Ans= (>).
+compSUBplus(X,Y,Ans) :- X<Y | Ans= (<).
+compSUBplus(X,Y,Ans) :- X=Y | Ans= (=).
+compSUBplus(X,Y,Ans) :- string(X,_,_),integer(Y) | Ans= (>).
+compSUBplus(X,Y,Ans) :- integer(X),string(Y,_,_) | Ans= (<).
+
+compSUBminus(X,Y,Ans) :- mdlib#bignum_less_than(Y,X)  | Ans= (<).
+compSUBminus(X,Y,Ans) :- mdlib#bignum_less_than(X,Y)  | Ans= (>).
+compSUBminus(X,Y,Ans) :- X>Y | Ans= (<).
+compSUBminus(X,Y,Ans) :- X<Y | Ans= (>).
+compSUBminus(X,Y,Ans) :- X=Y | Ans= (=).
+compSUBminus(X,Y,Ans) :- string(X,_,_),integer(Y) | Ans= (<).
+compSUBminus(X,Y,Ans) :- integer(X),string(Y,_,_) | Ans= (>).
+
+compSUBplus(X,Y,X1,Y1,Ans) :- mdlib#bignum_less_than(Y,X)  | X1= X, Y1= Y, Ans= (>).
+compSUBplus(X,Y,X1,Y1,Ans) :- mdlib#bignum_less_than(X,Y)  | X1= X, Y1= Y, Ans= (<).
+compSUBplus(X,Y,X1,Y1,Ans) :- X>Y | X1= X, Y1= Y, Ans= (>).
+compSUBplus(X,Y,X1,Y1,Ans) :- X<Y | X1= X, Y1= Y, Ans= (<).
+compSUBplus(X,Y,X1,Y1,Ans) :- X=Y | X1= X, Y1= Y, Ans= (=).
+compSUBplus(X,Y,X1,Y1,Ans) :- string(X,_,_),integer(Y) | X1= X, Y1= Y, Ans= (>).
+compSUBplus(X,Y,X1,Y1,Ans) :- integer(X),string(Y,_,_) | X1= X, Y1= Y, Ans= (<).
+
+compSUBminus(X,Y,X1,Y1,Ans) :- mdlib#bignum_less_than(Y,X)  | X1= X, Y1= Y, Ans= (<).
+compSUBminus(X,Y,X1,Y1,Ans) :- mdlib#bignum_less_than(X,Y)  | X1= X, Y1= Y, Ans= (>).
+compSUBminus(X,Y,X1,Y1,Ans) :- X>Y | X1= X, Y1= Y, Ans= (<).
+compSUBminus(X,Y,X1,Y1,Ans) :- X<Y | X1= X, Y1= Y, Ans= (>).
+compSUBminus(X,Y,X1,Y1,Ans) :- X=Y | X1= X, Y1= Y, Ans= (=).
+compSUBminus(X,Y,X1,Y1,Ans) :- string(X,_,_),integer(Y) | X1= X, Y1= Y, Ans= (<).
+compSUBminus(X,Y,X1,Y1,Ans) :- integer(X),string(Y,_,_) | X1= X, Y1= Y, Ans= (>).
+
+
+comp5_raise(X,Y,X1,Y1,Ans) :- true | shoen:raise(pimos_tag#error, 
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be rational number"),rational:compare(X,Y,X1,Y1,Ans)).
+
+
+%%%%%
+%%%%%   COMPARE :: Comparison of 2 rationals
+%%%%%
+compare(Xin,Yin,Ans) :- rational#rational(Xin,0,Nx,Dx) | comRATplus(Nx,Dx,Yin,Ans).
+compare(Xin,Yin,Ans) :- rational#rational(Xin,1,Nx,Dx) | comRATminus(Nx,Dx,Yin,Ans).
+compare(Xin,Yin,Ans) :- bignum#bignum(Xin,0,Nx) | comBNUMplus(Nx,Yin,Ans).
+compare(Xin,Yin,Ans) :- bignum#bignum(Xin,1,Nx) | comBNUMminus(Nx,Yin,Ans).
+compare(Xin,Yin,Ans) :- Xin>0 | comINTp(Xin,Yin,Ans).
+compare(Xin,Yin,Ans) :- Xin<0 | comINTm(Xin,Yin,Ans).
+compare(Xin,Yin,Ans) :- Xin=0 | comZERO(Yin,Ans).
+otherwise.
+compare(Xin,Yin,Ans) :- true | shoen:raise(pimos_tag#error, 
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational number"), rational:compare(Xin,Yin,Ans)).
+
+comRATplus(Nx,Dx,Yin,Ans) :- bignum#bignum(Yin,0,Ny) | bignum:mulbig(Ny,Dx,Xb),  compSUBplus(Nx,Xb,Ans).
+comRATplus(Nx,Dx,Yin,Ans) :- Yin>0 | bignum:mulbig(Yin,Dx,Xb),  compSUBplus(Nx,Xb,Ans).
+comRATplus(_,_,Yin,Ans) :- rational#sign(Yin,1) | Ans= (>).
+comRATplus(_,_,Yin,Ans) :- bignum#sign(Yin,1) | Ans= (>).
+comRATplus(_,_,Yin,Ans) :- Yin=<0 | Ans= (>).
+comRATplus(Nx,Dx,Yin,Ans) :- rational#rational(Yin,0,Nx,Dx) | Ans= (=).
+otherwise.
+comRATplus(Nx,Dx,Yin,Ans) :- rational#rational(Yin,0,Ny,Dy) |
+    bignum:mulbig(Nx,Dy,Xa),  bignum:mulbig(Ny,Dx,Xb),  compSUBplus(Xa,Xb,Ans).
+otherwise.
+comRATplus(Nx,Dx,Yin,Ans) :- true | rational#compose(0,Nx,Dx,Xin), comp3_raise(Xin,Yin,Ans).
+
+comRATminus(Nx,Dx,Yin,Ans) :- bignum#bignum(Yin,1,Ny) | bignum:mulbig(Ny,Dx,Xb),  compSUBminus(Nx,Xb,Ans).
+comRATminus(Nx,Dx,Yin,Ans) :- Yin<0 | 
+    mdlib#subtract_extended(0,Yin,_,YN), bignum:mulbig(YN,Dx,Xb),compSUBminus(Nx,Xb,Ans).
+comRATminus(_,_,Yin,Ans) :- rational#sign(Yin,0) | Ans= (<).
+comRATminus(_,_,Yin,Ans) :- bignum#sign(Yin,0) | Ans= (<).
+comRATminus(_,_,Yin,Ans) :- Yin>=0 | Ans= (<).
+comRATminus(Nx,Dx,Yin,Ans) :- rational#rational(Yin,1,Nx,Dx) | Ans= (=).
+otherwise.
+comRATminus(Nx,Dx,Yin,Ans) :- rational#rational(Yin,1,Ny,Dy) |
+    bignum:mulbig(Nx,Dy,Xa),  bignum:mulbig(Ny,Dx,Xb),  compSUBminus(Xa,Xb,Ans).
+otherwise.
+comRATminus(Nx,Dx,Yin,Ans) :- true | rational#compose(1,Nx,Dx,Xin), comp3_raise(Xin,Yin,Ans).
+
+comBNUMplus(Nx,Yin,Ans) :- rational#rational(Yin,0,Ny,Dy) | bignum:mulbig(Nx,Dy,M),compSUBplus(M,Ny,Ans).
+comBNUMplus(Nx,Yin,Ans) :- bignum#bignum(Yin,0,Ny) | compSUBplus(Nx,Ny,Ans).
+comBNUMplus(_,Yin,Ans) :- rational#sign(Yin,1) | Ans= (>).
+comBNUMplus(_,Yin,Ans) :- bignum#sign(Yin,1) | Ans= (>).
+comBNUMplus(_,Yin,Ans) :- integer(Yin) | Ans= (>).
+otherwise.
+comBNUMplus(Nx,Yin,Ans) :- true | bignum#compose(0,Nx,Xin), comp3_raise(Xin,Yin,Ans).
+
+comBNUMminus(Nx,Yin,Ans) :- rational#rational(Yin,1,Ny,Dy)| bignum:mulbig(Nx,Dy,M),compSUBminus(M,Ny,Ans).
+comBNUMminus(Nx,Yin,Ans) :- bignum#bignum(Yin,1,Ny) | compSUBminus(Nx,Ny,Ans).
+comBNUMminus(_,Yin,Ans) :- rational#sign(Yin,0) | Ans= (<).
+comBNUMminus(_,Yin,Ans) :- bignum#sign(Yin,0) | Ans= (<).
+comBNUMminus(_,Yin,Ans) :- integer(Yin) | Ans= (<).
+otherwise.
+comBNUMminus(Nx,Yin,Ans) :- true | bignum#compose(1,Nx,Xin), comp3_raise(Xin,Yin,Ans).
+
+comINTp(Xin,Yin,Ans) :- rational#rational(Yin,0,Ny,Dy) | bignum:mulbig(Xin,Dy,M),compSUBplus(M,Ny,Ans).
+comINTp(_,Yin,Ans) :- rational#sign(Yin,1) | Ans= (>).
+comINTp(_,Yin,Ans) :- bignum#sign(Yin,0) | Ans= (<).
+comINTp(_,Yin,Ans) :- bignum#sign(Yin,1) | Ans= (>).
+comINTp(Xin,Yin,Ans) :- Xin>Yin | Ans= (>).
+comINTp(Xin,Yin,Ans) :- Xin<Yin | Ans= (<).
+comINTp(Xin,Yin,Ans) :- Xin=Yin | Ans= (=).
+otherwise.
+comINTp(Xin,Yin,Ans) :- true | comp3_raise(Xin,Yin,Ans).
+
+comINTm(Xin,Yin,Ans) :- rational#rational(Yin,1,Ny,Dy) | 
+    mdlib#subtract_extended(0,Xin,_,XN), bignum:mulbig(XN,Dy,Xa),compSUBminus(Xa,Ny,Ans).
+comINTm(_,Yin,Ans) :- rational#sign(Yin,0) | Ans= (<).
+comINTm(_,Yin,Ans) :- bignum#sign(Yin,0) | Ans= (<).
+comINTm(_,Yin,Ans) :- bignum#sign(Yin,1) | Ans= (>).
+comINTm(Xin,Yin,Ans) :- Xin>Yin | Ans= (>).
+comINTm(Xin,Yin,Ans) :- Xin<Yin | Ans= (<).
+comINTm(Xin,Yin,Ans) :- Xin=Yin | Ans= (=).
+otherwise.
+comINTm(Xin,Yin,Ans) :- true | comp3_raise(Xin,Yin,Ans).
+
+comZERO(Yin,Ans) :- rational#sign(Yin,0) | Ans= (<).
+comZERO(Yin,Ans) :- rational#sign(Yin,1) | Ans= (>).
+comZERO(Yin,Ans) :- bignum#sign(Yin,0) | Ans= (<).
+comZERO(Yin,Ans) :- bignum#sign(Yin,1) | Ans= (>).
+comZERO(Yin,Ans) :- Yin>0 | Ans= (<).
+comZERO(Yin,Ans) :- Yin<0 | Ans= (>).
+comZERO(Yin,Ans) :- Yin=0 | Ans= (=).
+otherwise.
+comZERO(Yin,Ans) :- true | comp3_raise(0,Yin,Ans).
+
+
+comp3_raise(Xin,Yin,Ans) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be rational number"), rational:compare(Xin,Yin,Ans)).
+
+
+
+comEQUAL(Xin,Yin,Ans) :- Xin=Yin | Ans= true.
+otherwise.
+comEQUAL(_,_,Ans) :- true | Ans= false.
+
+notEQUAL(Xin,Yin,Ans) :- Xin=Yin | Ans= false.
+otherwise.
+notEQUAL(_,_,Ans) :- true | Ans= true.
+
+
+%%%%%
+%%%%%  PORTRAY :: Convert rational number to 16bit character string
+%%%%%
+portray(Xin,String) :- rational#complex(Xin,Real,Image) | portrayCOM1(Real,Image,String).
+portray(Xin,String) :- rational#rational(Xin,0,Num,Den) | portrayRATplus(Num,Den,String).
+portray(Xin,String) :- rational#rational(Xin,1,Num,Den) | portrayRATminus(Num,Den,String).
+portray(Xin,String) :- bignum#bignum(Xin,SX,Num) | bignum:portraybig(SX,Num,String).
+portray(Xin,String) :- Xin>0 | bignum:portraybig(0,Xin,String).
+portray(Xin,String) :- Xin<0 | mdlib#subtract_extended(0,Xin,_,XN), bignum:portraybig(1,XN,String).
+portray(Xin,String) :- Xin=0 | String= "0".
+otherwise.
+portray(Xin,String) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+                            "Argument must be complex number"), rational:portray(Xin,String)).
+
+portrayCOM1(Real,Image,String) :- rational#rational(Real,0,Num,Den) | 
+    portrayRATplus(Num,Den,Rstring), portrayCOM2(Image,Rstring,String).
+portrayCOM1(Real,Image,String) :- rational#rational(Real,1,Num,Den) | 
+    portrayRATminus(Num,Den,Rstring), portrayCOM2(Image,Rstring,String).
+portrayCOM1(Real,Image,String) :- bignum#bignum(Real,0,Num) | 
+    bignum:portraybig(0,Num,Rstring), portrayCOM2(Image,Rstring,String).
+portrayCOM1(Real,Image,String) :- bignum#bignum(Real,1,Num) | 
+    bignum:portraybig(1,Num,Rstring), portrayCOM2(Image,Rstring,String).
+portrayCOM1(Real,Image,String) :- Real>0 | 
+    bignum:portraybig(0,Real,Rstring), portrayCOM2(Image,Rstring,String).
+portrayCOM1(Real,Image,String) :- Real<0 | mdlib#subtract_extended(0,Real,_,RN),
+    bignum:portraybig(1,RN,Rstring), portrayCOM2(Image,Rstring,String).
+portrayCOM1(Real,Image,String) :- Real=0 | portrayCOM2(Image,"",String).
+
+portrayCOM2(Image,Rstring,String) :- rational#rational(Image,0,Num,Den) | 
+    portrayRATplus(Num,Den,Istring), builtin#append_string([Rstring,"+",Istring,"'i'"],String).
+portrayCOM2(Image,Rstring,String) :- rational#rational(Image,1,Num,Den) | 
+    portrayRATplus(Num,Den,Istring), builtin#append_string([Rstring,"-",Istring,"'i'"],String).
+portrayCOM2(Image,Rstring,String) :- bignum#bignum(Image,0,Num) | 
+    bignum:portraybig(0,Num,Istring), builtin#append_string([Rstring,"+",Istring,"'i'"],String).
+portrayCOM2(Image,Rstring,String) :- bignum#bignum(Image,1,Num) | 
+    bignum:portraybig(0,Num,Istring), builtin#append_string([Rstring,"-",Istring,"'i'"],String).
+portrayCOM2(Image,Rstring,String) :- Image>0 | 
+    bignum:portraybig(0,Image,Istring), builtin#append_string([Rstring,"+",Istring,"'i'"],String).
+portrayCOM2(Image,Rstring,String) :- Image<0 | 
+    bignum:portraybig(0,Image,Istring), builtin#append_string([Rstring,"+",Istring,"'i'"],String).
+portrayCOM2(Image,Rstring,String) :- Image=0 | String= Rstring.
+
+portrayRATplus(Num,Den,String) :- true | bignum:portraybig(0,Num,Nstr),bignum:portraybig(0,Den,Dstr),
+    builtin#append_string(["(", Nstr,"/",Dstr, ")"],String).
+portrayRATminus(Num,Den,String) :- true | bignum:portraybig(0,Num,Nstr),bignum:portraybig(0,Den,Dstr),
+    builtin#append_string(["-","(", Nstr,"/",Dstr, ")"],String).
+
+
+%%%%%
+%%%%%  WRITE :: Convert a number to string and put the string in a stream
+%%%%%
+write(Xin,Stream) :- rational#complex(Xin,Real,Image) | portrayCOM1(Real,Image,Str), Stream= [putb(Str)].
+write(Xin,Stream) :- rational#rational(Xin,0,Num,Den) | portrayRATplus(Num,Den,Str), Stream= [putb(Str)].
+write(Xin,Stream) :- rational#rational(Xin,1,Num,Den) | portrayRATminus(Num,Den,Str),Stream= [putb(Str)].
+write(Xin,Stream) :- bignum#bignum(Xin,SX,Num) | bignum:portraybig(SX,Num,Str), Stream= [putb(Str)].
+write(Xin,Stream) :- integer(Xin) | Stream= [putt(Xin)].
+otherwise.
+write(Xin,Stream) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+                            "Argument must be complex number"), rational:write(Xin,Stream)).
+
+
+write(Xin,float,Stream) :- integer(Xin) | integer_to_floating_point(Xin,XF), Stream= [putt(XF)].
+write(Xin,float,Stream) :- bignum#bignum(Xin) | bignum:bignum_to_float(Xin,XF), Stream= [putt(XF)].
+write(Xin,float,Stream) :- rational#rational(Xin) | rational_to_float(Xin,XF), Stream= [putt(XF)].
+write(Xin,float,Stream) :- rational#complex(Xin,R,I) | 
+    rational_to_float(R,RF), rational_to_float(I,IF), 
+    ( IF $>= 0.0 ->  Stream= [putt(RF),putb("+"),putt(IF),putb("'i'")]
+    ; IF $<  0.0 ->  Stream= [putt(RF),putt(IF), putb("'i'")]           ).
+otherwise.
+write(Xin,_,Stream) :- true | write(Xin,Stream).
+
+
+
+%%%%%
+%%%%%  Data type conversion 
+%%%%%
+rational_to_bignum(Xin,Int,Rem) :- integer(Xin) | Int= Xin, Rem= 0.
+rational_to_bignum(Xin,Int,Rem) :- bignum#bignum(Xin) | Int= Xin, Rem= 0.
+rational_to_bignum(Xin,Int,Rem) :- rational#rational(Xin,S,N,D) | 
+    bignum:divbig(N,D,Q,R), normBNUM(S,Q,Int), normRAT(S,R,D,Rem).
+otherwise.
+rational_to_bignum(Xin,Int,R) :- true | shoen:raise(pimos_tag#error, 
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational"),rational:rational_to_bignum(Xin,Int,R)).
+
+
+
+%% rational_to_float(Xin,^Float)
+rational_to_float(Xin,Float) :- integer(Xin) | integer_to_floating_point(Xin,Float).
+rational_to_float(Xin,Float) :- bignum#bignum(Xin) | bignum:bignum_to_float(Xin,Float).
+rational_to_float(Xin,Float) :- rational#rational(Xin,0,Num,Den) | ration_to_float(Num,Den, 1.0,Float).
+rational_to_float(Xin,Float) :- rational#rational(Xin,1,Num,Den) | ration_to_float(Num,Den,-1.0,Float).
+
+
+ration_to_float(Num,Den,Sign,Float) :- integer(Num) | rat2fltINT(Num,Den,Sign,Float).
+ration_to_float(Num,Den,Sign,Float) :- string(Num,NL,_) | rat2fltSTR(NL,Num,Den,Sign,Float).
+
+rat2fltINT(Num,Den,Sign,Float) :- integer(Den) |
+    integer_to_floating_point(Num,NF), integer_to_floating_point(Den,DF), Float $:= Sign*( NF/DF ).
+rat2fltINT(Num,Den,Sign,Float) :- string(Den,DL,_) | 
+    bit_lengthINT(Num,32,BNL), bit_lengthSTR(DL,Den,BDL,Den1), builtin:subtract(BNL,BDL,SL),
+    rat2fltINTsub(SL,Num,BDL,Den1,Sign,Float).
+
+%%  <NOTE> SL = NLbit-DLbit, 0<NLbit<32
+rat2fltINTsub(SL,_,  _,  _,  _,   Float) :- SL=< mdlib#fltEXPmin | Float $:= 0.0.
+rat2fltINTsub(SL,Num,BDL,Den,Sign,Float) :- SL>  mdlib#fltEXPmin, BDL<  mdlib#fltEXPmax | 
+    integer_to_floating_point(Num,NF), bignum:bnum_to_float(Den,1.0,DF), Float $:= Sign*( NF/DF ).
+rat2fltINTsub(SL,Num,BDL,Den,Sign,Float) :- SL>  mdlib#fltEXPmin, BDL>= mdlib#fltEXPmax | 
+    builtin:subtract(BDL,mdlib#fltEXPmax,SN), bignum:shift_right_big(Den,SN,Den1), Num1 := Num>>SN,
+    integer_to_floating_point(Num1,NF), bignum:bnum_to_float(Den1,1.0,DF), Float $:= Sign*( NF/DF ).
+
+
+rat2fltSTR(NL,Num,Den,Sign,Float) :- integer(Den) | 
+    bit_lengthSTR(NL,Num,BNL,Num1), bit_lengthINT(Den,32,BDL), builtin:subtract(BNL,BDL,SL),
+    rat2fltSTRint(SL,BNL,Num,Den,Sign,Float).
+rat2fltSTR(NL,Num,Den,Sign,Float) :- string(Den,DL,_) | 
+    bit_lengthSTR(NL,Num,BNL,Num1), bit_lengthSTR(DL,Den,BDL,Den1), builtin:subtract(BNL,BDL,SL),
+    rat2fltSTRstr(SL,BNL,BDL,Num,Den,Sign,Float).
+
+%%  <NOTE> SL = NLbit-DLbit, 0<DLbit<32
+rat2fltSTRint(SL,_,Num,_,Sign,Float) :- SL> mdlib#fltEXPmax | bignum:bnum_to_float(Num,Sign,Float).
+rat2fltSTRint(SL,BNL,Num,Den,Sign,Float) :- SL=<mdlib#fltEXPmax,BNL=<mdlib#fltEXPmax | 
+    bignum:bnum_to_float(Num,Sign,NumF), integer_to_floating_point(Den,DenF), Float $:= NumF/DenF.
+rat2fltSTRint(SL,BNL,Num,Den,Sign,Float) :- SL=<mdlib#fltEXPmax,BNL> mdlib#fltEXPmax | 
+    builtin:subtract(BNL,mdlib#fltEXPmax,SN),  Den1 := Den>>SN,  integer_to_floating_point(Den1,DenF), 
+    bignum:shift_right_big(Num,SN,Num1), bignum:bnum_to_float(Num1,Sign,NumF), Float $:= NumF/DenF.
+
+rat2fltSTRstr(SL,_,_,Num,_,Sign,Float) :- SL> mdlib#fltEXPmax | bignum:bnum_to_float(Num,Sign,Float).
+rat2fltSTRstr(SL,_,_,_,_,_,Float) :- SL< mdlib#fltEXPmin | Float $:= 0.0 .
+otherwise.
+rat2fltSTRstr(SL,BNL,BDL,Num,Den,Sign,Float) :- BNL=< mdlib#fltEXPmax,BDL=< mdlib#fltEXPmax |
+    bignum:bnum_to_float(Num,Sign,NumF), bignum:bnum_to_float(Den,1.0,DenF), Float $:= NumF/DenF.
+rat2fltSTRstr(SL,BNL,BDL,Num,Den,Sign,Float) :- BNL=< mdlib#fltEXPmax,BDL>  mdlib#fltEXPmax |
+    builtin:subtract(BDL,mdlib#fltEXPmax,SN),
+    bignum:shift_right_big(Num,SN,Num1),  bignum:shift_right_big(Den,SN,Den1),
+    bignum:bnum_to_float(Num1,Sign,NumF), bignum:bnum_to_float(Den1,1.0,DenF), Float $:= NumF/DenF.
+rat2fltSTRstr(SL,BNL,BDL,Num,Den,Sign,Float) :- BNL>  mdlib#fltEXPmax,BDL=< mdlib#fltEXPmax |
+    builtin:subtract(BNL,mdlib#fltEXPmax,SN),
+    bignum:shift_right_big(Num,SN,Num1),  bignum:shift_right_big(Den,SN,Den1),
+    bignum:bnum_to_float(Num1,Sign,NumF), bignum:bnum_to_float(Den1,1.0,DenF), Float $:= NumF/DenF.
+rat2fltSTRstr(SL,BNL,BDL,Num,Den,Sign,Float) :- BNL> mdlib#fltEXPmax,BDL> mdlib#fltEXPmax |
+    builtin:subtract(BNL,mdlib#fltEXPmax,SNnum),builtin:subtract(BDL,mdlib#fltEXPmax,SNden),
+    ( SNnum>=SNden -> SN= SNnum   ;  SNnum<SNden -> SN= SNden ),
+    bignum:shift_right_big(Num,SN,Num1),  bignum:shift_right_big(Den,SN,Den1),
+    bignum:bnum_to_float(Num1,Sign,NumF), bignum:bnum_to_float(Den1,1.0,DenF), Float $:= NumF/DenF.
+
+bit_lengthINT(Num,_,BLen) :- Num=0 | BLen= 0.
+bit_lengthINT(Num,L,BLen) :- Num<0 | BLen= L.
+bit_lengthINT(Num,L,BLen) :- Num>0 | N1 := Num<<1, builtin:add(-1,L,L1), bit_lengthINT(N1,L1,BLen).
+
+bit_lengthSTR(Len,Str,BLen,NewStr) :- Len=0 | BLen= 0, NewStr= Str.
+bit_lengthSTR(Len,Str,BLen,NewStr) :- Len>0 | 
+    string_element(Str,0,X0,NewStr), BL := Len<<5, bit_lengthINT(X0,BL,BLen).
+
+%%%%%
+%%%%%  Internal common utilities
+%%%%%
+%% normCOM(Real,Image,^Out)  Check if Image=0, that is if it can be expressed in real number
+%%    <NOTE> Both real part and imaginary part are already normalized.
+normCOM(Real,Image,Out) :- Image =:= 0 | Out= Real.
+normCOM(Real,Image,Out) :- Image =\= 0 | rational#compose(Real,Image,Out).
+normCOM(Real,Image,Out) :- rational#rational(Image) | rational#compose(Real,Image,Out).
+normCOM(Real,Image,Out) :- bignum#bignum(Image) | rational#compose(Real,Image,Out).
+
+%% normRAT(Sign,Numer,Denom,^Out)   Check if Denom=1, that is if it can be expressed in bignum
+normRAT(S,Num,Den,Out) :- Den>1 | normRATsub(S,Num,Den,Out).
+normRAT(S,Num,Den,Out) :- Den=1 | normBNUM(S,Num,Out).
+normRAT(S,Num,Den,Out) :- string(Den,DL,_),DL>1 | normRATsub(S,Num,Den,Out).
+normRAT(S,Num,Den,Out) :- string(Den,DL,_),DL=1 | string_element(Den,0,D0,Den1),
+    ( D0>0 -> normRATsub(S,Num,D0,Out)
+    ; D0<0 -> normRATsub(S,Num,Den1,Out)
+    ; D0=0 -> shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg3,
+                            "Denomirator must be nonzero number"), rational:normRAT(S,Num,Den,Out))    ).
+otherwise.
+normRAT(S,N,D,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg3,"Denomirator must be nonzero number"),rational:normRAT(S,N,D,Out)).
+
+normRATsub(_,Num,_,  Out) :- Num =:= 0 | Out= 0.
+normRATsub(S,Num,Den,Out) :- Num =\= 0 | rational#compose(S,Num,Den,Out).
+normRATsub(S,Num,Den,Out) :- string(Num,NL,_), NL>1 | rational#compose(S,Num,Den,Out).
+normRATsub(S,Num,Den,Out) :- string(Num,NL,_), NL=1 | string_element(Num,0,N0,Num1),
+    ( N0>=0 -> rational#compose(S,N0,Den,Out)   ; otherwise;true -> rational#compose(S,Num1,Den,Out) ).
+normRATsub(_,Num,_,  Out) :- string(Num,NL,_), NL=0 | Out= 0.
+
+
+%% normBNUM(Sign,Numer,^Out)   Check if it can be expressed in integer
+normBNUM(0,X,Out) :- X>=0 | Out= X.
+normBNUM(1,X,Out) :- X>=0 | builtin:subtract(0,X,Out).
+normBNUM(0,X,Out) :- string(X,N,_), N>1 | bignum#compose(0,X,Out).
+normBNUM(1,X,Out) :- string(X,N,_), N>1 | bignum#compose(1,X,Out).
+normBNUM(0,X,Out) :- string(X,1,_) | string_element(X,0,Ele,X1), norm_plus(Ele,X1,Out).
+normBNUM(1,X,Out) :- string(X,1,_) | string_element(X,0,Ele,X1), norm_minus(Ele,X1,Out).
+normBNUM(0,X,Out) :- string(X,0,_) | Out= 0.
+normBNUM(1,X,Out) :- string(X,0,_) | Out= 0.
+
+norm_plus(Ele,_,Out) :- Ele>=0 | Out= Ele.
+norm_plus(Ele,X,Out) :- Ele< 0 | bignum#compose(0,X,Out).
+
+norm_minus(Ele,_,Out) :- Ele>=0 | builtin:subtract(0,Ele,Out).
+norm_minus(Ele,X,Out) :- Ele< 0, Ele =\= 16#"80000000" | bignum#compose(1,X,Out).
+norm_minus(Ele,_,Out) :- Ele< 0, Ele =:= 16#"80000000" | Out= 16#"80000000".
+
+
+%% normINT(Sign,WordHigh,WordLow,^Xout)  Check if words can be expressed in integer
+%%      WordHigh,WordLow ::= 32bit unsigned integer
+normINT(0,0,ZL,Out) :- ZL>=0 | Out= ZL.
+normINT(0,0,ZL,Out) :- ZL< 0 | new_string(O,1,32),set_string_element(O,0,ZL,O1),bignum#compose(0,O1,Out).
+normINT(1,0,ZL,Out) :- ZL>=0 | builtin:subtract(0,ZL,Out).
+normINT(1,0,ZL,Out) :- ZL =:= 16#"80000000" | Out= ZL.
+normINT(1,0,ZL,Out) :- ZL< 0, ZL =\= 16#"80000000" | 
+    new_string(O,1,32), set_string_element(O,0,ZL,O1), bignum#compose(1,O1,Out).
+normINT(S,ZH,ZL,Out) :- ZH =\= 0 | new_string(O,2,32), 
+    set_string_element(O,0,ZH,O1), set_string_element(O1,1,ZL,O2), bignum#compose(S,O2,Out).

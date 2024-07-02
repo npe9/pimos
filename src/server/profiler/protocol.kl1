@@ -1,0 +1,411 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ :- module profiling_device_filter .
+ :- public profreq_filter /2 .
+:- with_macro pimos.
+
+profreq_filter(User,OS) :-true|
+        profreq_filter(User,OS,_,[]) .
+profreq_filter([User|U2],OS,_,Error) :-true|
+        '+profreq_command'(User,OS1,Flag,[profiling_request]),
+        'profreq_filter$wait'(U2,OS,OS1,Flag,Error) .
+profreq_filter([],OS,_,Error) :-true|
+        []=OS .
+otherwise .
+profreq_filter(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        OS =[],
+        raise_error(Error,User) .
+'profreq_filter$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        profreq_filter(U2,OS2,_,Error) .
+'profreq_filter$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+profreq_command'(create(_1,_2,_3,_4,_5),OS,_,Error) :-true|
+        '+profreq_command$wait'(create(__1,__2,__3,__4,_5),OS,Flag,Error),
+        '+interval'(_1,__1,Flag,[interval,'create /5'|Error]),
+        '+profiling_items'(_2,__2,Flag,[profiling_items,'create /5'|Error]),
+        '+nodes'(_3,__3,Flag,[nodes,'create /5'|Error]),
+        '+time_unit'(_4,__4,Flag,[time_unit,'create /5'|Error]) .
+'+profreq_command'(create(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+profreq_command$wait'(create(__1,__2,__3,_4),OS,Flag,Error),
+        '+interval'(_1,__1,Flag,[interval,'create /4'|Error]),
+        '+profiling_items'(_2,__2,Flag,[profiling_items,'create /4'|Error]),
+        '+time_unit'(_3,__3,Flag,[time_unit,'create /4'|Error]) .
+'+profreq_command'(create(_1,_2,_3),OS,_,Error) :-true|
+        '+profreq_command$wait'(create(__1,__2,_3),OS,Flag,Error),
+        '+interval'(_1,__1,Flag,[interval,'create /3'|Error]),
+        '+profiling_items'(_2,__2,Flag,[profiling_items,'create /3'|Error]) .
+'+profreq_command'(get_interval_range(_1,_2),OS,_,Error) :-true|
+        '+profreq_command$wait'(get_interval_range(__1,_2),OS,Flag,Error),
+        '+time_unit'(_1,__1,Flag,[time_unit,'get_interval_range /2'|Error]) .
+'+profreq_command'(get_interval_range(_1),OS,_,Error) :-true|
+        get_interval_range(__1) =OS,
+        '-get_interval_range$$$enu$2'(_1,__1,Flag,['get_interval_range /1'|Error]) .
+otherwise .
+'+profreq_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+profreq_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+profreq_command$wait'(create(__1,__2,__3,__4,_5),OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4)|
+        create(__1,__2,__3,__4,__5) =OS,
+        '-create$$$enu$1'(_5,__5,Flag,[profiling_device]) .
+'+profreq_command$wait'(create(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        create(__1,__2,__3,__4) =OS,
+        '-create$$$enu$2'(_4,__4,Flag,[profiling_device]) .
+'+profreq_command$wait'(create(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        create(__1,__2,__3) =OS,
+        '-create$$$enu$3'(_3,__3,Flag,[profiling_device]) .
+'+profreq_command$wait'(get_interval_range(__1,_2),OS,_,Error) :-wait(__1)|
+        get_interval_range(__1,__2) =OS,
+        '-get_interval_range$$$enu$1'(_2,__2,Flag,['get_interval_range /2'|Error]) .
+'+interval'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+interval'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+time_unit'(msec,OS,_,Error) :-true|
+        msec =OS .
+'+time_unit'(msec16,OS,_,Error) :-true|
+        msec16 =OS .
+'+time_unit'(usec,OS,_,Error) :-true|
+        usec =OS .
+otherwise .
+'+time_unit'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-create$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$1'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-create$$$enu$1'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-reason'(_1,__1,Flag,Error) .
+'-create$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-create$$$enu$2'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$2'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-create$$$enu$2'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-reason'(_1,__1,Flag,Error) .
+'-create$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-create$$$enu$3'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(_1,__2,_3),
+        '+normal$$$stream$3'(_1,__1,Flag,Error),
+        '-attention'(_3,__3,Flag,Error) .
+'-create$$$enu$3'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-reason'(_1,__1,Flag,Error) .
+'-create$$$enu$3'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-get_interval_range$$$enu$1'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-min'(_1,__1,Flag,Error),
+        '-max'(_2,__2,Flag,Error) .
+'-get_interval_range$$$enu$1'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-reason'(_1,__1,Flag,Error) .
+'-get_interval_range$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-get_interval_range$$$enu$2'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-min'(_1,__1,Flag,Error),
+        '-max'(_2,__2,Flag,Error) .
+'-get_interval_range$$$enu$2'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-reason'(_1,__1,Flag,Error) .
+'-get_interval_range$$$enu$2'(User,aborted,_,Error) :-true|
+        User =aborted .
+'+profiling_items'([In1|In2],Out,Flag,Error) :-true|
+        '+item'(In1,In11,Flag,Error),
+        '+profiling_items$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+profiling_items'([],Out,Flag,Error) :-true|
+        []=Out .
+'+profiling_items$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+profiling_items$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+profiling_items$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+profiling_items$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+profiling_items$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+item'(In1,In11,Flag,Error),
+        '+profiling_items$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'+nodes'([In1|In2],Out,Flag,Error) :-true|
+        '+node'(In1,In11,Flag,Error),
+        '+nodes$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+nodes'([],Out,Flag,Error) :-true|
+        []=Out .
+'+nodes$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+nodes$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+nodes$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+nodes$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+nodes$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+node'(In1,In11,Flag,Error),
+        '+nodes$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'+normal$$$stream$1'([User|U2],OS,_,Error) :-true|
+        '+profiling_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$1$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$1'([],OS,_,Error) :-true|
+        []=OS .
+otherwise .
+'+normal$$$stream$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$1$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$1'(U2,OS2,_,Error) .
+'+normal$$$stream$1$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$2'([User|U2],OS,_,Error) :-true|
+        '+profiling_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$2$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$2'([],OS,_,Error) :-true|
+        []=OS .
+otherwise .
+'+normal$$$stream$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$2$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$2'(U2,OS2,_,Error) .
+'+normal$$$stream$2$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$3'([User|U2],OS,_,Error) :-true|
+        '+profiling_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$3$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$3'([],OS,_,Error) :-true|
+        []=OS .
+otherwise .
+'+normal$$$stream$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$3$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$3'(U2,OS2,_,Error) .
+'+normal$$$stream$3$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'-attention'(User,attention,_,Error) :-true|
+        User =attention .
+'-attention'(User,[],_,Error) :-true|
+        User =[] .
+'-reason'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'+item'(idling_time,OS,_,Error) :-true|
+        idling_time =OS .
+'+item'(idling_time(_1),OS,_,Error) :-true|
+        '+item$wait'(idling_time(__1),OS,Flag,Error),
+        '+length'(_1,__1,Flag,['idling_time /1'|Error]) .
+'+item'(gevc,OS,_,Error) :-true|
+        gevc =OS .
+'+item'(gevc(_1),OS,_,Error) :-true|
+        '+item$wait'(gevc(__1),OS,Flag,Error),
+        '+length'(_1,__1,Flag,['gevc /1'|Error]) .
+'+item'(encoded_message_frequency,OS,_,Error) :-true|
+        encoded_message_frequency =OS .
+'+item'(decoded_message_frequency,OS,_,Error) :-true|
+        decoded_message_frequency =OS .
+'+item'(local_gc,OS,_,Error) :-true|
+        local_gc =OS .
+'+item'(local_gc(_1),OS,_,Error) :-true|
+        '+item$wait'(local_gc(__1),OS,Flag,Error),
+        '+length'(_1,__1,Flag,['local_gc /1'|Error]) .
+'+item'(log_event,OS,_,Error) :-true|
+        log_event =OS .
+'+item'(log_event(_1),OS,_,Error) :-true|
+        '+item$wait'(log_event(__1),OS,Flag,Error),
+        '+length'(_1,__1,Flag,['log_event /1'|Error]) .
+'+item'(message_handling_time,OS,_,Error) :-true|
+        message_handling_time =OS .
+otherwise .
+'+item'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+item$wait'(User,OS,fail,Error) :-true|
+        true .
+'+item$wait'(idling_time(__1),OS,_,Error) :-wait(__1)|
+        idling_time(__1) =OS .
+'+item$wait'(gevc(__1),OS,_,Error) :-wait(__1)|
+        gevc(__1) =OS .
+'+item$wait'(local_gc(__1),OS,_,Error) :-wait(__1)|
+        local_gc(__1) =OS .
+'+item$wait'(log_event(__1),OS,_,Error) :-wait(__1)|
+        log_event(__1) =OS .
+'+node'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+node'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+profiling_command'(get(_1),OS,_,Error) :-true|
+        get(__1) =OS,
+        '-get$$$enu$1'(_1,__1,Flag,['get /1'|Error]) .
+'+profiling_command'(stop(_1),OS,_,Error) :-true|
+        stop(__1) =OS,
+        '-status'(_1,__1,Flag,['stop /1'|Error]) .
+otherwise .
+'+profiling_command'(User,OS,Flag,Error) :-true|
+        '+aa_command'(User,OS,Flag,Error) .
+'-min'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-max'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'+length'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+length'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-get$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-data'(_1,__1,Flag,Error) .
+'-get$$$enu$1'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-reason'(_1,__1,Flag,Error) .
+'-get$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-status'(User,normal,_,Error) :-true|
+        User =normal .
+'-status'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-reason'(_1,__1,Flag,Error) .
+'-status'(User,aborted,_,Error) :-true|
+        User =aborted .
+'+aa_command'(reset(_1),OS,_,Error) :-true|
+        reset(__1) =OS,
+        '-reset$$$enu$1'(_1,__1,Flag,['reset /1'|Error]) .
+'+aa_command'(next_attention(_1),OS,_,Error) :-true|
+        next_attention(__1) =OS,
+        '-next_attention$$$enu$1'(_1,__1,Flag,['next_attention /1'|Error]) .
+'+aa_command'(resend(_1,_2),OS,_,Error) :-true|
+        '+aa_command$wait'(resend(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'resend /2'|Error]) .
+'+aa_command'(cancel(_1,_2),OS,_,Error) :-true|
+        '+aa_command$wait'(cancel(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'cancel /2'|Error]) .
+otherwise .
+'+aa_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+aa_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+aa_command$wait'(resend(__1,_2),OS,_,Error) :-wait(__1)|
+        resend(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['resend /2'|Error]) .
+'+aa_command$wait'(cancel(__1,_2),OS,_,Error) :-wait(__1)|
+        cancel(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['cancel /2'|Error]) .
+'-data'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'-reset$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(__1,_2,_3),
+        '-attention'(_2,__2,Flag,[attention|Error]),
+        '-msgid'(_3,__3,Flag,[msgid|Error]) .
+'-reset$$$enu$1'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-reason'(_1,__1,Flag,Error) .
+'-reset$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-next_attention$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-attention'(_1,__1,Flag,Error) .
+'-next_attention$$$enu$1'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-reason'(_1,__1,Flag,Error) .
+'-next_attention$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'+msgid'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+msgid'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-msgid'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+%%%%% system defined protocols %%%%%%%%%%
+'+ground'(X, Y) :- list(X) | '$$groundl'(X, Y).
+'+ground'(X, Y) :- vector(X,Size),Size \= 0 | 
+        '$$groundv'(X, 0, Size, X2),
+        '$$groundv2'(X2, Y).
+otherwise.
+'+ground'(X, Y) :- wait(X) | Y = X.
+'-ground'(X, Y) :- list(Y) | '$$groundl'(Y, X).
+'-ground'(X, Y) :- vector(Y,Size), Size \= 0 | 
+        '$$groundv'(Y, 0, Size, Y2),
+        '$$groundv2'(Y2, X).
+otherwise.
+'-ground'(X, Y) :- wait(Y) | Y = X.
+'$$groundl'([X1|X2], Y) :- true | '+ground'(X1,X11),
+        '$$groundl2'(X11, X2, Y).
+'$$groundl'([], Y) :- true | Y = [].
+'$$groundl2'(X11, X2, Y) :- wait(X11) |
+        '$$groundl31'(X2, [X11|Tail], Tail, Y).
+'$$groundl31'([X1|X2], Top, Tail, Y) :- true |
+        '+ground'(X1,X11),
+        '$$groundl32'(X11, X2, Top, Tail, Y).
+'$$groundl31'([], Top, Tail, Y) :- true |
+        Tail = [],
+        Top = Y.
+'$$groundl32'(X11, X2, Top, Tail, Y) :- wait(X11), X2 \= [] |
+        Tail = [X11|Tail2],
+        '$$groundl31'(X2, Top, Tail2, Y).
+'$$groundl32'(X11, [], Top, Tail, Y) :- wait(X11) |
+        Tail = [X11],
+        Y = Top.
+'$$groundv2'(X2, Y) :- wait(X2) | X2 = Y.
+'$$groundv'(X, Pos, Size, X2) :- Pos \= Size |
+        vector_element(X, Pos, Elm, NX),
+        '+ground'(Elm,Elm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Elm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Pos, Size, X2) :- wait(Elm), Pos \= Size |
+        vector_element(X, Pos, Nelm, NX),
+        '+ground'(Nelm, Nelm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Nelm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Size, Size, X2) :- wait(Elm) |
+        X = X2. 
+%%%%% to raise error %%%%%%%%%%
+raise_error(Info,Msg):- true |
+        atom_table:cache_table(Atom),
+        formatInfo(Info,[],Fstring,Atom),
+        shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_message_to_PIMOS,Fstring),Msg).
+formatInfo([Infoatom | Info], StringList,Fstring,Atom):- 
+        atom(Infoatom) |
+        Atom = [get_atom_name(Infoatom,normal(InfoString)) | Atail],
+        NSlist = [InfoString | StringList],
+        formatInfo(Info, NSlist, Fstring, Atail).
+formatInfo([], Slist, Fstring, Atom):- true |
+        Atom = [],
+        new_string(New,1,16),
+        set_string_element(New,0,key#lf,NL),
+        format(1,Slist,StringList,NL),
+        builtin#append_string([""|StringList], Fstring).
+format(1,[Info|Tail],StringList,NL):- true |
+        StringList = ["Device : ",Info |Stail2],
+        format(2,Tail,Stail2,NL).
+format(2,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,"Message : ",Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(3,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(_,[],StringList,_):- true |
+        StringList = [].

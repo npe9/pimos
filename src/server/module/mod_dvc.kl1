@@ -1,0 +1,394 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Module>mod_dvc.kl1.2, 23-Apr-92 16:19:46, Edit by hori
+:- module module_table_device.
+:- public driver/3, table/1 .
+:- with_macro pimos.
+
+%% DRIVER
+
+driver([],Out,_):- true| Out = [].
+driver([Com|In],Out,Users):- true|
+    set_vector_element(Users,2,UID,UID,Users1),
+    set_vector_element(Users1,5,GIDS,GIDS2,Users2),
+    copy:copy(GIDS,GIDS1,GIDS2),
+    Out = [{Com,{UID,GIDS1}}|OutN],
+    driver(In,OutN,Users2).
+
+table(In):- true |
+    protection:pool(process(P0),20,
+                    {pimos_user#super_pimos,pimos_group#super_pimos},
+                    8#"775"),           % Package Pool Protection : rwxrwxr-x
+    module_pool:create(ROOT,1,0,
+                    {pimos_user#super_pimos,pimos_group#super_pimos},
+                    8#"444"),           % Root Package Protection : r--r--r--
+    module_pool:create(PIMOS0,1000,root,
+                    {pimos_user#super_pimos,pimos_group#super_pimos},
+                    8#"775"),           % PIMOS Package Protection : rwxrwxr-x
+    module_pool:create(USER,50,pimos,
+                    {pimos_user#super_pimos,pimos_group#super_pimos},
+                    8#"774"),           % USER Package Protection : rwxrwxr--
+    module_pool:create(PPP0,20,root,
+                    {pimos_user#super_pimos,pimos_group#super_pimos},
+                    8#"700"),           % Privilege Package Protection : rwx------
+    module_pool:create(WORK,100,pimos,
+                    {pimos_user#super_pimos,pimos_group#super_pimos},
+                    8#"777"),           % Temporary Package Protection : rwxrwxrwx
+    P0 = [add(root,ROOT,normal,
+                {pimos_user#super_pimos,[pimos_group#super_pimos]}),
+          add(pimos,PIMOS,normal,
+                {pimos_user#super_pimos,[pimos_group#super_pimos]}),
+          add(user,USER,normal,
+                {pimos_user#super_pimos,[pimos_group#super_pimos]}),
+          add(privilege,PPP,normal,
+                {pimos_user#super_pimos,[pimos_group#super_pimos]}),
+          add(work,WORK,normal,
+                {pimos_user#super_pimos,[pimos_group#super_pimos]})|P],
+    ipl_modules(IPLModules),
+    privileged_module:list_of_privileged_module(PL),
+    RootID = {pimos_user#super_pimos,
+              pimos_group#super_pimos},
+    set_ipl_modules(IPLModules,RootID,PIMOS0,PIMOS1),
+    set_privilege_modules(PL,RootID,PIMOS1,PIMOS,PPP0,PPP),
+    module_table_0(In,P,1).             % Initial Message ID is 1.
+%%%%  modified by Fujise
+
+ipl_modules(IPLModules) :- true |
+%    shoen:raise(pimos_tag#pimos, init,[ get_all_modules( normal(IPLModules) ) ] ).
+    shoen:raise(pimos_tag#task, bios, [module(Result)]),
+    wait_ipl_modules(Result,IPLModules).
+
+wait_ipl_modules(normal(Mods),IPLModules):-
+    true|
+    Mods = [get_all_modules(normal(IPLModules))].
+
+set_ipl_modules([{Name,Module}|Rest],RootID,PIMOS0,PIMOS):- true |
+    PIMOS0 = [add(Name,Module,normal,RootID)|PIMOS1],
+    set_ipl_modules(Rest,RootID,PIMOS1,PIMOS).
+set_ipl_modules([],RootID,PIMOS0,PIMOS):- true |
+    PIMOS0 = PIMOS.
+
+set_privilege_modules([],RootID,PIMOS0,PIMOS,PPP0,PPP) :- true |
+    PIMOS0 = PIMOS,
+    PPP0 = PPP.
+set_privilege_modules([PModuleName|Rest],RootID,PIMOS0,PIMOS,PPP0,PPP) :- true |
+    PIMOS0 = [read(PModuleName,Status,RootID)|PIMOS1],
+    set_privilege(Status,PModuleName,RootID,PIMOS1,PIMOS2,PPP0,PPP1),
+    set_privilege_modules(Rest,RootID,PIMOS2,PIMOS,PPP1,PPP).
+
+set_privilege(normal(PModule),PModuleName,RootID,PIMOS0,PIMOS,PPP0,PPP) :- true |
+    PIMOS0 = [remove(PModuleName,normal,RootID)|PIMOS],
+    PPP0 = [add(PModuleName,PModule,normal,RootID)|PPP].
+otherwise.
+set_privilege(_,PModuleName,RootID,PIMOS0,PIMOS,PPP0,PPP) :- true |
+    PIMOS0 = PIMOS,
+    PPP0 = PPP.
+
+%% MODULE_TABLE_0
+
+module_table_0([{reset(Status),UserID}|In],P,MsgID):- true |
+    Status = normal(Abort,[],MsgID),
+    MsgID1 := MsgID + 1,
+    module_table_0(In,P,MsgID1).
+module_table_0([{next_attention(Status),UserID}|In],P,MsgID):- true |
+    Status = normal([]),
+    module_table_0(In,P,MsgID).
+module_table_0([{resend(MsgID0,Status),UserID}|In],P,MsgID):- true |
+    Status = normal,
+    module_table_0(In,P,MsgID).
+module_table_0([{cancel(MsgID0,Status),UserID}|In],P,MsgID):- true |
+    Status = normal,
+    module_table_0(In,P,MsgID).
+module_table_0([],P,MsgID):- true |
+    P = [].
+otherwise.
+module_table_0([{Message,UserID}|In],P0,MsgID) :- true |
+    module_table(Message,UserID,P0,P1),
+    module_table_0(In,P1,MsgID).
+
+%% MODULE_TABLE
+
+module_table(get_package_info(Package,Status),UserID,P0,P) :- true |% OK
+    get_package_info(Package,P0,P,UserID,Status).
+module_table(get_super_package(Package,Status),UserID,P0,P) :- true |% OK
+    get_super_package(Package,P0,P,UserID,Status).
+module_table(define_package(Package,Super,Protect,Status),UserID,P0,P) :- true |% OK
+    P0 = [access(Package,[],St,UserID)|P1],
+    define_package(St,Package,Super,UserID,Protect,Status,P1,P).
+module_table(protect_package(Package,Protect,Status),UserID,P0,P) :- true |
+    P0 = [access(Package,[set_protection(Protect,St1,UserID)],St0,UserID)|P],
+    set_status_0(St0,St1,Status).
+module_table(set_package_owner(Package,Owner,Status),UserID,P0,P) :- true |
+    P0 = [access(Package,[set_owner(Owner,St1,UserID)],St0,UserID)|P],
+    set_status_0(St0,St1,Status).
+module_table(remove_package(Package,Status),UserID,P0,P) :- true |  % OK
+    P0 = [remove(Package,Status,UserID)|P].
+module_table(get_all_packages(Status),UserID,P0,P) :- true |% OK
+    P0 = [listing(St,UserID)|P1],
+    get_all_packages(St,UserID,Status,P1,P).
+module_table(get_module(Package,Name,Status),UserID,P0,P) :- true | % OK
+    get_module(Package,Name,UserID,P0,P,Status).
+module_table(get_module_info(Package,Name,Status),UserID,P0,P) :- true |% OK
+    get_module_info(Package,Name,UserID,P0,P,Status).
+module_table(get_module_in_the_package(Package,Name,Status),UserID,P0,P) :- true |  % OK
+    get_module_in_the_package(Package,Name,UserID,P0,P,Status).
+module_table(get_code(Package,Name,Pred,Arity,Status),UserID,P0,P) :- true | % OK
+    get_module(Package,Name,UserID,P0,P,St),
+    get_code(St,Package,Name,Pred,Arity,Status).
+module_table(update_module(Package,Name,Module,Status),UserID,P0,P) :- true |   % OK
+    P0 = [access(Package,[write(Name,Module,St1,UserID)],St0,UserID)|P1],
+    update_module(St0,St1,Package,Name,Module,Status,UserID,P1,P).
+module_table(remove_module(Package,Name,Status),UserID,P0,P) :- true |
+    P0 = [access(Package,[remove(Name,St1,UserID)],St0,UserID)|P],
+    set_status(St0,St1,Package,Name,Status).
+module_table(get_all_modules(Package,Status),UserID,P0,P) :- true | % OK
+    P0 = [access(Package,[listing(St1,UserID)],St0,UserID)|P],
+    get_all_modules_in_the_package(St0,St1,Status).
+module_table(get_all_modules(Status),UserID,P0,P) :- true | % OK
+    P0 = [listing(St,UserID)|P1],
+    get_all_modules(St,UserID,Status,P1,P).
+
+%% GET_PACKAGE_INFO
+
+get_package_info(Package,P0,P,UserID,Status) :- true |
+    P0 = [access(Package,[get_protection(St1,UserID)],St0,UserID)|P],
+    get_package_info_0(St0,St1,Status).
+
+get_package_info_0(normal,normal({OwnerID,Protect}),Status) :- true |
+    Status = normal({OwnerID,Protect}).
+otherwise.
+get_package_info_0(St0,St1,Status) :- true |
+    set_status_0(St0,St1,Status).
+
+%% GET_SUPER_PACKAGE
+
+get_super_package(Package,P0,P,UserID,Status) :- true |
+    P0 = [access(Package,[get_super_package(St1)],St0,UserID)|P],
+    get_super_package_0(St0,St1,Status).
+
+get_super_package_0(normal,St,Status) :- true |
+    Status = St.
+otherwise.
+get_super_package_0(St0,St1,Status) :- true |
+    set_status_0(St0,St1,Status).
+
+%% DEFINE_PACKAGE
+
+define_package(non_existent,Package,Super,UserID,Protect,Status,P0,P) :- 
+    Package \= Super |
+    P0 = [add(Package,MP,St,UserID)|P],
+%    P0 = [add(Package,MP,St,0)|P],      % UserID is set 0 temporally.
+    define_package_0(St,MP,Super,UserID,Protect,Status).
+otherwise.
+define_package(_,Package,Super,UserID,Protect,Status,P0,P) :- true |
+    Status = abnormal,
+    P0 = P.
+
+define_package_0(normal,MP,Super,{UserID,[]},Protect,Status) :- true |
+    module_pool:create(MP,100,Super,{UserID,pimos_group#super_pimos},Protect),
+    Status = normal.
+define_package_0(normal,MP,Super,{UserID,[RGID|_]},Protect,Status) :- true |
+    module_pool:create(MP,100,Super,{UserID,RGID},Protect),
+    Status = normal.
+otherwise.
+define_package_0(St,MP,Super,UserID,Protect,Status) :- true |
+    Status = St.
+
+%% REMOVE_PACKAGE
+
+%% GET_MODULE
+
+get_module(Package,Name,UserID,P0,P,Status) :- true |
+    P0 = [access(Package,[read(Name,St1,UserID)|MP],St0,UserID)|P1],
+    get_module_0(St0,St1,Package,Name,UserID,P1,P,MP,_,Status).
+
+get_module_0(normal,St,Package,Name,UserID,P0,P,MP,RealPackage,Status) :- true |
+    get_module_1(St,Package,Name,UserID,P0,P,MP,RealPackage,Status).
+otherwise.
+get_module_0(St,_,_,_,_,P0,P,MP,RP,Status) :- true |
+    P0 = P,
+    MP = [],
+    RP = non_existent,
+    Status = St.
+
+get_module_1(normal(Module),Package,Name,UserID,P0,P,MP,RealPackage,Status) :- true |
+    P0 = P,
+    MP = [],
+    RealPackage = Package,
+    Status = normal(Module).
+get_module_1(non_existent,Package,Name,UserID,P0,P,MP,RP,Status) :- true |
+    MP = [get_super_package(St0)],
+    get_module_2(St0,Name,UserID,P0,P,RP,Status).
+otherwise.
+get_module_1(St,Package,Name,UserID,P0,P,MP,RP,Status) :- true |
+    P0 = P,
+    MP = [],
+    RP = non_existent,
+    Status = St.
+
+get_module_2(normal(Super),Name,UserID,P0,P,RP,Status) :- true |
+    P0 = [access(Super,[read(Name,St1,UserID)|MP],St0,UserID)|P1],
+    get_module_0(St0,St1,Super,Name,UserID,P1,P,MP,RP,Status).
+otherwise.
+get_module_2(_,Name,UserID,P0,P,RP,Status) :- true |
+    P0 = P,
+    RP = non_existent,
+    Status = non_existent.
+
+%% GET_MODULE_INFO
+
+get_module_info(Package,Name,UserID,P0,P,Status) :-
+    P0 = [access(Package,[read(Name,St1,UserID)|MP],St0,UserID)|P1],
+    get_module_0(St0,St1,Package,Name,UserID,P1,P,MP,RP,St2),
+    get_module_info_0(St2,RP,Status).
+
+get_module_info_0(normal(Module),Package,Status) :- module(Module,Length) |
+    Status = normal(Package,Module,Length). % The package is where the module really exists !!
+otherwise.
+get_module_info_0(St,_,Status) :- true |
+    Status = St.
+
+%% GET_MODULE_IN_THE_PACKAGE
+
+get_module_in_the_package(Package,Name,UserID,P0,P,Status) :- true |
+    P0 = [access(Package,[read(Name,St1,UserID)],St0,UserID)|P],
+    set_status_0(St0,St1,Status).
+
+%% GET_CODE
+
+get_code(normal(Module),Package,Name,Pred,Arity,Status) :- true |
+    predicate_to_code(Module,Pred,Arity,Code),
+    wait_pc(Code,Module,Pred,Arity,Status).
+otherwise.
+get_code(St,Package,Name,Pred,Arity,Status) :- true |
+    Status = St.
+
+wait_pc(Code,Module,Pred,Arity,Status):- 
+    code(Code,_,_,_) |
+    Status = normal(Code).
+otherwise.
+wait_pc(_,Module,Pred,Arity,Status):- true |
+    Status = non_existent(code(Module,Pred,Arity)).
+
+%% UPDATE_MODULE
+
+update_module(normal,normal,Package,Name,Module,Status,UserID,P0,P) :- true |
+    Status = normal,
+    P0 = P.
+%update_module(normal,non_existent,Package,Name,Module,Status,UserID,P0,P) :- UserID = {UID,GID} |
+update_module(normal,non_existent,Package,Name,Module,Status,UserID,P0,P) :- true|
+    P0 = [access(Package,[add(Name,Module,St1,UserID)],St0,UserID)|P],
+    set_status(St0,St1,Package,Name,Status).
+otherwise.
+update_module(St0,St1,Package,Name,Module,Status,UserID,P0,P) :- true |
+    set_status(St0,St1,Package,Name,Status),
+    P0 = P.
+
+%% GET_ALL_PACKAGES
+
+get_all_packages(normal(KeyList),UserID,Status,P0,P) :- true |
+    get_all_packages_0(KeyList,UserID,AllPackages,P0,P),
+    Status = normal(AllPackages).
+otherwise.
+get_all_packages(_,UserID,Status,P0,P) :- true |
+    Status = abnormal,
+    P0 = P.
+
+get_all_packages_0([Package|Rest],UserID,AllPackages,P0,P) :- true |
+    P0 = [access(Package,[get_super_package(St1),get_protection(St2,UserID)],St0,UserID)|P1],
+    get_all_packages_1(St0,St1,St2,Package,Rest,UserID,AllPackages,P1,P).
+get_all_packages_0([],UserID,AllPackages,P0,P) :- true |
+    AllPackages = [],
+    P0 = P.
+
+get_all_packages_1(normal,St1,St2,Package,Rest,UserID,AllPackages,P0,P) :- true |
+    AllPackages = [{Package,St1,St2}|RestPackages],
+    get_all_packages_0(Rest,UserID,RestPackages,P0,P).
+otherwise.
+get_all_packages_1(St0,St1,St2,Package,Rest,UserID,AllPackages,P0,P) :- true |
+    get_all_packages_0(Rest,UserID,AllPackages,P0,P).
+
+%% GET_ALL_MODULES (in the package)
+
+get_all_modules_in_the_package(normal,normal(AllModules),Status) :- true |
+    get_all_module_info_intp(AllModules,AllModuleInfo),
+    Status = normal(AllModuleInfo).
+otherwise.
+get_all_modules_in_the_package(St0,St1,Status) :- true |
+    set_status_0(St0,St1,Status).
+
+get_all_module_info_intp([{Name,Module}|Rest],AllModuleInfo) :- module(Module,Length) |
+    AllModuleInfo = [{Name,Module,Length}|InfoRest],
+    get_all_module_info_intp(Rest,InfoRest).
+get_all_module_info_intp([],AllModuleInfo) :- true |
+    AllModuleInfo = [].
+
+%% GET_ALL_MODULES
+
+get_all_modules(normal(KeyList),UserID,Status,P0,P) :- true |
+    get_all_modules_0(KeyList,UserID,AllModules,P0,P),
+    Status = normal(AllModules).
+otherwise.
+get_all_modules(St,UserID,Status,P0,P) :- true |
+    Status = St,
+    P0 = P.
+
+get_all_modules_0([Package|Rest],UserID,AllModules,P0,P) :- true |
+    P0 = [access(Package,[listing(St1,UserID)],St0,UserID)|P1],
+    get_all_modules_in_the_package(St0,St1,St),
+    AllModules = [{Package,St}|AllModules0],
+    get_all_modules_0(Rest,UserID,AllModules0,P1,P).
+get_all_modules_0([],_,AllModules,P0,P) :- true |
+    AllModules = [],
+    P0 = P.
+
+%% DEBUG %%
+
+%%'#module_table#'(T) :- true |
+%%    T = {}.
+%%    module_table:cache_table([get_all_modules(normal(All))]),
+%%    length(All,0,Length),
+%%    L := Length * 2,
+%%    new_vector(T0,L),
+%%    convert(All,0,T0,T).
+
+%%length([],L0,L) :- true |
+%%    L0 = L.
+%%length([_|Cdr],L0,L) :- true |
+%%    L1 := L0 + 1,
+%%    length(Cdr,L1,L).
+
+%%convert([{Name,Module}|Cdr],I,T0,T) :- true |
+%%    set_vector_element(T0,I,_,Module,T1),
+%%    I1 := I + 1,
+%%    set_vector_element(T1,I1,_,Name,T2),
+%%    I2 := I1 + 1,
+%%    convert(Cdr,I2,T2,T).
+%%convert([],I,T0,T) :- true |
+%%    T0 = T.
+
+%% SET_STATUS 
+
+set_status(normal,normal,_,_,Status) :- true |
+    Status = normal.
+set_status(normal,non_existent,_,Name,Status) :- true |
+    Status = non_existent(module(Name)).
+otherwise.
+set_status(non_existent,_,Package,_,Status) :- true |
+    Status = non_existent(package(Package)).
+set_status(normal,St,_,_,Status) :- true |
+    Status = St.
+otherwise.
+set_status(St,_,Package,Name,Status) :- true |
+    St = Status.
+
+set_status_0(normal,St,Status) :- true |
+    St = Status.
+otherwise.
+set_status_0(St,_,Status) :- true |
+    St = Status.

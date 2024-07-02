@@ -1,0 +1,252 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module user_server_manager.
+:- with_macro pimos.
+:- public go/3, go/2, dummy/0.
+
+:- include("pimos.h").
+
+go(OK1,OK,AB):-
+    wait(OK1)|
+%    user_initiate:go(OK2),
+    wait_go(OK1,OK,AB).
+
+wait_go(OK2,OK,AB):-
+    wait(OK2)|
+    go(OK,AB).
+
+go(OK,AB):-
+    true|
+    OK = ok,
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [file(FR),number_of_feps(N),module(Mod)],
+    wait_file(FR,N,Mod,AB).
+
+:- switch(machine).
+:- case(vm).
+wait_file(normal(FR,_,_),N,Mod,AB):-
+    true|
+    FR = [open(">sys>user>me>pimos.conf",read(File))],
+    wait_file2(File,N,Mod,AB).
+:- default.
+wait_file(normal(FR,_,_),N,Mod,AB):-
+    true|
+    FR = [open("pimos:pimos.conf",read(File))],
+    wait_file2(File,N,Mod,AB).
+:- end_switch.
+otherwise.
+wait_file(_,_,Mod,AB):-
+    display_console(ascii#"Fatal error in fep file system")|
+    wait_close(Mod).
+
+wait_close(normal(Mod,_,_)):-
+    true|
+    Mod = [].
+otherwise.
+wait_close(_):- true| true.
+
+wait_file2(normal(File,_,_),N,Mod,AB):-
+    true|
+    current_node(_,M),
+    buffer:input_filter(FileIn,File),
+    wait_file3(N,M,Mod,FileIn,AB).
+otherwise.
+wait_file2(_,N,Mod,AB):-
+    display_console(ascii#"pimos.conf Not exit")|
+    wait_close(Mod).
+
+wait_file3(normal(NFep),NNode,Mod,File,AB):-
+    true|
+    wait_file4(Mod,File,NFep,NNode,AB).
+otherwise.
+wait_file3(_,NNode,Mod,File,AB):-
+    display_console(ascii#" Cannot get #feps")|
+    Mod = [], File = [].
+
+wait_file4(normal(MR,_,_),File,NFep,NNode,AB):-
+    true|
+    MR = [create(Mod)],
+    wait_file5(Mod,File,NFep,NNode,AB).
+otherwise.
+wait_file4(_,File,NFep,NNode,AB):-
+    display_console(ascii#" Fatal error in module system")|
+    File = [].
+
+wait_file5(normal(Mod,_,_),File,NFep,NNode,AB):-
+    true|
+    merge(ModIn,Mod),
+    File = [getwt(WT)|FileN],
+    wait_wt(WT,ModIn,FileN,NFep,NNode,AB).
+otherwise.
+wait_file5(_,File,NFep,NNode,AB):-
+    display_console(ascii#" Fatal error in module system")|
+    File = [].
+
+wait_wt(normal(end_of_file),Mod,File,NFep,NNode,AB):-
+    true|
+    Mod = [],
+    File = [].
+wait_wt(normal(empty),Mod,File,NFep,NNode,AB):-
+    true|
+    File = [getwt(WT)|FileN],
+    wait_wt(WT,Mod,FileN,NFep,NNode,AB).
+otherwise.
+wait_wt(normal(WT),Mod,File,NFep,NNode,AB):-
+    true|
+    variable:unwrap(WT,{_,Term},[count(Vars)]),
+    wt_check(Vars,Term,Mod,File,NFep,NNode,AB).
+otherwise.
+wait_wt(_,Mod,File,NFep,NNode,AB):-
+    display_console(ascii#" Syntax error in pimos.conf")|
+    File = [getwt(WT)|FileN],
+    wait_wt(WT,Mod,FileN,NFep,NNode,AB).
+    
+wt_check(0,Term,Mod,File,NFep,NNode,AB):-
+    true|
+    Mod = {Mod1,Mod2},
+    wt_check2(Term,Mod1,NFep,NNode,AB),
+    File = [getwt(WT)|FileN],
+    wait_wt(WT,Mod2,FileN,NFep,NNode,AB).
+otherwise.
+wt_check(N,_,Mod,File,NFep,NNode,AB):-
+    display_console(ascii#"Error in pimos.conf")|
+    File = [gett(WT)|FileN],
+    wait_wt(WT,Mod,FileN,NFep,NNode,AB).
+
+wt_check2(system(Fep,Node,Name,{':',ModName,PredArg}),Mod,NFep,NNode,AB):-
+    Fep >= 0,
+    Fep < NFep,
+    Node >= 0,
+    Node < NNode,
+    string(Name,_,_),
+    atom(ModName)|
+    wt_check3(PredArg,ModName,Name,Fep,Node,Mod,AB).
+wt_check2(with_console,Mod,NFep,NNode,AB):-
+    true|
+    Mod = [].
+wt_check2(without_console,Mod,NFep,NNode,AB):-
+    true|
+    Mod = [].
+otherwise.
+wt_check2(_,Mod,NFep,NNode,AB):-
+    display_console(ascii#"Error in pimos.conf")|
+    Mod = [].
+
+wt_check3(PredArg,ModName,Name,Fep,Node,Mod,AB):-
+    atom(PredArg)|
+    Mod = [get_code(pimos,ModName,PredArg,0,Result)],
+    term_check(Result,{},Name,Fep,AB)@node(Node).
+wt_check3(PredArg,ModName,Name,Fep,Node,Mod,AB):-
+    vector(PredArg,N),
+    N > 0,
+    vector_element(PredArg,0,Pred),
+    atom(Pred),
+    N1 := N - 1|
+    get_pred_and_arg(PredArg,N,Pred,Arg),
+    Mod = [get_code(pimos,ModName,Pred,N1,Result)],
+    term_check(Result,Arg,Name,Fep,AB)@node(Node).
+otherwise.
+wt_check3(_,_,_,_,_,Mod,_):-
+    display_console(ascii#"Error in pimos.conf")|
+    Mod = [].
+
+:- switch(machine).
+:- case(vm).
+term_check(normal(Code),Argv,Name,Fep,AB):-
+    true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [execute(Code,Argv,Name,0,4050,-1,Result)],
+    task_monitor(Result,AB).
+:- default.
+term_check(normal(Code),Argv,Name,Fep,AB):-
+    true|
+    shoen:raise(pimos_tag#task,general_request(Fep),GR),
+    GR = [execute(Code,Argv,Name,0,4050,-1,Result)],
+    task_monitor(Result,AB).
+:- end_switch.
+otherwise.
+term_check(_,_,_,_,_):-
+    display_console(ascii#"Error in pimos.conf")|
+    true.
+
+task_monitor(normal(Cont,Report),AB):-
+        true|
+        task_monitor(Report,Cont,AB,normal).
+
+task_monitor(R,C,Abort,_):-
+        wait(Abort)|
+        C = [abort(_)],
+        task_monitor(R,_,_,abort).
+alternatively.
+task_monitor([terminated|R],C,Abort,N):- true|
+        C = [],
+        task_monitor(R,_,Abort,N).
+
+task_monitor([aborted|R],C,Abort,normal):-
+        display_console(ascii#"User Server was aborted")|
+        C = [],
+        shoen:raise(pimos_tag#task,shut_down,_),
+        task_monitor(R,_,Abort,normal).
+task_monitor([aborted|R],C,Abort,abort):-
+        display_console(ascii#"User Server End")|
+        C = [],
+        task_monitor(R,_,Abort,abort).
+
+task_monitor([started|R],C,Abor,N):- true|
+        task_monitor(R,C,Abort,N).
+
+task_monitor([resource_low|R],C,Abort,N):- true|
+%        C = [add_resource(100000),allow_resource_report|CN],
+       C = [add_resource(16#"3FFFFFFF",16#"FFFFFFFF"),allow_resource_report|CN],
+        task_monitor(R,CN,Abort,N).
+
+task_monitor([resource_added|R],C,Abort,N):- true|
+        task_monitor(R,C,Abort,N).
+
+task_monitor([return_resource(_,_)|R],C,Abort,N):- true|
+        task_monitor(R,C,Abort,N).
+
+task_monitor([resource_report_allowed|R],C,Abort,N):- true|
+        task_monitor(R,C,Abort,N).
+
+task_monitor([statistics_started|R],C,Abort,N):- true|
+        task_monitor(R,C,Abort,N).
+
+task_monitor([exception(Type,Info,NCode,NArgv)|R],C,Abort,N):-
+        display_console(ascii#"Exception Occurred!!"),
+        display_console(Type),
+        display_console(Info)|
+        get_dummy_code(NCode),
+        NArgv = {},
+        C = [abort(_)|CN],
+        task_monitor(R,CN,Abort,N).
+
+task_monitor([],C,Abort,N):- true|
+        true.
+
+get_pred_and_arg(PredArg,N,Pred,Arg):-
+    N1 := N - 1|
+    set_vector_element(PredArg,0,Pred,0,Args),
+    new_vector(Arg0,N1),
+    get_args(N1,Args,Arg0,Arg).
+
+get_args(N,Args,Arg0,Arg):-
+    N < 1|
+    Arg0 = Arg.
+get_args(N,Args,Arg0,Arg):-
+    N > 0,
+    N1 := N - 1|
+    set_vector_element(Args,N,E,0,Args1),
+    set_vector_element(Arg0,N1,_,E,Arg1),
+    get_args(N1,Args1,Arg1,Arg).
+
+get_dummy_code(Code):-
+    true|
+    predicate_to_code(module#user_server_manager,dummy,0,Code).
+
+dummy:- true| true.
+

@@ -1,0 +1,189 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_tracer_utility.
+:- public read_command/4.
+:- with_macro pimos.
+
+read_command(Mode,IN,IN1,Command) :- true |
+    IN=[prompt("? "), getlt(COM)|IN1],
+    translate(Mode,COM,COM1),
+    is_command(Mode,COM1,Command).
+
+translate(_ ,end_of_file,         C) :-  C=return.
+translate(_ ,tg,                  C) :-  C=list_traced_goals.
+translate(_ ,tg(V),               C) :-  C=list_traced_goals(V).
+translate(_ ,kg,                  C) :-  C=list_kept_goals.
+translate(_ ,kg(V),               C) :-  C=list_kept_goals(V).
+translate(_ ,h,                   C) :-  C=help.
+translate(_ ,(?),                 C) :-  C=help.
+translate(_ ,pl,                  C) :-  C=print_length.
+translate(_ ,pd,                  C) :-  C=print_depth.
+translate(_ ,pv,                  C) :-  C=print_variable_mode.
+translate(_ ,psl,                 C) :-  C=print_string_length.
+translate(_ ,pal,                 C) :-  C=print_atom_length.
+translate(_ ,pl(N),               C) :-  C=print_length(N).
+translate(_ ,pd(N),               C) :-  C=print_depth(N).
+translate(_ ,psl(N),              C) :-  C=print_string_length(N).
+translate(_ ,pal(N),              C) :-  C=print_atom_length(N).
+translate(_ ,w,                   C) :-  C=write.
+translate(_ ,w(V),                C) :-  C=write(V).
+translate(_ ,w(D,L),              C) :-  C=write(D,L).
+translate(_ ,ins(N),              C) :-  C=inspect(N).
+translate(_ ,rem(S),              C) :-  C=remember(S).
+translate(_ ,rem(X,Y),            C) :-  C=remember(X,Y).
+translate(_ ,m(S),                C) :-  C=monitor(S).
+translate(_ ,m(X,Y),              C) :-  C=monitor(X,Y).
+translate(_ ,mf(S),               C) :-  C=monitor_and_fork(S).
+translate(_ ,mf(X,Y),             C) :-  C=monitor_and_fork(X,Y).
+translate(_ ,mm,                  C) :-  C=monitor_mode.
+translate(_ ,mt,                  C) :-  C=monitored_terms.
+translate(_ ,l,                   C) :-  C=list.
+translate(_ ,v,                   C) :-  C=value.
+translate(_ ,v(V),                C) :-  C=value(V).
+translate(MD,s(V),                C) :- (MD=tr;MD=kg) | C=spy_reduction(V).
+translate(MD,sr(V),               C) :- (MD=tr;MD=kg) | C=spy_reduction(V).
+translate(MD,sf(V),               C) :- (MD=tr;MD=kg) | C=spy_fork(V).
+translate(MD,si,                  C) :- (MD=tr;MD=kg) | C=spying.
+translate(MD,si(M),               C) :- (MD=tr;MD=kg) | C=spying(M).
+translate(MD,si(P,M),             C) :- (MD=tr;MD=kg) | C=spying(P,M).
+translate(MD,tr(N),               C) :- (MD=tr;MD=kg) | C=trace(N).
+translate(MD,f,                   C) :- (MD=tr;MD=kg) | C=fork.
+translate(MD,f(X),                C) :- (MD=tr;MD=kg) | C=fork(X).
+translate(MD,f(X,Y),              C) :- (MD=tr;MD=kg) | C=fork(X,Y).
+translate(MD,q,                   C) :- (MD=tg;MD=kg) | C=return.
+translate(kg,N,                   C) :- N>0 | C=execute(N).
+translate(kg,(A,B),               C) :-  C=execute((A,B)).
+translate(ex,q,                   C) :-  C=quit.
+translate(ex,c,                   C) :-  C=continue.
+translate(ex,e,                   C) :-  C=execute.
+translate(ex,info,                C) :-  C=information.
+translate(tr,N,                   C) :- N>0 | C=reverse(N).
+translate(tr,(A,B),               C) :-  C=reverse((A,B)).
+translate(tr,c,                   C) :-  C=return.
+translate(tr,at(N),               C) :-  C=auto_trace(N).
+translate(tr,as(N),               C) :-  C=auto_spy(N).
+translate(tr,ntr,                 C) :-  C=notrace_anymore.
+translate(tr,n,                   C) :-  C=notrace.
+translate(tr,s,                   C) :-  C=spy_reduction.
+translate(tr,sr,                  C) :-  C=spy_reduction.
+translate(tr,sf,                  C) :-  C=spy_fork.
+translate(MD,a,                   C) :- (MD=tr;MD=ex) | C=abort.
+translate(MD,b,                   C) :- (MD=tr;MD=ex) | C=break.
+translate(tr,sp,                  C) :-  C=spying_patterns.
+translate(MD,ins,                 C) :- (MD=tr;MD=ex) | C=inspect.
+translate(tr,t,                   C) :-  C=toggle.
+translate(tr,t(V),                C) :-  C=toggle(V).
+translate(tr,env,                 C) :-  C=environment.
+translate(tr,holo,                C) :-  C=holophrasting.
+translate(tr,ho,                  C) :-  C=holophrasting.
+translate(tr,tri,                 C) :-  C=tracing.
+translate(tr,tr(M,P,A),           C) :-  C=trace(M,P,A).
+translate(tr,tr(K,M,P,A),         C) :-  C=trace(K,M,P,A).
+translate(tr,ntr_all,             C) :-  C=notrace_all.
+translate(tr,ntr(N),              C) :-  C=notrace(N).
+translate(tr,ntr(M,P,A),          C) :-  C=notrace(M,P,A).
+translate(tr,ntr(K,M,P,A),        C) :-  C=notrace(K,M,P,A).
+translate(tr,tr_shoen,            C) :-  C=trace_shoen.
+translate(tr,ntr_shoen,           C) :-  C=notrace_shoen.
+translate(tr,da,                  C) :-  C=display_ancestor.
+translate(tr,da(M),               C) :-  C=display_ancestor(M).
+translate(tr,k,                   C) :-  C=keep.
+translate(tr,k(V),                C) :-  C=keep(V).
+otherwise.
+translate(_ ,X,                   C) :-  C=X.
+
+
+is_command(_ ,return,                         C) :- C=return.
+is_command(_ ,list_traced_goals,              C) :- C=list_traced_goals.
+is_command(_ ,list_traced_goals(V),           C) :- C=list_traced_goals(V).
+is_command(_ ,list_kept_goals,                C) :- C=list_kept_goals.
+is_command(_ ,list_kept_goals(V),             C) :- C=list_kept_goals(V).
+is_command(_ ,help,                           C) :- C=help.
+is_command(_ ,print_length,                   C) :- C=print_length.
+is_command(_ ,print_depth,                    C) :- C=print_depth.
+is_command(_ ,print_variable_mode,            C) :- C=print_variable_mode.
+is_command(_ ,print_string_length,            C) :- C=print_string_length.
+is_command(_ ,print_atom_length,              C) :- C=print_atom_length.
+is_command(_ ,print_length(N),                C) :- C=print_length(N).
+is_command(_ ,print_depth(N),                 C) :- C=print_depth(N).
+is_command(_ ,print_string_length(N),         C) :- C=print_string_length(N).
+is_command(_ ,print_atom_length(N),           C) :- C=print_atom_length(N).
+is_command(_ ,write,                          C) :- C=write.
+is_command(_ ,write(V),                       C) :- C=write(V).
+is_command(_ ,write(D,L),                     C) :- C=write(D,L).
+is_command(_ ,inspect(N),                     C) :- C=inspect(N).
+is_command(_ ,remember(V),                    C) :- C=remember(V).
+is_command(_ ,remember(X,Y),                  C) :- C=remember(X,Y).
+is_command(_ ,monitor(V),                     C) :- C=monitor(V).
+is_command(_ ,monitor(X,Y),                   C) :- C=monitor(X,Y).
+is_command(_ ,monitor_and_fork(V),            C) :- C=monitor_and_fork(V).
+is_command(_ ,monitor_and_fork(X,Y),          C) :- C=monitor_and_fork(X,Y).
+is_command(_ ,monitor_mode,                   C) :- C=monitor_mode.
+is_command(_ ,monitored_terms,                C) :- C=monitored_terms.
+is_command(_ ,list,                           C) :- C=list.
+is_command(_ ,value,                          C) :- C=value.
+is_command(_ ,value(V),                       C) :- C=value(V).
+is_command(MD,spy_reduction(V),               C) :- (MD=tr;MD=kg) | C=spy_reduction(V).
+is_command(MD,spy_fork(V),                    C) :- (MD=tr;MD=kg) | C=spy_fork(V).
+is_command(MD,spying,                         C) :- (MD=tr;MD=kg) | C=spying('*','*').
+is_command(MD,spying(M),                      C) :- (MD=tr;MD=kg) | C=spying(M).
+is_command(MD,spying(X,M),                    C) :- (MD=tr;MD=kg) | C=spying(X,M).
+is_command(MD,trace(N),                       C) :- (MD=tr;MD=kg) | C=trace(N).
+is_command(MD,fork,                           C) :- (MD=tr;MD=kg) | C=fork.
+is_command(MD,fork(X),                        C) :- (MD=tr;MD=kg) | C=fork(X).
+is_command(MD,fork(X,Y),                      C) :- (MD=tr;MD=kg) | C=fork(X,Y).
+is_command(kg,execute(A),                     C) :- C=execute(A).
+is_command(ex,continue,                       C) :- C=continue.
+is_command(ex,execute,                        C) :- C=execute.
+is_command(ex,quit,                           C) :- C=quit.
+is_command(ex,information,                    C) :- C=information.
+is_command(tr,auto_trace(N),                  C) :- C=auto_trace(N).
+is_command(tr,auto_spy(N),                    C) :- C=auto_spy(N).
+is_command(tr,x,                              C) :- C=reverse.
+is_command(tr,reverse(A),                     C) :- C=reverse(A).
+is_command(tr,notrace,                        C) :- C=notrace.
+is_command(tr,notrace_anymore,                C) :- C=notrace_anymore.
+is_command(tr,spy_reduction,                  C) :- C=spy_reduction.
+is_command(tr,spy_fork,                       C) :- C=spy_fork.
+is_command(MD,abort,                          C) :- (MD=tr;MD=ex) | C=abort.
+is_command(MD,break,                          C) :- (MD=tr;MD=ex) | C=break.
+is_command(tr,spying_patterns,                C) :- C=spying_patterns.
+is_command(MD,inspect,                        C) :- (MD=tr;MD=ex) | C=inspect.
+is_command(tr,toggle,                         C) :- C=toggle.
+is_command(tr,toggle(V),                      C) :- C=toggle(V).
+is_command(tr,environment,                    C) :- C=environment.
+is_command(tr,holophrasting,                  C) :- C=holophrasting.
+is_command(tr,spy,                            C) :- C=spy.
+is_command(MD,spy(N),                         C) :- (MD=tr;MD=kg) | C=spy(N).
+is_command(MD,spy(P,A),                       C) :- (MD=tr;MD=kg) | C=spy(P,A).
+is_command(MD,spy(M,P,A),                     C) :- (MD=tr;MD=kg) | C=spy(M,P,A).
+is_command(MD,spy(X,M,P,A),                   C) :- (MD=tr;MD=kg) | C=spy(X,M,P,A).
+is_command(MD,nospy,                          C) :- (MD=tr;MD=kg) | C=nospy.
+is_command(MD,nospy(V),                       C) :- (MD=tr;MD=kg) | C=nospy(V).
+is_command(MD,nospy(P,A),                     C) :- (MD=tr;MD=kg) | C=nospy(P,A).
+is_command(MD,nospy(M,P,A),                   C) :- (MD=tr;MD=kg) | C=nospy(M,P,A).
+is_command(MD,nospy(X,M,P,A),                 C) :- (MD=tr;MD=kg) | C=nospy(X,M,P,A).
+is_command(tr,tracing,                        C) :- C=tracing.
+is_command(tr,trace(M,P,A),                   C) :- C=trace(M,P,A).
+is_command(tr,trace(Pa,M,P,A),                C) :- C=trace(Pa,M,P,A).
+is_command(tr,notrace_all,                    C) :- C=notrace_all.
+is_command(tr,notrace(N),                     C) :- C=notrace(N).
+is_command(tr,notrace(M,P,A),                 C) :- C=notrace(M,P,A).
+is_command(tr,notrace(Pa,M,P,A),              C) :- C=notrace(Pa,M,P,A).
+is_command(tr,notrace_shoen,                  C) :- C=notrace_shoen.
+is_command(tr,trace_shoen,                    C) :- C=trace_shoen.
+is_command(tr,display_ancestor,               C) :- C=display_ancestor.
+is_command(tr,display_ancestor(M),            C) :- C=display_ancestor(M).
+is_command(tr,scope,                          C) :- C=scope.
+is_command(tr,scope(M),                       C) :- C=scope(M).
+is_command(tr,keep,                           C) :- C=keep.
+is_command(tr,keep(V),                        C) :- C=keep(V).
+is_command(_,'$error'(_),                    C) :- C=syntax_error.
+is_command(_,'$ambiguous'(_),                C) :- C=syntax_error.
+otherwise.
+is_command(_ ,X,                              C) :- C=non_existent(X).

@@ -1,0 +1,44 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_timer_manager.
+:- public create/2, filter/2.
+:- with_macro pimos.
+
+create(Timer,Starting) :- true |
+    merge(Timer,Timer1),
+    shoen:raise(pimos_tag#task, general_request, [timer(TmeReqStatus)]),
+    make_timer_device(TmeReqStatus,Starting,Timer1).
+
+make_timer_device(normal(TmeReq,_,_),Starting,Timer) :- true|
+    TmeReq=[create(TmeStatus)],
+    make_timer_dev(TmeStatus,Starting,Timer).
+otherwise.
+make_timer_device(Abnormal,          Starting,Timer) :- true|
+    Starting=timerRequestDeviceStatus(Abnormal),
+    dummy(Timer).
+
+make_timer_dev(normal(Timer,_,_),Starting,Timer1) :- true|
+    Timer=[set_time_unit(msec,_),get_date_time(Starting)|Timer1].
+otherwise.
+make_timer_dev(Abnormal,         Starting,Timer ) :- true|
+    Starting=timerDeviceStatus(Abnormal),
+    dummy(Timer).
+
+dummy([{_,_,X}|T]) :- true| X=abnormal, dummy(T).
+dummy([{_,X}|T]) :- true| X=abnormal, dummy(T).
+dummy([]) :- true|true.
+
+filter([get_date_time(X)|US],OS) :-
+    OS=[get_date_time(Y)|OS1],
+    listener_utility:ground_unify(Y,X),
+    filter(US,OS1).
+filter([get_count(X)|US],OS) :-
+    OS=[get_count(Y)|OS1],
+    listener_utility:ground_unify(Y,X),
+    filter(US,OS1).
+filter([],OS) :- OS=[].

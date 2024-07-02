@@ -1,0 +1,60 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module who.
+:- with_macro pimos.
+:- public go/0 .
+
+go:- true|
+    privilege:execute(who_body:go(Res),{0,1000000},{0,1000000}),
+    shoen:raise(pimos_tag#shell,get_std_out,Out),
+    print_info0(Res,Out).
+
+print_info0([],Out):-
+    true|
+    Out = [putl(string#"no users")].
+print_info0(abnormal,Out):-
+    true|
+    Out = [putl(string#"SYSTEM ERROR!!")].
+otherwise.
+print_info0(Info,Out):-
+    true|
+    print_info(Info,Out).
+
+print_info([],Out):-
+    true|
+    Out = [].
+otherwise.
+print_info([{UN,LID,StrList}|Next],Out):-
+    true|
+    Out = [putb(UN),putb(string#":  ")|OutNext0],
+    print_list(StrList,OutNext0,OutNext),
+    print_info(Next,OutNext).
+%print_info([{UN,LID,{Node}}|Next],Out):-
+%    integer(Node)|
+%    Out = [putb(UN),putb(string#":  "),putt(Node),nl|OutNext],
+%    print_info(Next,OutNext).
+
+print_list({Node},Out,OutN):-
+   string(Node,_,_)|
+   Out = [putl(Node)|OutN].
+print_list({Node},Out,OutN):-
+   integer(Node)|
+   login_int:int2string(1,Node,NODE),
+   Out = [putl(NODE)|OutN].
+print_list([],Out,OutN):-
+   true|
+    Out = [nl|OutN].
+print_list([Str|Next],Out,OutN):-
+   string(Str,_,_)|
+   Out = [putb(Str),putb(string#"  ")|Out0],
+   print_list(Next,Out0,OutN).
+print_list([Str|Next],Out,OutN):-
+   integer(Str)|
+   login_int:int2string(1,Str,STR),
+   Out = [putb(STR),putb(string#"  ")|Out0],
+   print_list(Next,Out0,OutN).
+

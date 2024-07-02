@@ -1,0 +1,114 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%% 1991.7.2
+
+class what_shell_window has
+nature  as_graphics,
+        reshape_notifier,
+        %as_inhibit_reshape,
+        as_mouse_input,
+        labeled_sash,
+        superior_window;
+after:create(Class,IL,Win):-
+    :get_size(Win,W0,H0),
+    W=W0-20,
+    H=H0-24-20,
+    :create(#pmacs_window,
+        [size(W,H),position(10,10),
+         superior(Win),
+         nature([with_superior_input_buffer,
+                 as_inhibit_reshape
+                ]),
+         label_flag(off)],EW),
+    :get_label_font(Win,F),
+    :set_font(EW,F),
+    :activate(EW),
+    Win!win:=EW,
+    %% :confirm(#messenger,"   ok   "),
+    :draw_flame(Win);
+:go(Class):-
+    :create(#font,"font:test_11.font",F),
+    :create(Class,[size(400,300),
+        position(300,200),
+        label_font(F),
+        margin_flag(off),
+        border_flag(off)],W),
+    :activate(W),
+    :putt(W,ok),
+    :flash(W),
+    :getl(W,_),
+    :kill(W);
+instance
+attribute win;
+:putt(W,T):-!, :putt(W!win,T);
+:putl(W,L):-!, :putl(W!win,L);
+:putl(W):-!, :putl(W!win);
+:putc(W,C):-!, :putc(W!win,C);
+:putb(W,B,L):-!, :putb(W!win,B,L);
+:gett(W,T):-!, :gett(W!win,T);
+:getl(W,L):-!, :getl(W!win,L);
+:getc(W,C):-!, :getc(W!win,C);
+:putf(W,F,L):-!, :putf(W!win,F,L);
+:putf(W,F):-!, :putf(W!win,F);
+:putf(W,F,L,A):-!, :putf(W!win,F,L,A);
+:flash(W):-!, :flash(W!win);
+:set_font(W,F):-!, :set_font(W!win,F);
+
+before:kill(Win):-
+    :kill(Win!win);
+
+:has_been_reshaped(Win):-
+    %:deactivate(Win), %%%
+    :deactivate(Win!win),
+    :get_size(Win,W0,H0),
+    :draw_filled_rectangle(Win,0,0,W0,H0,reset),
+    :get_position(Win!win,X,Y),
+    W=W0-20,
+    H=H0-24-20,
+    :get_size(Win!win,W1,H1),
+    (W1=<W,H1=<H,!,:set_size(Win!win,W,H);
+     :confirm(#messenger,"   Too Small !!   ",[beep]),
+     :deactivate(Win),
+     :set_size(Win,W1+20,H1+20+24),
+     :activate(Win)),
+    :has_been_reshaped(Win!win),    %%% urawaza !!
+    :activate(Win!win),
+    :draw_flame(Win),
+    %TW=Win!win!text_window,        %%% urawaza !!
+    :get_text_window(Win!win,TW),   %%% urawaza !!
+    :reset_cwi(TW,CWI),             %%% urawaza !!
+    :refresh(TW,CWI,_),             %%% urawaza !!
+         %%% text_buffer in pmacs -->#editor_buffer_window
+    %:activate(Win), %%%
+    %:select(Win!win),
+    true;
+
+:draw_flame(Win):-
+    :get_size(Win,W,Height),
+    H=Height-20,
+    :draw_filled_rectangle(Win,0,0,W,H,0,fix,set),
+    :draw_filled_rectangle(Win,0,0,W,H,1,light_paint,reset),
+%%% up
+    :draw_line(Win,0,1,W,1,2,solid,reset),
+%%% left
+    :draw_line(Win,0,0,0,H,2,solid,reset),
+%%% under
+    :draw_line(Win,1,H-2,W,H-2,1,solid,set),
+    :draw_line(Win,0,H-1,W,H-1,1,solid,set),
+%%% right
+    :draw_line(Win,W-2,1,W-2,H,1,solid,set),
+    %:confirm(#messenger,"   ok  1  "),
+    :draw_line(Win,W-1,0,W-1,H-1,1,solid,set),
+    %:confirm(#messenger,"   ok  2  "),
+    inner(Win);
+
+local
+
+inner(Obj):-
+    :get_size(Obj,W,H),
+    :draw_filled_rectangle(Obj,8,8,W-20+4,H-20-20+4,0,fix,reset),
+    :draw_line(Obj,8,9,8+W-20+4,9,2,solid,set),
+    :draw_line(Obj,8,8,8,8+H-20-20+4,2,solid,set),
+    true;
+
+end.

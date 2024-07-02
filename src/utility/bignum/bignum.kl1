@@ -1,0 +1,2054 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%
+%%%%%  Arbitary length integer (bignum) arithmetic module
+%%%%%
+%%%%%  MODULE :: bignum
+%%%%%  FILE   :: bignum.kl1
+%%%%%    
+%%%%%       Written by S. Terasaki,   ICOT 4th laboratory,  11-Nov-1991
+%%%%%       Modified  19-Dec-91, for adding a method power/3
+%%%%%    
+%%%%%  NOTE  ::  Switch parameter for conditional compilation of machine dependent codes
+%%%%%               floating_point ::=  yes | no
+%%%%%
+:- module     bignum.
+:- with_macro pimos.
+:- include("pimos.h").
+:- public
+    is_bignum/3,   is_wrapped_bignum/3,  sign/3,   numer/3,  construct/3, copy/3, hash/3, 
+    negate/2, absolute/2,  add/3,  subtract/3, multiply/3, divide/4, divide/3,  modulo/3, power/3,
+    shift_left_abs/3, shift_right_abs/3, shift_right_abs/4, gcd/3, gcd/5, contents/2, contents/3, 
+    sort/5,   compare/5,  parse/2,  portray/2, bignum_to_float/2.
+
+%% INTERFACE to rational arithmetic module
+:- public  addbig/6, subbig/6, mulbig/3, divbig/4, div1/6, modbig/3, mod1/5,  gcd_int/3, gcd_unsigned/3,
+           bnum_to_float/3, shift_right_big/3, copybig/3, gcdbig/5, gcdbig/3, portraybig/3.
+%%
+
+
+%% << REQUIRED MACRO >>
+%%     Module name :: bignum_macro
+%%     File  name  :: bignum_macro.mac 
+%% 
+%%  [1] Macro definitions to keep data abstruction 
+%%     bignum#compose(SX,Xstr,^Out)     Construct a bignum data structure from sign and numeral data
+%%     bignum#bignum(Xin)               Check "Xin" is a bignum or not
+%%     bignum#wrapped(Xin)              Check "Xin" is a wrapped bignum or not
+%%     bignum#bignum(Xin,^SX,^Xstr)     Check "Xin" is a bignum and extract its sign and numeral part
+%%     bignum#bignum(Xin,^SX,^XL,^Xstr) Check "Xin" is a bignum and extract its sign and numeral part
+%%     bignum#numer(Xin,^Xstr)          Check "Xin" is a bignum and extract its numeral part
+%%     bignum#numer(Xin,^XL,^Xstr)      Check "Xin" is a bignum and extract its numeral part
+%%     bignum#sign(Xin,^SX)             Check "Xin" is a bignum and extract its sign part
+%%          (where,  "SX" is sign part, "Xstr" and "XL" are numeral part and its length)
+%% 
+%%  [2] Macro definitions to keep machine independence (inherit form pimos)
+%%     mdlib#bignum_less_than(Xin,Yin)                  Equivalent to bignum_less_than/2  
+%%     mdlib#bignum_not_less_than(Xin,Yin)              Equivalent to bignum_not_less_than/2
+%%     mdlib#add_extended(Xin,Yin,^Carry,^Zout)         Equivalent to add_extended/4
+%%     mdlib#subtract_extended(Xin,Yin,^Borrow,^Zout)   Equivalent to subtract_extended/4
+%%     mdlib#multiply_extended(Xin,Yin,^Zhigh,^Zlow)    Equivalent to multiply_extended/4
+%%     mdlib#divide_extended(Xhigh,Xlow,Yin,^Quot,^Rem) Equivalent to divide_extended/5
+%%     mdlib#add_bignum(Xin,Yin,^Zout)                  Equivalent to add_bignum/3
+%%     mdlib#subtract_bignum(Xin,Yin,^Zsign,^Zout)      Equivalent to subtract_bignum/4
+%%     mdlib#multiply_bignum_by_word(Xin,Yword,^Zout)   Equivalent to multiply_bignum_by_word/3
+
+
+%%  <<< DESIGN PRINCIPLE >>>
+%% [1] Abstructed data
+%%     To keep independency between internal data structure and user interface,
+%%     methods to extract/construct components of internal data is supported.
+%%     (sign/3, numer/3, construct/3)
+%% 
+%% [2] High speed
+%%     High speed multiply/divide are supported in special cases when
+%%     multiplier/diviser is a number of power of 2.
+%%     (shift_left_abs/3, shift_right_abs/3, shift_right_abs/4)
+%% 
+%%     Methods to get GCD(Greatest common diviser) are supported, because
+%%     it depends on internal data structure to write a high speed program.
+%% 
+%% 
+%% <<< USAGE and FUNCTIONS >>>
+%%     All inputs and outputs data are 'bignum' except they have definition.
+%%     Bignum data ::= Number which can be expressed in a 32bit unsigned integer
+%%                     is always expressed in integer, otherwise it is expressed by a compound term.
+%%     
+%% 
+%% [1] Type check
+%% bignum:is_bignum(Xin,^Xnew,^Ans)            Is "Xin" bignum or integer ?
+%% bignum:is_wrapped_bignum(Xin,^Xnew,^Ans)    Is "Xin" wrapped bignum or wrapped integer ?
+%%     Ans ::=  true | fail     Xnew ::= Xin
+%% 
+%% 
+%% [2] Unary operation
+%% bignum:negate(Xin,^Zout)                Zout= (-Xin)
+%% bignum:absolute(Xin,^Zout)              Zout= |Xin| (the sign of Zout is '+')
+%%    
+%% 
+%% [3] Binary operation
+%% bignum:add(Xin,Yin,^Zout)           Zout= Xin+Yin
+%% bignum:subtract(Xin,Yin,^Zout)      Zout= Xin-Yin
+%% bignum:multiply(Xin,Yin,^Zout)      Zout= Xin*Yin
+%% bignum:divide(Xin,Yin,^Qout,^Rout)  Qout= Xin/Yin,   Rout= Xin mod Yin
+%% bignum:divide(Xin,Yin,^Qout)        Equivalent to divide(Xin,Yin,Zout,_)
+%% bignum:modulo(Xin,Yin,^Rout)        Rout= Xin mod Yin
+%% bignum:power(Xin,Yin,^Zout)         Zout= Xin**Yin,  Yin must be non-negative integer
+%% bignum:gcd(Xin,Yin,^GCD)            To get the GCD(the Greatest Common Diviser) of "Xin" and "Yin"
+%% bignum:gcd(Xin,Yin,^GCD,^QX,^QY)    Xin= GCD*QX, Yin= GCD*QY 
+%% bignum:contents(List,^GCD)          Find a GCD of a List of bignums
+%% bignum:contents(List,^GCD,^RedNums) Find a GCD of a List of bignums and reduced numbers "RedNums"
+%%    
+%% 
+%% [4] Absolute shift as multiplication/division in special cases
+%% bignum:shift_left_abs(Xin,SN,^Zout)    Zout= Xin<<SN = Xin*(2^SN), SN>0
+%% bignum:shift_right_abs(Xin,SN,^Zout)   Zout= Xin>>SN = Xin/(2^SN), SN>0
+%% bignum:shift_right_abs(Xin,SN,^Zout,^Rem)  Rem= Xin mod (2^SN)
+%%
+%%     
+%% [5] Comparison
+%% bignum:sort(Xin,Yin,^Small,^Large,^Swapped)
+%% bignum:compare(Xin,Yin,^Xnew,^Ynew,^CMP) 
+%%         Small   ::= Xin (when Xin=<Yin) | Yin (when Yin<Xin),
+%%         Large   ::= Yin (when Xin=<Yin) | Xin (when Yin<Xin),
+%%         Swapped ::= no  (when Xin=<Yin) | yes (when Yin<Xin)
+%%         CMP ::= > | = | < (atom),  Xnew= Xin,  Ynew= Yin
+%% 
+%% 
+%% [6] Input/Output conversion
+%% bignum:parse(CharStr,^Bignum)        Convert a chracter string to a bignum
+%% bignum:portray(Bignum,^CharStr)      Convert a bignum to a character string
+%%         CharStr ::= 16 bit charcter string which represent numbers in JIS code
+%% 
+%% 
+%% [7] Misc. and utilities
+%% bignum:hash(Xin,^Hash,^Xout)         Get hashed value of Xin
+%% bignum:copy(Xin,^Xnew,^Copy)         Copy a bignum
+%% bignum:bignum_to_float(Bnum,^Float)  Convert a bignum to a floating point number
+%% 
+%% 
+%% 
+%% [8] Extract/Construct compoenets of internal data
+%% bignum:sign(Xin,^Xnew,^SignPart)            Extract bignum data components 
+%% bignum:numer(Xin,^Xnew,^NumerPart)             / Construct bignum data sturcture from components
+%% bignum:construct(SignPart,NumerPart,^Zout)  
+%%     SignPart  ::= + | - 
+%%     NumerPart ::= BnumStr | integer (absolute value)
+%%     BnumStr   ::= 32bit string whose elements are 32bit unsigned integer.
+%%             The MSW(Most Significant Word) is at the 1st element(position 0),
+%%             and the LSW is at the last.
+%%     <Note>  Specifications of sign/2, numer/2 and construct/3 is not changed
+%%             even if the internal data structure changes. These are external features.
+%% 
+%%%%%
+%%%%%  Type check and data structure handling
+%%%%%
+%%  is_bignum(In,^InNew,^Ans)    Type check
+%%      InNew ::= In,      Ans ::=  true (when "In" is bignum or integer) | false 
+is_bignum(Xin,Xnew,Ans) :- bignum#bignum(Xin) | Xnew= Xin, Ans= true .
+is_bignum(Xin,Xnew,Ans) :- integer(Xin) | Xnew=Xin, Ans= true .
+otherwise.
+is_bignum(Xin,Xnew,Ans) :- true | Xnew=Xin, Ans= false .
+ 
+%%  is_wrapped_bignum(In,^InNew,^Ans)    Type check
+%%      InNew ::= In,      Ans ::=  true (when "In" is wrapped bignum or integer) | false 
+is_wrapped_bignum(Xin,Xnew,Ans) :- bignum#wrapped(Xin) | Xnew= Xin, Ans= true .
+is_wrapped_bignum(integer(X),Xnew,Ans) :- true | Xnew= integer(X), Ans= true .
+otherwise.
+is_wrapped_bignum(Xin,Xnew,Ans) :- true | Xnew=Xin, Ans= false .
+
+%%  sign(Xin,^Xnew,^Sign)  Extract sign part 
+sign(In,InNew,Sign) :- In>=0 | InNew= In, Sign= (+).
+sign(In,InNew,Sign) :- In< 0 | InNew= In, Sign= (-).
+sign(In,InNew,Sign) :- bignum#sign(In,0) | InNew= In, Sign= (+) .
+sign(In,InNew,Sign) :- bignum#sign(In,1) | InNew= In, Sign= (-) .
+otherwise.
+sign(In,InNew,Sign) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input_at_arg1, 
+    "Argument must be bignum"), bignum:sign(In,InNew,Sign)).
+
+%%  numer(Xin,^Xnew,^Numer)  Extract numeral part, to keep consistency with sign/2 and construct/3,  
+%%      if Xin is bignum,       Numer is numeral part of Xin,
+%%      else if Xin= 80000000H, Numer is a 32bit string whose element is 80000000H,
+%%      else Xin is integer,    Numer is an absolute value of Xin.
+numer(In,InNew,Out) :- In>=0 | InNew= In, Out= In.
+numer(In,InNew,Out) :- In< 0, In =\= 16#"80000000" | InNew= In, builtin:subtract(0,In,Out).
+numer(In,InNew,Out) :- In =:= 16#"80000000" | 
+    InNew= 16#"80000000", new_string(X,1,32), set_string_element(X,0,In,Out).
+numer(In,InNew,Out) :- bignum#bignum(In,SX,XL,Xstr) | new_string(Ostr,XL,32),
+    builtin#copy_string_elements(Ostr,0,XL,Xstr,0,Out,Xstr1), bignum#compose(SX,Xstr1,InNew).
+otherwise.
+numer(In,InNew,Out) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input_at_arg1, 
+    "Argument must be bignum"), bignum:numer(In,InNew,Out)).
+
+%%  construct(Sign,Numer,^Bignum)  Constrcut a bignum data from components
+%%       Sign  ::= + | -           Numer ::= positive integer or zero| 32bit string
+construct(+,Num,Out) :- Num>=0 | Out= Num.
+construct(-,Num,Out) :- Num>=0 | builtin:subtract(0,Num,Out).
+construct(+,Num,Out) :- string(Num,0,32) | Out= 0.
+construct(-,Num,Out) :- string(Num,0,32) | Out= 0.
+construct(+,Num,Out) :- string(Num,1,32) | string_element(Num,0,X0,Num1), norm_plus(X0,Num1,Out).
+construct(-,Num,Out) :- string(Num,1,32) | string_element(Num,0,X0,Num1), norm_minus(X0,Num1,Out).
+construct(+,Num,Out) :- string(Num,L,32), L>1 | bignum#compose(0,Num,Out).
+construct(-,Num,Out) :- string(Num,L,32), L>1 | bignum#compose(1,Num,Out).
+otherwise.
+construct(S,Num,Out) :- true | 
+    (S = (+) -> ArgPos= illegal_input_at_arg2, Mess= "Argument must be positive integer or 32bit string"
+    ;S = (-) -> ArgPos= illegal_input_at_arg2, Mess= "Argument must be positive integer or 32bit string"
+    ;otherwise;true -> ArgPos= illegal_input_at_arg2, Mess= "Argument must be '+' or '-'" ),
+    shoen:raise(pimos_tag#error,'$PIMOS$'(ArgPos,Mess),bignum:construct(S,Num,Out)) .
+
+%%%%%
+%%%%%  COPY / HASH / BIGNUM_TO_FLOAT
+%%%%%
+%%  copy(In,^InNew,^Copy)  Copy bignum
+copy(In,InNew,Copy) :- integer(In) | InNew= In, Copy= In.
+copy(In,InNew,Copy) :- bignum#bignum(In,S,L,Str) | new_string(Ostr,L,32),
+    builtin#copy_string_elements(Ostr,0,L,Str,0,Ostr1,Str1),
+    bignum#compose(S,Str1,InNew), bignum#compose(S,Ostr1,Copy).
+otherwise.
+copy(In,InNew,Copy) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input, 
+    "The 1st argument must be bignum"), bignum:copy(In,InNew,Copy)).
+
+%%  hash(Xin, ^Hash, ^Xout)   Hash function for PIMOS I/F
+hash(Xin,Hash,Xout) :- Xin>=0 | Xout= Xin, Hash= Xin.
+hash(Xin,Hash,Xout) :- Xin< 0 | Xout= Xin, mdlib#subtract_extended(0,Xin,_,XN), Hash := XN/\16#"7FFFFFFF".
+hash(Xin,Hash,Xout) :- bignum#bignum(Xin,SX,XL,Xstr) | builtin:add(-1,XL,Pt), 
+    string_element(Xstr,Pt,LSW,Xstr1), bignum#compose(SX,Xstr1,Xout), mdlib#add_extended(XL,LSW,_,XX),
+    ( XX>=0 -> Hash= XX    ;    XX< 0 -> mdlib#subtract_extended(0,XX,_,XN), Hash := XN/\16#"7FFFFFFF" ).
+otherwise.
+hash(Xin,Hash,Xout) :- true | shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_input_at_arg1,
+     "Argument must be bignum"), bignum:hash(Xin,Hash,Xout)).
+
+ 
+%%  bignum_to_float(Xin,^Float)  Convert a bignum to a floating point number
+%%      Very naive implementation, because it does not take into consideration of overflow.
+%%      If a machine does not support floating point calculation then this method returns the input.
+:- switch(floating_point).
+:- case(yes).
+  bignum_to_float(Xin,Float) :- integer(Xin) | integer_to_floating_point(Xin,Float).
+  bignum_to_float(Xin,Float) :- bignum#bignum(Xin,0,XL,Xstr) | bnum_to_float(XL,Xstr, 1.0,Float).
+  bignum_to_float(Xin,Float) :- bignum#bignum(Xin,1,XL,Xstr) | bnum_to_float(XL,Xstr,-1.0,Float).
+  otherwise.
+  bignum_to_float(Xin,Float) :- true | shoen:raise(pimos_tag#error, 
+      '$PIMOS$'(illegal_input_at_arg1, "Argument must be a bignum"), bignum:bignum_to_float(Xin,Float)).
+
+  bnum_to_float(Len,Str,Sign,Float) :- true |
+      Radix $:= 65536.0 * 65536.0 ,       RadSqrt := 65536.0 ,
+      string_element(Str,0,MSW,Str1),     XH := MSW>>16,   XL := MSW/\16#"FFFF",
+      integer_to_floating_point(XH,XHF),  integer_to_floating_point(XL,XLF),
+      Accum $:= Sign*((XHF*RadSqrt)+XLF), bnum2float(1,Len,Str1,Accum,Radix,RadSqrt,Float).
+
+  bnum2float(Pt,NL,_,  Accum,_,    _,   Float) :- Pt>=NL | Float= Accum.
+  bnum2float(Pt,NL,Str,Accum,Radix,Sqrt,Float) :- Pt< NL |
+      string_element(Str,Pt,XW,Str1),        XH := XW>>16, XL := XW/\16#"FFFF",
+      integer_to_floating_point(XH,XHF),     integer_to_floating_point(XL,XLF),
+      Accum1 $:= Accum*Radix+(XHF*Sqrt)+XLF, builtin:add(1,Pt,Pt1),
+      bnum2float(Pt1,NL,Str1,Accum1,Radix,Sqrt,Float).
+:- case(no).
+  bignum_to_float(Xin,Out) :- true | Xin= Out.
+:- end_switch.
+
+
+%%%%%
+%%%%%  NEGATE / ABSOLUTE
+%%%%%
+negate(In,Out) :- In =\= 16#"80000000" | builtin:subtract(0,In,Out).
+negate(In,Out) :- In =:= 16#"80000000" | 
+    new_string(X,1,32), set_string_element(X,0,In,X1), bignum#compose(0,X1,Out).
+negate(In,Out) :- bignum#bignum(In,S,L,X), L =\= 1 | S1 := S xor 1, bignum#compose(S1,X,Out).
+negate(In,Out) :- bignum#bignum(In,S,1,X) | string_element(X,0,N,X1), negate_sub(N,S,X1,Out).
+otherwise.
+negate(In,Out) :- true | shoen:raise(pimos_tag#error,
+                    '$PIMOS$'(illegal_input_at_arg1, "Argument must be bignum"), bignum:negate(In,Out)).
+
+
+
+negate_sub(N,0,_,Out) :- N =:= 16#"80000000" | Out= N.
+otherwise.
+negate_sub(N,S,X,Out) :- true | S1 := S xor 1, bignum#compose(S1,X,Out).
+
+
+absolute(In,Out) :- In>=0 | Out= In.
+absolute(In,Out) :- In< 0, In =\= 16#"80000000" | builtin:subtract(0,In,Out).
+absolute(In,Out) :- In< 0, In =:= 16#"80000000" | 
+    new_string(X,1,32), set_string_element(X,0,In,X1), bignum#compose(0,X1,Out).
+absolute(In,Out) :- bignum#numer(In,X) | bignum#compose(0,X,Out).
+otherwise.
+absolute(In,Out) :- true | shoen:raise(pimos_tag#error,
+                    '$PIMOS$'(illegal_input_at_arg1,"Argument must be bignum"),bignum:absolute(In,Out)).
+
+%%%%%
+%%%%%  ADD
+%%%%%
+add(Xin,Yin,Zout) :- Xin>0 | addINTplus(Xin,Yin,Zout).
+add(Xin,Yin,Zout) :- Xin<0 | addINTminus(Xin,Yin,Zout).
+add(0,  Yin,Zout) :- true  | add_arg2(Yin,Zout).
+add(Xin,Yin,Zout) :- bignum#bignum(Xin,SX,Xstr) | addBNUM(SX,Xstr,Yin,Zout).
+otherwise.
+add(Xin,Yin,Zout) :- true | add_raise(1,Xin,Yin,Zout).
+
+addINTplus(Xin,Yin,Zout) :- Yin>0 | mdlib#add_extended(Xin,Yin,ZH,ZL), normalize(0,ZH,ZL,Zout).
+addINTplus(Xin,Yin,Zout) :- Yin<0 | builtin:add(Xin,Yin,Zout).
+addINTplus(Xin,0,  Zout) :- true  | Zout= Xin.
+addINTplus(Xin,Yin,Zout) :- bignum#bignum(Yin,SY,Y) | 
+    new_string(Str,1,32), set_string_element(Str,0,Xin,Str1), addSTR(0,SY,Str1,Y,Zout).
+otherwise.
+addINTplus(Xin,Yin,Zout) :- true | add_raise(2,Xin,Yin,Zout).
+
+addINTminus(Xin,Yin,Zout) :- Yin>0 | builtin:add(Xin,Yin,Zout).
+addINTminus(Xin,Yin,Zout) :- Yin<0 | mdlib#subtract_extended(0,Xin,_,X),
+    mdlib#subtract_extended(0,Yin,_,Y), mdlib#add_extended(X,Y,ZH,ZL), normalize(1,ZH,ZL,Zout).
+addINTminus(Xin,0,  Zout) :- true  | Zout= Xin.
+addINTminus(Xin,Yin,Zout) :- bignum#bignum(Yin,SY,Y) | mdlib#subtract_extended(0,Xin,_,X),
+    new_string(Str,1,32), set_string_element(Str,0,X,Str1), addSTR(1,SY,Str1,Y,Zout).
+otherwise.
+addINTminus(Xin,Yin,Zout) :- true | add_raise(2,Xin,Yin,Zout).
+
+add_arg2(Yin,Zout) :- integer(Yin)  | Zout= Yin.
+add_arg2(Yin,Zout) :- bignum#bignum(Yin) | Zout= Yin.
+otherwise.
+add_arg2(Yin,Zout) :- true | add_raise(2,0,Yin,Zout).
+
+addBNUM(SX,X,0,  Zout) :- true  | bignum#compose(SX,X,Zout).
+addBNUM(SX,X,Yin,Zout) :- Yin>0 | 
+    new_string(Str,1,32), set_string_element(Str,0,Yin,Str1), addSTR(SX,0,X,Str1,Zout).
+addBNUM(SX,X,Yin,Zout) :- Yin<0 | mdlib#subtract_extended(0,Yin,_,Y),
+    new_string(Str,1,32), set_string_element(Str,0,Y,Str1), addSTR(SX,1,X,Str1,Zout).
+addBNUM(SX,X,Yin,Zout) :- bignum#bignum(Yin,SY,Y) | addSTR(SX,SY,X,Y,Zout).
+otherwise.
+addBNUM(SX,X,Yin,Zout) :- true | bignum#compose(SX,X,Xin), add_raise(2,Xin,Yin,Zout).
+    
+
+%% addSTR(SX,SY,Xin,Yin,^Zout)   Zout ::= bignum
+%%    SX, SY ::= 0 (+) | 1 (-) ,    Xin, Yin ::= 32bit string
+addSTR(0,1,Xin,Yin,Zout) :- true | mdlib#subtract_bignum(Xin,Yin,SZ,Z), normalize(SZ,Z,Zout).
+addSTR(1,0,Xin,Yin,Zout) :- true | mdlib#subtract_bignum(Yin,Xin,SZ,Z), normalize(SZ,Z,Zout).
+addSTR(0,0,Xin,Yin,Zout) :- true | mdlib#add_bignum(Xin,Yin,Z), bignum#compose(0,Z,Zout).
+addSTR(1,1,Xin,Yin,Zout) :- true | mdlib#add_bignum(Xin,Yin,Z), bignum#compose(1,Z,Zout).
+
+
+add_raise(1,X,Y,Z) :- true | shoen:raise(pimos_tag#error,
+                    '$PIMOS$'(illegal_input_at_arg1,"Argument must be bignum"), bignum:add(X,Y,Z)).
+add_raise(2,X,Y,Z) :- true | shoen:raise(pimos_tag#error,
+                    '$PIMOS$'(illegal_input_at_arg2,"Argument must be bignum"), bignum:add(X,Y,Z)).
+
+%%%%%
+%%%%%  SUBTRACT
+%%%%%
+subtract(Xin,Yin,Zout) :- Xin>0 | subINTplus(Xin,Yin,Zout).
+subtract(Xin,Yin,Zout) :- Xin<0 | subINTminus(Xin,Yin,Zout).
+subtract(0,  Yin,Zout) :- true  | sub_arg2(Yin,Zout).
+subtract(Xin,Yin,Zout) :- bignum#bignum(Xin,SX,Xstr) | subBNUM(SX,Xstr,Yin,Zout).
+otherwise.
+subtract(Xin,Yin,Zout) :- true | sub_raise(1,Xin,Yin,Zout).
+
+subINTplus(Xin,Yin,Zout) :- Yin>0 | builtin:subtract(Xin,Yin,Zout).
+subINTplus(Xin,Yin,Zout) :- Yin<0 | 
+    mdlib#subtract_extended(0,Yin,_,Y), mdlib#add_extended(Xin,Y,ZH,ZL), normalize(0,ZH,ZL,Zout).
+subINTplus(Xin,0,  Zout) :- true  | Zout= Xin.
+subINTplus(Xin,Yin,Zout) :- bignum#bignum(Yin,SY,Y) |
+    new_string(Str,1,32), set_string_element(Str,0,Xin,Str1), subSTR(0,SY,Str1,Y,Zout).
+otherwise.
+subINTplus(Xin,Yin,Zout) :- true | sub_raise(2,Xin,Yin,Zout).
+
+subINTminus(Xin,Yin,Zout) :- Yin>0 | 
+    mdlib#subtract_extended(0,Xin,_,X), mdlib#add_extended(X,Yin,ZH,ZL), normalize(1,ZH,ZL,Zout).
+subINTminus(Xin,Yin,Zout) :- Yin<0 | builtin:subtract(Xin,Yin,Zout).
+subINTminus(Xin,0,  Zout) :- true  | Zout= Xin.
+subINTminus(Xin,Yin,Zout) :- bignum#bignum(Yin,SY,Y) | mdlib#subtract_extended(0,Xin,_,X),
+    new_string(Str,1,32), set_string_element(Str,0,X,Str1), subSTR(1,SY,Str1,Y,Zout).
+otherwise.
+subINTminus(Xin,Yin,Zout) :- true | sub_raise(2,Xin,Yin,Zout).
+
+sub_arg2(Yin,Zout) :- Yin =:= 16#"80000000" | 
+    new_string(Str,1,32), set_string_element(Str,0,Yin,Str1), bignum#compose(0,Str1,Zout).
+sub_arg2(Yin,Zout) :- Yin =\= 16#"80000000" | builtin:subtract(0,Yin,Zout).
+sub_arg2(Yin,Zout) :- bignum#bignum(Yin,SY,Y) | SZ := 1 xor SY, bignum#compose(SZ,Y,Zout).
+otherwise.
+sub_arg2(Yin,Zout) :- true | sub_raise(2,0,Yin,Zout).
+
+subBNUM(SX,X,Yin,Zout) :- Yin>0 | 
+    new_string(Str,1,32), set_string_element(Str,0,Yin,Str1), subSTR(SX,0,X,Str1,Zout).
+subBNUM(SX,X,Yin,Zout) :- Yin<0 | mdlib#subtract_extended(0,Yin,_,Y),
+    new_string(Str,1,32), set_string_element(Str,0,Y,Str1), subSTR(SX,1,X,Str1,Zout).
+subBNUM(SX,X,0,  Zout) :- true  | bignum#compose(SX,X,Zout).
+subBNUM(SX,X,Yin,Zout) :- bignum#bignum(Yin,SY,Y)| subSTR(SX,SY,X,Y,Zout).
+otherwise.
+subBNUM(SX,X,Yin,Zout) :- true | bignum#compose(SX,X,Xin), sub_raise(2,Xin,Yin,Zout).
+
+    
+%% subSTR(SX,SY,Xin,Yin,^Zout)   Zout ::= bignum
+%%    SX, SY ::= 0 (+) | 1 (-) ,    Xin, Yin ::= 32bit string
+subSTR(0,1,Xin,Yin,Zout) :- true | mdlib#add_bignum(Xin,Yin,Z), bignum#compose(0,Z,Zout).
+subSTR(1,0,Xin,Yin,Zout) :- true | mdlib#add_bignum(Xin,Yin,Z), bignum#compose(1,Z,Zout).
+subSTR(0,0,Xin,Yin,Zout) :- true | mdlib#subtract_bignum(Xin,Yin,S,Z), normalize(S,Z,Zout).
+subSTR(1,1,Xin,Yin,Zout) :- true | mdlib#subtract_bignum(Xin,Yin,F,Z), S := 1 xor F, normalize(S,Z,Zout).
+
+
+sub_raise(1,X,Y,Z) :- true |shoen:raise(pimos_tag#error, 
+                    '$PIMOS$'(illegal_input_at_arg1,"Argument must be bignum"), bignum:subtract(X,Y,Z)).
+sub_raise(2,X,Y,Z) :- true |shoen:raise(pimos_tag#error, 
+                    '$PIMOS$'(illegal_input_at_arg2,"Argument must be bignum"), bignum:subtract(X,Y,Z)).
+
+%%%%%
+%%%%%  MULTIPLY
+%%%%%
+multiply(Xin,Yin,Zout) :- Xin>0 | mulINTplus(Xin,Yin,Zout).
+multiply(Xin,Yin,Zout) :- Xin<0 | mdlib#subtract_extended(0,Xin,_,X), mulINTminus(X,Yin,Zout).
+multiply(0,  Yin,Zout) :- true  | mul_arg2(Yin,Zout).
+multiply(Xin,Yin,Zout) :- bignum#bignum(Xin,SX,XL,X),XL>1 | mulBNUM(SX,XL,X,Yin,Zout).
+multiply(Xin,Yin,Zout) :- bignum#bignum(Xin,SX,XL,X),XL=1 | mulBN1(SX,X,Yin,Zout).
+otherwise.
+multiply(Xin,Yin,Zout) :- true | mul_raise(1,Xin,yin,Zout).
+
+mulINTplus(Xin,Yin,Zout) :- Yin>0 | mdlib#multiply_extended(Xin,Yin,ZH,ZL), normalize(0,ZH,ZL,Zout).
+mulINTplus(Xin,Yin,Zout) :- Yin<0 | 
+    mdlib#subtract_extended(0,Yin,_,Y), mdlib#multiply_extended(Xin,Y,ZH,ZL), normalize(1,ZH,ZL,Zout).
+mulINTplus(_,  0,  Zout) :- true  | Zout= 0.
+mulINTplus(Xin,Yin,Zout) :- bignum#bignum(Yin,SY,Y) | 
+    mdlib#multiply_bignum_by_word(Y,Xin,Z), normalize(SY,Z,Zout).
+otherwise.
+mulINTplus(Xin,Yin,Zout) :- true | mul_raise(2,Xin,Yin,Zout).
+
+mulINTminus(Xin,Yin,Zout) :- Yin>0 | mdlib#multiply_extended(Xin,Yin,ZH,ZL), normalize(1,ZH,ZL,Zout).
+mulINTminus(Xin,Yin,Zout) :- Yin<0 | 
+    mdlib#subtract_extended(0,Yin,_,Y), mdlib#multiply_extended(Xin,Y,ZH,ZL), normalize(0,ZH,ZL,Zout).
+mulINTminus(_,  0,  Zout) :- true  | Zout= 0.
+mulINTminus(Xin,Yin,Zout) :- bignum#bignum(Yin,SY,Y) | 
+    mdlib#multiply_bignum_by_word(Y,Xin,Z), SZ := 1 xor SY,  normalize(SZ,Z,Zout).
+otherwise.
+mulINTminus(Xin,Yin,Zout) :- true | mdlib#subtract_extended(0,Xin,_,X), mul_raise(2,X,Yin,Zout).
+
+mulBN1(SX,X,Yin,Zout) :- Yin>  1 | 
+    string_element(X,0,X0,_), mdlib#multiply_extended(X0,Yin,ZH,ZL), normalize(SX,ZH,ZL,Zout).
+mulBN1(SX,X,Yin,Zout) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y), SZ := SX xor 1,
+    string_element(X,0,X0,_), mdlib#multiply_extended(X0,Y,  ZH,ZL), normalize(SZ,ZH,ZL,Zout).
+mulBN1(SX,X, 1, Zout) :- true | bignum#compose(SX,X,Zout).
+mulBN1(_, _, 0, Zout) :- true | Zout= 0.
+mulBN1(SX,X,-1, Zout) :- true | SZ := SX xor 1, normalize(SZ,X,Zout).
+mulBN1(SX,X,Yin,Zout) :- bignum#bignum(Yin,SY,YL,Y),YL>1 | SZ := SX xor SY,
+    string_element(X,0,X0,_), mdlib#multiply_bignum_by_word(Y,X0,Z), normalize(SZ,Z,Zout).
+mulBN1(SX,X,Yin,Zout) :- bignum#bignum(Yin,SY,YL,Y),YL=1 | string_element(Y,0,Y0,_), SZ := SX xor SY,
+    string_element(X,0,X0,_), mdlib#multiply_extended(X0,Y0, ZH,ZL), normalize(SZ,ZH,ZL,Zout).
+otherwise.
+mulBN1(SX,X,Yin,Zout) :- true | bignum#compose(SX,X,Xin), mul_raise(2,Xin,Yin,Zout).
+
+mulBNUM(SX,_, X,Yin,Zout) :- Yin>  1 | mdlib#multiply_bignum_by_word(X,Yin,Z), normalize(SX,Z,Zout).
+mulBNUM(SX,_, X,Yin,Zout) :- Yin< -1 |  mdlib#subtract_extended(0,Yin,_,Y),
+    mdlib#multiply_bignum_by_word(X,Y,Z), SZ := SX xor 1, normalize(SZ,Z,Zout).
+mulBNUM(SX,_, X, 1, Zout) :- true | bignum#compose(SX,X,Zout).
+mulBNUM(_, _, _,0,  Zout) :- true | Zout= 0.
+mulBNUM(SX,_, X,-1, Zout) :- true | SZ := SX xor 1, bignum#compose(SZ,X,Zout).
+mulBNUM(SX,XL,X,Yin,Zout) :- bignum#bignum(Yin,SY,YL,Y),YL>1 | 
+    mulSTR(XL,YL,X,Y,Z), SZ := SX xor SY, normalize(SZ,Z,Zout).
+mulBNUM(SX,XL,X,Yin,Zout) :- bignum#bignum(Yin,SY,YL,Y),YL=1 | string_element(Y,0,Y0,_),
+    mdlib#multiply_bignum_by_word(X,Y0,Z), SZ := SX xor SY, normalize(SZ,Z,Zout).
+otherwise.
+mulBNUM(SX,_, X,Yin,Zout) :- true | bignum#compose(SX,X,Xin), mul_raise(2,Xin,Yin,Zout).
+
+
+mul_arg2(Yin,Zout) :- integer(Yin)  | Zout= 0.
+mul_arg2(Yin,Zout) :- bignum#bignum(Yin) | Zout= 0.
+otherwise.
+mul_arg2(Yin,Zout) :- true | mul_raise(2,0,Yin,Zout).
+
+
+
+%%  mulSTR(XL,YL,Xin,Yin,^Zout)   Multiply 2 bignums by normal algorithm ( O(n^2) )
+%%      XL,YL ::= integer (Length of Xin, Yin)  Xin,Yin,Zout ::= 32bit string
+mulSTR(XL,YL,Xin,Yin,Zout) :- XL>=YL | new_string(Zin,YL,32), 
+    builtin:add(-1,YL,YP), string_element(Yin,YP,Y,Yin1), mdlib#multiply_bignum_by_word(Xin,Y,Acc), 
+    next_accum(Acc,LSW,Acc1), set_string_element(Zin,YP,LSW,Zin1), mulSTR(YP,Yin1,Xin,Acc1,Zin1,Zout) .
+mulSTR(XL,YL,Xin,Yin,Zout) :- XL< YL | new_string(Zin,XL,32), 
+    builtin:add(-1,XL,XP), string_element(Xin,XP,X,Xin1), mdlib#multiply_bignum_by_word(Yin,X,Acc), 
+    next_accum(Acc,LSW,Acc1), set_string_element(Zin,XP,LSW,Zin1), mulSTR(XP,Xin1,Yin,Acc1,Zin1,Zout) .
+
+
+%  mulSTR(XL,Xin,Yin,Accum,Zin,^Zout)
+%     Xin, Yin ::= 32bit string,                  XL ::= integer (Length of Xstr)
+%     Zin ::= 32bit string (Lower words of Zout), Accum    ::= 32bit string (Upper words of Zout)
+mulSTR(0, _,  _,  Accum,Zin,Zout) :- true | builtin#append_string(Accum,Zin,Zout).
+mulSTR(XL,Xin,Yin,Accum,Zin,Zout) :- XL =\= 0 | builtin:add(-1,XL,Pt),
+    string_element(Xin,Pt,X,Xin1),mdlib#multiply_bignum_by_word(Yin,X,XY),mdlib#add_bignum(Accum,XY,Ac1),
+    next_accum(Ac1,Word,Ac2), set_string_element(Zin,Pt,Word,Zin1), mulSTR(Pt,Xin1,Yin,Ac2,Zin1,Zout).
+
+
+%  next_accum(Accum,^LSW,^AccNew)  Split Accum into the last element (LSW) and others.
+%    <NOTE> The LSW of "Accum" does not contribute addition of Accum+INTER_PRODUCTS in next loop,
+%           where, INTER_PRODUCTS is Xin*Yword.
+%           This will be faster than calculate
+%               shift_left(INTER_PRODUCTS,SNword,IPRO), add_bnum(IPRO,Accum)
+%           because, SNword increases in each loop.
+next_accum(Acc,LSW,AccNew) :- string(Acc,0,_)        | LSW=0, AccNew= Acc.
+next_accum(Acc,LSW,AccNew) :- string(Acc,AL,_), AL>0 |
+    builtin:add(-1,AL,AL1), string_element(Acc,AL1,LSW,Acc1), builtin#substring(Acc1,0,AL1,AccNew,_).
+
+
+
+mul_raise(1,X,Y,Z) :- true | shoen:raise(pimos_tag#error,
+                '$PIMOS$'(illegal_input_at_arg1,"Argument must be bignum"), bignum:multiply(X,Y,Z)).
+mul_raise(2,X,Y,Z) :- true | shoen:raise(pimos_tag#error,
+                '$PIMOS$'(illegal_input_at_arg2,"Argument must be bignum"), bignum:multiply(X,Y,Z)).
+
+
+
+%%%%%
+%%%%%  DIVIDE/3 and DIVIDE/4
+%%%%%
+divide(Xin,Yin,Qout) :- true | divide(Xin,Yin,Qout,_).
+
+
+divide(Xin,Yin,Qout,Rem) :- Xin =\= 0 | divINT(Xin,Yin,Qout,Rem).
+divide(0,  Yin,Qout,Rem) :- true  | div_arg2(Yin,Qout,Rem).
+divide(Xin,Yin,Qout,Rem) :- bignum#bignum(Xin,SX,1,X) | divBN1(SX,X,Yin,Qout,Rem).
+divide(Xin,Yin,Qout,Rem) :- bignum#bignum(Xin,SX,XL,X), XL>1 | divBNUM(SX,XL,X,Yin,Qout,Rem).
+otherwise.
+divide(Xin,Yin,Qout,Rem) :- true | div_raise(1,Xin,Yin,Qout,Rem).
+
+
+divINT(Xin,Yin,Qout,Rem) :- bignum#bignum(Yin) | Qout= 0, Rem= Xin.
+divINT(Xin,Yin,Qout,Rem) :- Yin =\= 0 | builtin:divide(Xin,Yin,Qout), builtin:modulo(Xin,Yin,Rem).
+divINT(Xin,0,  Qout,Rem) :- true  | div_zero_raise(Xin,Qout,Rem).
+otherwise.
+divINT(Xin,Yin,Qout,Rem) :- true | div_raise(2,Xin,Yin,Qout,Rem).
+
+
+div_arg2(Yin,Qout,Rem) :- Yin =\= 0  | Qout= 0, Rem= 0.
+div_arg2(Yin,Qout,Rem) :- bignum#bignum(Yin) | Qout=  0, Rem= 0 .
+div_arg2(Yin,Qout,Rem) :- Yin =:= 0  | div_zero_raise(0,Qout,Rem).
+otherwise.
+div_arg2(Yin,Qout,Rem) :- true | div_raise(2,0,Yin,Qout,Rem).
+
+
+divBN1(SX,X,Yin,Qout,Rem) :- bignum#bignum(Yin,SY,YL,Y), YL>1 | Qout= 0, bignum#compose(SX,X,Rem).
+divBN1(SX,X,Yin,Qout,Rem) :- bignum#bignum(Yin,SY,1,Y) | 
+    string_element(Y,0,Y0,_), string_element(X,0,X0,_),
+    mdlib#divide_extended(0,X0,Y0,Q,R), SQ := SX xor SY, normalize(SQ,0,Q,Qout), normalize(SX,0,R,Rem).
+divBN1(SX,X,Yin,Qout,Rem) :- Yin>  1 | string_element(X,0,X0,_),
+    mdlib#divide_extended(0,X0,Yin,Q,R), normalize(SX,0,Q,Qout), normalize(SX,0,R,Rem).
+divBN1(SX,X,Yin,Qout,Rem) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN), string_element(X,0,X0,_),
+    mdlib#divide_extended(0,X0,YN,Q,R), SQ := 1 xor SX, normalize(SQ,0,Q,Qout), normalize(SX,0,R,Rem).
+divBN1(SX,X, 1, Qout,Rem) :- true | bignum#compose(SX,X,Qout), Rem= 0.
+divBN1(SX,X,-1, Qout,Rem) :- true | SQ := SX xor 1, bignum#compose(SQ,X,Qout), Rem= 0.
+divBN1(SX,X, 0, Qout,Rem) :- true | bignum#compose(SX,X,Xin), div_zero_raise(Xin,Qout,Rem).
+otherwise.
+divBN1(SX,X,Yin,Qout,Rem) :- true | bignum#compose(SX,X,Xin), div_raise(2,Xin,Yin,Qout,Rem).
+
+
+divBNUM(SX,XL,X,Yin,Qout,Rem) :- bignum#bignum(Yin,SY,YL,Y),YL>1 | SQ := SX xor SY, 
+    comp(X,Y,CMP,Xnew,Ynew), divSTR(CMP,Xnew,Ynew,Q,R), normalize(SQ,Q,Qout), normalize(SX,R,Rem).
+divBNUM(SX,XL,X,Yin,Qout,Rem) :- bignum#bignum(Yin,SY,1,Y) | SQ := SX xor SY, string_element(Y,0,Y0,_), 
+    string_element(X,0,X0,Xstr), div1(X0,Y0,XL,Xstr,Q,R), normalize(SQ,Q,Qout), normalize(SX,R,Rem).
+divBNUM(SX,XL,X,Yin,Qout,Rem) :- Yin>  1 | SQ := SX xor 0, 
+    string_element(X,0,X0,Xstr), div1(X0,Yin,XL,Xstr,Q,R), normalize(SQ,Q,Qout), normalize(SX,R,Rem).
+divBNUM(SX,XL,X,Yin,Qout,Rem) :- Yin< -1 | SQ := SX xor 1, mdlib#subtract_extended(0,Yin,_,Y),
+    string_element(X,0,X0,Xstr), div1(X0,Y,XL,Xstr,Q,R), normalize(SQ,Q,Qout), normalize(SX,R,Rem).
+divBNUM(SX,_, X, 1, Qout,Rem) :- true | bignum#compose(SX,X,Qout), Rem= 0.
+divBNUM(SX,_, X,-1, Qout,Rem) :- true | SQ := SX xor 1, bignum#compose(SQ,X,Qout), Rem= 0.
+divBNUM(SX,_, X, 0, Qout,Rem) :- true | bignum#compose(SX,X,Xin), div_zero_raise(Xin,Qout,Rem).
+otherwise.
+divBNUM(SX,_, X,Yin,Qout,Rem) :- true | bignum#compose(SX,X,Xin), div_raise(2,Xin,Yin,Qout,Rem).
+
+%% div1(X0,Y0,XL,Xin,^Quot,^Rem)   Divide bignum string by a unsigned integer
+%%     X0,Y0 ::= unsigned integer  
+%%     <<NOTE>> If X0>Y0 then length of Quot is XL, otherwise, length of Qout is XL-1
+div1(X0,Y0,XL,Xin,Qout,Rout) :- X0>0,Y0>0,X0>=Y0 | new_string(Qin,XL,32),
+    mdlib#divide_extended(0,X0,Y0,Q0,R0), set_string_element(Qin,0,Q0,Qin1),
+    div1(1,XL,Xin,Y0,1,Qin1,R0,Qout,Rout).
+div1(X0,Y0,XL,Xin,Qout,Rout) :- X0<0,Y0<0,X0>=Y0 | new_string(Qin,XL,32), 
+    mdlib#divide_extended(0,X0,Y0,Q0,R0), set_string_element(Qin,0,Q0,Qin1),
+    div1(1,XL,Xin,Y0,1,Qin1,R0,Qout,Rout).
+div1(X0,Y0,XL,Xin,Qout,Rout) :- X0<0,Y0>0 | new_string(Qin,XL,32), mdlib#divide_extended(0,X0,Y0,Q0,R0),
+    set_string_element(Qin,0,Q0,Qin1), div1(1,XL,Xin,Y0,1,Qin1,R0,Qout,Rout).
+otherwise.
+div1(X0,Y0,XL,Xin,Qout,Rout) :- true | builtin:add(-1,XL,QL), new_string(Qin,QL,32),
+    string_element(Xin,1,X1,Xin1),      mdlib#divide_extended(X0,X1,Y0,Q0,R0), 
+    set_string_element(Qin,0,Q0,Qin1),  div1(2,XL,Xin1,Y0,1,Qin1,R0,Qout,Rout).
+
+div1(XL,XL,_,  _,_, Qin,Rin,Qout,Rout) :- true | Qout= Qin, Rout= Rin.
+div1(XP,XL,Xin,Y,QP,Qin,Rin,Qout,Rout) :- XP =\= XL | string_element(Xin,XP,X,Xin1),
+    mdlib#divide_extended(Rin,X,Y,Q,Rin1), set_string_element(Qin,QP,Q,Qin1), 
+    builtin:add(1,XP,XP1), builtin:add(1,QP,QP1), div1(XP1,XL,Xin1,Y,QP1,Qin1,Rin1,Qout,Rout).
+
+
+%%  divSTR(CMP,Xin,Yin,Qout,Rem)   Divide a bignum string by a bignum string
+%%       CMP ::= > | = | < ,      Xin,Yin,Qout,Rem ::= 32bit string
+%%  <NOTE> "Yin" is normalized by shift_left_until_1stBIT/3, where normalize means that
+%%         the 1st bit of "Yin" is non-zero. If "Yin" is not normalized then estimation
+%%         accuracy of quotient is very poor.
+divSTR(<,Xin,_,  Qout,Rout) :- true | Qout= 0, Rout= Xin.
+divSTR(=,_,  _,  Qout,Rout) :- true | Qout= 1, new_string(Rout,0,32).
+divSTR(>,Xin,Yin,Qout,Rout) :- true |
+    shift_left_until_1stBIT(Yin,SN,Yin0), 
+    string_element(Yin0,0,Y0,Yin1), string_element(Yin1,1,Y1,Yin2), string(Yin2,YL,_,Yin3),     
+    shift_left_bit(Xin,SN,Xin1),    string(Xin1,XL,_,Xin2), 
+    first_quot(XL,YL,Xin2,Y0,Y1,Sub,TL,Tail,QE,QL),   estim_check(QE,Sub,Yin3,QC,Rem,Yin4),
+    quot_set(QC,QL,Qin,QP), next_dividend(0,TL,Tail,Rem,TP1,Tail1,RL,Rem1),
+    div_loop(TP1,TL,Tail1,RL,YL,Rem1,Yin4,Y0,Y1,QP,Qin,Qout,Rem3), 
+    zero_suppress(Rem3,Rem4),
+    shift_right_bit(Rem4,SN,Rout).
+
+%% div_loop(TP,TL,Tail,XL,YL,Xin,Yin,Y0,Y1,QP,Qin,^Quot,^Rem)
+%%     Tail,TL,TP ::= Tail string, its length and its pointer
+%%     XL,YL ::= length of Xin,Yin      Xin,Yin,Qin,Qout,Rem ::= 32bit string
+%%     Y0,Y1 ::= Diviser's(Yin) element at position 0 (MSW) and position 1
+%%     QP    ::= position counter of Qout
+%%   <NOTE> Tail string is a substring of Xin (dividend string), and it does not contribute
+%%          to calculate quotient and remainder at the current stage of the loop,
+%%          but will contribute later stages of the loop.
+div_loop(TP,TL,_,_, _, Xin,_,  _, _, _, Qin,Qout,Rout) :- TP>=TL,TL=0 | Qout= Qin, Rout= Xin.
+div_loop(TP,TL,_,XL,YL,Xin,Yin,Y0,Y1,QP,Qin,Qout,Rout) :- TP= TL,TL>0 |
+    quot_estim(XL,YL,Xin,Y0,Y1,Xin1,QE), 
+    estim_check(QE,Xin1,Yin,QC,Rout,_), set_string_element(Qin,QP,QC,Qout).
+div_loop(TP,TL,Tail,XL,YL,Xin,Yin,Y0,Y1,QP,Qin,Qout,Rout) :- TP<TL |
+    quot_estim(XL,YL,Xin,Y0,Y1,Xin1,QE),  
+    estim_check(QE,Xin1,Yin,QC,Rem,Yin1), set_string_element(Qin,QP,QC,Qin1), builtin:add(1,QP,QP1),
+    next_dividend(TP,TL,Tail,Rem,TP1,Tail1,RL,Rem1),
+    div_loop(TP1,TL,Tail1,RL,YL,Rem1,Yin1,Y0,Y1,QP1,Qin1,Qout,Rout).
+
+%  first_quot(XL,YL,Xin2,Y0,Y1,^Sub,^TL,^Tail,^QE,^QL)  Estimate 1st word of quot and its length
+%      TL ::= length of Tail
+%      Sub  ::= substring of Xin (upper words string which are related to quot)
+%      Tail ::= tail string of Xin (lower words string which does not contribute to the 1st word of quot)
+%      QE   ::= estimated quot      QL ::= length of quot
+%    <NOTE> 1. MSB of Y0 is always 1 ( that is Y0 is negative), after Yin (diviser) is normalized
+%           2. YL>=2, where YL is length of Yin, because if YL=1 then div1/6 is used
+%           3. XL>=YL, where XL is length of Xin, because if XL<YL then this method never be called
+first_quot(XL,YL,Xin,Y0,Y1,Sub,TL,Tail,QE,QL) :- XL =:= YL | TL=0, new_string(Tail,0,32),
+    string_element(Xin,0,X1,Xin1), string_element(Xin1,1,X2,Sub), estim1(0,X1,X2,Y0,Y1,QE), QL= 1.
+first_quot(XL,YL,Xin,Y0,Y1,Sub,TL,Tail,QE,QL) :- XL =\= YL | 
+    string_element(Xin, 0,X0,Xin0),   string_element(Xin0,1,X1,Xin1), string_element(Xin1,2,X2,Xin2),
+    first_quot(X0,X1,X2,Y0,Y1,XL,YL,QE,QL), tail_string(XL,QL,TL,Xin2,Sub,Tail).
+
+
+first_quot(X0,X1,_,Y0,Y1,XL,YL,QE,QL) :- X0< 0, X0>=Y0 | 
+    builtin:add(-1,YL,YL1), builtin:subtract(XL,YL1,QL), mdlib#divide_extended(0,X0,Y0,Q,R),
+    mdlib#multiply_extended(Q,Y1,S1,S2), comp2W(S1,S2,R,X1,CMP), estim2(CMP,R,X1,Y0,Y1,Q,QE).
+first_quot(X0,X1,X2,Y0,Y1,XL,YL,QE,QL) :- X0< 0, X0< Y0 | builtin:subtract(XL,YL,QL),
+    mdlib#divide_extended(X0,X1,Y0,Q,R),
+    mdlib#multiply_extended(Q,Y1,S1,S2), comp2W(S1,S2,R,X2,CMP), estim2(CMP,R,X2,Y0,Y1,Q,QE).
+first_quot(X0,X1,X2,Y0,Y1,XL,YL,QE,QL) :- X0>=0 | builtin:subtract(XL,YL,QL), 
+    mdlib#divide_extended(X0,X1,Y0,Q,R),
+    mdlib#multiply_extended(Q,Y1,S1,S2), comp2W(S1,S2,R,X2,CMP), estim2(CMP,R,X2,Y0,Y1,Q,QE).
+
+
+tail_string(_, 1, TL,Xin,Sub,Tail) :- true | TL= 0, Sub= Xin, new_string(Tail,0,32).
+tail_string(XL,QL,TL,Xin,Sub,Tail) :- QL =\= 1 | builtin:add(-1,QL,TL),
+    builtin:subtract(XL,TL,SL),builtin#substring(Xin,0,SL,Sub,Xin1),builtin#substring(Xin1,SL,TL,Tail,_).
+
+
+
+
+% quot_set(MSW,QL,^Qout,^QP)   Check and set the MSW of quotient
+quot_set(0,  QL,Qout,QP) :- true | builtin:add(-1,QL,QL1), new_string(Qout,QL1,32), QP= 0.
+quot_set(MSW,QL,Qout,QP) :- MSW =\=0 | new_string(Q,QL,32), set_string_element(Q,0,MSW,Qout), QP= 1.
+
+
+
+
+%  next_dividend(TP,Tail,Rem,^NewTP,^NewTail,^RLen,^NewRem)  
+%     Append the MSW element of "Tail" to the tail of "Rem".
+%     The MSW is required to estimate quotinet in the next loop.
+%           Rem ::= remainder string          Tail ::=  tail string
+%           TP   ::= position of tail string 
+next_dividend(TP,TL,Tail,Rem,TPNew,TailNew,RLen,RemNew) :- TP<TL | string_element(Tail,TP,LSW,TailNew),
+    builtin:add(1,TP,TPNew),  string(Rem,L,_,Rem1), builtin:add(1,L,RLen), new_string(Out,RLen,32),
+    builtin#copy_string_elements(Out,0,L,Rem1,0,Out1,_), set_string_element(Out1,L,LSW,RemNew).
+next_dividend(TP,TL,_,Rem,TPNew,TailNew,RLen,RemNew) :- TP>=TL |
+    TPNew= TP, new_string(TailNew,0,32),   RLen= L, RemNew= Rem.
+
+
+%% quot_estim(XL,YL,Xin,Y0,Y1,^Xin1,^Qestim)
+%%     Estimate a word of quotient by the most significant (MS) 2 words of Xin and the MSW of Yin
+%%     XL,YL ::= length of Xin,Yin,      Xin ::= 32bit string
+%%     Y0,Y1, Qestim ::= 32bit unsigned integer (Y0 is always negative)
+%%         <NOTE> 1. Assumed YL>=2, XL>=YL and Y0>= 80000000H.
+%%                2. Yin ::= (Y0, Y1, ...... ),  Xin ::= (X0, X1, X2, ......)
+%%                3. Basically, Qestim = (X0,X1) / Y0
+quot_estim(XL,YL,Xin,_, _, Xout,QE) :- XL< YL | QE= 0, Xout= Xin.
+quot_estim(XL,YL,Xin,Y0,Y1,Xout,QE) :- XL>=YL, XL>2 | string_element(Xin, 0,X0,Xin1),
+    string_element(Xin1,1,X1,Xin2), string_element(Xin2,2,X2,Xout), estim1(X0,X1,X2,Y0,Y1,QE).
+quot_estim(XL,YL,Xin,Y0,Y1,Xout,QE) :- XL>=YL, XL=<2 | 
+    string_element(Xin,0,X1,Xin1), string_element(Xin1,1,X2,Xout), estim1(0,X1,X2,Y0,Y1,QE).
+
+estim1(X0,_, _, Y0,_, QE) :- X0< 0, X0>=Y0 | QE= 16#"FFFFFFFF" .
+estim1(X0,X1,X2,Y0,Y1,QE) :- X0< 0, X0< Y0 | mdlib#divide_extended(X0,X1,Y0,Q,R), 
+    mdlib#multiply_extended(Q,Y1,S1,S2), comp2W(S1,S2,R,X2,CMP), estim2(CMP,R,X2,Y0,Y1,Q,QE).
+estim1(X0,X1,X2,Y0,Y1,QE) :- X0>=0         | mdlib#divide_extended(X0,X1,Y0,Q,R), 
+    mdlib#multiply_extended(Q,Y1,S1,S2), comp2W(S1,S2,R,X2,CMP), estim2(CMP,R,X2,Y0,Y1,Q,QE).
+
+%%  estim2(CMP,R,X2,Y0,Y1,Q,QE)   
+%%      Local estimation check by the most significant(MS) 3 words of "Xin" and MS 2 word of "Yin"
+%%         Q = (X0,X1)/Y0,  R = (X0,X1)-QY0 = (X0,X1) mod Y0, 
+%%         QE= Q, when Y1*Q =< (R,X2),  else Q= Q-1 until Y1*Q=< (R,X2) := hold.
+estim2(=,_,_,_,_,Q,QE) :- true | QE= Q.
+estim2(<,_,_,_,_,Q,QE) :- true | QE= Q.
+estim2(>,R,X,Y0,Y1,Q,QE) :- true | 
+    mdlib#subtract_extended(Q,1,_,Q1), mdlib#add_extended(R,Y0,C,R1), estim3(C,R1,X,Y0,Y1,Q1,QE).
+
+estim3(C,_,_,_,_,Q,QE) :- C =\= 0 | QE= Q.
+estim3(0,R1,X,Y0,Y1,Q,QE) :- true | 
+    mdlib#multiply_extended(Q,Y1,S1,S2), comp2W(S1,S2,R1,X,CMP), estim2(CMP,R1,X,Y0,Y1,Q,QE).
+
+
+%%  estim_check(QE,XL,Xin,Yin,^QC,^Rem,^YinNew)  Global estimation check
+%%       QE ::= estimated quotient,    QC ::= corrected quotient
+%%       XL ::= length of Xin,Yin,     Xin,Yin,Rem ::= 32bit string
+%%     QC  = QE when Xin >= Yin*QE, else QE=QE-1 until Xin >= Yin*QE := hold.
+%%     Rem = Xin- Yin*QC
+estim_check(0, Xin,Yin,QC,Rout,Yout) :- true | QC= 0, Rout= Xin, Yout= Yin.
+estim_check(QE,Xin,Yin,QC,Rout,Yout) :- QE =\= 0 | mdlib#multiply_bignum_by_word(Yin,QE,YQ),
+    Yout=Yin, comp(Xin,YQ,CMP,Xin1,YQ2), estim_chk(CMP,YQ2,QE,Xin1,Yin,QC,Rout).
+
+%% estim_chk(CMP,YQ,Qestim,Xin,Yin,^Qout,^Rout)  Check the estimated quotient
+%%      Flag ::= > | = | <,  YQ ::= Qestim*Yin, 
+%%      Qout ::= corrected Qestim,  Rout ::= Xin-YQ
+estim_chk(=,_, QE,_,  _,  Qout,Rout) :- true | Qout= QE, new_string(Rout,0,32).
+estim_chk(>,YQ,QE,Xin,_,  Qout,Rout) :- true | Qout= QE, mdlib#subtract_bignum(Xin,YQ,_,Rout).
+estim_chk(<,YQ,QE,Xin,Yin,Qout,Rout) :- true | 
+    mdlib#subtract_extended(QE,1,_,QE1),  mdlib#subtract_bignum(YQ,Yin,_,YQ0), 
+    comp(Xin,YQ0,CMP,Xin1,YQ2),           estim_chk(CMP,YQ2,QE1,Xin1,Yin,Qout,Rout). 
+
+
+div_zero_raise(X,Q,R) :- true | shoen:raise(pimos_tag#error,
+                       '$PIMOS$'(integer_zero_division, "Zero division error"), bignum:divide(X,0,Q,R)).
+div_raise(1,X,Y,Q,R) :- true | shoen:raise(pimos_tag#error,
+                       '$PIMOS$'(illegal_input_at_arg1,"Argument must be bignum"),bignum:divide(X,Y,Q,R)).
+div_raise(2,X,Y,Q,R) :- true | shoen:raise(pimos_tag#error,
+                       '$PIMOS$'(illegal_input_at_arg2,"Argument must be bignum"),bignum:divide(X,Y,Q,R)).
+
+%%%%%
+%%%%%  MODULO
+%%%%%
+modulo(Xin,Yin,Rem) :- Xin =\= 0 | modINT(Xin,Yin,Rem).
+modulo(0,  Yin,Rem) :- true  | mod_arg2(Yin,Rem).
+modulo(Xin,Yin,Rem) :- bignum#bignum(Xin,SX,1,X) | modBN1(SX,X,Yin,Rem).
+modulo(Xin,Yin,Rem) :- bignum#bignum(Xin,SX,XL,X), XL>1 | modBNUM(SX,XL,X,Yin,Rem).
+otherwise.
+modulo(Xin,Yin,Rem) :- true | mod_raise(1,Xin,Yin,Rem).
+
+
+modINT(Xin,Yin,Rem) :- bignum#bignum(Yin) | Rem= Xin.
+modINT(Xin,Yin,Rem) :- Yin =\= 0 | builtin:modulo(Xin,Yin,Rem).
+modINT(Xin,0,  Rem) :- true | mod_zero_raise(Xin,Rem).
+otherwise.
+modINT(Xin,Yin,Rem) :- true | mod_raise(2,Xin,Yin,Rem).
+
+
+modBN1(SX,X,Yin,Rem) :- bignum#numer(Yin,YL,Y), YL>1 | bignum#compose(SX,X,Rem).
+modBN1(SX,X,Yin,Rem) :- bignum#numer(Yin,1, Y) | string_element(Y,0,Y0,_), 
+    string_element(X,0,X0,_), mdlib#divide_extended(0,X0,Y0,_,R), normalize(SX,0,R,Rem).
+modBN1(SX,X,Yin,Rem) :- Yin>  1 | 
+    string_element(X,0,X0,_), mdlib#divide_extended(0,X0,Yin,_,R), normalize(SX,0,R,Rem).
+modBN1(SX,X,Yin,Rem) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,YN),
+    string_element(X,0,X0,_), mdlib#divide_extended(0,X0,YN,_,R), normalize(SX,0,R,Rem).
+modBN1(_,_, 1, Rem) :- true | Rem= 0.
+modBN1(_,_,-1, Rem) :- true | Rem= 0.
+modBN1(SX,X,0, Rem) :- true | bignum#compose(SX,X,Xin), mod_zero_raise(Xin,Rem).
+otherwise.
+modBN1(SX,X,Yin,Rem) :- true | bignum#compose(SX,X,Xin), mod_raise(2,Xin,Yin,Rem).
+
+
+modBNUM(SX,_, X,Yin,Rem) :- bignum#numer(Yin,YL,Y),YL>1 |
+    comp(X,Y,CMP,Xnew,Ynew), modSTR(CMP,Xnew,Ynew,R), normalize(SX,R,Rem).
+modBNUM(SX,XL,X,Yin,Rem) :- bignum#numer(Yin,1,Y) | 
+    string_element(X,0,X0,Xstr), string_element(Y,0,Y0,_), mod1(X0,Y0,XL,Xstr,R), normalize(SX,R,Rem).
+modBNUM(SX,XL,X,Yin,Rem) :- Yin>  1 | 
+    string_element(X,0,X0,Xstr), mod1(X0,Yin,XL,Xstr,R), normalize(SX,R,Rem).
+modBNUM(SX,XL,X,Yin,Rem) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y),
+    string_element(X,0,X0,Xstr), mod1(X0,Y,XL,Xstr,R), normalize(SX,R,Rem).
+modBNUM(_,_,_, 1, Rem) :- true | Rem= 0.
+modBNUM(_,_,_,-1, Rem) :- true | Rem= 0.
+modBNUM(SX,_,X,0, Rem) :- true | bignum#compose(SX,X,Xin), mod_zero_raise(Xin,Rem).
+otherwise.
+modBNUM(SX,_,X,Yin,Rem) :- true | bignum#compose(SX,X,Xin), mod_raise(2,Xin,Yin,Rem).
+
+
+mod_arg2(Yin,Rem) :- Yin =\= 0  | Rem= 0.
+mod_arg2(Yin,Rem) :- bignum#bignum(Yin) | Rem= 0 .
+mod_arg2(Yin,Rem) :- Yin =:= 0  | mod_zero_raise(0,Rem).
+otherwise.
+mod_arg2(Yin,Rem) :- true | mod_raise(2,0,Yin,Rem).
+
+
+%% mod1(X0,Y0,XL,Xin,^Rem)   
+%%      X0,Y0 ::= unsigned integer  
+mod1(X0,Y0,XL,Xin,Rout) :- X0>0,Y0>0,X0<Y0 | 
+    string_element(Xin,1,X1,Xin1), mdlib#divide_extended(X0,X1,Y0,_,R0), mod1(2,XL,Xin1,Y0,R0,Rout).
+mod1(X0,Y0,XL,Xin,Rout) :- X0<0,Y0<0,X0<Y0 | 
+    string_element(Xin,1,X1,Xin1), mdlib#divide_extended(X0,X1,Y0,_,R0), mod1(2,XL,Xin1,Y0,R0,Rout).
+mod1(X0,Y0,XL,Xin,Rout) :- X0>0,Y0<0 | 
+    string_element(Xin,1,X1,Xin1), mdlib#divide_extended(X0,X1,Y0,_,R0), mod1(2,XL,Xin1,Y0,R0,Rout).
+otherwise.
+mod1(X0,Y0,XL,Xin,Rout) :- true | mdlib#divide_extended(0,X0,Y0,_,R0), mod1(1,XL,Xin,Y0,R0,Rout).
+
+
+mod1(XL,XL,_,  _,Rin,Rout) :- true | Rout= Rin.
+mod1(XP,XL,Xin,Y,Rin,Rout) :- XP =\= XL | string_element(Xin,XP,X,Xin1),
+    mdlib#divide_extended(Rin,X,Y,_,Rin1), builtin:add(1,XP,XP1), mod1(XP1,XL,Xin1,Y,Rin1,Rout).
+
+
+
+%%  modSTR(CMP,Xin,Yin,Rem)   Modulo by bignum
+%%       CMP ::= > | = | < ,   
+%%       Xin,Yin,Rem ::= 32bit string
+modSTR(<,Xin,_,  Rout) :- true | Rout= Xin.
+modSTR(=,_,  _,  Rout) :- true | new_string(Rout,0,32).
+modSTR(>,Xin,Yin,Rout) :- true |
+    shift_left_until_1stBIT(Yin,SN,Yin0), 
+    string_element(Yin0,0,Y0,Yin1), string_element(Yin1,1,Y1,Yin2), string(Yin2,YL,_,Yin3),     
+    shift_left_bit(Xin,SN,Xin1),    string(Xin1,XL,_,Xin2), 
+    first_quot(XL,YL,Xin2,Y0,Y1,Sub,TL,Tail,QE,_), 
+    estim_check(QE,Sub,Yin3,_,Rem,Yin4),
+    next_dividend(0,TL,Tail,Rem,TP1,Tail1,RL,Rem1),
+    mod_loop(TP1,TL,Tail1,RL,YL,Rem1,Yin4,Y0,Y1,Rem3), 
+    zero_suppress(Rem3,Rem4),
+    shift_right_bit(Rem4,SN,Rout).
+
+%% mod_loop(CMP,XL,YL,Xin,Yin,Y0,Y1,^Rem)
+%%     XL,YL ::= length of Xin,Yin      Xin,Yin,Rem ::= 32bit string
+%%     Y0,Y1 ::= Diviser's(Yin) element at position 0 (MSW) and position 1
+mod_loop(TP,TL,_,_, _,Xin,_,   _, _, Rout) :- TP>=TL,TL=0 | Rout= Xin.
+mod_loop(TP,TL,_,XL,YL,Xin,Yin,Y0,Y1,Rout) :- TP= TL,TL>0 |
+    quot_estim(XL,YL,Xin,Y0,Y1,Xin1,QE), estim_check(QE,Xin1,Yin,_,Rout,_).
+mod_loop(TP,TL,Tail,XL,YL,Xin,Yin,Y0,Y1,Rout) :- TP<TL |
+    quot_estim(XL,YL,Xin,Y0,Y1,Xin1,QE),  
+    estim_check(QE,Xin1,Yin,_,Rem,Yin1), 
+    next_dividend(TP,TL,Tail,Rem,TP1,Tail1,RL,Rem1),
+    mod_loop(TP1,TL,Tail1,RL,YL,Rem1,Yin1,Y0,Y1,Rout).
+
+
+
+mod_zero_raise(X,R) :- true | shoen:raise(pimos_tag#error, 
+                    '$PIMOS$'(bignum_zero_division, "Zero division error"), bignum:modulo(X,0,R)).
+mod_raise(1,X,Y,R) :- true | shoen:raise(pimos_tag#error, 
+                    '$PIMOS$'(illegal_input_at_arg1,"Argument must be bignum"), bignum:modulo(X,Y,R)).
+mod_raise(2,X,Y,R) :- true | shoen:raise(pimos_tag#error, 
+                    '$PIMOS$'(illegal_input_at_arg2,"Argument must be bignum"), bignum:modulo(X,Y,R)).
+
+
+%%%%%
+%%%%%  POWER :: Out = Xin**Yin, where Xin must be bignum, Yin must be non_negative integer
+%%%%%
+power(Xin,Yin,Out) :- bignum#bignum(Xin,Sx,Nx) | powBNUM(Sx,Nx,Yin,Out).
+power(Xin,Yin,Out) :- Xin>  1 | powINTp(Xin,Yin,Out).
+power(Xin,Yin,Out) :- Xin< -1 | powINTm(Xin,Yin,Out).
+power(Xin,Yin,Out) :- Xin=  0 | powZERO(Yin,Out).
+power(Xin,Yin,Out) :- Xin=  1 | pow1p(Yin,Out).
+power(Xin,Yin,Out) :- Xin= -1 | pow1m(Yin,Out).
+otherwise.
+power(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be rational"),bignum:power(Xin,Yin,Out)).
+
+powBNUM(_, Nx,Yin,Out) :- Yin>1, 0 := Yin/\1 | powBNUMsub(Yin,Nx,1,Nz), normalize(0,Nz,Out).
+powBNUM(Sx,Nx,Yin,Out) :- Yin>1, 1 := Yin/\1 | powBNUMsub(Yin,Nx,1,Nz), normalize(Sx,Nz,Out).
+powBNUM(Sx,Nx,Yin,Out) :- Yin=1 | bignum#compose(Sx,Nx,Out).
+powBNUM(_, _, Yin,Out) :- Yin=0 | Out= 1.
+otherwise.
+powBNUM(Sx,Nx,Yin,Out) :- true | bignum#compose(Sx,Nx,Xin), pow_raise(Xin,Yin,Out).
+
+powINTp(Xin,Yin,Out) :- Yin>1 | powBNUMsub(Yin,Xin,1,Nz), normalize(0,Nz,Out).
+powINTp(Xin,Yin,Out) :- Yin=1 | Out= Xin.
+powINTp(_,  Yin,Out) :- Yin=0 | Out= 1.
+otherwise.
+powINTp(Xin,Yin,Out) :- true |  pow_raise(Xin,Yin,Out).
+
+powINTm(Xin,Yin,Out) :- Yin>1, 0 := Yin/\1 | 
+    mdlib#subtract_extended(0,Xin,_,XN), powBNUMsub(Yin,XN,1,Nz), normalize(0,Nz,Out).
+powINTm(Xin,Yin,Out) :- Yin>1, 1 := Yin/\1 | 
+    mdlib#subtract_extended(0,Xin,_,XN), powBNUMsub(Yin,XN,1,Nz), normalize(1,Nz,Out).
+powINTm(Xin,Yin,Out) :- Yin=1 | Out= Xin.
+powINTm(_,  Yin,Out) :- Yin=0 | Out= 1.
+otherwise.
+powINTm(Xin,Yin,Out) :- true |  pow_raise(Xin,Yin,Out).
+
+pow1p(Yin,Out) :- Yin>=0 | Out= 1.
+otherwise.
+pow1p(Yin,Out) :- true | pow_raise(1,Yin,Out).
+
+pow1m(Yin,Out) :- Yin>=0, 0 := Yin/\1 | Out= 1.
+pow1m(Yin,Out) :- Yin>=0, 1 := Yin/\1 | Out= -1.
+otherwise.
+pow1m(Yin,Out) :- true | pow_raise(1,Yin,Out).
+
+powZERO(Yin,Out) :- Yin>=0 | Out= 0.
+otherwise.
+powZERO(Yin,Out) :- true | pow_raise(0,Yin,Out).
+
+pow_raise(Xin,Yin,Out) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg2,"Argument must be non-negative integer"),bignum:power(Xin,Yin,Out)).
+
+
+powBNUMsub(N,_,Ac,Zout) :- N =:= 0 | Zout= Ac.
+powBNUMsub(N,X,Ac,Zout) :- N =\= 0, 0 := N/\1 | N1 := N>>1, mulbig(X,X,X2),powBNUMsub(N1,X2,Ac,Zout).
+powBNUMsub(N,X,Ac,Zout) :- N =\= 0, 1 := N/\1 | N1 := N>>1, 
+    mulbig(X,Ac,Ac1), mulbig(X,X,X2), powBNUMsub(N1,X2,Ac1,Zout).
+
+
+%%%%%
+%%%%%  Absolute shift left operation to speedup multiply in special cases
+%%%%%
+shift_left_abs(Xin,SN,Zout) :- Xin>0 | shift_leftINTplus(Xin,SN,Zout).
+shift_left_abs(Xin,SN,Zout) :- Xin<0 | shift_leftINTminus(Xin,SN,Zout).
+shift_left_abs(Xin,SN,Zout) :- Xin=0, SN>=0 | Zout= 0.
+shift_left_abs(Xin,SN,Zout) :- Xin=0, SN<0  | shift_left_raise(2,0,SN,Zout).
+shift_left_abs(Xin,SN,Zout) :- bignum#bignum(Xin,SX,XL,X),XL>1 | shift_leftBNUM(SX,XL,X,SN,Zout).
+shift_left_abs(Xin,SN,Zout) :- bignum#bignum(Xin,SX,XL,X),XL=1 | shift_leftBN1(SX,X,SN,Zout).
+otherwise.
+shift_left_abs(Xin,SN,Zout) :- true | shift_left_raise(1,Xin,SN,Zout).
+
+shift_leftINTplus(Xin,SN,Zout) :- SN>=32 |
+    SNw := SN>>5, SNb := SN/\16#"1F", shift_leftINT(SN,SNw,SNb,Xin,Z), bignum#compose(0,Z,Zout).
+shift_leftINTplus(Xin,SN,Zout) :- SN< 32, SN>0 | overflow(SN,M),
+    builtin:subtract(32,SN,CSN), XH := (Xin/\M)>>CSN, XL := Xin<<SN, normalize(0,XH,XL,Zout).
+shift_leftINTplus(Xin,SN,Zout) :- SN< 32, SN=0 |  Zout= Xin.
+otherwise.
+shift_leftINTplus(Xin,SN,Zout) :- true | shift_left_raise(2,Xin,SN,Zout).
+
+shift_leftINTminus(Xin,SN,Zout) :- SN>=32 | mdlib#subtract_extended(0,Xin,_,XN), 
+    SNw := SN>>5, SNb := SN/\16#"1F", shift_leftINT(SN,SNw,SNb,XN,Z), bignum#compose(1,Z,Zout).
+shift_leftINTminus(Xin,SN,Zout) :- SN< 32, SN>0 | mdlib#subtract_extended(0,Xin,_,XN), 
+    overflow(SN,M),builtin:subtract(32,SN,CSN), XH := (XN/\M)>>CSN, XL := XN<<SN,normalize(1,XH,XL,Zout).
+shift_leftINTminus(Xin,SN,Zout) :- SN< 32, SN=0 |  Zout= Xin.
+otherwise.
+shift_leftINTminus(Xin,SN,Zout) :- true | shift_left_raise(2,Xin,SN,Zout).
+
+shift_leftBN1(SX,Xin,SN,Zout) :- SN>=32       | 
+    SNw := SN>>5, SNb := SN/\16#"1F", shiftLBN1(SN,SNw,SNb,Xin,Z), bignum#compose(SX,Z,Zout).
+shift_leftBN1(SX,Xin,SN,Zout) :- SN< 32, SN>0 | string_element(Xin,0,X0,_),
+    overflow(SN,M),builtin:subtract(32,SN,CSN),XH := (X0/\M)>>CSN, XL := X0<<SN,normalize(SX,XH,XL,Zout).
+shift_leftBN1(SX,Xin,SN,Zout) :- SN< 32, SN=0 | bignum#compose(SX,Xin,Zout).
+otherwise.
+shift_leftBN1(SX,Xin,SN,Zout) :- true |  bignum#compose(SX,Xin,Zout), shift_left_raise(2,Xin,SN,Zout).
+
+shift_leftBNUM(SX,XL,Xin,SN,Zout) :- SN>0 |
+    SNw := SN>>5, SNb := SN/\16#"1F", shift_left(SN,SNw,SNb,XL,Xin,Z), bignum#compose(SX,Z,Zout).
+shift_leftBNUM(SX,_,Xin, 0,Zout) :- true | bignum#compose(SX,Xin,Zout).
+otherwise.
+shift_leftBNUM(SX,_,Xin,SN,Zout) :- true |  bignum#compose(SX,Xin,Zout), shift_left_raise(2,Xin,SN,Zout).
+
+shiftLBN1(_, SNw,SNb,Xin,Zout) :- SNb =:= 0 | string_element(Xin,0,X0,_),
+    builtin:add(1,SNw,ZL), new_string(Z,ZL,32), set_string_element(Z,0,X0,Zout).
+shiftLBN1(SN,_,  SNb,Xin,Zout) :- SNb =\= 0 | change_element_size(Xin,1,Bs1),
+    search_character(Bs1,0,31,1,Pt,Bs2), move_left(Pt,SN,SNb,32,Bs2,Os), change_element_size(Os,32,Zout).
+
+shift_leftINT(_,SNw,SNb,Xin,Zout) :- SNb =:= 0 | 
+    builtin:add(1,SNw,ZL), new_string(Z,ZL,32), set_string_element(Z,0,Xin,Zout).
+shift_leftINT(SN,_,SNb,Xin,Zout) :- SNb =\= 0 | new_string(S,1,32), set_string_element(S,0,Xin,Str),
+    change_element_size(Str,1,Bs1),     search_character(Bs1,0,31,1,Pos1,Bs2), 
+    move_left(Pos1,SN,SNb,32,Bs2,Ostr), change_element_size(Ostr,32,Zout).
+
+%  shift_left(SN,SNword,SNmod32,XL,Xstr,^Zout)
+shift_left(_, SNw,SNb,XL,Xin,Zout) :- SNb =:= 0 | 
+    builtin:add(XL,SNw,ZL), new_string(Z,ZL,32), builtin#copy_string_elements(Z,0,XL,Xin,0,Zout,_).
+shift_left(SN,_,  SNb,_, Xin,Zout) :- SNb =\= 0 | change_element_size(Xin,1,Bs),
+    string(Bs,BL,_,Bs1), builtin:add(-1,BL,BE), search_character(Bs1,0,BE,1,Pos1,Bs2),
+    move_left(Pos1,SN,SNb,BL,Bs2,Ostr),   change_element_size(Ostr,32,Zout).
+%  move_left(Pos1,SN,SNbit,Len,Bstr,^Out) 
+%       Pos1 ::= position of first nonzero bit in Bstr  SN, ::= Total Sift number,   SNbit ::= SN mod 32
+%       Len  ::= length of Bstr      Bstr   ::= bit string input    Out ::= output bit string    
+%       NOTE when Pos1>=SNbit, OutLen := Len+SN-SNbit otherwise, OutLen := Len+SN-SNbit+32,
+move_left(Pos1,SN,SNbit,Len,Bstr,Out) :-  Pos1>=SNbit |
+    builtin:add(Len,SN,SNL), builtin:subtract(SNL,SNbit,OLen), new_string(Ostr,OLen,1),
+    builtin:subtract(Len,SNbit,CL),builtin#copy_string_elements(Ostr,0,CL,Bstr,SNbit,Out,_). 
+move_left(Pos1,SN,SNbit,Len,Bstr,Out) :-  Pos1< SNbit | 
+    builtin:add(Len,SN,SNL), builtin:subtract(SNL,SNbit,SNL1), builtin:add(SNL1,32,OLen), 
+    new_string(Os,OLen,1),  builtin:subtract(Len,Pos1,CL),     builtin:subtract(SNbit,Pos1,S),
+    builtin:subtract(32,S,PS), builtin#copy_string_elements(Os,PS,CL,Bstr,Pos1,Out,_).
+
+% shift_left_until_1stBIT(Xin, ^SN,^Xout)   Bit shift until the first bit is non zero
+shift_left_until_1stBIT(Xin,SN,Xout) :- string_element(Xin,0,X0), X0<0 | SN= 0, Xout= Xin.
+otherwise.
+shift_left_until_1stBIT(Xin,SN,Xout) :- string(Xin,_,_) | change_element_size(Xin,1,Bs),
+    string(Bs,BL,_,Bs1), builtin:add(-1,BL,BE), search_character(Bs1,0,BE,1,SN,Bs2), 
+    builtin:subtract(BL,SN,CL),   new_string(Ostr,BL,1), 
+    builtin#copy_string_elements(Ostr,0,CL,Bs2,SN,Out,_), change_element_size(Out,32,Xout).
+
+% shift_left_bit(Xin,SN,^Out)   Append 0 string to the tail   Xin, Out ::= 32bit string | integer 
+shift_left_bit(Xin,SN,Out) :- Xin =\= 0,SN>0 | shiftLINT(Xin,SN,Out).
+shift_left_bit(Xin,SN,Out) :- Xin =:= 0 | Out= 0.
+shift_left_bit(Xin,SN,Out) :- string(Xin,XL,_),XL>1,SN>0 | 
+    SNw := SN>>5, SNb := SN/\16#"1F", shift_left(SN,SNw,SNb,XL,Xin,Out).
+shift_left_bit(Xin,SN,Out) :- string(Xin,XL,_),XL=1,SN>0 | shiftLBS1(Xin,SN,Out).
+shift_left_bit(Xin,SN,Out) :- string(Xin,XL,_),XL=0 | Out= 0.
+shift_left_bit(Xin,0, Out) :- true | Out= Xin.
+
+shiftLINT(Xin,SN,Out) :- SN< 32 | overflow(SN,Mask),
+    builtin:subtract(32,SN,CSN), XH := (Xin/\Mask)>>CSN, XL := Xin<<SN, to_numer(XH,XL,Out).
+shiftLINT(Xin,SN,Out) :- SN>=32 | SNw := SN>>5, SNb := SN/\16#"1F", shift_leftINT(SN,SNw,SNb,Xin,Out).
+
+shiftLBS1(Xin,SN,Out) :- SN< 32 | string_element(Xin,0,X0,_), 
+    overflow(SN,M), builtin:subtract(32,SN,CSN), XH := (X0/\M)>>CSN, XL := X0<<SN, to_numer(XH,XL,Out).
+shiftLBS1(Xin,SN,Out) :- SN>=32 | SNw := SN>>5, SNb := SN/\16#"1F", shiftLBN1(SN,SNw,SNb,Xin,Out).
+
+shift_left_raise(1,X,SN,Z) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_arg1,"Argument must be bignum"),bignum:shift_left_abs(X,SN,Z)).
+shift_left_raise(2,X,SN,Z) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_arg2,"Argument must be positive integer"),bignum:shift_left_abs(X,SN,Z)).
+
+%% overflow(SNbit,^Mask)  Make a mask to keep overflow bits
+overflow( 0,M) :- true | M= 16#"00000000".    overflow( 1,M) :- true | M= 16#"80000000".
+overflow( 2,M) :- true | M= 16#"C0000000".    overflow( 3,M) :- true | M= 16#"E0000000".
+overflow( 4,M) :- true | M= 16#"F0000000".    overflow( 5,M) :- true | M= 16#"F8000000".
+overflow( 6,M) :- true | M= 16#"FC000000".    overflow( 7,M) :- true | M= 16#"FE000000".
+overflow( 8,M) :- true | M= 16#"FF000000".    overflow( 9,M) :- true | M= 16#"FF800000".
+overflow(10,M) :- true | M= 16#"FFC00000".    overflow(11,M) :- true | M= 16#"FFE00000".
+overflow(12,M) :- true | M= 16#"FFF00000".    overflow(13,M) :- true | M= 16#"FFF80000".
+overflow(14,M) :- true | M= 16#"FFFC0000".    overflow(15,M) :- true | M= 16#"FFFE0000".
+overflow(16,M) :- true | M= 16#"FFFF0000".    overflow(17,M) :- true | M= 16#"FFFF8000".
+overflow(18,M) :- true | M= 16#"FFFFC000".    overflow(19,M) :- true | M= 16#"FFFFE000".
+overflow(20,M) :- true | M= 16#"FFFFF000".    overflow(21,M) :- true | M= 16#"FFFFF800".
+overflow(22,M) :- true | M= 16#"FFFFFC00".    overflow(23,M) :- true | M= 16#"FFFFFE00".
+overflow(24,M) :- true | M= 16#"FFFFFF00".    overflow(25,M) :- true | M= 16#"FFFFFF80".
+overflow(26,M) :- true | M= 16#"FFFFFFC0".    overflow(27,M) :- true | M= 16#"FFFFFFE0".
+overflow(28,M) :- true | M= 16#"FFFFFFF0".    overflow(29,M) :- true | M= 16#"FFFFFFF8".
+overflow(30,M) :- true | M= 16#"FFFFFFFC".    overflow(31,M) :- true | M= 16#"FFFFFFFE".
+
+%%%%%
+%%%%%  Absolute shift right operation to speedup divide in special cases
+%%%%%
+shift_right_abs(Xin,SN,Zout) :- Xin>0 | shift_rightINTplus(Xin,SN,Zout).
+shift_right_abs(Xin,SN,Zout) :- Xin<0 | shift_rightINTminus(Xin,SN,Zout).
+shift_right_abs(Xin,SN,Zout) :- Xin=0, SN>=0 | Zout= 0.
+shift_right_abs(Xin,SN,Zout) :- Xin=0, SN< 0 | shift_right_raise(2,0,SN,Zout).
+shift_right_abs(Xin,SN,Zout) :- bignum#bignum(Xin,SX,XL,X),XL>1 |
+    XLb := XL<<5, shift_rightBNUM(SX,XL,XLb,X,SN,Zout).
+shift_right_abs(Xin,SN,Zout) :- bignum#bignum(Xin,SX,XL,X),XL=1 | shift_rightBN1(SX,X,SN,Zout).
+otherwise.
+shift_right_abs(Xin,SN,Zout) :- true | shift_right_raise(1,Xin,SN,Zout).
+
+shift_rightINTplus(_,  SN,Zout) :- SN>=32 | Zout= 0.
+shift_rightINTplus(Xin,SN,Zout) :- SN< 32, SN>=0 | Zout := Xin>>SN.
+otherwise.
+shift_rightINTplus(Xin,SN,Zout) :- true | shift_right_raise(2,Xin,SN,Zout).
+
+shift_rightINTminus(_,  SN,Zout) :- SN>=32 | Zout= 0.
+shift_rightINTminus(Xin,SN,Zout) :- SN< 32, SN>0 | 
+    mdlib#subtract_extended(0,Xin,_,X), Z := X>>SN, mdlib#subtract_extended(0,Z,_,Zout).
+shift_rightINTminus(Xin,SN,Zout) :- SN< 32, SN=0 | Zout= Xin.
+otherwise.
+shift_rightINTminus(Xin,SN,Zout) :- true | shift_right_raise(2,Xin,SN,Zout).
+
+shift_rightBN1(_, _,  SN,Zout) :- SN>=32 | Zout= 0.
+shift_rightBN1(SX,Xin,SN,Zout) :- SN< 32,SN>0,SX=0 | string_element(Xin,0,X0,_), Zout := X0>>SN.
+shift_rightBN1(SX,Xin,SN,Zout) :- SN< 32,SN>0,SX=1 | 
+    string_element(Xin,0,X,_), Z := X>>SN, builtin:subtract(0,Z,Zout).
+shift_rightBN1(SX,Xin,SN,Zout) :- SN< 32,SN=0 | bignum#compose(SX,Xin,Zout).
+otherwise.
+shift_rightBN1(SX,Xin,SN,Zout) :- true | bignum#compose(SX,Xin,X), shift_right_raise(2,X,SN,Zout).
+
+shift_rightBNUM(_, _, XLb,_,  SN,Zout) :- SN>=XLb | Zout= 0.
+shift_rightBNUM(SX,XL,XLb,Xin,SN,Zout) :- SN< XLb,SN>0 |
+    SNw := SN>>5, SNb := SN/\16#"1F", shift_right(SN,SNw,SNb,XL,XLb,Xin,Z), normalize(SX,Z,Zout).
+shift_rightBNUM(SX,_, _,  Xin,SN,Zout) :- SN= 0  | bignum#compose(SX,Xin,Zout).
+otherwise.
+shift_rightBNUM(SX,_,_,Xin,SN,Zout) :- true | bignum#compose(SX,Xin,X), shift_right_raise(2,X,SN,Zout).
+
+
+%  shift_right(SNtotal,SNword,SNbit,XL,XLb,Xstr,^Zout)
+shift_right(_, SNw,SNb,XL,_,  Xin,Zout) :- SNb =:= 0 |
+    builtin:subtract(XL,SNw,Len),builtin#substring(Xin,0,Len,Zout,_).
+shift_right(SN,_,  SNb,_, XLb,Xin,Zout) :- SNb =\= 0 | change_element_size(Xin,1,Bstr),
+    builtin:add(-1,XLb,BE), search_character(Bstr,0,BE,1,Pos1,Bstr1), builtin:subtract(XLb,SN,QL1),
+    QLr := QL1/\16#"1F",    builtin:subtract(32,QLr,AL),  builtin:add(QL1,AL,QL),
+    builtin:subtract(QL1,Pos1,CL), builtin:add(Pos1,AL,ZL), move_right(ZL,Pos1,QL,CL,Bstr1,_,Zout).
+
+%  move_right(ZL,Pos1,QL,CL,Bstr,^BstrNew,^Out)
+%       Pos1 ::= position of 1st non-zero bit in Bstr    ZL ::= Pos1+(32-(SN mod 32))
+%       Bstr ::= bit string and its length   QL ::= output string's length   CL   ::= copy length
+move_right(ZL,Pos1,QL,CL,Bstr,BstrNew,Out) :- ZL< 32,QL>0,CL>0 | new_string(Os,QL,1),
+    builtin#copy_string_elements(Os,ZL,CL,Bstr,Pos1,Os1,BstrNew), change_element_size(Os1,32,Out).
+move_right(ZL,Pos1,QL,CL,Bstr,BstrNew,Out) :- ZL>=32,QL>0,CL>0 | 
+    builtin:subtract(QL,32,OL), builtin:subtract(ZL,32,ZLr), new_string(Os,OL,1), 
+    builtin#copy_string_elements(Os,ZLr,CL,Bstr,Pos1,Os1,BstrNew), change_element_size(Os1,32,Out).
+otherwise.
+move_right(_,_,_,_,Bstr,BstrNew,Out) :- true | BstrNew= Bstr, Out= 0.
+shift_right_raise(1,X,SN,Z) :- true | shoen:raise(pimos_tag#error,
+      '$PIMOS$'(illegal_input_arg2,"Argument must be bignum"), bignum:shift_right_abs(X,SN,Z)).
+shift_right_raise(2,X,SN,Z) :- true | shoen:raise(pimos_tag#error,
+      '$PIMOS$'(illegal_input_arg2,"Argument must be positive integer"),bignum:shift_right_abs(X,SN,Z)).
+
+
+
+%%%  shift_right_bit(Xin,SN,^Out)
+%%%       Xin, Out ::=  32bit string,  SN ::= integer ( 0 =< SN =< 31)
+shift_right_bit(Xin,0, Out) :- true | Out= Xin.
+shift_right_bit(Xin,_, Out) :- string(Xin,0,_) | new_string(Out,0,32).
+shift_right_bit(Xin,SN,Out) :- string(Xin,1,_),SN>0 |
+    string_element(Xin,0,X0,Xin1), XX := X0>>SN, shift_right_bitSUB(XX,Xin1,Out).
+shift_right_bit(Xin,SN,Out) :- string(Xin,XL,_),XL>1,SN>0 | XLb := XL<<5, 
+    change_element_size(Xin,1,Bstr), builtin:add(-1,XLb,BE), search_character(Bstr,0,BE,1,Pos1,Bstr1), 
+    builtin:subtract(XLb,SN,QL1),QLr:=QL1/\16#"1F", builtin:subtract(32,QLr,AL), builtin:add(QL1,AL,QL),
+    builtin:subtract(QL1,Pos1,CL), builtin:add(Pos1,AL,ZL), move_right(ZL,Pos1,QL,CL,Bstr1,_,Out).
+
+shift_right_bitSUB(X,_,Out) :- X =:= 0 | new_string(Out,0,32).
+shift_right_bitSUB(X,S,Out) :- X =\= 0 | set_string_element(S,0,X,Out).
+
+
+%%%  shift_right_until_odd(Xin,^SN,^Out)   Bit shift until the last bit is non zero
+%%%             Xin ::= 32bit string     Out ::= 32bit string (Not normalized)
+shift_right_until_odd(Xin,SN,Out) :- string(Xin,XL,_),XL>1 | XLb := XL<<5,
+    change_element_size(Xin,1,Bstr), builtin:add(-1,XLb,BE), search_character(Bstr,BE,0,1,Pos1,Bstr1), 
+    builtin:subtract(BE,Pos1,SN), until_odd_sub(SN,XLb,BE,Bstr1,Out).
+shift_right_until_odd(Xin,SN,Out) :- string(Xin,XL,_),XL=0 | SN= 0, Out= Xin.
+shift_right_until_odd(Xin,SN,Out) :- string(Xin,XL,_),XL=1 | string_element(Xin,0,X0,Xin1),
+    LB := X0/\1, until_odd_int(LB,0,SN,X0,Z), set_string_element(Xin1,0,Z,Out).
+
+until_odd_sub(0, _,  _, Bstr,Out) :- true | change_element_size(Bstr,32,Out).
+until_odd_sub(SN,XLb,BE,Bstr,Out) :- SN =\= 0 | search_character(Bstr,0,BE,1,Pos1,Bstr1), 
+    builtin:subtract(XLb,SN,QL1),QLr := QL1/\16#"1F",builtin:subtract(32,QLr,AL),builtin:add(QL1,AL,QL),
+    builtin:subtract(QL1,Pos1,CL), builtin:add(Pos1,AL,ZL), move_right(ZL,Pos1,QL,CL,Bstr1,_,Out).
+    
+until_odd_int(0, N,SN,X,Out) :- true | X1 := X>>1, LB := X1/\1, N1 := N+1, until_odd_int(LB,N1,SN,X1,Out).
+until_odd_int(LB,N,SN,X,Out) :- LB =\= 0 | SN= N, Out= X.
+
+
+
+
+%%  shift_right_abs(Xin,SN,^Zout,^Rout)   Zout= Xin>>SN = Xin/(2^(SN)),  Rout= Xin mod (2^(SN))
+%%      Xin,Zout,Rout  ::= integer | bignum,  SN ::= non negative integer
+shift_right_abs(Xin,SN,Zout,Rout) :- Xin>0 | shift_rightINTplus(Xin,SN,Zout,Rout).
+shift_right_abs(Xin,SN,Zout,Rout) :- Xin<0 | shift_rightINTminus(Xin,SN,Zout,Rout).
+shift_right_abs(Xin,SN,Zout,Rout) :- Xin=0, SN>=0 | Zout= 0.
+shift_right_abs(Xin,SN,Zout,Rout) :- Xin=0, SN< 0 | shift_right_raise(2,0,SN,Zout,Rout).
+shift_right_abs(Xin,SN,Zout,Rout) :- bignum#bignum(Xin,SX,XL,X),XL>1 |
+    XLb := XL<<5, shift_rightBNUM(SX,XL,XLb,X,SN,Zout,Rout).
+shift_right_abs(Xin,SN,Zout,Rout) :- bignum#bignum(Xin,SX,XL,X),XL=1 | shift_rightBN1(SX,X,SN,Zout,Rout).
+otherwise.
+shift_right_abs(Xin,SN,Zout,Rout) :- true | shift_right_raise(1,Xin,SN,Zout,Rout).
+
+shift_rightINTplus(Xin,SN,Zout,Rout) :- SN>=32 | Zout= 0, Rout= Xin.
+shift_rightINTplus(Xin,SN,Zout,Rout) :- SN< 32, SN>=0 |  Zout := Xin>>SN, underflow(SN,M), Rout := Xin/\M.
+otherwise.
+shift_rightINTplus(Xin,SN,Zout,Rout) :- true | shift_right_raise(2,Xin,SN,Zout,Rout).
+
+shift_rightINTminus(Xin,SN,Zout,Rout) :- SN>=32 | Zout= 0, Rout= Xin.
+shift_rightINTminus(Xin,SN,Zout,Rout) :- SN< 32, SN>0 | 
+    pow2_num(SN,Y), builtin:divide(Xin,Y,Zout), builtin:modulo(Xin,Y,Rout).
+shift_rightINTminus(Xin,SN,Zout,Rout) :- SN< 32, SN=0 | Zout= Xin, Rout= 0.
+otherwise.
+shift_rightINTminus(Xin,SN,Zout,Rout) :- true | shift_right_raise(2,Xin,SN,Zout,Rout).
+
+shift_rightBN1(SX,Xin,SN,Zout,Rout) :- SN>=32 | Zout= 0, bignum#compose(SX,Xin,Rout).
+shift_rightBN1(SX,Xin,SN,Zout,Rout) :- SN< 32,SN>0,SX=0 |
+    string_element(Xin,0,X0,_), Zout := X0>>SN, underflow(SN,M), Rout := X0/\M.
+shift_rightBN1(SX,Xin,SN,Zout,Rout) :- SN< 32,SN>0,SX=1 | string_element(Xin,0,X0,_),
+    Z := X0>>SN, underflow(SN,M), R := X0/\M, builtin:subtract(0,Z,Zout),builtin:subtract(0,R,Rout).
+shift_rightBN1(SX,Xin,SN,Zout,Rout) :- SN< 32,SN=0 | bignum#compose(SX,Xin,Zout), Rout= 0.
+otherwise.
+shift_rightBN1(SX,Xin,SN,Z,R) :- true | bignum#compose(SX,Xin,X),shift_right_raise(2,X,SN,Z,R).
+
+shift_rightBNUM(SX,_, XLb,Xin,SN,Zout,Rout) :- SN>=XLb | Zout= 0, bignum#compose(SX,Xin,Rout).
+shift_rightBNUM(SX,XL,XLb,Xin,SN,Zout,Rout) :- SN< XLb, SN>0 | SNw := SN>>5, SNb := SN/\16#"1F",
+    shift_right(SN,SNw,SNb,XL,XLb,Xin,Z,R), normalize(SX,Z,Zout), normalize(SX,R,Rout).
+shift_rightBNUM(SX,_, XLb,Xin,SN,Zout,Rout) :- SN< XLb, SN=0 | bignum#compose(SX,Xin,Zout), Rout= 0.
+otherwise.
+shift_rightBNUM(SX,_,_,Xin,SN,Z,R) :- true | bignum#compose(SX,Xin,X), shift_right_raise(2,X,SN,Z,R).
+
+%  shift_right(SNtotal,SNword,SNbit,XL,XLbit,Xstr,^Zout,Rout)
+shift_right(SN,SNw,SNb,XL,_,Xstr,Qout,Rout) :- SN>=32, SNb =:= 0 | builtin:subtract(XL,SNw,Len),
+    builtin#substring(Xstr,0,Len,Qout,Xstr1), builtin#substring(Xstr1,Len,SNw,Rout,_).
+shift_right(SN,_,  SNb,_,XLb,Xstr,Qout,Rout) :- SN>=32, SNb =\= 0 | change_element_size(Xstr,1,Bstr),
+    builtin:add(-1,XLb,BE), search_character(Bstr,0,BE,1,Pos1,Bstr1), builtin:subtract(XLb,SN,QL1),
+    QLr := QL1/\16#"1F", builtin:subtract(32,QLr,AL), builtin:add(QL1,AL,QL),
+    builtin:subtract(QL1,Pos1,CLQ), builtin:add(Pos1,AL,ZL), move_right(ZL,Pos1,QL,CLQ,Bstr1,Bstr2,Qout),
+    builtin:subtract(32,SNb,RA),    search_character(Bstr2,QL1,BE,1,Pos2,Bstr3),
+    builtin:subtract(Pos2,QL1,MP2), builtin:add(MP2,RA,ZLR), builtin:add(SN,RA,RL),
+    builtin:subtract(RL,ZLR,CL),    sft_rem(Pos2,ZLR,RL,CL,Bstr3,Rout).
+shift_right(SN,_,_,XL,XLb,Xstr,Qout,Rout) :- SN< 32 | builtin:add(-1,XL,XE),
+    string_element(Xstr,XE,LSW,Xstr1), underflow(SN,M), Rout := LSW/\M,
+    change_element_size(Xstr1,1,Bstr), builtin:add(-1,XLb,BE), search_character(Bstr,0,BE,1,Pos1,Bstr1), 
+    builtin:subtract(XLb,SN,QL1),  QLr := QL1/\16#"1F",   builtin:subtract(32,QLr,AL),
+    builtin:add(QL1,AL,QL),  builtin:subtract(QL1,Pos1,CLQ), 
+    builtin:add(Pos1,AL,ZL), move_right(ZL,Pos1,QL,CLQ,Bstr1,_,Qout).
+
+sft_rem(Pos2,ZL,RL,CL,Bstr,Rout) :- ZL>=32, Pos2>=0,RL>0,CL>0 | 
+    ZLq := (ZL>>5)<<5, ZLr := ZL/\16#"1F", builtin:subtract(RL,ZLq,L1), new_string(Rstr,L1,1), 
+    builtin#copy_string_elements(Rstr,ZLr,CL,Bstr,Pos2,Rstr1,_), change_element_size(Rstr1,32,Rout).
+sft_rem(Pos2,ZL,RL,CL,Bstr,Rout) :- ZL< 32, ZL>=0, Pos2>=0,RL>0,CL>0 | new_string(Rstr,RL,1), 
+    builtin#copy_string_elements(Rstr,ZL,CL,Bstr,Pos2,Rstr1,_), change_element_size(Rstr1,32,Rout).
+sft_rem(Pos2,ZL,RL,CL,Bstr,Rout) :- ZL<0, Pos2>=0,RL>0,CL>0 | new_string(Rstr,RL,1), 
+    builtin#copy_string_elements(Rstr,0,CL,Bstr,Pos2,Rstr1,_), change_element_size(Rstr1,32,Rout).
+otherwise.
+sft_rem(_,_,_,_,_,Rout) :- true | Rout= 0.
+
+
+shift_right_raise(1,X,SN,Z,R) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_arg1,"Argument must be bignum"), bignum:shift_right_abs(X,SN,Z,R)).
+shift_right_raise(2,X,SN,Z,R) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_arg2,"Argument must be positive integer"), bignum:shift_right_abs(X,SN,Z,R)).
+
+
+
+%% underflow(SNbit,^Mask)  Make a mask to keep underflow bits
+underflow( 0,Mask) :- true | Mask= 16#"00000000".     underflow( 1,Mask) :- true | Mask= 16#"00000001".
+underflow( 2,Mask) :- true | Mask= 16#"00000003".     underflow( 3,Mask) :- true | Mask= 16#"00000007".
+underflow( 4,Mask) :- true | Mask= 16#"0000000F".     underflow( 5,Mask) :- true | Mask= 16#"0000001F".
+underflow( 6,Mask) :- true | Mask= 16#"0000003F".     underflow( 7,Mask) :- true | Mask= 16#"0000007F".
+underflow( 8,Mask) :- true | Mask= 16#"000000FF".     underflow( 9,Mask) :- true | Mask= 16#"000001FF".
+underflow(10,Mask) :- true | Mask= 16#"000003FF".     underflow(11,Mask) :- true | Mask= 16#"000007FF".
+underflow(12,Mask) :- true | Mask= 16#"00000FFF".     underflow(13,Mask) :- true | Mask= 16#"00001FFF".
+underflow(14,Mask) :- true | Mask= 16#"00003FFF".     underflow(15,Mask) :- true | Mask= 16#"00007FFF".
+underflow(16,Mask) :- true | Mask= 16#"0000FFFF".     underflow(17,Mask) :- true | Mask= 16#"0001FFFF".
+underflow(18,Mask) :- true | Mask= 16#"0003FFFF".     underflow(19,Mask) :- true | Mask= 16#"0007FFFF".
+underflow(20,Mask) :- true | Mask= 16#"000FFFFF".     underflow(21,Mask) :- true | Mask= 16#"001FFFFF".
+underflow(22,Mask) :- true | Mask= 16#"003FFFFF".     underflow(23,Mask) :- true | Mask= 16#"007FFFFF".
+underflow(24,Mask) :- true | Mask= 16#"00FFFFFF".     underflow(25,Mask) :- true | Mask= 16#"01FFFFFF".
+underflow(26,Mask) :- true | Mask= 16#"03FFFFFF".     underflow(27,Mask) :- true | Mask= 16#"07FFFFFF".
+underflow(28,Mask) :- true | Mask= 16#"0FFFFFFF".     underflow(29,Mask) :- true | Mask= 16#"1FFFFFFF".
+underflow(30,Mask) :- true | Mask= 16#"3FFFFFFF".     underflow(31,Mask) :- true | Mask= 16#"7FFFFFFF".
+
+%% pow2_num(SNbit,^Number)  Convert 2's power (sift number) into integer
+pow2_num( 1,N) :- true | N= 16#"00000002".   pow2_num( 2,N) :- true | N= 16#"00000004".
+pow2_num( 3,N) :- true | N= 16#"00000008".   pow2_num( 4,N) :- true | N= 16#"00000010".
+pow2_num( 5,N) :- true | N= 16#"00000020".   pow2_num( 6,N) :- true | N= 16#"00000040".
+pow2_num( 7,N) :- true | N= 16#"00000080".   pow2_num( 8,N) :- true | N= 16#"00000100".
+pow2_num( 9,N) :- true | N= 16#"00000200".   pow2_num(10,N) :- true | N= 16#"00000400".
+pow2_num(11,N) :- true | N= 16#"00000800".   pow2_num(12,N) :- true | N= 16#"00001000".
+pow2_num(13,N) :- true | N= 16#"00002000".   pow2_num(14,N) :- true | N= 16#"00004000".
+pow2_num(15,N) :- true | N= 16#"00008000".   pow2_num(16,N) :- true | N= 16#"00010000".
+pow2_num(17,N) :- true | N= 16#"00020000".   pow2_num(18,N) :- true | N= 16#"00040000".
+pow2_num(19,N) :- true | N= 16#"00080000".   pow2_num(20,N) :- true | N= 16#"00100000".
+pow2_num(21,N) :- true | N= 16#"00200000".   pow2_num(22,N) :- true | N= 16#"00400000".
+pow2_num(23,N) :- true | N= 16#"00800000".   pow2_num(24,N) :- true | N= 16#"01000000".
+pow2_num(25,N) :- true | N= 16#"02000000".   pow2_num(26,N) :- true | N= 16#"04000000".
+pow2_num(27,N) :- true | N= 16#"08000000".   pow2_num(28,N) :- true | N= 16#"10000000".
+pow2_num(29,N) :- true | N= 16#"20000000".   pow2_num(30,N) :- true | N= 16#"40000000".
+pow2_num(31,N) :- true | N= 16#"80000000".
+
+%%%%%
+%%%%%  COMPARE functions
+%%%%%
+compare(Xin,Yin,Xnew,Ynew,CMP) :- integer(Xin) | compINT(Xin,Yin,Xnew,Ynew,CMP).
+compare(Xin,Yin,Xnew,Ynew,CMP) :- bignum#bignum(Xin,0,Xstr) | compBNplus(Xstr,Yin,Xnew,Ynew,CMP).
+compare(Xin,Yin,Xnew,Ynew,CMP) :- bignum#bignum(Xin,1,Xstr) | compBNminus(Xstr,Yin,Xnew,Ynew,CMP).
+otherwise.
+compare(Xin,Yin,Xnew,Ynew,CMP) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1, 
+    "Argument must be bignum"), bignum:compare(Xin,Yin,Xnew,Ynew,CMP)).
+
+compINT(Xin,Yin,Xnew,Ynew,CMP) :- Xin<Yin | Xnew= Xin, Ynew= Yin, CMP= (<).
+compINT(Xin,Yin,Xnew,Ynew,CMP) :- Xin>Yin | Xnew= Xin, Ynew= Yin, CMP= (>).
+compINT(Xin,Yin,Xnew,Ynew,CMP) :- Xin=Yin | Xnew= Xin, Ynew= Yin, CMP= (=).
+compINT(Xin,Yin,Xnew,Ynew,CMP) :- bignum#sign(Yin,0) | Xnew= Xin, Ynew= Yin, CMP= (<).
+compINT(Xin,Yin,Xnew,Ynew,CMP) :- bignum#sign(Yin,1) | Xnew= Xin, Ynew= Yin, CMP= (>).
+otherwise.
+compINT(Xin,Yin,Xnew,Ynew,CMP) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1, 
+    "Argument must be bignum"), bignum:compare(Xin,Yin,Xnew,Ynew,CMP)).
+ 
+compBNplus(Xs,Yin,Xnew,Ynew,CMP) :- integer(Yin) | bignum#compose(0,Xs,Xnew), Ynew= Yin, CMP = (>).
+compBNplus(Xs,Yin,Xnew,Ynew,CMP) :- bignum#bignum(Yin,0,Ys) | compBNplus2(Xs,Ys,Xnew,Ynew,CMP).
+compBNplus(Xs,Yin,Xnew,Ynew,CMP) :- bignum#sign(Yin,1) | bignum#compose(0,Xs,Xnew), Ynew= Yin, CMP= (>).
+otherwise.
+compBNplus(Xs,Yin,Xnew,Ynew,CMP) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg2, 
+    "Argument must be bignum"), bignum:comp(Xs,Yin,Xnew,Ynew,CMP)).
+
+compBNminus(Xs,Yin,Xnew,Ynew,CMP) :- integer(Yin) | bignum#compose(1,Xs,Xnew), Ynew= Yin, CMP= (<).
+compBNminus(Xs,Yin,Xnew,Ynew,CMP) :- bignum#bignum(Yin,1,Ys) | compBNminus2(Xs,Ys,Xnew,Ynew,CMP).
+compBNminus(Xs,Yin,Xnew,Ynew,CMP) :- bignum#sign(Yin,0) | bignum#compose(1,Xs,Xnew), Ynew= Yin, CMP= (<).
+otherwise.
+compBNminus(Xs,Yin,Xnew,Ynew,CMP) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg2, 
+    "Argument must be bignum"), bignum:comp(Xs,Yin,Xnew,Ynew,CMP)).
+
+compBNplus2(X,Y,Xnew,Ynew,CMP) :- mdlib#bignum_less_than(X,Y) | 
+    bignum#compose(0,X,Xnew), bignum#compose(0,Y,Ynew), CMP= (<).
+compBNplus2(X,Y,Xnew,Ynew,CMP) :- mdlib#bignum_less_than(Y,X) | 
+    bignum#compose(0,X,Xnew), bignum#compose(0,Y,Ynew), CMP= (>).
+otherwise.
+compBNplus2(X,Y,Xnew,Ynew,CMP) :- true | 
+    bignum#compose(0,X,Xnew), bignum#compose(0,Y,Ynew), CMP= (=).
+
+compBNminus2(X,Y,Xnew,Ynew,CMP) :- mdlib#bignum_less_than(X,Y) | 
+    bignum#compose(1,X,Xnew), bignum#compose(1,Y,Ynew), CMP= (>).
+compBNminus2(X,Y,Xnew,Ynew,CMP) :- mdlib#bignum_less_than(Y,X) | 
+    bignum#compose(1,X,Xnew), bignum#compose(1,Y,Ynew), CMP= (<).
+otherwise.
+compBNminus2(X,Y,Xnew,Ynew,CMP) :- true | 
+    bignum#compose(1,X,Xnew), bignum#compose(1,Y,Ynew), CMP= (=).
+
+
+
+%%  comp(Xin,Yin,^CMP,^Xnew,^Ynew)  Compare 2 bignums
+%%       SX,SY ::= sign of Xin, Yin     Xin,Yin ::=  32bit string,    CMP ::=  > | < | =  
+comp(Xin,Yin,CMP,Xo,Yo) :- mdlib#bignum_less_than(Yin,Xin) | CMP= (>), Xo= Xin, Yo= Yin.
+comp(Xin,Yin,CMP,Xo,Yo) :- mdlib#bignum_less_than(Xin,Yin) | CMP= (<), Xo= Xin, Yo= Yin.
+comp(Xin,Yin,CMP,Xo,Yo) :- Xin=Yin | CMP= (=), Xo= Xin, Yo= Yin.
+
+
+%% comp2W(Xhigh,Xlow,Yhigh,Ylow,CMP)   compare 2 double words ( each word := unsigned integer)
+comp2W(X1,X0,Y1,Y0,CMP) :- X1=Y1 | comp2W_sub(X0,Y0,CMP).
+comp2W(X1,_, Y1,_, CMP) :- X1>=0, Y1>=0, X1>Y1 | CMP =(>).
+comp2W(X1,_, Y1,_, CMP) :- X1< 0, Y1>=0 | CMP =(>).
+comp2W(X1,_, Y1,_, CMP) :- X1< 0, Y1< 0, X1>Y1 | CMP =(>).
+otherwise.
+comp2W(_,_,_,_,CMP) :- true | CMP= (<).
+
+comp2W_sub(X,Y,CMP) :- X=Y | CMP= (=).
+comp2W_sub(X,Y,CMP) :- X< 0,Y>=0 | CMP= (>).
+comp2W_sub(X,Y,CMP) :- X< 0,Y< 0, X>Y | CMP= (>).
+comp2W_sub(X,Y,CMP) :- X>=0,Y>=0, X>Y | CMP= (>).
+otherwise.
+comp2W_sub(_,_,CMP) :- true | CMP= (<).
+
+%% sort(Xin,Yin,^Small,^Large,^SwappedFlag)   Sorting function for PIMOS I/F
+%%     Xin, Yin     ::= bignum | integer    Small, Large ::= bignum | integer (Small=<Large)
+%%     SwappedFlag  ::= yes | no   ('yes' if Xin>Yin, 'no' if Xin>=Yin)
+sort(Xin,Yin,S,L,F) :- integer(Xin) | sortINT(Xin,Yin,S,L,F).
+sort(Xin,Yin,S,L,F) :- bignum#bignum(Xin,0,Xstr) | sortBNplus(Xstr,Yin,S,L,F).
+sort(Xin,Yin,S,L,F) :- bignum#bignum(Xin,1,Xstr) | sortBNminus(Xstr,Yin,S,L,F).
+otherwise.
+sort(Xin,Yin,S,L,F) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1, 
+    "Argument must be bignum"), bignum:sort(Xin,Yin,S,L,F)).
+
+sortINT(Xin,Yin,S,L,F) :- Xin=<Yin | S= Xin, L= Yin, F= no.
+sortINT(Xin,Yin,S,L,F) :- Xin> Yin | S= Yin, L= Xin, F= yes.
+sortINT(Xin,Yin,S,L,F) :- bignum#sign(Yin,0) | S= Xin, L= Yin, F= no.
+sortINT(Xin,Yin,S,L,F) :- bignum#sign(Yin,1) | S= Yin, L= Xin, F= yes.
+otherwise.
+sortINT(Xin,Yin,S,L,F) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1, "Argument must be bignum"), bignum:sort(Xin,Yin,S,L,F)).
+ 
+sortBNplus(Xin,Yin,S,L,F) :- integer(Yin) | S= Yin, bignum#compose(0,Xin,L), F= yes.
+sortBNplus(Xin,Yin,S,L,F) :- bignum#bignum(Yin,0,Ystr) | sortBNplus2(Xin,Ystr,S,L,F).
+sortBNplus(Xin,Yin,S,L,F) :- bignum#sign(Yin,1) | S= Yin, bignum#compose(0,Xin,L), F= yes.
+otherwise.
+sortBNplus(Xin,Yin,S,L,F) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1, "Argument must be bignum"), bignum:sort(Xin,Yin,S,L,F)).
+
+sortBNminus(Xin,Yin,S,L,F) :- integer(Yin) | bignum#compose(1,Xin,S), L= Yin, F= no.
+sortBNminus(Xin,Yin,S,L,F) :- bignum#bignum(Yin,1,Ystr) | sortBNminus2(Xin,Ystr,S,L,F).
+sortBNminus(Xin,Yin,S,L,F) :- bignum#sign(Yin,0) | bignum#compose(1,Xin,S), L= Yin, F= no.
+otherwise.
+sortBNminus(Xin,Yin,S,L,F) :- true | shoen:raise(pimos_tag#error,
+    '$PIMOS$'(illegal_input_at_arg1,"Argument must be bignum"),bignum:sort(Xin,Yin,S,L,F)).
+
+sortBNplus2(X,Y,S,L,F) :- mdlib#bignum_not_less_than(Y,X) |
+    bignum#compose(0,X,S), bignum#compose(0,Y,L), F= no.
+otherwise.
+sortBNplus2(X,Y,S,L,F) :- true | bignum#compose(0,Y,S), bignum#compose(0,X,L), F= yes.
+
+sortBNminus2(X,Y,S,L,F) :- mdlib#bignum_less_than(X,Y) | 
+    bignum#compose(1,Y,S), bignum#compose(1,X,L), F= yes.
+otherwise.
+sortBNminus2(X,Y,S,L,F) :- true | bignum#compose(1,X,S),bignum#compose(1,Y,L), F= no.
+
+%%%%%
+%%%%%  GCD/5 (Greatest Common Divesr) of 2 bignums and their quotient
+%%%%%
+gcd(Xin,Yin,GCD,QX,QY) :- Xin>  1 | gcdINTplus(Xin,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- Xin< -1 | gcdINTminus(Xin,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- Xin=  0 | gcd_arg2( 0,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- Xin=  1 | gcd_arg2( 1,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- Xin= -1 | gcd_arg2(-1,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- bignum#bignum(Xin,SX,XL,X),XL>1 | gcdBNUM(SX,XL,X,Yin,GCD,QX,QY).
+gcd(Xin,Yin,GCD,QX,QY) :- bignum#bignum(Xin,SX,XL,X),XL=1 | gcdBN1(SX,X,Yin,GCD,QX,QY).
+otherwise.
+gcd(Xin,Yin,GCD,QX,QY) :- true | gcd_raise(1,Xin,Yin,GCD,QX,QY).
+
+
+gcdINTplus(Xin,Yin,GCD,QX,QY) :- Yin>  1 |
+    gcd_int(Xin,Yin,GCD), builtin:divide(Xin,GCD,QX), builtin:divide(Yin,GCD,QY).
+gcdINTplus(Xin,Yin,GCD,QX,QY) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y),
+    gcd_int(Xin,Y,GCD), builtin:divide(Xin,GCD,QX), builtin:divide(Yin,GCD,QY).
+gcdINTplus(Xin,Yin,GCD,QX,QY) :- Yin=  0 | GCD= Xin, QX= 1,   QY= 0.
+gcdINTplus(Xin,Yin,GCD,QX,QY) :- Yin=  1 | GCD= 1,   QX= Xin, QY= 1.
+gcdINTplus(Xin,Yin,GCD,QX,QY) :- Yin= -1 | GCD= 1,   QX= Xin, QY= -1.
+gcdINTplus(Xin,Yin,GCD,QX,QY) :- bignum#bignum(Yin,SY,YL,Y),YL>1 | 
+    string_element(Y,0,Y0,Ys), mod1(Y0,Xin,YL,Ys,Rem),
+    gcd_int(Xin,Rem,GCD), builtin:divide(Xin,GCD,QX), div1(Y0,GCD,YL,Ys,Qy,_),normalize(SY,Qy,QY).
+gcdINTplus(Xin,Yin,GCD,QX,QY) :- bignum#bignum(Yin,SY,YL,Y),YL=1 | 
+    string_element(Y,0,Y0,_), mdlib#divide_extended(0,Y0,Xin,_,Rem), gcd_int(Xin,Rem,GCD),
+    builtin:divide(Xin,GCD,QX), mdlib#divide_extended(0,Y0,GCD,Qy,_),normalize(SY,0,Qy,QY).
+otherwise.
+gcdINTplus(Xin,Yin,GCD,QX,QY) :- true | gcd_raise(2,Xin,Yin,GCD,QX,QY).
+
+
+gcdINTminus(Xin,Yin,GCD,QX,QY) :- Yin>  1 | mdlib#subtract_extended(0,Xin,_,XN),
+    gcd_int(XN,Yin,GCD), builtin:divide(Xin,GCD,QX), builtin:divide(Yin,GCD,QY).
+gcdINTminus(Xin,Yin,GCD,QX,QY) :- Yin< -1 | mdlib#subtract_extended(0,Xin,_,XN),
+    mdlib#subtract_extended(0,Yin,_,YN), 
+    gcd_int(XN,YN,GCD), builtin:divide(Xin,GCD,QX), builtin:divide(Yin,GCD,QY).
+gcdINTminus(Xin,Yin,GCD,QX,QY) :- Yin=  0 | GCD= Xin, QX= 1,   QY= 0.
+gcdINTminus(Xin,Yin,GCD,QX,QY) :- Yin=  1 | GCD= 1,   QX= Xin, QY= 1.
+gcdINTminus(Xin,Yin,GCD,QX,QY) :- Yin= -1 | GCD= 1,   QX= Xin, QY= -1.
+gcdINTminus(Xin,Yin,GCD,QX,QY) :- bignum#bignum(Yin,SY,YL,Y),YL>1 | mdlib#subtract_extended(0,Xin,_,XN),
+    string_element(Y,0,Y0,Ys), mod1(Y0,XN,YL,Ys,Rem),
+    gcd_int(XN,Rem,GCD), builtin:divide(Xin,GCD,QX), div1(Y0,GCD,YL,Ys,Qy,_),normalize(SY,Qy,QY).
+gcdINTminus(Xin,Yin,GCD,QX,QY) :- bignum#bignum(Yin,SY,YL,Y),YL=1 | mdlib#subtract_extended(0,Xin,_,XN),
+    string_element(Y,0,Y0,_), mdlib#divide_extended(0,Y0,XN,_,Rem), gcd_int(XN,Rem,GCD),
+    builtin:divide(Xin,GCD,QX), mdlib#divide_extended(0,Y0,GCD,Qy,_),normalize(SY,0,Qy,QY).
+otherwise.
+gcdINTminus(Xin,Yin,GCD,QX,QY) :- true | gcd_raise(2,Xin,Yin,GCD,QX,QY).
+
+gcd_arg2( 0,Yin,GCD,QX,QY) :- integer(Yin)  | GCD= Yin, QX= 0, QY= 1.
+gcd_arg2( 0,Yin,GCD,QX,QY) :- bignum#bignum(Yin) | GCD= Yin, QX= 0, QY= 1.
+gcd_arg2( 1,Yin,GCD,QX,QY) :- integer(Yin)  | GCD= 1, QX=  1, QY= Yin.
+gcd_arg2( 1,Yin,GCD,QX,QY) :- bignum#bignum(Yin) | GCD= 1, QX=  1, QY= Yin.
+gcd_arg2(-1,Yin,GCD,QX,QY) :- integer(Yin)  | GCD= 1, QX= -1, QY= Yin.
+gcd_arg2(-1,Yin,GCD,QX,QY) :- bignum#bignum(Yin) | GCD= 1, QX= -1, QY= Yin.
+otherwise.
+gcd_arg2(_,Yin,GCD,QX,QY) :- true | gcd_raise(2,Xin,Yin,GCD,QX,QY).
+
+gcdBN1(SX,X,Yin,GCD,QX,QY) :- Yin>  1 | 
+    string_element(X,0,X0,_), mdlib#divide_extended(0,X0,Yin,_,Rem), gcd_int(Yin,Rem,GCD),
+    builtin:divide(Yin,GCD,QY), mdlib#divide_extended(0,X0,GCD,Qx,_), normalize(SX,0,Qx,QX).
+gcdBN1(SX,X,Yin,GCD,QX,QY) :- Yin<  -1 | mdlib#subtract_extended(0,Yin,_,YN),
+    string_element(X,0,X0,_), mdlib#divide_extended(0,X0,YN,_,Rem), gcd_int(YN,Rem,GCD),
+    builtin:divide(Yin,GCD,QY), mdlib#divide_extended(0,X0,GCD,Qx,_), normalize(SX,0,Qx,QX).
+gcdBN1(SX,X,Yin,GCD,QX,QY) :- Yin=  0 | normalize(0,X,GCD), QX= 1, QY=0.
+gcdBN1(SX,X,Yin,GCD,QX,QY) :- Yin=  1 | GCD= 1, bignum#compose(SX,X,QX), QY= 1.
+gcdBN1(SX,X,Yin,GCD,QX,QY) :- Yin= -1 | GCD= 1, bignum#compose(SX,X,QX), QY= -1.
+gcdBN1(SX,X,Yin,GCD,QX,QY) :- bignum#bignum(Yin,SY,YL,Y),YL>1 | 
+    string_element(X,0,X0,_), string_element(Y,0,Y0,Ys),   mod1(Y0,X0,YL,Ys,Rem),
+    gcd_unsigned(Rem,X0,Gcd), mdlib#divide_extended(0,X0,Gcd,Qx,_), div1(Y0,GCD,YL,Ys,Qy,_),
+    normalize(0,0,Gcd,GCD),   normalize(SX,0,Qx,QX),       normalize(SY,Qy,QY).
+gcdBN1(SX,X,Yin,GCD,QX,QY) :- bignum#bignum(Yin,SY,YL,Y),YL=1 | 
+    string_element(X,0,X0,_), string_element(Y,0,Y0,_),
+    gcd_unsigned(X0,Y0,Gcd),  mdlib#divide_extended(0,X0,Gcd,Qx,_), mdlib#divide_extended(0,Y0,Gcd,Qy,_),
+    normalize(0,0,Gcd,GCD),   normalize(SX,0,Qx,QX),     normalize(SY,0,Qy,QY).
+otherwise.
+gcdBN1(SX,X,Yin,GCD,QX,QY) :- true | bignum#compose(SX,X,Xin), gcd_raise(2,Xin,Yin,GCD,QX,QY).
+
+
+gcdBNUM(SX,XL,X,Yin,GCD,QX,QY) :- Yin>  1 | 
+    string_element(X,0,X0,Xs), mod1(X0,Yin,XL,Xs,Rem),   gcd_int(Yin,Rem,GCD),
+    builtin:divide(Yin,GCD,QY),       div1(X0,GCD,XL,Xs,Qx,_ ), normalize(SX,Qx,QX).
+gcdBNUM(SX,XL,X,Yin,GCD,QX,QY) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y),
+    string_element(X,0,X0,Xs), mod1(X0,Y,  XL,Xs,Rem),   gcd_int(Y,Rem,GCD),
+    builtin:divide(Yin,GCD,QY),       div1(X0,GCD,XL,Xs,Qx,_ ), normalize(SX,Qx,QX).
+gcdBNUM(SX,_,X,Yin,GCD,QX,QY) :- Yin=  0 | normalize(0,X,GCD), QX= 1, QY=0.
+gcdBNUM(SX,_,X,Yin,GCD,QX,QY) :- Yin=  1 | GCD= 1, bignum#compose(SX,X,QX), QY= 1.
+gcdBNUM(SX,_,X,Yin,GCD,QX,QY) :- Yin= -1 | GCD= 1, bignum#compose(SX,X,QX), QY= -1.
+gcdBNUM(SX,XL,X,Yin,GCD,QX,QY) :- bignum#bignum(Yin,SY,YL,Y),YL>1 | 
+    gcdSTR(XL,YL,X,Y,Gcd), to_numer(0,Gcd,Gcd1), divbig(X,Gcd,Qx,_),  divbig(Y,Gcd,Qy,_),
+    normalize(0,Gcd1,GCD), normalize(SX,Qx,QX),  normalize(SY,Qy,QY).
+gcdBNUM(SX,XL,X,Yin,GCD,QX,QY) :- bignum#bignum(Yin,SY,YL,Y),YL=1 | 
+    string_element(X,0,X0,Xs), string_element(Y,0,Y0,_), mod1(X0,Y0,XL,Xs,Rem),
+    gcd_unsigned(Y0,Rem,Gcd),  div1(X0,Gcd,XL,Xs,Qx,_),  mdlib#divide_extended(0,Y0,Gcd,Qy,_),
+    normalize(0,Gcd,GCD),      normalize(SX,Qx,QX),      normalize(SY,0,Qy,QY).
+otherwise.
+gcdBNUM(SX,_,X,Yin,GCD,QX,QY) :- true | bignum#compose(SX,X,Xin), gcd_raise(2,Xin,Yin,GCD,QX,QY).
+
+
+gcd_raise(1,X,Y,G,QX,QY) :- true | shoen:raise(pimos_tag#error,
+                '$PIMOS$'(illegal_input_at_arg1,"Argument must be bignum"),bignum:gcd(X,Y,G,QX,QY)).
+gcd_raise(2,X,Y,G,QX,QY) :- true | shoen:raise(pimos_tag#error,
+                '$PIMOS$'(illegal_input_at_arg2,"Argument must be bignum"),bignum:gcd(X,Y,G,QX,QY)).
+
+
+
+%%%%%  GCD/3 (Greatest Common Divesr) of 2 bignums
+gcd(Xin,Yin,GCD) :- Xin>  1 | gcdINTplus(Xin,Yin,GCD).
+gcd(Xin,Yin,GCD) :- Xin< -1 | gcdINTminus(Xin,Yin,GCD).
+gcd(Xin,Yin,GCD) :- Xin=  0 | gcd_arg2( 0,Yin,GCD).
+gcd(Xin,Yin,GCD) :- Xin=  1 | gcd_arg2( 1,Yin,GCD).
+gcd(Xin,Yin,GCD) :- Xin= -1 | gcd_arg2(-1,Yin,GCD).
+gcd(Xin,Yin,GCD) :- bignum#bignum(Xin,SX,XL,X),XL>1 | gcdBNUM(SX,XL,X,Yin,GCD).
+gcd(Xin,Yin,GCD) :- bignum#bignum(Xin,SX,XL,X),XL=1 | gcdBN1(SX,X,Yin,GCD).
+otherwise.
+gcd(Xin,Yin,GCD) :- true | gcd_raise(1,Xin,Yin,GCD).
+
+gcdINTplus(Xin,Yin,GCD) :- Yin>  1 | gcd_int(Xin,Yin,GCD).
+gcdINTplus(Xin,Yin,GCD) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y), gcd_int(Xin,Y,GCD).
+gcdINTplus(Xin,Yin,GCD) :- Yin=  0 | GCD= Xin.
+gcdINTplus(Xin,Yin,GCD) :- Yin=  1 | GCD= 1.
+gcdINTplus(Xin,Yin,GCD) :- Yin= -1 | GCD= 1.
+gcdINTplus(Xin,Yin,GCD) :- bignum#numer(Yin,YL,Y),YL>1 | 
+    string_element(Y,0,Y0,Ys), mod1(Y0,Xin,YL,Ys,Rem), gcd_int(Xin,Rem,GCD).
+gcdINTplus(Xin,Yin,GCD) :- bignum#numer(Yin,YL,Y),YL=1 | 
+    string_element(Y,0,Y0,_), mdlib#divide_extended(0,Y0,Xin,_,Rem), gcd_int(Xin,Rem,GCD).
+otherwise.
+gcdINTplus(Xin,Yin,GCD) :- true | gcd_raise(2,Xin,Yin,GCD).
+
+gcdINTminus(Xin,Yin,GCD) :- Yin>  1 | mdlib#subtract_extended(0,Xin,_,XN), gcd_int(XN,Yin,GCD).
+gcdINTminus(Xin,Yin,GCD) :- Yin< -1 |
+    mdlib#subtract_extended(0,Xin,_,XN), mdlib#subtract_extended(0,Yin,_,YN), gcd_int(XN,YN,GCD).
+gcdINTminus(Xin,Yin,GCD) :- Yin=  0 | GCD= Xin.
+gcdINTminus(Xin,Yin,GCD) :- Yin=  1 | GCD= 1.
+gcdINTminus(Xin,Yin,GCD) :- Yin= -1 | GCD= 1.
+gcdINTminus(Xin,Yin,GCD) :- bignum#numer(Yin,YL,Y),YL>1 | mdlib#subtract_extended(0,Xin,_,XN),
+    string_element(Y,0,Y0,Ys), mod1(Y0,XN,YL,Ys,Rem), gcd_int(XN,Rem,GCD).
+gcdINTminus(Xin,Yin,GCD) :- bignum#numer(Yin,YL,Y),YL=1 | mdlib#subtract_extended(0,Xin,_,XN),
+    string_element(Y,0,Y0,_), mdlib#divide_extended(0,Y0,XN,_,Rem), gcd_int(XN,Rem,GCD).
+otherwise.
+gcdINTminus(Xin,Yin,GCD) :- true | gcd_raise(2,Xin,Yin,GCD).
+
+gcd_arg2( 0,Yin,GCD) :- integer(Yin)  | GCD= Yin.
+gcd_arg2( 0,Yin,GCD) :- bignum#bignum(Yin) | GCD= Yin.
+gcd_arg2( 1,Yin,GCD) :- integer(Yin)  | GCD= 1.
+gcd_arg2( 1,Yin,GCD) :- bignum#bignum(Yin) | GCD= 1.
+gcd_arg2(-1,Yin,GCD) :- integer(Yin)  | GCD= 1.
+gcd_arg2(-1,Yin,GCD) :- bignum#bignum(Yin) | GCD= 1.
+otherwise.
+gcd_arg2(_,Yin,GCD) :- true | gcd_raise(2,Xin,Yin,GCD).
+
+gcdBN1(_,X,Yin,GCD) :- Yin>  1 | string_element(X,0,X0,_),
+    mdlib#divide_extended(0,X0,Yin,_,R), gcd_int(Yin,R,GCD).
+gcdBN1(_,X,Yin,GCD) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y),
+        string_element(X,0,X0,_), mdlib#divide_extended(0,X0,Y,_,R), gcd_int(Y,R,GCD).
+gcdBN1(_,X,Yin,GCD) :- Yin=  0 | normalize(0,X,GCD).
+gcdBN1(_,X,Yin,GCD) :- Yin=  1 | GCD= 1.
+gcdBN1(_,X,Yin,GCD) :- Yin= -1 | GCD= 1.
+gcdBN1(_,X,Yin,GCD) :- bignum#numer(Yin,YL,Y),YL>1 | string_element(X,0,X0,_), 
+    string_element(Y,0,Y0,Ys), mod1(Y0,X0,YL,Ys,R),  gcd_unsigned(R,X0,Gcd), normalize(0,0,Gcd,GCD).
+gcdBN1(_,X,Yin,GCD) :- bignum#numer(Yin,YL,Y),YL=1 | string_element(X,0,X0,_),
+    string_element(Y,0,Y0,_), gcd_unsigned(X0,Y0,Gcd), normalize(0,0,Gcd,GCD).
+otherwise.
+gcdBN1(SX,X,Yin,GCD) :- true | bignum#compose(SX,X,Xin), gcd_raise(2,Xin,Yin,GCD).
+
+gcdBNUM(_,XL,X,Yin,GCD) :- Yin>  1 | 
+    string_element(X,0,X0,Xs), mod1(X0,Yin,XL,Xs,Rem), gcd_int(Yin,Rem,GCD).
+gcdBNUM(_,XL,X,Yin,GCD) :- Yin< -1 | mdlib#subtract_extended(0,Yin,_,Y),
+    string_element(X,0,X0,Xs), mod1(X0,Y,  XL,Xs,Rem), gcd_int(Y,Rem,GCD).
+gcdBNUM(_,_,X,Yin,GCD) :- Yin=  0 | normalize(0,X,GCD).
+gcdBNUM(_,_,X,Yin,GCD) :- Yin=  1 | GCD= 1.
+gcdBNUM(_,_,X,Yin,GCD) :- Yin= -1 | GCD= 1.
+gcdBNUM(_,XL,X,Yin,GCD) :- bignum#numer(Yin,YL,Y),YL>1 | gcdSTR(XL,YL,X,Y,Gcd), normalize(0,Gcd,GCD).
+gcdBNUM(_,XL,X,Yin,GCD) :- bignum#numer(Yin,YL,Y),YL=1 | string_element(X,0,X0,Xs),
+    string_element(Y,0,Y0,_), mod1(X0,Y0,XL,Xs,Rem), gcd_unsigned(Y0,Rem,Gcd), normalize(0,Gcd,GCD).
+otherwise.
+gcdBNUM(SX,_,X,Yin,GCD) :- true | bignum#compose(SX,X,Xin), gcd_raise(2,Xin,Yin,GCD).
+
+
+%% gcd_int(X,Y,^GCD)        X and Y are positive integer
+gcd_int(X,0,GCD) :- true | GCD= X.
+gcd_int(0,Y,GCD) :- true | GCD= Y.
+gcd_int(X,Y,GCD) :- X>Y | builtin:modulo(X,Y,Rem), gcd_int(Y,Rem,GCD).
+gcd_int(X,Y,GCD) :- X=Y | GCD=X.
+gcd_int(X,Y,GCD) :- X<Y | builtin:modulo(Y,X,Rem), gcd_int(X,Rem,GCD).
+
+%% gcd_unsigned(X,Y,^GCD)    X and Y are unsigned integer
+gcd_unsigned(X,Y,GCD) :- X=0 | GCD= Y.
+gcd_unsigned(X,Y,GCD) :- X>0,Y=0 | GCD= X.
+gcd_unsigned(X,Y,GCD) :- X>0,X=Y | GCD= X.
+gcd_unsigned(X,Y,GCD) :- X>0,Y>0 | gcd_int(X,Y,GCD).
+gcd_unsigned(X,Y,GCD) :- X>0,Y<0 | mdlib#divide_extended(0,Y,X,_,R), gcd_int(X,R,GCD).
+gcd_unsigned(X,Y,GCD) :- X<0,Y=0 | GCD= X.
+gcd_unsigned(X,Y,GCD) :- X<0,X=Y | GCD= X.
+gcd_unsigned(X,Y,GCD) :- X<0,Y<0,X>Y | mdlib#divide_extended(0,X,Y,_,R), gcd_unsigned(Y,R,GCD).
+gcd_unsigned(X,Y,GCD) :- X<0,Y<0,X<Y | mdlib#divide_extended(0,Y,X,_,R), gcd_unsigned(X,R,GCD).
+gcd_unsigned(X,Y,GCD) :- X<0,Y>0 | mdlib#divide_extended(0,X,Y,_,R), gcd_int(Y,R,GCD).
+
+
+gcdSTR(XL,XL,Xin,Yin,GCD) :- true | shift_right_until_odd(Xin,SNx,Xnew),
+    shift_right_until_odd(Yin,SNy,Ynew),gcdSFT0(SNx,SNy,Xnew,Ynew,GCD).
+gcdSTR(XL,YL,Xin,Yin,GCD) :- XL>YL | YL2 := YL<<1, gcdSTRsub1(XL,YL2,Xin,Yin,GCD).
+gcdSTR(XL,YL,Xin,Yin,GCD) :- XL<YL | XL2 := XL<<1, gcdSTRsub1(YL,XL2,Yin,Xin,GCD).
+
+gcdSTRsub1(XL,YL2,Xin,Yin,GCD) :- XL< YL2 | shift_right_until_odd(Xin,SNx,Xnew),
+    shift_right_until_odd(Yin,SNy,Ynew),   gcdSFT0(SNx,SNy,Xnew,Ynew,GCD).
+gcdSTRsub1(XL,YL2,Xin,Yin,GCD) :- XL>=YL2 | 
+    modSTR(>,Xin,Yin,Rem), string(Rem,RL,_,Rstr), gcdSTRsub2(RL,Yin,Rstr,GCD).
+
+gcdSTRsub2(YL,Xin,Yin,GCD) :- YL>1 | shift_right_until_odd(Xin,SNx,Xnew),
+    shift_right_until_odd(Yin,SNy,Ynew),gcdSFT0(SNx,SNy,Xnew,Ynew,GCD).
+gcdSTRsub2(YL,Xin,Yin,GCD) :- YL=1, string(Xin,XL,_) | string_element(Xin,0,X0,Xstr),
+    string_element(Yin,0,Y0,_), mod1(X0,Y0,XL,Xstr,R), gcd_unsigned(Y0,R,GCD).
+gcdSTRsub2(YL,Xin,Yin,GCD) :- YL=0 | GCD= Xin.
+
+gcdSFT0(SNx,SNy,Xstr,Ystr,GCD) :- SNx>=SNy | gcdSFT1(0,Xstr,Xstr,Ystr,SNy,GCD).
+gcdSFT0(SNx,SNy,Xstr,Ystr,GCD) :- SNx< SNy | gcdSFT1(1,Ystr,Xstr,Ystr,SNx,GCD).
+
+gcdSFT1(0,Tin,_,Yin,SN,GCD) :- true | 
+    mdlib#subtract_bignum(Tin,Yin,ST,Tnew), gcdSFT2(ST,Tnew,Tin,Yin,SN,GCD).
+gcdSFT1(1,Tin,Xin,_,SN,GCD) :- true | 
+    mdlib#subtract_bignum(Xin,Tin,ST,Tnew), gcdSFT2(ST,Tnew,Xin,Tin,SN,GCD).
+gcdSFT2(ST,Tstr,Xstr,Ystr,SN,GCD) :- string(Tstr,TL,_),TL>1 |
+    shift_right_until_odd(Tstr,_,Tstr1), gcdSFT1(ST,Tstr1,Xstr,Ystr,SN,GCD).
+gcdSFT2(ST,Tstr,Xstr,Ystr,SN,GCD) :- string(Tstr,TL,_),TL=1 | string_element(Tstr,0,T0,_),
+    ( ST= 0 ->   string(Ystr,YL,_,Ystr1), gcdSUB(YL,Ystr1,T0,SN,GCD)
+    ; ST= 1 ->   string(Xstr,XL,_,Xstr1), gcdSUB(XL,Xstr1,T0,SN,GCD)   ).
+gcdSFT2(_, Tstr,Xstr,_,   SN,GCD) :- string(Tstr,0,_), string(Xstr,XL,_) |
+    SNbit := SN/\16#"1F", SNword := SN>>5, shift_left(SN,SNword,SNbit,XL,Xstr,GCD).
+
+gcdSUB(XL,Xstr,Y0,SN,GCD) :- XL>1 | string_element(Xstr,0,X0,Xstr1),
+    mod1(X0,Y0,XL,Xstr1,Rem), gcd_unsigned(Y0,Rem,Gcd), shift_left_bit(Gcd,SN,GCD).
+gcdSUB(XL,Xstr,Y0,SN,GCD) :- XL=1 | string_element(Xstr,0,X0,_), 
+    gcd_unsigned(X0,Y0,Gcd), shift_left_bit(Gcd,SN,GCD).
+gcdSUB(XL,Xstr,Y0,SN,GCD) :- XL=0 | shift_left_bit(Y0,SN,GCD).
+
+
+gcd_raise(1,X,Y,G) :- true | shoen:raise(pimos_tag#error,
+                    '$PIMOS$'(illegal_input_at_arg1,"Argument must be bignum"),bignum:gcd(X,Y,G)).
+gcd_raise(2,X,Y,G) :- true | shoen:raise(pimos_tag#error,
+                    '$PIMOS$'(illegal_input_at_arg2,"Argument must be bignum"),bignum:gcd(X,Y,G)).
+
+
+
+%%%%%
+%%%%%  CONTENTS :: GCD of aribitary number of bignums
+%%%%%
+
+contents([],GCD) :- true | GCD= 0.
+contents([X1],GCD) :- integer(X1) | GCD= X1.
+contents([X1],GCD) :- bignum#bignum(X1) | GCD= X1.
+contents([X1,X2|Tail],GCD) :- true | gcd(X1,X2,G), contentsSUB(G,Tail,GCD).
+otherwise.
+contents(List,GCD) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be a list which consists of bignums"), bignum:contents(List,GCD)).
+
+contentsSUB(1,_,GCD) :- true | GCD= 1.
+contentsSUB(G,[],GCD) :- true | GCD= G.
+contentsSUB(G,[X|Tail],GCD) :- G =\= 1 | gcd(G,X,Gnew), contentsSUB(Gnew,Tail,GCD).
+
+
+
+contents([],GCD,Out) :- true | GCD= 0, Out= [].
+contents([X1],GCD,Out) :- integer(X1) | GCD= X1, Out= [X1].
+contents([X1],GCD,Out) :- bignum#bignum(X1) | GCD= X1, Out= [X1].
+contents([X1,X2|Tail],GCD,Out) :- true | 
+    gcd(X1,X2,G), contentsSUB(G,Tail,GCD), contentsSUB2(GCD,[X1,X2|Tail],Out).
+otherwise.
+contents(List,GCD,Out) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input_at_arg1,
+    "Argument must be a list which consists of bignums"), bignum:contents(List,GCD,Out)).
+
+contentsSUB2(1,List,Out) :- true |  Out= List.
+contentsSUB2(G,List,Out) :- G =\= 1 | contQUOT(List,G,Out).
+contentsSUB2(G,List,Out) :- bignum#bignum(G) | contQUOT(List,G,Out).
+   
+contQUOT([],   _,Out) :- true | Out= [].
+contQUOT([X|T],G,Out) :- true | divide(X,G,Q), Out= [Q|Os], contQUOT(T,G,Os).
+
+
+%%%%%
+%%%%%  INPUT / OUTPUT conversion
+%%%%%
+%%  parse(CharStr, ^Bignum)  Convert 16bit character string to bignum
+parse(CharStr,Bignum) :- string(CharStr,CL,16) |  RadTen= 1000000000, RadLen= 9,
+    string_element(CharStr,0,Char,Cstr),  get_string_num(Char,CL,Cstr,Sign,DLen,[MSD|DigitList]),
+    builtin:add(-1,DLen,DL1),  builtin:modulo(DL1,RadLen,Counter), builtin:add(-1,RadLen,Mod),
+    radixTEN(DigitList,Counter,Mod,MSD,NumList), dec_to_hex(NumList,Sign,RadTen,Bignum).
+parse(CharStr,Bignum) :- bignum#bignum(CharStr) | Bignum= CharStr.
+parse(CharStr,Bignum) :- integer(CharStr) | Bignum= CharStr.
+otherwise.
+parse(CharStr,Bignum) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input, 
+    "The 1st argument must be a number string(16bit) expressed in JIS code"), 
+    bignum:parse(CharStr,Bignum)).
+
+%  radixTEN(DigitList,Counter,Mod,Accum,^NumList)  Convert radix from 10 to RadTen
+%       DigitList ::= number list (radix=10)     NumList ::= number list (radix=RadTen)
+radixTEN([],        _,  _,  Acc,NumList) :- true | NumList= [Acc].
+radixTEN([Num|List],Ctr,Mod,Acc,NumList) :- Ctr =\= 0 |  builtin:multiply(Acc,10,Acc10),
+    builtin:add(Acc10,Num,AccNew), builtin:add(-1,Ctr,Ctr1), radixTEN(List,Ctr1,Mod,AccNew,NumList).
+radixTEN([Num|List],0,  Mod,Acc,NumList) :- true | NumList= [Acc|Tail], radixTEN(List,Mod,Mod,Num,Tail) .
+
+% dec_to_hex([Num|List],Sign,RadTen,^Bignum)    Radix conversion from RadTen to 100000000H
+dec_to_hex([],        _,_,     Bignum) :- true | Bignum= 0.
+dec_to_hex([Num],     0,_,     Bignum) :- true | Bignum= Num.
+dec_to_hex([Num],     1,_,     Bignum) :- true | builtin:subtract(0,Num,Bignum).
+otherwise.
+dec_to_hex([MSW|List],Sign,RadTen,Bignum) :- true | new_string(TMP,1,32),
+    set_string_element(TMP,0,MSW,Accum), d2h(List,Accum,RadTen,Xstr), normalize(Sign,Xstr,Bignum).
+
+%  d2h(List,Accum,RadTen,^Zout)  
+d2h([],      Accum,_,     Zout) :- true | Zout= Accum.
+d2h([0|Tail],Accum,RadTen,Zout) :- true | 
+    mdlib#multiply_bignum_by_word(Accum,RadTen,Acc1), d2h(Tail,Acc1,RadTen,Zout).
+d2h([X|Tail],Accum,RadTen,Zout) :- X =\= 0 | new_string(S,1,32), set_string_element(S,0,X,S1),
+    mdlib#multiply_bignum_by_word(Accum,RadTen,TMP), 
+    mdlib#add_bignum(TMP,S1,Acc1), d2h(Tail,Acc1,RadTen,Zout).
+
+%  get_string_num(Char,CL,Str,^Sign,^DL,^DigitList)  
+%     Char ::= character code at position 0
+%     CL   ::= length of Str     Str  ::= 16bit JIS code string
+%     Sign ::= 0 (+) | 1 (-)     DLen ::= length of DigitList    DigitList ::= number list (Radix 10)
+get_string_num(#"-",CL,Str,Sgn,DLen,List) :- true | Sgn= 1, 
+    builtin:add(-1,CL,DLen), string_num(1,CL,Str,List).
+get_string_num(#"+",CL,Str,Sgn,DLen,List) :- true | Sgn= 0, 
+    builtin:add(-1,CL,DLen), string_num(1,CL,Str,List).
+otherwise.
+get_string_num(Code,CL,Str,Sgn,DLen,List) :- true | 
+    Sgn= 0, DLen= CL, codeNUM(Code,Num), List= [Num|Tail],  string_num(1,CL,Str,Tail).
+
+string_num(CL,CL,_,  Out) :- true | Out= [].
+string_num(Pt,CL,Str,Out) :- Pt =\= CL | string_element(Str,Pt,Code,Str1), 
+    codeNUM(Code,Num), Out= [Num|Tail], builtin:add(1,Pt,Pt1), string_num(Pt1,CL,Str1,Tail).
+
+codeNUM(#"0",N) :- true | N= 0.    codeNUM(#"1",N) :- true | N= 1.    codeNUM(#"2",N) :- true | N= 2.
+codeNUM(#"3",N) :- true | N= 3.    codeNUM(#"4",N) :- true | N= 4.    codeNUM(#"5",N) :- true | N= 5.
+codeNUM(#"6",N) :- true | N= 6.    codeNUM(#"7",N) :- true | N= 7.    codeNUM(#"8",N) :- true | N= 8.
+codeNUM(#"9",N) :- true | N= 9.
+
+%%  portray(Bignum, ^CharStr)  Convert bignum to 16bit character string
+%%
+portray(0,CharStr) :- true | CharStr= "0" .
+portray(Bignum,CharStr) :- string(Bignum,_,16) | CharStr= Bignum.
+portray(Bignum,CharStr) :- bignum#sign(Bignum,SX) |  hex_to_dec(Bignum,100000000,List),
+    digit1(List,0,[],Len,DigitList), portray(SX,DigitList,Len,CharStr).
+portray(Bignum,CharStr) :- Bignum =\= 0 | 
+    sign_int(Bignum,SX), builtin:divide(Bignum,10,Q), builtin:modulo(Bignum,10,R), 
+    abs(R,_,LSD), abs(Q,_,Num), digit2(Num,1,[LSD],Len,List), portray(SX,List,Len,CharStr).
+otherwise.
+portray(Bignum,CharStr) :- true | shoen:raise(pimos_tag#error, '$PIMOS$'(illegal_input, 
+    "The 1st argument must be bignum"),  bignum:portray(Bignum,CharStr)).
+
+%  hex_to_dec(Xin,Radix,^List)  Convert radix from 100000000H to 100000000 by bignum division
+hex_to_dec(0,  _,List) :- true | List= [].
+hex_to_dec(Xin,Radix,List) :- Xin>0, Xin<Radix | List= [Xin].
+otherwise.
+hex_to_dec(Xin,Radix,List) :- true | 
+    divide(Xin,Radix,Quot,Rem), abs(Rem,_,Rabs), List= [Rabs|Tail], hex_to_dec(Quot,Radix,Tail).
+    
+%  digit1(NumList,L,Acc,Len,^DigitList)  Convert radix from 100000000 to 10
+digit1([N],L,Acc,Len,Out) :- true | digit2(N,L,Acc,Len,Out).
+otherwise.
+digit1([N|T],L,Acc,Len,Out) :- true | builtin:add(L,8,L1),
+    builtin:divide(N, 10,Q0),builtin:modulo(N, 10,R0), builtin:divide(Q0,10,Q1),builtin:modulo(Q0,10,R1),
+    builtin:divide(Q1,10,Q2),builtin:modulo(Q1,10,R2), builtin:divide(Q2,10,Q3),builtin:modulo(Q2,10,R3),
+    builtin:divide(Q3,10,Q4),builtin:modulo(Q3,10,R4), builtin:divide(Q4,10,Q5),builtin:modulo(Q4,10,R5),
+    builtin:divide(Q5,10,Q6),builtin:modulo(Q5,10,R6), 
+    Ac1= [Q6,R6,R5,R4,R3,R2,R1,R0|Acc], digit1(T,L1,Ac1,Len,Out).
+
+% digit2(Xin,LengthIn,LinsIn,^LengthOut,ListOut)   Convert a word of integer to digits list
+digit2(0,L,Acc,Len,List) :- true | Len= L, List= Acc .
+digit2(N,L,Acc,Len,List) :- N =\= 0 | builtin:divide(N,10,N1),builtin:modulo(N,10,R), 
+    Ac1= [R|Acc], builtin:add(1,L,L1), digit2(N1,L1,Ac1,Len,List).
+
+%  portray(Sign,DigitList,Len,^CharStr)   (The MSD of DigitList is at the 1st element)
+portray(1,List,Len,CharStr) :- true | builtin:add(1,Len,Len1), new_string(Str,Len1,16),
+    get_number_string(List,1,Str,Str1), set_string_element(Str1,0,#"-",CharStr).
+portray(0,List,Len,CharStr) :- true | new_string(Str,Len,16), get_number_string(List,0,Str,CharStr).
+
+get_number_string([],_,Str,StrNew) :- true | StrNew= Str.
+get_number_string([Num|Tail],Pt,Str,StrNew) :- true | numCODE(Num,Code),
+    set_string_element(Str,Pt,Code,Str1), builtin:add(1,Pt,Pt1), get_number_string(Tail,Pt1,Str1,StrNew).
+
+numCODE(0,C) :- true | C= #"0" .    numCODE(1,C) :- true | C= #"1" .    numCODE(2,C) :- true | C= #"2" .
+numCODE(3,C) :- true | C= #"3" .    numCODE(4,C) :- true | C= #"4" .    numCODE(5,C) :- true | C= #"5" .
+numCODE(6,C) :- true | C= #"6" .    numCODE(7,C) :- true | C= #"7" .    numCODE(8,C) :- true | C= #"8" .
+numCODE(9,C) :- true | C= #"9" .
+
+
+%%%%%
+%%%%%  INTERNAL COMMON UTILITIES
+%%%%%
+%% normalize(Sign,NumeralPart,^Xout)
+%%     Sign ::= 0 (+) | 1  (-)
+normalize(0,X,Out) :- X>=0 | Out= X.
+normalize(1,X,Out) :- X>=0 | builtin:subtract(0,X,Out).
+normalize(0,X,Out) :- X< 0 | 
+    new_string(Str,1,32), set_string_element(Str,0,X,Str1), bignum#compose(0,Str1,Out).
+normalize(1,X,Out) :- X< 0 | 
+    new_string(Str,1,32), set_string_element(Str,0,X,Str1), bignum#compose(1,Str1,Out).
+normalize(0,X,Out) :- string(X,N,_), N>1 | bignum#compose(0,X,Out).
+normalize(1,X,Out) :- string(X,N,_), N>1 | bignum#compose(1,X,Out).
+normalize(0,X,Out) :- string(X,1,_) | string_element(X,0,Ele,X1), norm_plus(Ele,X1,Out).
+normalize(1,X,Out) :- string(X,1,_) | string_element(X,0,Ele,X1), norm_minus(Ele,X1,Out).
+normalize(0,X,Out) :- string(X,0,_) | Out= 0.
+normalize(1,X,Out) :- string(X,0,_) | Out= 0.
+
+norm_plus(Ele,_,Out) :- Ele>=0 | Out= Ele.
+norm_plus(Ele,X,Out) :- Ele< 0 | bignum#compose(0,X,Out).
+
+norm_minus(Ele,_,Out) :- Ele>=0 | builtin:subtract(0,Ele,Out).
+norm_minus(Ele,X,Out) :- Ele< 0, Ele =\= 16#"80000000" | bignum#compose(1,X,Out).
+norm_minus(Ele,_,Out) :- Ele< 0, Ele =:= 16#"80000000" | Out= 16#"80000000".
+
+%% normalize(Sign,WordHigh,WordLow,^Xout)  Check if words can be expressed in integer
+%%      WordHigh,WordLow ::= 32bit unsigned integer
+normalize(0,0,ZL,Out) :- ZL>=0 | Out= ZL.
+normalize(0,0,ZL,Out) :- ZL< 0 | 
+    new_string(O,1,32), set_string_element(O,0,ZL,O1), bignum#compose(0,O1,Out).
+normalize(1,0,ZL,Out) :- ZL>=0 | builtin:subtract(0,ZL,Out).
+normalize(1,0,ZL,Out) :- ZL =:= 16#"80000000" | Out= ZL.
+normalize(1,0,ZL,Out) :- ZL< 0, ZL =\= 16#"80000000" | 
+    new_string(O,1,32), set_string_element(O,0,ZL,O1), bignum#compose(1,O1,Out).
+normalize(S,ZH,ZL,Out) :- ZH =\= 0 | new_string(O,2,32), 
+    set_string_element(O,0,ZH,O1), set_string_element(O1,1,ZL,O2), bignum#compose(S,O2,Out).
+
+
+abs(In,S,Out) :- In>=0 | S= 0, Out= In.
+abs(In,S,Out) :- In<0, In =\= 16#"80000000" | S= 1, builtin:subtract(0,In,Out).
+abs(In,S,Out) :- In<0, In =:= 16#"80000000" | S= 1, Out= In.
+
+sign_int(In,S) :- In>=0 | S= 0.
+sign_int(In,S) :- In< 0 | S= 1.
+
+to_numer(0, ZL,Zout) :- string(ZL,L,_),L>1 | Zout= ZL.
+to_numer(0, ZL,Zout) :- string(ZL,L,_),L=1 | string_element(ZL,0,Z0,ZL1), to_numerSUB(Z0,ZL1,Zout).
+to_numer(0, ZL,Zout) :- string(ZL,L,_),L=0 | Zout= 0.
+to_numer(0, ZL,Zout) :- ZL>=0    | Zout= ZL.
+to_numer(0, ZL,Zout) :- ZL< 0    | new_string(Z,1,32), set_string_element(Z,0,ZL,Zout).
+to_numer(ZH,ZL,Zout) :- ZH =\= 0 | 
+    new_string(Z,2,32), set_string_element(Z,0,ZH,Z1), set_string_element(Z1,1,ZL,Zout).
+
+to_numerSUB(Z0,ZL,Zout) :- Z0>=0 | Zout= Z0.
+to_numerSUB(Z0,ZL,Zout) :- Z0< 0 | Zout= ZL.
+
+
+%%  zero_suppress(Str,^Out)  Remove leading zero from the input string
+%%          Str ::= 32bit string,   Out ::= 32bit string | 32#{} (null string)
+zero_suppress(Str,Out) :- string(Str,0,_) | Out= Str.
+zero_suppress(Str,Out) :- string(Str,1,_),string_element(Str,0,0) | new_string(Out,0,32).
+zero_suppress(Str,Out) :- string_element(Str,0,E),E=\=0 | Out= Str.
+otherwise.
+zero_suppress(Str,Out) :- string(Str,L,_),L>1 | 
+    string_element(Str,0,E0,Str1), zero_suppress(E0,L,0,Str1,Out).
+
+zero_suppress(E,L,Pt,Str,Out) :- E=\=0 | builtin#substring(Str,Pt,L,Out,_).
+zero_suppress(E,L,_, _,  Out) :- E=:=0,L=<1 | new_string(Out,0,32).
+zero_suppress(E,L,Pt,Str,Out) :- E=:=0,L> 1 | 
+    builtin:add(Pt,1,Pt1), string_element(Str,Pt1,Ele,Str1), 
+    builtin:subtract(L,1,L1), zero_suppress(Ele,L1,Pt1,Str1,Out).
+
+
+
+
+%%%%%
+%%%%%   INTERFACE methods to rational arithmetic module
+%%%%%
+
+%% addbig(SX,SY,Xin,Yin,^SZ,^Zout)
+%%      SX,SY,SZ ::= 0 (+) | 1 (-)    Xin,Yin,Zout  ::= 32bit string  | positive integer
+addbig(0,0,Xin,Yin,SZ,Zout) :- true | SZ= 0, addbig(Xin,Yin,Zout).
+addbig(1,1,Xin,Yin,SZ,Zout) :- true | SZ= 1, addbig(Xin,Yin,Zout).
+addbig(0,1,Xin,Yin,SZ,Zout) :- true | subbig(Xin,Yin,SZ,Zout).
+addbig(1,0,Xin,Yin,SZ,Zout) :- true | subbig(Yin,Xin,SZ,Zout).
+
+addbig(Xin,Yin,Zout) :- string(Xin,_,_) | addbigSTR(Xin,Yin,Zout).
+addbig(Xin,Yin,Zout) :- integer(Xin)    | addbigINT(Xin,Yin,Zout).
+
+addbigSTR(Xin,Yin,Zout) :- string(Yin,_,_) | mdlib#add_bignum(Xin,Yin,Zout).
+addbigSTR(Xin,Yin,Zout) :- integer(Yin) | 
+    new_string(Y,1,32), set_string_element(Y,0,Yin,Ystr), mdlib#add_bignum(Xin,Ystr,Zout).
+
+addbigINT(Xin,Yin,Zout) :- string(Yin,_,_) | 
+    new_string(X,1,32), set_string_element(X,0,Xin,Xstr), mdlib#add_bignum(Xstr,Yin,Zout).
+addbigINT(Xin,Yin,Zout) :- integer(Yin) | mdlib#add_extended(Xin,Yin,ZH,ZL), to_numer(ZH,ZL,Zout).
+
+
+
+%% subbig(SX,SY,Xin,Yin,^SZ,^Zout)
+%%      Xin,Yin,Zout  ::= 32bit string  | positive integer
+subbig(0,1,Xin,Yin,SZ,Zout) :- true | SZ= 0, addbig(Xin,Yin,Zout).
+subbig(1,0,Xin,Yin,SZ,Zout) :- true | SZ= 1, addbig(Xin,Yin,Zout).
+subbig(0,0,Xin,Yin,SZ,Zout) :- true | subbig(Xin,Yin,SZ,Zout).
+subbig(1,1,Xin,Yin,SZ,Zout) :- true | subbig(Xin,Yin,S,Zout), SZ := S xor 1.
+
+subbig(Xin,Yin,SZ,Zout) :- string(Xin,_,_) | subbigSTR(Xin,Yin,SZ,Zout).
+subbig(Xin,Yin,SZ,Zout) :- integer(Xin)    | subbigINT(Xin,Yin,SZ,Zout).
+
+subbigSTR(Xin,Yin,SZ,Zout) :- string(Yin,_,_) | mdlib#subtract_bignum(Xin,Yin,SZ,Zout).
+subbigSTR(Xin,Yin,SZ,Zout) :- integer(Yin) | 
+    new_string(Y,1,32), set_string_element(Y,0,Yin,Ystr), mdlib#subtract_bignum(Xin,Ystr,SZ,Zout).
+
+subbigINT(Xin,Yin,SZ,Zout) :- string(Yin,_,_) | 
+    new_string(X,1,32), set_string_element(X,0,Xin,Xstr), mdlib#subtract_bignum(Xstr,Yin,SZ,Zout).
+subbigINT(Xin,Yin,SZ,Zout) :- integer(Yin) | builtin:subtract(Xin,Yin,Z), abs(Z,SZ,Zout).
+
+
+
+%%  mulbig(Xin,Yin,^Zout) 
+%%      Xin,Yin,Zout  ::= 32bit string  | positive integer
+mulbig(Xin,Yin,Zout) :- string(Xin,XL,_) | mulbig2(XL,Xin,Yin,Zout).
+mulbig(Xin,Yin,Zout) :- integer(Xin)     | mulINT(Xin,Yin,Zout).
+
+mulbig2(XL,Xin,Yin,Zout) :- string(Yin,YL,_) | mulSTR(XL,YL,Xin,Yin,Zout).
+mulbig2(_, Xin,Yin,Zout) :- integer(Yin)     | mdlib#multiply_bignum_by_word(Xin,Yin,Zout).
+
+mulINT(Xin,Yin,Zout) :- string(Yin,_,_) | mdlib#multiply_bignum_by_word(Yin,Xin,Zout).
+mulINT(Xin,Yin,Zout) :- integer(Yin)    | mdlib#multiply_extended(Xin,Yin,ZH,ZL), to_numer(ZH,ZL,Zout).
+
+
+%%  divbig(Xin,Yin,^Qout,^Rem) 
+%%      Xin,Yin,Zout,Rem  ::= 32bit string  | positive integer
+%%    <NOTE> This method is used not only as "long" interface but also as a subprocess of gcd/5.
+divbig(Xin,Yin,Qout,Rem) :- string(Xin,XL,_),XL>1 | divbig2(XL,Xin,Yin,Qout,Rem).
+divbig(Xin,Yin,Qout,Rem) :- string(Xin,1,_) | divbig1(Xin,Yin,Qout,Rem).
+divbig(Xin,Yin,Qout,Rem) :- string(Xin,0,_) | Qout= 0, Rem= 0.
+divbig(Xin,Yin,Qout,Rem) :- integer(Xin)    | div_int(Xin,Yin,Qout,Rem).
+
+divbig1(Xin,Yin,Qout,Rem) :- string(Yin,1,_) | string_element(Xin,0,X0,_),
+    string_element(Yin,0,Y0,_), mdlib#divide_extended(0,X0,Y0,Q,R), to_numer(0,Q,Qout), to_numer(0,R,Rem).
+divbig1(Xin,Yin,Qout,Rem) :- string(Yin,YL,_), YL>1 | Qout= 0, Rem= Xin.
+divbig1(Xin,  1,Qout,Rem) :- true  | Qout= Xin, Rem= 0.
+divbig1(Xin,Yin,Qout,Rem) :- Yin>1 | string_element(Xin,0,X0,_), 
+    mdlib#divide_extended(0,X0,Yin,Q,R), to_numer(0,Q,Qout), to_numer(0,R,Rem).
+
+divbig2(XL,Xin,Yin,Qout,Rem) :- string(Yin,1,_) | string_element(Xin,0,X0,Xstr), 
+    string_element(Yin,0,Y0,_), div1(X0,Y0,XL,Xstr,Q,R), to_numer(0,Q,Qout), to_numer(0,R,Rem).
+divbig2(_, Xin,Yin,Qout,Rem) :- string(Yin,YL,_), YL>1 | 
+    comp(Xin,Yin,CMP,Xnew,Ynew), divSTR(CMP,Xnew,Ynew,Q,R), to_numer(0,Q,Qout), to_numer(0,R,Rem).
+divbig2(_, Xin,  1,Qout,Rem) :- true  | Qout= Xin, Rem= 0.
+divbig2(XL,Xin,Yin,Qout,Rem) :- Yin>1 | 
+    string_element(Xin,0,X0,Xstr), div1(X0,Yin,XL,Xstr,Q,R), to_numer(0,Q,Qout), to_numer(0,R,Rem).
+
+div_int(Xin,Yin,Qout,Rem) :- string(Yin,_,_) | Qout= 0, Rem= Xin.
+div_int(Xin,Yin,Qout,Rem) :- integer(Yin)    | builtin:divide(Xin,Yin,Qout), builtin:modulo(Xin,Yin,Rem).
+
+
+
+
+%%  modbig(Xin,Yin,^Rem)   
+%%      Xin,Yin,Zout,Rem  ::= 32bit string  | positive integer
+modbig(Xin,Yin,Rem) :- string(Xin,1,_) | modbig1(Xin,Yin,Rem).
+modbig(Xin,Yin,Rem) :- string(Xin,XL,_),XL>1 | modbig2(XL,Xin,Yin,Rem).
+modbig(Xin,Yin,Rem) :- integer(Xin)    | mod_int(Xin,Yin,Rem).
+
+modbig1(Xin,Yin,Rem) :- string(Yin,1,_) | string_element(Xin,0,X0,_),
+    string_element(Yin,0,Y0,_), mdlib#divide_extended(0,X0,Y0,_,R), to_numer(0,R,Rem).
+modbig1(Xin,Yin,Rem) :- string(Yin,YL,_), YL>1 | Rem= Xin.
+modbig1(_,    1,Rem) :- true  | Rem= 0.
+modbig1(Xin,Yin,Rem) :- Yin>1 | string_element(Xin,0,X0,_),
+    mdlib#divide_extended(0,X0,Yin,_,R), to_numer(0,R,Rem).
+
+modbig2(XL,Xin,Yin,Rem) :- string(Yin,1,_) | 
+    string_element(Xin,0,X0,Str), string_element(Yin,0,Y0,_), mod1(X0,Y0,XL,Str,R),  to_numer(0,R,Rem).
+modbig2(XL,Xin,Yin,Rem) :- string(Yin,YL,_), YL>1 | 
+    comp(Xin,Yin,CMP,Xnew,Ynew), modSTR(CMP,Xnew,Ynew,R), to_numer(0,R,Rem).
+modbig2(_, _,    1,Rem) :- true  | Rem= 0.
+modbig2(XL,Xin,Yin,Rem) :- Yin>1 | string_element(Xin,0,X0,Str),mod1(X0,Yin,XL,Str,R), to_numer(0,R,Rem).
+
+mod_int(Xin,Yin,Rem) :- string(Yin,_,_) | Rem= Xin.
+mod_int(Xin,Yin,Rem) :- integer(Yin)    | builtin:modulo(Xin,Yin,Rem).
+
+
+
+%%  gcdbig(Xin,Yin,^GCD,^QX,^QY)   GCD= gcd(Xin,Yin), QX= Xin/GCD,  QY= Yin/GCD
+%%          Xin,Yin,GCD,QX,QY ::= 32bit string | positive integer
+gcdbig(Xin,Yin,GCD,QX,QY) :- Xin>1 | gcdPLUS(Xin,Yin,GCD,QX,QY).
+gcdbig(Xin,Yin,GCD,QX,QY) :- Xin=0 | GCD= Yin, QX= 0, QY= 1.
+gcdbig(Xin,Yin,GCD,QX,QY) :- Xin=1 | GCD= 1,   QX= 1, QY= Yin.
+gcdbig(Xin,Yin,GCD,QX,QY) :- string(Xin,XL,_),XL>1 | gcdbigN(XL,Xin,Yin,GCD,QX,QY).
+gcdbig(Xin,Yin,GCD,QX,QY) :- string(Xin,XL,_),XL=1 | gcdbig1(Xin,Yin,GCD,QX,QY).
+gcdbig(Xin,Yin,GCD,QX,QY) :- string(Xin,XL,_),XL=0 | gcdbigZERO(Yin,GCD,QX,QY).
+
+gcdPLUS(Xin,Yin,GCD,QX,QY) :- Yin>1 | 
+    gcd_int(Xin,Yin,GCD), builtin:divide(Xin,GCD,QX), builtin:divide(Yin,GCD,QY).
+gcdPLUS(Xin,Yin,GCD,QX,QY) :- Yin=0 | GCD= Xin, QX= 1,   QY= 0.
+gcdPLUS(Xin,Yin,GCD,QX,QY) :- Yin=1 | GCD= 1,   QX= Xin, QY= 1.
+gcdPLUS(Xin,Yin,GCD,QX,QY) :- string(Yin,YL,_),YL>1 |
+    string_element(Yin,0,Y0,Ys), mod1(Y0,Xin,YL,Ys,Rem),
+    gcd_int(Xin,Rem,GCD), builtin:divide(Xin,GCD,QX), div1(Y0,GCD,YL,Ys,Qy,_), to_numer(0,Qy,QY).
+gcdPLUS(Xin,Yin,GCD,QX,QY) :- string(Yin,YL,_),YL=1 | 
+    string_element(Yin,0,Y0,_), mdlib#divide_extended(0,Y0,Xin,_,Rem), gcd_int(Xin,Rem,GCD),
+    builtin:divide(Xin,GCD,QX), mdlib#divide_extended(0,Y0,GCD,Qy,_), to_numer(0,Qy,QY).
+gcdPLUS(Xin,Yin,GCD,QX,QY) :- string(Yin,YL,_),YL=0 | GCD= Xin, QX= 1, QY= 0.
+
+gcdbig1(Xin,Yin,GCD,QX,QY) :- Yin>1 |
+    string_element(Xin,0,X0,_), mdlib#divide_extended(0,X0,Yin,_,Rem), gcd_int(Yin,Rem,GCD),
+    builtin:divide(Yin,GCD,QY),        mdlib#divide_extended(0,X0,GCD,Qx,_),  to_numer(0,Qx,QX).
+gcdbig1(Xin,Yin,GCD,QX,QY) :- Yin=0 | GCD= Xin, QX= 1,   QY=0.
+gcdbig1(Xin,Yin,GCD,QX,QY) :- Yin=1 | GCD= 1,   QX= Xin, QY=1.
+gcdbig1(Xin,Yin,GCD,QX,QY) :- string(Yin,YL,_),YL>1 | 
+    string_element(Xin,0,X0,_), string_element(Yin,0,Y0,Ys), mod1(Y0,X0,YL,Ys,Rem),
+    gcd_unsigned(Rem,X0,Gcd),   mdlib#divide_extended(0,X0,Gcd,Qx,_), div1(Y0,Gcd,YL,Ys,Qy,_),
+    to_numer(0,Gcd,GCD),        to_numer(0,Qx,QX),                    to_numer(0,Qy,QY).
+gcdbig1(Xin,Yin,GCD,QX,QY) :- string(Yin,YL,_),YL=1 |
+    string_element(Xin,0,X0,_), string_element(Yin,0,Y0,_),
+    gcd_unsigned(X0,Y0,Gcd),    mdlib#divide_extended(0,X0,Gcd,Qx,_),mdlib#divide_extended(0,Y0,Gcd,Qy,_),
+    to_numer(0,Gcd,GCD),        to_numer(0,Qx,QX),                   to_numer(0,Qy,QY).
+gcdbig1(Xin,Yin,GCD,QX,QY) :- string(Yin,YL,_),YL=0 | GCD= Xin, QX=1, QY= 0.
+
+gcdbigN(XL,Xin,Yin,GCD,QX,QY) :- Yin>1 | 
+    string_element(Xin,0,X0,Xs), mod1(X0,Yin,XL,Xs,Rem), gcd_int(Yin,Rem,GCD),
+    builtin:divide(Yin,GCD,QY),         div1(X0,GCD,XL,Xs,QX,_).
+gcdbigN(_,Xin,Yin,GCD,QX,QY) :- Yin=0 | GCD= Xin, QX= 1,   QY= 0.
+gcdbigN(_,Xin,Yin,GCD,QX,QY) :- Yin=1 | GCD= 1,   QX= Xin, QY= 1.
+gcdbigN(XL,Xin,Yin,GCD,QX,QY) :- string(Yin,YL,_),YL>1 | 
+    gcdSTR(XL,YL,Xin,Yin,Gcd),  to_numer(0,Gcd,GCD),
+    divbig(Xin,GCD,Qx,_),       divbig(Yin,GCD,Qy,_), to_numer(0,Qx,QX), to_numer(0,Qy,QY).
+gcdbigN(XL,Xin,Yin,GCD,QX,QY) :- string(Yin,YL,_),YL=1 | 
+    string_element(Xin,0,X0,Xs), string_element(Yin,0,Y0,_), mod1(X0,Y0,XL,Xs,Rem),
+    gcd_unsigned(Y0,Rem,Gcd),    div1(X0,Gcd,XL,Xs,Qx,_),    mdlib#divide_extended(0,Y0,Gcd,Qy,_),
+    to_numer(0,Gcd,GCD),         to_numer(0,Qx,QX),          to_numer(0,Qy,QY).
+gcdbigN(XL,Xin,Yin,GCD,QX,QY) :- string(Yin,YL,_),YL=0 | GCD= Xin, QX= 1, QY= 0.
+
+gcdbigZERO(Yin,GCD,QX,QY) :- Yin>0 | GCD= Yin, QX= 0, QY= 1.
+gcdbigZERO(Yin,GCD,QX,QY) :- Yin=0 | GCD= 0,   QX= 0, QY= 0.
+gcdbigZERO(Yin,GCD,QX,QY) :- string(Yin,YL,_),YL>0 | GCD= Yin, QX= 0, QY= 1.
+gcdbigZERO(Yin,GCD,QX,QY) :- string(Yin,YL,_),YL=0 | GCD= 0,   QX= 0, QY= 0.
+
+
+
+%%  gcdbig(Xin,Yin,^GCD)   GCD= gcd(Xin,Yin)
+%%          Xin,Yin,GCD,QY ::= 32bit string | positive integer
+gcdbig(Xin,Yin,GCD) :- Xin>1 | gcdPLUS(Xin,Yin,GCD).
+gcdbig(Xin,Yin,GCD) :- Xin=0 | GCD= Yin.
+gcdbig(Xin,Yin,GCD) :- Xin=1 | GCD= 1.
+gcdbig(Xin,Yin,GCD) :- string(Xin,XL,_),XL>1 | gcdbigN(XL,Xin,Yin,GCD).
+gcdbig(Xin,Yin,GCD) :- string(Xin,XL,_),XL=1 | gcdbig1(Xin,Yin,GCD).
+gcdbig(Xin,Yin,GCD) :- string(Xin,XL,_),XL=0 | gcdbigZERO(Yin,GCD).
+
+gcdPLUS(Xin,Yin,GCD) :- Yin>1 | gcd_int(Xin,Yin,GCD).
+gcdPLUS(Xin,Yin,GCD) :- Yin=0 | GCD= Xin.
+gcdPLUS(Xin,Yin,GCD) :- Yin=1 | GCD= 1.
+gcdPLUS(Xin,Yin,GCD) :- string(Yin,YL,_),YL>1 |
+    string_element(Yin,0,Y0,Ys), mod1(Y0,Xin,YL,Ys,Rem), gcd_int(Xin,Rem,GCD).
+gcdPLUS(Xin,Yin,GCD) :- string(Yin,YL,_),YL=1 | 
+    string_element(Yin,0,Y0,_), mdlib#divide_extended(0,Y0,Xin,_,Rem), gcd_int(Xin,Rem,GCD).
+gcdPLUS(Xin,Yin,GCD) :- string(Yin,YL,_),YL=0 | GCD= Xin.
+
+gcdbig1(Xin,Yin,GCD) :- Yin>1 |
+    string_element(Xin,0,X0,_), mdlib#divide_extended(0,X0,Yin,_,Rem), gcd_int(Yin,Rem,GCD).
+gcdbig1(Xin,Yin,GCD) :- Yin=0 | GCD= Xin.
+gcdbig1(Xin,Yin,GCD) :- Yin=1 | GCD= 1.
+gcdbig1(Xin,Yin,GCD) :- string(Yin,YL,_),YL>1 | string_element(Xin,0,X0,_),
+    string_element(Yin,0,Y0,Ys), mod1(Y0,X0,YL,Ys,R), gcd_unsigned(R,X0,Gcd), to_numer(0,Gcd,GCD).
+gcdbig1(Xin,Yin,GCD) :- string(Yin,YL,_),YL=1 | string_element(Xin,0,X0,_),
+    string_element(Yin,0,Y0,_),  gcd_unsigned(X0,Y0,Gcd), to_numer(0,Gcd,GCD).
+gcdbig1(Xin,Yin,GCD) :- string(Yin,YL,_),YL=0 | GCD= Xin.
+
+gcdbigN(XL,Xin,Yin,GCD) :- Yin>1 | string_element(Xin,0,X0,Xs), mod1(X0,Yin,XL,Xs,R), gcd_int(Yin,R,GCD).
+gcdbigN(_,Xin,Yin,GCD) :- Yin=0 | GCD= Xin.
+gcdbigN(_,Xin,Yin,GCD) :- Yin=1 | GCD= 1.
+gcdbigN(XL,Xin,Yin,GCD) :- string(Yin,YL,_),YL>1 | gcdSTR(XL,YL,Xin,Yin,Gcd), to_numer(0,Gcd,GCD).
+gcdbigN(XL,Xin,Yin,GCD) :- string(Yin,YL,_),YL=1 | string_element(Xin,0,X0,Xs),
+    string_element(Yin,0,Y0,_), mod1(X0,Y0,XL,Xs,Rem),  gcd_unsigned(Y0,Rem,Gcd), to_numer(0,Gcd,GCD).
+gcdbigN(XL,Xin,Yin,GCD) :- string(Yin,YL,_),YL=0 | GCD= Xin.
+
+gcdbigZERO(Yin,GCD) :- Yin>0 | GCD= Yin.
+gcdbigZERO(Yin,GCD) :- Yin=0 | GCD= 0.
+gcdbigZERO(Yin,GCD) :- string(Yin,YL,_),YL>0 | GCD= Yin.
+gcdbigZERO(Yin,GCD) :- string(Yin,YL,_),YL=0 | GCD= 0.
+
+
+
+
+%%  bnum_to_float(Str,Sign,^Float)  Convert a bignum string to floating point number
+%%     If a machine does not support floating point caculation this method returns the input.
+:- switch(floating_point).
+:- case(yes).
+  bnum_to_float(Str,Sign,Float) :- integer(Str) | integer_to_floating_point(Str,F), Float $:= Sign*F.
+  bnum_to_float(Str,Sign,Float) :- string(Str,Len,_),Len>0 | bnum_to_float(Len,Str,Sign,Float).
+  bnum_to_float(Str,Sign,Float) :- string(Str,Len,_),Len=0 | Float= 0.0 .
+:- case(no).
+  bnum_to_float(Str,_,Float) :- Float= Str.
+:- end_switch.
+
+
+%% shift_right_big(Xin,SN,^Out)
+shift_right_big(Xin,SN,Out) :- integer(Xin), SN< 32 | Out := Xin>>SN.
+shift_right_big(Xin,SN,Out) :- integer(Xin), SN>=32 | Out= 0.
+shift_right_big(Xin,SN,Out) :- string(Xin,L,_), L>1 | Lb := L<<5, shift_right_bigSUB(L,Lb,Xin,SN,Out).
+shift_right_big(Xin,SN,Out) :- string(Xin,L,_), L=1, SN< 32 | string_element(Xin,0,X0,_), Out := X0>>SN.
+shift_right_big(Xin,SN,Out) :- string(Xin,L,_), L=1, SN>=32 | Out= 0.
+shift_right_big(Xin,SN,Out) :- string(Xin,L,_), L=0 | Out= 0.
+
+shift_right_bigSUB(_, XLb,_,  SN,Out) :- SN>=XLb | Out= 0.
+shift_right_bigSUB(XL,XLb,Xin,SN,Out) :- SN< XLb,SN>0 |
+    SNw := SN>>5, SNb := SN/\16#"1F", shift_right(SN,SNw,SNb,XL,XLb,Xin,Z), to_numer(0,Z,Out).
+shift_right_bigSUB(_, _,  Xin,SN,Out) :- SN= 0 | Out= Xin.
+
+
+
+%%  copybig(Xstr,^NewXstr,^CopyStr)  make a copy of numeral part
+copybig(Xin,Xnew,Copy) :- integer(Xin) | Xnew= Xin, Copy= Xin.
+copybig(Xin,Xnew,Copy) :- string(Xin,XL,_),XL>0 | 
+    new_string(Str,XL,32), builtin#copy_string_elements(Str,0,XL,Xin,0,Copy,Xnew).
+copybig(Xin,Xnew,Copy) :- string(Xin,XL,_),XL=0 | new_string(Copy,0,32).
+
+
+%% portraybig(Xin,^Out)   Convert bignum to charcter string
+%%          Xin ::= positive integer | 32bit string
+portraybig(SX,Xin,Out) :- Xin>0 | builtin:divide(Xin,10,Num),
+    builtin:modulo(Xin,10,LSD), digit2(Num,1,[LSD],Len,List), portray(SX,List,Len,Out).
+portraybig(SX,Xin,Out) :- Xin=16#"80000000" | 
+    mdlib#divide_extended(0,Xin,10,Num,LSD), digit2(Num,1,[LSD],Len,List), portray(SX,List,Len,Out).
+portraybig(SX,Xin,Out) :- Xin=0 | Out= "0".
+portraybig(SX,Xin,Out) :- string(Xin,XL,_),XL>0 | bignum#compose(SX,Xin,Bnum),
+    hex_to_dec(Bnum,100000000,List), digit1(List,0,[],Len,DigitList), portray(SX,DigitList,Len,Out).
+portraybig(SX,Xin,Out) :- string(Xin,XL,_),XL=0 | Out= "0".

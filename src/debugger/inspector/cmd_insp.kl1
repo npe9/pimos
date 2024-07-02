@@ -1,0 +1,427 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_cmd_inspect.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public execute/12,temp_stack/3.
+
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,down(M)) :- true |
+        V=V1,
+        down(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M).
+
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,me(M,N)) :- true |
+        V=V1,
+        inspector_write:write(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M,N).
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,me(M)) :- true |
+        V=V1,
+        inspector_write:write(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M).
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,me) :- true |
+        V=V1,S=S1,
+        inspector_write:write(Abort,X,X1,IR,IR1,WS,WS1).
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,me_with_print_length(M)) :- true |
+        V=V1,
+        inspector_write:write_with_print_length(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M).
+
+execute(_,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,up(N)) :- true |
+        IR=IR1,V=V1,
+        up(N,X,X1,WS,WS1,S,S1).
+execute(_,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,up) :- true |
+        IR=IR1,V=V1,
+        up(1,X,X1,WS,WS1,S,S1).
+
+execute(_,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,show(T)) :- true |
+        X=X1,IR=IR1,V=V1,S=S1,
+        WS=[write(T,_)|WS1].
+
+execute(Abort,_,X1,IR,IR1,WS,WS1,V,V1,S,S1,push_root(T)) :- true |
+        push_root(Abort,T,X1,IR,IR1,WS,WS1,V,V1,S,S1).
+
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,history(N)) :- true |
+        V=V1,
+        history(Abort,X,X1,IR,IR1,WS,WS1,S,S1,N).
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,history) :- true |
+        V=V1,
+        history(Abort,X,X1,IR,IR1,WS,WS1,S,S1).
+
+execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,length) :- true |
+        V=V1,S=S1,
+        length(Abort,X,X1,IR,IR1,WS,WS1).
+
+
+%*** up ***
+up(N,X,X1,WS,WS1,S,S1) :- true |
+        nonnegative_int(N,Res),
+        up(N,X,X1,WS,WS1,S,S1,Res).
+
+nonnegative_int(N,Res) :- N>=0 | Res=normal.
+alternatively.
+nonnegative_int(_,Res) :- true | Res=abnormal.
+
+up(N,X,X1,WS,WS1,S,S1,normal) :- true |
+        do_up(N,X,X1,WS,WS1,S,S1).
+up(N,X,X1,WS,WS1,S,S1,abnormal) :- true |
+        X=X1,S=S1,
+        WS=[error(unwrapped_illegal_param(N))|WS1].
+
+do_up(N,X,X1,WS,WS1,S,S1) :- N>0 |
+        S=[get(Parent)|S0],
+        if_up(N,X,X1,WS,WS1,S0,S1,Parent).
+do_up(0,X,X1,WS,WS1,S,S1) :- true |
+        X=X1,WS=WS1,S=S1.
+
+if_up(N,_,X1,WS,WS1,S,S1,{X,_}) :- true |
+        do_up(~(N-1),X,X1,WS,WS1,S,S1).
+if_up(_,X,X1,WS,WS1,S,S1,root) :- true |
+        X=X1,S=S1,
+%        S=[put(root)|S1],
+        WS=[forced_putf(string#"~s~n",[string#">Root"])|WS1].
+
+%*** push_root ***
+push_root(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,NS) :- true |
+        V=[put_forcibly(string#"ROOT",X)|V1],
+        S=[],
+        inspector_data_stack:stack(NS),
+        inspector_write:write(Abort,X,X1,IR,IR1,WS,WS1).
+
+%*** history ***
+history(Abort,X,X1,IR,IR1,WS,WS1,S,S1) :- true |
+        WS=[print_length(PL,PL)|WS0],
+        do_history(Abort,X,X1,IR,IR1,WS0,WS1,S,S1,PL).
+
+history(Abort,X,X1,IR,IR1,WS,WS1,S,S1,N) :- true |
+        nonnegative_int(N,Res),
+        if_history(Abort,X,X1,IR,IR1,WS,WS1,S,S1,N,Res).
+
+if_history(Abort,X,X1,IR,IR1,WS,WS1,S,S1,N,normal) :- true |
+        do_history(Abort,X,X1,IR,IR1,WS,WS1,S,S1,N).
+if_history(_,X,X1,IR,IR1,WS,WS1,S,S1,N,abnormal) :- true |
+        X=X1,IR=IR1,S=S1,
+        WS=[error(unwrapped_illegal_param(N))|WS1].
+
+do_history(Abort,X,X1,IR,IR1,WS,WS1,S,S1,N) :- N>0 |
+        S=[get_history(N,List)|S1],
+        write_history(Abort,X,X1,IR,IR1,WS,WS1,List).
+do_history(_,X,X1,IR,IR1,WS,WS1,S,S1,0) :- true |
+        X=X1,IR=IR1,WS=WS1,S=S1.
+
+write_history(Abort,X,X1,IR,IR1,WS,WS1,_) :- wait(Abort) |
+        X=X1,IR=IR1,WS=WS1.
+write_history(_,X,X1,[abort|IR],IR1,WS,WS1,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+alternatively.
+write_history(Abort,X,X1,IR,IR1,WS,WS4,[{D,Y,P}|List]) :- true |
+        WS=[tab(1),putt(D)|WS1],
+        write_down_position(P,WS1,WS2),
+        WS2=[write(Y,_)|WS3],
+        write_history(Abort,X,X1,IR,IR1,WS3,WS4,List).
+write_history(_,X,X1,IR,IR1,WS,WS3,[{D,P}]) :- true |
+        IR=IR1,
+        WS=[tab(1),putt(D)|WS1],
+        write_down_position(P,WS1,WS2),
+        WS2=[write(X,X1)|WS3].
+
+write_down_position(root,WS,WS1) :- true |
+        WS=[putf(string#"~s",[string#" root "]),tab(1),
+            putf(string#"~s",[string#": "]),tab(1)|WS1].
+otherwise.
+write_down_position(P,WS,WS1) :- true |
+        WS=[putf(string#"~s~t",[string#" down ",P]),tab(1),
+            putf(string#"~s",[string#": "]),tab(1)|WS1].
+
+
+% *** down ***
+down(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M) :- true |
+        unbound(M,M0),
+        temp_stack(TS,S,S1),
+        if_get_term(Ab,M0,X,TS,TS1,Res0),
+        final_check(Res0,X,Res),
+        wait_term(Abort,Res,X1,IR,IR1,WS,WS1,TS1,Ab).
+
+temp_stack(TS,S,S1) :- true |
+        temp_stack(TS,S,S1,[]).
+
+temp_stack([put(Data)|TS],S,S1,Back) :- true |
+        S=[put(Data)|S0],
+        temp_stack(TS,S0,S1,[get(Data)|Back]).
+temp_stack([get(Data)|TS],S,S1,Back) :- true |
+        S=[get(Data0)|S0],
+        if_back(Data0,Data,Back,Back1),
+        temp_stack(TS,S0,S1,Back1).
+temp_stack([],S,S1,_) :- true | S=S1.
+temp_stack([repair_stack],S,S1,Back) :- true |
+        repair_stack(Back,S,S1).
+
+if_back(root,Data,Back,Back1) :- true | Data=root,Back=Back1.
+if_back({X,M},Data,Back,Back1) :- true |
+        Data={X,M},
+        Back1=[put({X,M})|Back].
+
+repair_stack([Msg|Back],S,S1) :- true |
+        S=[Msg|S0],
+        repair_stack(Back,S0,S1).
+repair_stack([],S,S1) :- true | S=S1.
+
+wait_term(Abort,Res,X1,IR,IR1,WS,WS1,TS,Ab) :- wait(Abort) |
+        Ab=abort,
+        wait_term(_,Res,X1,IR,IR1,WS,WS1,TS,_).
+wait_term(_,Res,X1,[abort|IR],IR1,WS,WS1,TS,Ab) :- true |
+        Ab=abort,
+        wait_term(_,Res,X1,IR,IR1,WS,WS1,TS,_).
+wait_term(Abort,normal(E),X1,IR,IR1,WS,WS1,TS,Ab) :- true |
+        Ab=[],
+        TS=[],
+        inspector_write:write(Abort,E,X1,IR,IR1,WS,WS1).
+wait_term(_,error(Type,X),X1,IR,IR1,WS,WS1,TS,Ab) :- true |
+        Ab=[],
+        TS=[repair_stack],
+        X=X1,IR=IR1,
+        WS=[error(Type)|WS1].
+wait_term(_,cannot_down(Type,X),X1,IR,IR1,WS,WS1,TS,Ab) :- true |
+        Ab=[],
+        TS=[repair_stack],
+        X=X1,IR=IR1,
+        WS=[putf(string#"~s~t~n",[string#">Cannot go down: ",Type])|WS1].
+wait_term(_,unbound(X),X1,IR,IR1,WS,WS1,TS,Ab) :- true |
+        Ab=[],
+        TS=[repair_stack],
+        X=X1,IR=IR1,
+        WS=[putf(string#"~s~n",[string#">Unbound"])|WS1].
+wait_term(_,tail_unbound(X),X1,IR,IR1,WS,WS1,TS,Ab) :- true |
+        Ab=[],
+        TS=[repair_stack],
+        IR=IR1,
+        WS=[write(tail,X,X1)|WS1].
+wait_term(_,aborted(X),X1,IR,IR1,WS,WS1,TS,_) :- true |
+        TS=[repair_stack],
+        X=X1,IR=IR1,WS=WS1.
+
+if_get_term(Ab,{M},X,TS,TS1,Res) :- true |
+        check_param(Ab,M,X,TS,TS1,Res).
+if_get_term(_,{_,_,M},X,TS,TS1,Res) :- true |
+        TS=TS1,Res=error(unwrapped_illegal_param(M),X).
+
+final_check(normal(X),_,Res) :- true | Res=normal(X).
+final_check(error(Type,_),X,Res) :- true | Res=error(Type,X).
+final_check(cannot_down(Type,_),X,Res) :- true | Res=cannot_down(Type,X).
+final_check(unbound(_),X,Res) :- true | Res=unbound(X).
+final_check(tail_unbound(_),X,Res) :- true | Res=tail_unbound(X).
+final_check(aborted(_),X,Res) :- true | Res=aborted(X).
+
+check_param(Ab,{>,P,Q},X,TS,TS1,Res) :- true |
+        unbound(P,P0),
+        if_get_term(Ab,P0,X,TS,TS0,R),
+        wait_first_check(Ab,Q,R,TS0,TS1,Res).
+check_param(Ab,'..',X,TS,TS1,Res) :- true |
+        TS=[get(Parent)|TS1],
+        wait_parent(Ab,Parent,X,Res).
+check_param(Ab,M,X,TS,TS1,Res) :- M>=0 |
+        unbound(X,X0),
+        if_term(Ab,M,X0,TS,TS1,Res).
+check_param(Ab,car,X,TS,TS1,Res) :- true |
+        unbound(X,X0),
+        if_term_car(Ab,car,X0,TS,TS1,Res).
+check_param(Ab,cdr,X,TS,TS1,Res) :- true |
+        unbound(X,X0),
+        if_term_car(Ab,cdr,X0,TS,TS1,Res).
+check_param(Ab,tail,X,TS,TS1,Res) :- true |
+        term_tail(Ab,X,TS,TS1,CpX,CpX,Res).
+%check_param(_,var(M),X,TS,TS1,Res) :- true |
+%        TS=TS1,
+%        Res=error(unwrapped_illegal_param(var(M)),X).
+otherwise.
+check_param(_,M,X,TS,TS1,Res) :- true |
+        TS=TS1,
+        Res=error(unwrapped_illegal_param(M),X).
+
+wait_first_check(Ab,P,normal(X),TS,TS1,Res) :- true |
+        check_param(Ab,P,X,TS,TS1,Res).
+otherwise.
+wait_first_check(_,_,Res0,TS,TS1,Res) :- true |
+        TS=TS1,Res=Res0.
+
+wait_parent(_,{X,_},_,Res) :- true | Res=normal(X).
+wait_parent(_,root,X,Res) :- true | Res=error(illegal_param('..'),X).
+
+if_term(Ab,M,{X},TS,TS1,Res) :- true |
+        term(Ab,M,X,TS,TS1,Res).
+if_term(_,_,{_,_,X},TS,TS1,Res) :- true |
+        TS=TS1,
+        Res=unbound(X).
+
+term(Ab,M,X,TS,TS1,Res) :- vector(X,L) |
+        term_vect(Ab,M,X,TS,TS1,Res,L).
+term(Ab,M,X,TS,TS1,Res) :- module(X,L) |
+        term_mod(Ab,M,X,TS,TS1,Res,L).
+term(Ab,M,X,TS,TS1,Res) :- string(X,L,_) |
+        term_str(Ab,M,X,TS,TS1,Res,L).
+term(Ab,M,X,TS,TS1,Res) :- list(X) |
+        term_list(Ab,0,M,X,TS,TS1,CpX,CpX,Res).
+term(_,_,X,TS,TS1,Res) :- integer(X) |
+        TS=TS1,Res=cannot_down(integer,X).
+:- switch(floating_point).
+:- case(yes).
+term(_,_,X,TS,TS1,Res) :- floating_point(X) |
+        TS=TS1,Res=cannot_down(floating_point,X).
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+term(_,_,X,TS,TS1,Res) :- extended_floating_point(X,_) |
+        TS=TS1,Res=cannot_down(extended_floating_point,X).
+:- end_switch.
+term(_,_,X,TS,TS1,Res) :- atom(X) |
+        TS=TS1,Res=cannot_down(atom,X).
+term(_,_,X,TS,TS1,Res) :- code(X,_,_,_) |
+        TS=TS1,Res=cannot_down(code,X).
+otherwise.
+term(_,_,X,TS,TS1,Res) :- true |
+        TS=TS1,Res=cannot_down(unknown_data_type,X).
+
+term_vect(_,M,X,TS,TS1,Res,L) :- M<L |
+        vector_element(X,M,E,X0),
+        TS=[put({X0,M})|TS1],
+        Res=normal(E).
+otherwise.
+term_vect(_,M,X,TS,TS1,Res,_) :- true |
+        TS=TS1,Res=error(illegal_param(M),X).
+
+term_mod(_,M,X,TS,TS1,Res,L) :- M<L |
+        module_element(X,M,E),
+        TS=[put({X,M})|TS1],
+        Res=normal(E).
+otherwise.
+term_mod(_,M,X,TS,TS1,Res,_) :- true |
+        TS=TS1,Res=error(illegal_param(M),X).
+
+term_str(_,M,X,TS,TS1,Res,L) :- M<L |
+        string_element(X,M,E,X0),
+        TS=[put({X0,M})|TS1],
+        Res=normal(E).
+otherwise.
+term_str(_,M,X,TS,TS1,Res,_) :- true |
+        TS=TS1,Res=error(illegal_param(M),X).
+
+term_list(abort,_,_,X,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,TS=TS1,Res=aborted(CpX).
+term_list(Ab,I,M,X,TS,TS1,CpX,CpX1,Res) :- I<M |
+        unbound(X,X0),
+        if_term_list(Ab,I,M,X0,TS,TS1,CpX,CpX1,Res).
+term_list(Ab,M,M,X,TS,TS1,CpX,CpX1,Res) :- true |
+        unbound(X,X0),
+        if_term_list_found(Ab,M,X0,TS,TS1,CpX,CpX1,Res).
+
+if_term_list(Ab,I,M,{[E|X]},TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=[E|CpX2],
+        term_list(Ab,~(I+1),M,X,TS,TS1,CpX,CpX2,Res).
+otherwise.
+if_term_list(_,_,M,{X},TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,TS=TS1,Res=error(illegal_param(M),CpX).
+if_term_list(_,_,_,{_,_,X},TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,TS=TS1,Res=tail_unbound(CpX).
+
+if_term_list_found(_,M,{[E|X]},TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=[E|X],
+        TS=[put({CpX,M})|TS1],
+        Res=normal(E).
+otherwise.
+if_term_list_found(_,M,{X},TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,TS=TS1,Res=error(illegal_param(M),CpX).
+if_term_list_found(_,_,{_,_,X},TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,TS=TS1,Res=tail_unbound(CpX).
+
+if_term_car(_,car,{[E|X]},TS,TS1,Res) :- true |
+        TS=[put({[E|X],car})|TS1],
+        Res=normal(E).
+if_term_car(_,cdr,{[E|X]},TS,TS1,Res) :- true |
+        TS=[put({[E|X],cdr})|TS1],
+        Res=normal(X).
+otherwise.
+if_term_car(_,M,{X},TS,TS1,Res) :- true |
+        TS=TS1,Res=error(illegal_param(M),X).
+if_term_car(_,_,{_,_,X},TS,TS1,Res) :- true |
+        TS=TS1,Res=unbound(X).
+
+term_tail(abort,X,TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,TS=TS1,Res=aborted(CpX).
+alternatively.
+term_tail(Ab,X,TS,TS1,CpX,CpX1,Res) :- true |
+        unbound(X,X0),
+        if_term_tail(Ab,X0,TS,TS1,CpX,CpX1,Res).
+
+if_term_tail(Ab,{[E|X]},TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=[E|CpX2],
+        term_tail(Ab,X,TS,TS1,CpX,CpX2,Res).
+otherwise.
+if_term_tail(_,{X},TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,
+        TS=[put({CpX,tail})|TS1],
+        Res=normal(X).
+if_term_tail(_,{_,_,X},TS,TS1,CpX,CpX1,Res) :- true |
+        CpX1=X,
+        TS=[put({CpX,tail})|TS1],
+        Res=normal(X).
+
+%*** length ***
+length(Abort,X,X1,IR,IR1,WS,WS1) :- true |
+        WS=[wrap(X,X0,WT,1,1)|WS0],
+        do_length(Abort,X0,X1,IR,IR1,WS0,WS1,WT).
+
+do_length(_,X,X1,IR,IR1,WS,WS1,vector(_)) :- vector(X,L) |
+        X=X1,IR=IR1,
+        WS=[putf(string#" ~t~n",[L])|WS1].
+do_length(_,X,X1,IR,IR1,WS,WS1,module(_)) :- module(X,L) |
+        X=X1,IR=IR1,
+        WS=[putf(string#" ~t~n",[L])|WS1].
+do_length(Abort,X,X1,IR,IR1,WS,WS1,list(_)) :- true |
+        do_length_list(Abort,X,X1,IR,IR1,WS,WS1,0).
+do_length(_,X,X1,IR,IR1,WS,WS1,string(_)) :- string(X,L,S) |
+        X=X1,IR=IR1,
+        WS=[putf(string#" Length of the string is ~t,~n",[L]),
+            putf(string#" element size of the string is ~t~n",[S])|WS1].
+do_length(_,X,X1,IR,IR1,WS,WS1,variable(_)) :- true |
+        X=X1,IR=IR1,
+        WS=[putf(string#">Data is unbound~n",[])|WS1].
+do_length(_,X,X1,IR,IR1,WS,WS1,unknown(_)) :- true |
+        X=X1,IR=IR1,
+        WS=[putf(string#">Unknown data type~n",[])|WS1].
+otherwise.
+do_length(_,X,X1,IR,IR1,WS,WS1,{Type,_}) :- true |
+        X=X1,IR=IR1,
+        WS=[putf(string#">Illegal data type: ~t~n",[Type])|WS1].
+
+do_length_list(Abort,X,X1,IR,IR1,WS,WS1,_) :- wait(Abort) |
+        X=X1,IR=IR1,WS=WS1.
+do_length_list(_,X,X1,[abort|IR],IR1,WS,WS1,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+alternatively.
+do_length_list(Abort,[E|X],X1,IR,IR1,WS,WS1,I) :- true |
+        X1=[E|X2],
+        do_length_list(Abort,X,X2,IR,IR1,WS,WS1,~(I+1)).
+do_length_list(_,[],X1,IR,IR1,WS,WS1,L) :- true |
+        X1=[],IR=IR1,
+        WS=[putf(string#" ~t~n",[L])|WS1].
+alternatively.
+do_length_list(Abort,X,X1,IR,IR1,WS,WS1,I) :- true |
+        WS=[wrap(X,X0,WT,1,1)|WS0],
+        if_tail(WT,X0,X1,IR,IR1,WS0,WS1,I,Abort).
+
+if_tail(list(_),[E|X],X1,IR,IR1,WS,WS1,I,Abort) :- true |
+        X1=[E|X2],
+        do_length_list(Abort,X,X2,IR,IR1,WS,WS1,~(I+1)).
+if_tail(atom(_),[],X1,IR,IR1,WS,WS1,L,_) :- true |
+        X1=[],IR=IR1,
+        WS=[putf(string#" ~t~n",[L])|WS1].
+if_tail(variable(T),X,X1,IR,IR1,WS,WS1,L,_) :- true |
+        X=X1,IR=IR1,
+        WS=[putf(string#">The tail of the list is variable: ~W,~n",[variable(T)]),
+            putf(string#" length of the list is greater or equal to ~t~n",[L])|WS1].
+otherwise.
+if_tail({Type,_},X,X1,IR,IR1,WS,WS1,L,_) :- true |
+        X=X1,IR=IR1,
+        WS=[wrap(X,X1,WT),
+            putf(string#">The tail of the list is ~t: ~W,~n",[Type,WT]),
+            putf(string#" length of the list is greater or equal to ~t~n",[L])|WS1].
+

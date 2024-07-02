@@ -1,0 +1,710 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi277::>sys>user>pimos>V25A>src>shell>main>comexe.kl1.3, 06-Dec-90 16:09:25, Edit by pimos
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a 'commandExecutor' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module commandExecutor.
+:- public create/6.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Create the Command Executor  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create(Resident, JobCnt, RCMRpt, IoH, Pool, Atom) :- true |
+    shellUtils:seqNoGen(SNG),
+    comExe(Resident, JobCnt, RCMRpt, SNG, IoH, Pool, Atom).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% comExe(+Cmd, +[-JMCmd | JMCnt], +[-Message | Rpt], Pool)     %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+comExe([], JMCnt, Rpt, SNG, IoH, Pool, Atom) :- true |
+    JMCnt = [], Rpt = [], SNG = [], IoH = [], Pool = [], Atom = [].
+
+%%%%%  Shell Controlling Messages  %%%%%
+%comExe([{clear, Stat} | Cmd], JMCnt, Rpt, SNG, IoH, Pool, Atom) :- true |
+%    shoen:raise(pimos_tag#shell, get_std_mes_dev, [clear(Stat)]),
+%    comExe(Cmd, JMCnt, Rpt, SNG, IoH, Pool, Atom).
+comExe([{suspend, Stat} | Cmd], JMCnt, Rpt, SNG, IoH, Pool, Atom) :- true |
+    shoen:raise(pimos_tag#task, get_std(io), StdIo),
+%    shoen:raise(pimos_tag#shell, get_std_io, StdIo),
+    StdIo = [switch(Stat)],
+    comExeSuspend(Stat, Cmd, JMCnt, Rpt, SNG, IoH, Pool, Atom).
+comExe([{exit, Stat} | _], JMCnt, Rpt, SNG, IoH, Pool, Atom) :- true |
+    Rpt = [], SNG = [], Pool = [], Atom = [],
+    JMCnt = [startJob(all) | NJMCnt],
+    IoH = [kill(all, Stat)],
+    waitStatus(Stat, NJMCnt, [killJob(all)]).
+%    shoen:raise(pimos_tag#task, general_request, [suicide(_)]).
+
+%%% job handling command %%%
+comExe([{Mes, Stat} | Cmd], JMCnt, Rpt, SNG, IoH, Pool, A) :-
+%        Mes \= suspend, Mes \= exit, Mes \= clear |
+        Mes \= suspend, Mes \= exit |
+    (Mes = stop(JobId) -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NIoH=IoH, NPool=Pool,
+        NA = A, Stat = normal, JMCnt = [stopJob(JobId) | NJMCnt] ;
+     Mes = stop -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NIoH=IoH, NPool=Pool,
+        NA = A, Stat = normal, JMCnt = [stopJob | NJMCnt] ;
+     Mes = attention(JobId) -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NPool=Pool,
+        NA = A, JMCnt = [stopJob(JobId) | NJMCnt],
+        IoH=[detach(Stat)|NIoH] ;
+     Mes = attention -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NPool=Pool,
+        NA = A, JMCnt = [stopJob | NJMCnt],
+        IoH=[detach(Stat)|NIoH] ;
+     Mes = back(JobId) -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NIoH=IoH, NPool=Pool,
+        NA = A, Stat = normal, JMCnt = [startJob(JobId) | NJMCnt] ;
+     Mes = back -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NIoH=IoH, NPool=Pool,
+        NA = A, Stat = normal, JMCnt = [startJob | NJMCnt] ;
+     Mes = fore(JobId) -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NPool=Pool, NA = A,
+        JMCnt = [io_no(JobId, IO_NO), startJob(JobId)| NJMCnt],
+        IoH=[attach(IO_NO,_,Stat0)|NIoH], make_status(Stat0,Stat,JobId) ;
+     Mes = fore -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NPool=Pool, NA = A,
+        JMCnt = [startJob | NJMCnt], IoH = [attach(_,Stat) | NIoH] ;
+     Mes = status -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NIoH=IoH, NPool=Pool,
+        NA = A, JMCnt = [jobStatus(Stat) | NJMCnt] ;
+     Mes = kill(JobId), JobId \= all -> NCmd=Cmd,NRpt=Rpt,NSNG=SNG,NPool=Pool,
+        NA = A, IoH = [kill(IO_NO, Stat) | NIoH],
+        JMCnt=[io_no(JobId, IO_NO),startJob(JobId)|JMCnt1],
+        waitStatus(Stat, JMCnt1, JMCnt2),
+        JMCnt2=[killJob(JobId)|NJMCnt] ;
+     Mes = kill -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NPool=Pool, NA = A,
+        IoH = [kill(Stat) | NIoH],
+        waitStatus(Stat, JMCnt1, JMCnt2),
+        JMCnt = [startJob | JMCnt1], JMCnt2 = [killJob | NJMCnt] ;
+     Mes = kill(all) -> NCmd=Cmd, NRpt=Rpt, NSNG=SNG, NPool=Pool, NA = A,
+        IoH = [kill(all, Stat) | NIoH],
+        waitStatus(Stat, JMCnt1, JMCnt2),
+        JMCnt = [startJob(all) | JMCnt1], JMCnt2 = [killJob(all) | NJMCnt] ;
+%%%%%  Access to Shell-Variables  %%%%%
+     Mes = get(SRpt, NSRpt) ->
+        NCmd=Cmd, NJMCnt=JMCnt, NRpt=Rpt, NSNG=SNG, NIoH=IoH, NA=A,
+        Pool = [get_and_put(node, PE, PE), get_and_put(dir, DIR, DIR),
+                get_and_put(minprio, Min, Min), get_and_put(maxprio, Max, Max),
+                get_and_put(rscinc, Inc, Inc), get_and_put(echo, Echo, Echo),
+                get_and_put(pl, Prtl, Prtl), get_and_put(pd, Prtd, Prtd),
+                get_and_put(pal, Prtal, Prtal),
+                get_and_put(psl, Prtsl, Prtsl)
+                | NPool],
+        SRpt = [shell_var(node, {PE}), shell_var(dir, {DIR}),
+                shell_var(minprio, {Min}), shell_var(maxprio, {Max}),
+                shell_var(rscinc, {Inc}), shell_var(echo, {Echo}),
+                shell_var(pl, {Prtl}), shell_var(pd, {Prtd}),
+                shell_var(pal, {Prtal}), shell_var(psl, {Prtsl}), flush(Stat)
+                | NSRpt] ;
+     Mes = unset(_) -> NCmd=Cmd, NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NPool=Pool,
+        NA = A, Rpt = [future_spec(unset, Stat) | NRpt] ;
+     Mes = get(Param), atom(Param) ->
+        NCmd = Cmd, NJMCnt = JMCnt, NSNG = SNG, NIoH = IoH, NA = A,
+        getShlVar(Param, Value, Pool, NPool, Rpt, NRpt, Stat) ;
+     Mes = {set, {'=', Param, Value}}, atom(Param) ->
+        NJMCnt = JMCnt, NSNG = SNG, NIoH = IoH, NA = A,
+        setShlVar(Param, Value, Cmd, NCmd, Rpt, NRpt, Pool, NPool, Stat) ;
+%%%%%  Access to JOB-Parameter  %%%%%
+     Mes = get({Param, JobNo}) -> NCmd=Cmd, NSNG=SNG, NIoH=IoH, NPool=Pool,
+        NA = A, getJobPrm(Param, JobNo, JMCnt, NJMCnt, Rpt, NRpt, Stat) ;
+     Mes = {set, {'=', {Param, JobNo}, Value}} ->
+        NCmd = Cmd, NSNG = SNG, NIoH = IoH, NPool = Pool, NA = A,
+        setJobPrm(Param, JobNo, Value, JMCnt, NJMCnt, Rpt, NRpt, Stat) ;
+%%%%%  Secret Command  %%%%%
+     Mes = def -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NCmd = Cmd, NA = A,
+        showWorld(Stat, Rpt, NRpt, Pool, NPool) ;
+     Mes = {def, {'=', W, Dir}} -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NCmd=Cmd,
+        NA = A, defWorld(Stat, W, Dir, Rpt, NRpt, Pool, NPool)  ;
+     Mes = {con, W} -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NA = A,
+        conWorld(W, Pool, NPool, Cmd, NCmd, Rpt, NRpt, Stat) ;
+%%%%%  Command Alias  %%%%%
+     Mes = alias -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NCmd = Cmd, NA=A,
+        showAlias(Stat, Rpt, NRpt, Pool, NPool) ;
+     Mes = {alias, {'=', X, Y}} -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NCmd=Cmd,
+        defAlias(Stat, X, Y, Rpt, NRpt, Pool, NPool, A, NA)  ;
+     Mes = {alias, X}, atom(X) -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NCmd=Cmd,
+        getAlias(Stat, X, Rpt, NRpt, Pool, NPool, A, NA)  ;
+     Mes = {alias,X},integer(X) -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NCmd=Cmd,
+        getAlias(Stat, X, Rpt, NRpt, Pool, NPool, A, NA)  ;
+     Mes = {alias, X}, string(X,_,_) ->
+        NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NCmd=Cmd,
+        getAlias(Stat, X, Rpt, NRpt, Pool, NPool, A, NA)  ;
+     Mes = {unalias, X} -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NCmd=Cmd,
+        rmvAlias(Stat, X, Rpt, NRpt, Pool, NPool, A, NA) ;
+%%%%%  Access to Environment-Variables  %%%%%
+     Mes = pwd -> NJMCnt=JMCnt,NRpt=Rpt,NSNG=SNG,NIoH=IoH,NPool=Pool,NA=A, 
+        NCmd = [{getenv( task:directory ), Stat} | Cmd] ;
+     Mes = cd -> NJMCnt=JMCnt, NRpt=Rpt, NSNG=SNG, NIoH=IoH, NPool=Pool, NA=A, 
+        NCmd = [{cd( '~' ), Stat} | Cmd] ;
+     Mes = cd(CWD) -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH,
+        checkCWD(CWD, Stat, Cmd, NCmd, Rpt, NRpt, A, NA, cd, Pool, NPool) ;
+     Mes = pushd -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH,
+        exchangeDirs(Stat, Cmd, NCmd, Rpt, NRpt, A, NA, Pool, NPool) ;
+     Mes = pushd(CWD) -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH,
+        checkPushd(CWD, Stat, Cmd, NCmd, Rpt, NRpt, A, NA, Pool, NPool) ;
+     Mes = popd -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH,
+        Pool = [get_and_put(dir, ODIR, NDIR) | NP],
+        popDown(ODIR, NDIR, DIR),
+        popCWD(DIR, Stat, Cmd, NCmd, Rpt, NRpt, A, NA, NP, NPool) ;
+     Mes = dirs -> NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NCmd = Cmd, NA = A,
+        showDir(Stat, Rpt, NRpt, Pool, NPool) ;
+     Mes = {setenv, {'=', Key, Value}} ->
+        NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NPool=Pool, NA=A, NCmd=Cmd,
+        checkEnv(Key, Value, Rpt, NRpt, Stat) ;
+     Mes = unsetenv(Key) ->
+        NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NPool=Pool, NA=A, NCmd=Cmd,
+        checkUnset(Key, Rpt, NRpt, Stat) ;
+     Mes = getenv -> 
+        shoen:raise(pimos_tag#task, general_request, [getenv(Values)]),
+        NCmd=Cmd, NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NPool=Pool, NA = A,
+        envAll(Values, Rpt, NRpt, Stat) ;
+     Mes = getenv(Key) ->
+        shoen:raise(pimos_tag#task, general_request, [getenv(Key, Value)]),
+        NCmd=Cmd, NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NPool=Pool, NA = A,
+        env(Key, Value, Rpt, NRpt, Stat) ;
+%%%%%  Display SHELL-Message  %%%%%
+     Mes = help -> Rpt = [help(Stat) | NRpt],
+        NCmd=Cmd, NJMCnt=JMCnt, NSNG=SNG, NIoH=IoH, NPool=Pool, NA = A ;
+     Mes = last_error -> JMCnt = [last_error(Stat) | NJMCnt],
+        NCmd=Cmd, NRpt = Rpt, NSNG=SNG, NIoH=IoH, NPool=Pool, NA = A ;
+     Mes = inspect -> JMCnt = [get_last_error(Error) | NNJMCnt], NCmd = Cmd,
+        Pool = [get_and_put(node, PE, PE),
+                get_and_put(minprio, Min, Min), get_and_put(maxprio, Max, Max),
+                get_and_put(rscinc, Inc, Inc) | NPool],
+        Info = {PE, Min, Max, Inc}, NA = A,
+        comExePara([fore(inspector(Error))], Stat,
+                NNJMCnt, Rpt, SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info) ;
+    otherwise ;
+     true -> NCmd = Cmd, NA = A,
+        shellParser:paraParser(Mes, CmdLn1),        %%%  Detect '&'  %%%
+        Pool = [get_and_put(node, PE, PE),
+                get_and_put(minprio, Min, Min), get_and_put(maxprio, Max, Max),
+                get_and_put(rscinc, Inc, Inc) | NPool],
+        Info = {PE, Min, Max, Inc},
+        comExePara(CmdLn1, Stat,
+                JMCnt, Rpt, SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info) ),
+    comExe(NCmd, NJMCnt, NRpt, NSNG, NIoH, NPool, NA).
+
+comExeSuspend(Status, Cmd, JMCnt, Rpt, SNG, IoH, Pool, Atom) :- wait(Status) |
+    comExe(Cmd, JMCnt, Rpt, SNG, IoH, Pool, Atom).
+
+make_status(Stat0, Stat, JobId) :- wait(Stat0) |
+    ( Stat0 = detected -> Stat = detected(JobId) ;
+     otherwise ;
+      true -> Stat = Stat0).
+
+waitStatus(Stat, Old, New) :- wait(Stat) | Old = New.
+
+%%%%%  get value from SHELL-variables  %%%%%
+getShlVar(Param, Value, Pool, NPool, Rpt, NRpt, Stat) :- true |
+    (atom(Param) ->
+        Pool = [do([get_if_any(Param, Value)|REM]) | NPool],
+        getShlVar1(Param, Value, Rpt, NRpt, Stat, REM) ;
+    otherwise ;
+     true -> NPool = Pool,
+        Rpt = [illegal_variable_name(Param, Stat) | NRpt] ).
+
+getShlVar1(Param, X, Rpt, NRpt, Stat, REM) :- true |
+    (X = {} -> Rpt = [shell_var(Param, {}), flush(Stat) | NRpt], REM = [] ;
+     X = {Y} -> Value = Y, REM = [put(Param, Value, _)],
+        Rpt = [shell_var(Param, {Value}), flush(Stat) | NRpt] ).
+
+%%%%%  set value into SHELL-variables  %%%%%
+setShlVar(Param, Value, Cmd, NCmd, Rpt, NRpt, Pool, NPool, Stat) :-atom(Param)|
+    (Param = node -> current_node(_, PENO),
+        setPE(Value, PENO, Pool, NPool, Rpt, NRpt) ;
+%    (Param = pe -> current_processor(_, X, Y), PENO := X * Y,
+     Param = pe -> current_node(_, PENO),   %%%%%  temporary  %%%%%
+        setPE(Value, PENO, Pool, NPool, Rpt, NRpt) ;
+     Param = dir -> setDir(Value, Rpt, NRpt, Pool, NPool) ;
+     Param = rscinc -> setShlVar1(rscinc, Value,Rpt,NRpt,Pool,NPool) ;
+     Param = maxprio -> setShlVar1(maxprio, Value,Rpt,NRpt,Pool,NPool) ;
+     Param = minprio -> setShlVar1(minprio, Value,Rpt,NRpt,Pool,NPool) ;
+     Param = echo -> setShlVar1(echo, Value,Rpt,NRpt,Pool,NPool) ;
+     Param = pl -> setShlVar1(pl, Value,Rpt,NRpt,Pool,NPool) ;
+     Param = pd -> setShlVar1(pd, Value,Rpt,NRpt,Pool,NPool) ;
+     Param = pal -> setShlVar1(pal, Value,Rpt,NRpt,Pool,NPool) ;
+     Param = psl -> setShlVar1(psl, Value,Rpt,NRpt,Pool,NPool) ;
+    otherwise ;
+     true -> Pool = [put(Param, Value, _) | NPool], NRpt = Rpt ),
+    NCmd = [{get(Param), Stat} | Cmd].
+otherwise.
+setShlVar(Param, _, Cmd, NCmd, Rpt, NRpt, Pool, NPool, Stat) :- true |
+    Rpt = [illegal_variable_name(Param, Stat) | NRpt],NCmd=Cmd,NPool=Pool.
+
+setPE(PE, PENO, Pool, NPool, Rpt, NRpt) :- true |
+    (integer(PE), PE >= 0, PE < PENO ->
+        Pool = [put(node, PE, _) | NPool], NRpt = Rpt ;
+    otherwise ;
+     true -> NPool = Pool, Rpt = [illegal_value(node, PE, _) | NRpt] ).
+
+setDir(DIRS, Rpt, NRpt, Pool, NPool) :- true |
+    ( DIRS = [] -> Stat = abnormal, NDIRS = [] ;
+    otherwise ;
+      true -> checkDir(DIRS, NDIRS, Stat) ),
+    setDir1(Stat, NDIRS, Rpt, NRpt, Pool, NPool).
+
+checkDir([], NDIRS, Stat) :- true | NDIRS = [], Stat = normal.
+checkDir([DIR|DIRS], NDIRS, Stat) :- true |
+    ( string(DIR,L,_), L \= 0 ->
+        NDIRS = [DIR|NNDIRS], checkDir(DIRS, NNDIRS, Stat) ;
+    otherwise ;
+      true -> NDIRS = [DIR|DIRS], Stat = abnormal ).
+otherwise.
+checkDir(DIRS, NDIRS, Stat) :- true | NDIRS = DIRS, Stat = abnormal.
+
+setDir1(Stat, DIRS, Rpt, NRpt, P, NP) :- true |
+    ( Stat = normal -> P = [put(dir, DIRS, _) | NP], NRpt = Rpt ;
+      Stat = abnormal -> Rpt = [illegal_value(dir,DIRS,_) | NRpt], NP = P ).
+
+setShlVar1(Param, Value, Rpt, NRpt, Pool, NPool) :- true |
+    (Param = rscinc, integer(Value), Value >= 0, Value =< 1000000000 ->
+        Pool = [put(rscinc, Value, _) | NPool], NRpt = Rpt ;
+     Param = rscinc, Value = {High, Low}, integer(High), integer(Low),
+     High >= 0, High =< 1000000000, Low >= 0, Low =< 1000000000 ->
+        Pool = [put(Param, {High, Low}, _) | NPool], NRpt = Rpt ;
+     Param = rscinc, Value = infinite ->
+        Pool = [put(Param, infinite, _) | NPool], NRpt = Rpt ;
+     Param = maxprio, integer(Value), Value >= 0, Value =< 4000 -> NRpt = Rpt,
+        Pool = [put(Param, Value, _) | NPool] ;
+     Param = minprio, integer(Value), Value >= 0, Value =< 4000 -> NRpt = Rpt,
+        Pool = [put(Param, Value, _) | NPool] ;
+     Param = echo, atom(Value) -> NRpt = Rpt,
+        Pool = [put(Param, Value, _) | NPool] ;
+     Param = pl, integer(Value), Value >= 0 -> NRpt = Rpt,
+        Pool = [put(Param, Value, _) | NPool] ;
+     Param = pd,  integer(Value), Value >= 0 -> NRpt = Rpt,
+        Pool = [put(Param, Value, _) | NPool] ;
+     Param = pal, integer(Value), Value >= 0 -> NRpt = Rpt,
+        Pool = [put(Param, Value, _) | NPool] ;
+     Param = psl, integer(Value), Value >= 0 -> NRpt = Rpt,
+        Pool = [put(Param, Value, _) | NPool] ;
+    otherwise ;
+     true -> Rpt = [illegal_value(Param, Value, _) | NRpt], NPool = Pool ).
+
+%%%%%  get value from JOB-parameters  %%%%%
+getJobPrm(Param, JobNo, JMCnt, NJMCnt, Rpt, NRpt, Stat) :- true |
+    (integer(JobNo), JobNo > 0 ->
+        getJobPrm1(Param, JobNo, JMCnt, NJMCnt, Rpt, NRpt, Stat) ;
+    otherwise ;
+     true -> Rpt = [illegal_job_no(JobNo, Stat) | NRpt], NJMCnt=JMCnt ).
+
+getJobPrm1(Param, JobNo, JMCnt, NJMCnt, Rpt, NRpt, Stat) :- true |
+    (Param = rscinc -> JMCnt = [get_rscinc(JobNo, Stat) | NJMCnt], NRpt=Rpt ;
+    otherwise ;
+     true ->
+        Rpt = [illegal_variable_name(Param, Stat) | NRpt], NJMCnt = JMCnt ).
+
+%%%%%  set value into JOB-parameters  %%%%%
+setJobPrm(Param, JobNo, Value, JMCnt, NJMCnt, Rpt, NRpt, Stat) :- true |
+    (integer(JobNo), JobNo > 0 ->
+        setJobPrm1(Param, JobNo, Value, JMCnt, NJMCnt, Rpt, NRpt, Stat) ;
+    otherwise ;
+     true -> NJMCnt=JMCnt, Rpt = [illegal_job_no(JobNo, Stat)] ).
+
+setJobPrm1(Param, JobNo, Value, JMCnt, NJMCnt, Rpt, NRpt, Stat) :- true |
+    (Param = rscinc ->
+        setJobPrm2(rscinc,JobNo,Value,JMCnt,NJMCnt,Rpt,NRpt,Stat) ;
+    otherwise ;
+     true -> NJMCnt=JMCnt, Rpt = [illegal_variable_name(Param, Stat) | NRpt] ).
+
+setJobPrm2(Param, JobNo, Value, JMCnt, NJMCnt, Rpt, NRpt, Stat) :- true |
+    (Param = rscinc, integer(Value), Value>=0, Value=<1000000000 -> NRpt=Rpt,
+        JMCnt = [set_rscinc(JobNo, Value), get_rscinc(JobNo, Stat) | NJMCnt] ;
+     Param = rscinc, Value = {High, Low},
+            integer(High), High >= 0, High =< 1000000000,
+            integer(Low), Low >= 0, Low =< 1000000000 -> NRpt=Rpt,
+        JMCnt = [set_rscinc(JobNo,{High,Low}),get_rscinc(JobNo,Stat)|NJMCnt] ;
+     Param = rscinc, Value = infinite -> NRpt=Rpt,
+        JMCnt = [set_rscinc(JobNo,infinite),get_rscinc(JobNo,Stat)|NJMCnt] ;
+    otherwise ;
+     true -> Rpt = [illegal_value(Param,Value,Stat) | NRpt], NJMCnt=JMCnt ).
+
+%%%%% get value from ENVIRONMENT-variables  %%%%%
+envAll(normal(KeyValues), Rpt, NRpt, Stat) :- true |
+    envList(KeyValues, Rpt, NRpt, Stat).
+otherwise.
+envAll(_,Rpt,NRpt,Stat) :- true|Rpt=[environment(non_existent_all,Stat)|NRpt].
+
+envList([{Key, Value} | Values], Rpt, NRpt, Stat) :- true |
+    Rpt = [environment(Key, Value) | Rpt1],
+    envList(Values, Rpt1, NRpt, Stat).
+envList([], Rpt, NRpt, Stat) :- true | Rpt = [flush(Stat) | NRpt].
+
+env(Key, normal(Value), Rpt, NRpt, Stat) :- true |
+    Rpt = [environment(Key, Value), flush(Stat) | NRpt].
+otherwise.
+env(Key, _, Rpt, NRpt, Stat) :- true |
+    Rpt = [environment(non_existent, Key), flush(Stat) | NRpt].
+
+%%%%%  set value into ENVIRONMENT-variables  %%%%%
+% task:node %
+%checkUnset(Key, Rpt, NRpt, Stat) :-  Key = {(':'), task, node} |
+checkUnset(Key, Rpt, NRpt, Stat) :-  Key = {(':'), task, io_node} |
+        Rpt = [cannot_unsetenv(Key, Stat) | NRpt] .
+otherwise.
+checkUnset(Key, Rpt, NRpt, Stat) :- true |
+        shoen:raise(pimos_tag#task,general_request,[unsetenv(Key,ST)|Gen]),
+        waitStatus(ST, Gen, [getenv(Key, NValue)]),
+        waitStatus(ST, Rpt, [unsetenv(Key) | NNRpt]),
+        env(Key, NValue, NNRpt, NRpt, Stat).
+
+%checkEnv(Key, Value, Rpt, NRpt, Stat) :- Key = {(':'), task, node} |
+checkEnv(Key, Value, Rpt, NRpt, Stat) :- Key = {(':'), task, io_node} |
+        shoen:raise(pimos_tag#task,general_request,
+            [getenv(Key, OValue), setenv(Key, Value, ST) | Gen]),
+        checkNode(Key, OValue, Value, Gen, Rpt, NRpt, Stat, ST).
+otherwise.
+checkEnv(Key, Value, Rpt, NRpt, Stat) :- true |
+        shoen:raise(pimos_tag#task,general_request,[setenv(Key,Value,ST)|Gen]),
+        waitStatus(ST, Gen, [getenv(Key, NValue)]),
+        env(Key, NValue, Rpt, NRpt, Stat).
+
+checkNode(Key, OValue, Value, Gen, Rpt, NRpt, Stat, ST) :- wait(ST) |
+    shoen:raise(pimos_tag#task, general_request, [connection(OK)]),
+    checkNode1(OK, Key, OValue, Value, Gen, Rpt, NRpt, Stat).
+
+checkNode1(normal(_), Key, _, _, Gen, Rpt, NRpt, Stat) :- true |
+    Gen = [getenv(Key, NValue)],
+    env(Key, NValue, Rpt, NRpt, Stat).
+otherwise.
+checkNode1(_, Key, normal(ONode), Value, Gen, Rpt, NRpt, Stat) :- true |
+    Gen = [setenv(Key, ONode, ST) | Gen1],
+    waitStatus(ST, Gen1, [getenv(Key, NValue)]),
+    Rpt = [cannot_connect(Value) | NNRpt],
+    env(Key, NValue, NNRpt, NRpt, Stat).
+
+%% pushd/0 %%
+exchangeDirs(Stat, Cmd, NCmd, Rpt, NRpt, A, NA, Pool, NPool) :- true |
+    Pool = [get_and_put(dir, ODIR, NDIR) | P1],
+    exchangeTop(ODIR, NDIR, Stat, Cmd, NCmd, Rpt, NRpt, A, NA, P1, NPool).
+
+exchangeTop([D1,D2|ODIR],NDIR,Stat,Cmd,NCmd,Rpt,NRpt,A,NA,P,NP) :- true |
+    NDIR = [D2, D1 | ODIR], dirList(NDIR, Rpt, Rpt1, _),
+    checkCWD(D2, Stat, Cmd, NCmd, Rpt1, NRpt, A, NA, cd, P, NP).
+otherwise.
+exchangeTop(ODIR, NDIR, Stat, Cmd, NCmd, Rpt, NRpt, A, NA, P, NP) :- true |
+    NCmd=Cmd, NA=A, NP=P, NDIR=ODIR, Rpt = [not_exchange(Stat) | NRpt].
+%% pushd/1 %%
+checkPushd(CWD,Stat,Cmd,NCmd,Rpt,NRpt,A,NA,Pool,NPool) :- integer(CWD)|
+    ( CWD >= 0 ->
+        Pool = [get_and_put(dir, ODIR, NDIR) | NP],
+        rotateDir(0,
+                CWD,Stat,STK,STK,ODIR,NDIR,Cmd,NCmd,Rpt,NRpt,A,NA,NP,NPool) ;
+      CWD < 0 -> 
+        NCmd=Cmd,NA=A,NPool=Pool, Rpt = [not_exchange(Stat) | NRpt] ).
+otherwise.
+checkPushd(CWD, Stat, Cmd, NCmd, Rpt, NRpt, A, NA, Pool, NPool) :- true |
+    checkCWD(CWD, Stat, Cmd, NCmd, Rpt, NRpt, A, NA, pushd, Pool, NPool).
+%% pushd N %%
+rotateDir(C,Max,Stat,STK,NSTK,[],NDIR,Cmd,NCmd,Rpt,NRpt,A,NA,P,NP) :- true |
+    STK=[],NDIR=NSTK,
+    ( C = Max -> dirList(NSTK, Rpt, Rpt1, _), NSTK=[CAR|CDR],
+        checkCWD(CAR, Stat, Cmd, NCmd, Rpt1, NRpt, A, NA, cd, P, NP) ;
+      C < Max -> NCmd=Cmd,NA=A,NP=P, Rpt = [not_exchange(Stat) | NRpt] ).
+rotateDir(C,Max,Stat,STK,NSTK,[DIR|ODIR],NDIR,Cmd,NCmd,Rpt,NRpt,A,NA,P,NP) :-
+        true |
+    ( C = Max -> STK = [], shellUtils:append([DIR | ODIR], NSTK, NDIR),
+        dirList(NDIR, Rpt, Rpt1, _), NDIR=[CAR|CDR],
+        checkCWD(CAR, Stat, Cmd, NCmd, Rpt1, NRpt, A, NA, cd, P, NP) ;
+      C < Max -> STK = [DIR | NNSTK],
+        rotateDir(~(C + 1),
+            Max,Stat,NNSTK,NSTK,ODIR,NDIR,Cmd,NCmd,Rpt,NRpt,A,NA,P,NP) ).
+%% dirs %%
+showDir(Stat, Rpt, NRpt, Pool, NPool) :- 
+    Pool = [get_and_put(dir, Dir, Dir) | NPool],
+    dirList(Dir, Rpt, NRpt, Stat).
+
+dirList([], Rpt, NRpt, Stat) :- true | Rpt = [flush(Stat) | NRpt].
+dirList([Dir | Dirs], Rpt, NRpt, Stat) :- true |
+    Rpt = [dir(Dir) | NNRpt],
+    dirList(Dirs, NNRpt, NRpt, Stat).
+%% popd %%
+popCWD(normal(CWD), Stat, Cmd, NCmd, Rpt, NRpt, A, NA, P, NP) :- true |
+    checkCWD(CWD, Stat, Cmd, NCmd, Rpt, NRpt, A, NA, cd, P, NP).
+popCWD(abnormal,  Stat, Cmd, NCmd, Rpt, NRpt, A, NA, P, NP) :- true |
+    NCmd=Cmd, NA=A, NP=P, Rpt = [empty_dir(Stat) | NRpt].
+
+popDown([X], NDIR, DIR) :- true | NDIR = [X], DIR = abnormal.
+otherwise.
+popDown([_,X|ODIR], NDIR, DIR) :- true | NDIR = [X|ODIR], DIR = normal(X).
+%% cd & pushd %%
+checkCWD(CWD, Stat, Cmd, NCmd, Rpt, NRpt, A, NA, Mode, P, NP) :- true |
+    shoen:raise(pimos_tag#task, general_request, GR),
+    shellUtils:file_type(DLM, GR, NGR),
+%        DLM = { 0:Type, 1:D_string, 2:D_char, 3:D_atom }
+    checkCWD00(CWD,Stat,Cmd,NCmd,Rpt,NRpt,A,NA,Mode,P,NP,NGR,DLM).
+
+checkCWD00(CWD,Stat,Cmd,NCmd,Rpt,NRpt,A,NA,Mode,P,NP,GR,DLM) :-
+        vector_element(DLM, 2, D_char),
+        string(CWD, _, _), string_element(CWD, 0, D_char) | NA = A,
+    GR = [file(FilDev)],
+    checkCWD1(CWD,Cmd,NCmd,Rpt,NRpt,Stat,FilDev,Mode,P,NP,DLM).
+otherwise.
+checkCWD00(CWD,Stat,Cmd,NCmd,Rpt,NRpt,A,NA,Mode,P,NP,GR,DLM) :-
+        string(CWD, _, _) | NA = A,
+    GR = [getenv(task:directory, Dir), file(FilDev)],
+    checkCWD0(Dir,CWD,Cmd,NCmd,Rpt,NRpt,Stat,FilDev,Mode,P,NP,DLM).
+otherwise.
+checkCWD00(CWD,Stat,Cmd,NCmd,Rpt,NRpt,A,NA,Mode,P,NP,GR,DLM) :-
+        true |
+    set_vector_element(DLM,0,Type,Type,DLM1),
+    set_vector_element(DLM1,1,D_str,D_str,DLM2),
+    set_vector_element(DLM2,2,D_char,D_char,DLM3),
+    set_vector_element(DLM3,3,D_atom,D_atom,DLM4),
+    NDLM = { Type, D_str, D_char, D_atom },
+    shellUtils:expand_pathname(CWD,NCWD,A,NA,TDIR,HDIR,DLM4),
+    GR = [file(FilDev),getenv(task:directory,TDIR),getenv(task:home,HDIR)],
+    checkCWD1(NCWD,Cmd,NCmd,Rpt,NRpt,Stat,FilDev,Mode,P,NP,NDLM).
+
+checkCWD0(normal(Dir),CWD,Cmd,NCmd,Rpt,NRpt,Stat,
+        FilDev,Mode,P,NP,DLM) :- string(Dir, _, _) |
+    set_vector_element(DLM,1,D_str,D_str,NDLM),
+    builtin#append_string([Dir, D_str, CWD], NCWD),
+    checkCWD1(NCWD,Cmd,NCmd,Rpt,NRpt,Stat,FilDev,Mode,P,NP,NDLM).
+otherwise.
+checkCWD0(_,CWD,Cmd,NCmd,Rpt,NRpt,Stat,_,_,P,NP,_) :- true |
+    NCmd = Cmd, NP = P,
+    Rpt = [illegal_directory_name(CWD, Stat) | NRpt].
+
+checkCWD1(CWD,Cmd,NCmd,Rpt,NRpt,Stat,normal(File,_,_),Mode,P,NP,DLM) :-
+        true |
+    File = [directory(CWD, DirDev)],
+    checkCWD2(CWD,Cmd,NCmd,Rpt,NRpt,Stat,DirDev,Mode,P,NP,DLM).
+otherwise.
+checkCWD1(CWD,Cmd,NCmd,Rpt,NRpt,Stat,_,_,P,NP,_) :- true |
+    NCmd = Cmd, NP = P,
+    Rpt = [illegal_directory_name(CWD, Stat) | NRpt].
+
+checkCWD2(_,Cmd,NCmd,Rpt,NRpt,Stat,normal(DIR,_,_),Mode,P,NP,DLM) :- true |
+    set_vector_element(DLM,0,Type,Type,NDLM),
+    ( Mode = cd -> DIR = [pathname(normal(PathName))], NRpt = Rpt,
+        shellUtils:get_pathname(Type, PathName, NPathName),
+        P = [get_and_put(dir, [_ | DIRS], [NPathName | DIRS]) | NP] ;
+      Mode = pushd -> DIR = [pathname(normal(PathName))],
+        shellUtils:get_pathname(Type, PathName, NPathName),
+        P = [get_and_put(dir, ODIR, NDIR) | NP], NDIR = [ NPathName | ODIR ],
+        dirList(NDIR, Rpt, NRpt, _) ),
+    NCmd = [{{setenv, {'=', task:directory, NPathName}}, Stat} | Cmd].
+otherwise.
+checkCWD2(CWD, Cmd, NCmd, Rpt, NRpt, Stat, _, _, P, NP, _) :- true |
+    NCmd = Cmd, NP = P,
+    Rpt = [illegal_directory_name(CWD, Stat) | NRpt].
+
+%checkAndPush(normal(TDIR),ODIR,NDIR) :- string(TDIR,_,_) | NDIR = [TDIR|ODIR].
+%otherwise.
+%checkAndPush(_, ODIR, NDIR) :- true | NDIR = ODIR.
+
+%%%%%  for Secret Command  %%%%%
+showWorld(Stat, Rpt, NRpt, Pool, NPool) :- true |
+    Pool = [get_and_put(def, Defs, Defs) | NPool],
+    worldList(Defs, Rpt, NRpt, Stat).
+worldList([], Rpt, NRpt, Stat) :- true | Rpt = [flush(Stat) | NRpt].
+worldList([{W, Dir} | Defs], Rpt, NRpt, Stat) :- true |
+    Rpt = [def(W, Dir) | NNRpt],
+    worldList(Defs, NNRpt, NRpt, Stat).
+
+defWorld(Stat, W, Dir, Rpt, NRpt, Pool, NPool) :- atom(W), string(Dir,_,_) |
+    Pool = [get_and_put(def, Defs, NDefs) | NPool],
+    Rpt = [def(W, Dir), flush(Stat) | NRpt],
+    addDef(W, Dir, Defs, [], NDefs),
+    shoen:raise(pimos_tag#task, general_request,
+                                [setenv(shell:logical_pathname, NDefs, _)]).
+otherwise.
+defWorld(Stat, W, Dir, Rpt, NRpt, Pool, NPool) :- true |
+    NPool = Pool, Rpt = [noDef(W, Dir, Stat) | NRpt].
+addDef(W, Dir, [], Defs, NDefs) :- true | NDefs = [{W, Dir} | Defs].
+addDef(W, Dir, [{OW, _} | Rest], Defs, NDefs) :- OW = W |
+    addDef(W, Dir, Rest, Defs, NDefs).
+otherwise.
+addDef(W, Dir, [{OW, ODir} | Rest], Defs, NDefs) :- true |
+    NNDefs = [{OW, ODir} | Defs],
+    addDef(W, Dir, Rest, NNDefs, NDefs).
+
+conWorld(W, Pool, NPool, Cmd, NCmd, Rpt, NRpt, Stat) :- true |
+    Pool = [get_and_put(def, Defs, Defs) | NPool],
+    getWorld(Defs, W, Cmd, NCmd, Rpt, NRpt, Stat).
+getWorld([], W, Cmd, NCmd, Rpt, NRpt, Stat) :- true | NCmd = Cmd,
+    Rpt = [illegal_directory_name(W, Stat) | NRpt].
+getWorld([{OW, ODir} | _], W, Cmd, NCmd, Rpt, NRpt, Stat) :- OW = W |
+    NCmd = [{cd(ODir), Stat} | Cmd], Rpt = NRpt.
+otherwise.
+getWorld([_ | Defs], W, Cmd, NCmd, Rpt, NRpt, Stat) :- true |
+    getWorld(Defs, W, Cmd, NCmd, Rpt, NRpt, Stat).
+
+%%%%%  for Command Alias  %%%%
+showAlias(Stat, Rpt, NRpt, Pool, NPool) :- true |
+    Pool = [get_and_put(alias, Aliases, Aliases) | NPool],
+    aliasList(Aliases, Rpt, NRpt, Stat).
+aliasList([], Rpt, NRpt, Stat) :- true | Rpt = [flush(Stat) | NRpt].
+aliasList([{X, Y} | Aliases], Rpt, NRpt, Stat) :- true |
+    Rpt = [alias(X, Y) | NNRpt],
+    aliasList(Aliases, NNRpt, NRpt, Stat).
+
+getAlias(Stat, X, Rpt, NRpt, Pool, NPool, A, NA) :- true |
+    Pool = [get_and_put(alias, Aliases, Aliases) | NPool],
+    A = [get_atom_name(X, Y) | NA],
+    aliasData(Aliases, X, Y, Rpt, NRpt, Stat).
+
+aliasData([], OX, normal(X), Rpt, NRpt, Stat) :- true |
+    Rpt = [noAlias(X, Stat) | NRpt].
+aliasData([{X, Y}|Aliases], OName, normal(Name), Rpt, NRpt, Stat) :- true |
+    ( X = Name -> Rpt = [alias(X, Y), flush(Stat) | NRpt] ;
+    otherwise ;
+      true -> aliasData(Aliases, OName, normal(Name), Rpt, NRpt, Stat) ).
+otherwise.
+aliasData(_,OName,_,Rpt,NRpt,Stat) :- true | Rpt = [noAlias(OName,Stat)|NRpt].
+
+defAlias(Stat, X, Y, Rpt, NRpt, Pool, NPool, A, NA) :-
+        atom(X), string(Y,_,_), X \= alias, X \= unalias |
+    A = [get_atom_name(X, normal(XX)) | NA],
+    Pool = [get_and_put(alias, Aliases, NAliases) | NPool],
+    Rpt = [alias(XX, Y), flush(Stat) | NRpt],
+    addAlias(XX, Y, Aliases, [], NAliases).
+otherwise.
+defAlias(Stat, X, Y, Rpt, NRpt, Pool, NPool, A, NA) :- true |
+    NPool = Pool, A = NA, Rpt = [noAlias(X, Y, Stat) | NRpt].
+addAlias(X, Y, [], Aliases, NAliases) :- true | NAliases = [{X, Y} | Aliases].
+addAlias(X, Y, [{OX, _} | Rest], Aliases, NAliases) :- OX = X |
+    addAlias(X, Y, Rest, Aliases, NAliases).
+otherwise.
+addAlias(X, Y, [{OX, OY} | Rest], Aliases, NAliases) :- true |
+    NNAliases = [{OX, OY} | Aliases],
+    addAlias(X, Y, Rest, NNAliases, NAliases).
+
+rmvAlias(Stat, X, Rpt, NRpt, Pool, NPool, A, NA) :- atom(X) |
+    A = [get_atom_name(X, normal(XX)) | NA],
+    Pool = [get_and_put(alias, Aliases, NAliases) | NPool],
+    reviseAliases(Aliases, NAliases, XX, Rpt, NRpt, Stat).
+otherwise.
+rmvAlias(Stat, X, Rpt, NRpt, Pool, NPool, A, NA) :- true |
+    Rpt = [noAlias(X, Stat) | NRpt], Pool = NPool, NA = A.
+reviseAliases([], NAliases, X, Rpt, NRpt, Stat) :- true |
+    NAliases = [], Rpt = [noAlias(X, Stat) | NRpt].
+reviseAliases([{OX, OY} | Aliases], NAliases, X, Rpt, NRpt, Stat) :- OX = X |
+    NAliases = Aliases, Rpt = [unalias(X, Stat) | NRpt].
+otherwise.
+reviseAliases([{OX, OY} | Aliases], NAliases, X, Rpt, NRpt, Stat) :- true |
+    NAliases = [{OX, OY} | NNAliases],
+    reviseAliases(Aliases, NNAliases, X, Rpt, NRpt, Stat).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Invoke the job-groups as pararel  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+comExePara([], Stat, JMCnt, Rpt,
+        SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, _) :- true |
+    Stat = normal, NJMCnt = JMCnt, NRpt = Rpt, NSNG = SNG, NIoH = IoH.
+comExePara([fore(JobGrp)], Stat, JMCnt, Rpt,
+        SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info) :- true |
+    invokeFJGrp(JobGrp, Stat,
+        JMCnt, Rpt, SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info).
+otherwise.
+comExePara([back(JobGrp) | CmdLn], Stat, JMCnt, Rpt,
+        SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info) :- true |
+    invokeBJGrp(JobGrp,
+        JMCnt, Rpt, SNG, IoH, MJMCnt, MRpt, MSNG, MIoH, Info),
+    comExePara(CmdLn, Stat,
+        MJMCnt, MRpt, MSNG, MIoH, NJMCnt, NRpt, NSNG, NIoH, Info).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Invoke the job-group into back-ground  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+invokeBJGrp(JobGrp,JMCnt,Rpt,SNG,IoH,NJMCnt,NRpt,NSNG,NIoH,Info) :-
+    vector(JobGrp, _), vector_element(JobGrp, 0, V0), V0 = (';') |
+    shellParser:seqParser(JobGrp, JobGrp1),        %%% Detect ';'  %%%
+%%%%% pseudo spec. %%%%%
+    JobGrp1 = [Job | _],
+    invokeBJ(Job,JMCnt,Rpt,SNG,IoH,NJMCnt,NRpt,NSNG,NIoH,Info).
+%%%%% future spec. %%%%%
+%    invokeBackSubShell(JobGrp1, JMCnt, Rpt,
+%        SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info).
+%%%%%%%%%%%%%%%%%%%%%%%%
+otherwise.
+invokeBJGrp(Job,JMCnt,Rpt,SNG,IoH,NJMCnt,NRpt,NSNG,NIoH,Info) :- true|
+    invokeBJ(Job,JMCnt,Rpt,SNG,IoH,NJMCnt,NRpt,NSNG,NIoH,Info).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Invoke the job-group into fore-ground  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+invokeFJGrp(JobGrp,Stat,JMCnt,Rpt,SNG,IoH,NJMCnt,NRpt,NSNG,NIoH,
+    Info) :- vector(JobGrp, _), vector_element(JobGrp, 0, V0), V0 = (';') |
+    shellParser:seqParser(JobGrp, JobGrp1),        %%% Detect ';'  %%%
+%%%%% pseudo spec. %%%%%
+    JobGrp1 = [Job | _],
+    invokeFJ(Job,Stat,JMCnt,Rpt,SNG,IoH,NJMCnt,NRpt,NSNG,NIoH,Info).
+%%%%% future spec. %%%%%
+%    invokeForeSubShell(JobGrp1, Stat,
+%        JMCnt, Rpt, SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info).
+%%%%%%%%%%%%%%%%%%%%%%%%
+otherwise.
+invokeFJGrp(Job, Stat, JMCnt, Rpt,
+        SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info) :- true |
+    invokeFJ(Job,Stat,JMCnt,Rpt,SNG,IoH,NJMCnt,NRpt,NSNG,NIoH,Info).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Invoke the job into back-ground  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+invokeBJ(Job,JMCnt,Rpt,SNG,IoH,NJMCnt,NRpt,NSNG,NIoH,Info) :- true |
+    NIoH = IoH,
+    invokeJob(Job, normal, JMCnt, Rpt, SNG, NJMCnt, NRpt, NSNG, _, Info).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Invoke the job into fore-ground  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+invokeFJ(Job,Dtct,JMCnt,Rpt,SNG,IoH,NJMCnt,NRpt,NSNG,NIoH,Info) :-
+    true | IoH = [attach(ID, Stat, Dtct) | NIoH],
+    invokeJob(Job, Stat, JMCnt, Rpt, SNG, NJMCnt, NRpt, NSNG, ID, Info).
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Invoke one job  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+invokeJob(Job,Stat,JMCnt,Rpt,SNG,NJMCnt,NRpt,NSNG,ID,Info) :- true |
+    SNG = [getNo(JobNo) | NSNG], Rpt = NRpt,
+    shoen:raise(pimos_tag#shell, get_std_mes_dev, StdMes),
+    JMCnt = [job(Job, JobNo, StdMes, Stat, ID, Info) | NJMCnt].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Invoke the sub-shell into back-ground  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%invokeBackSubShell(JobGrp, JMCnt, Rpt,
+%        SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info) :- true |
+%    IoH = [create(JobNo, IoCont, End) | NIoH],
+%    invokeSubShell(JobGrp, normal,
+%        JMCnt, Rpt, SNG, NJMCnt, NRpt, NSNG, JobNo, IoCont, End, Info).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Invoke the sub-shell into fore-ground  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%invokeForeSubShell(JobGrp, Stat, JMCnt, Rpt,
+%        SNG, IoH, NJMCnt, NRpt, NSNG, NIoH, Info):- true |
+%    IoH = [create(JobNo, IoCont, End), fore(JobNo, Stat) | NIoH],
+%    invokeSubShell(JobGrp, Stat,
+%        JMCnt, Rpt, SNG, NJMCnt, NRpt, NSNG, JobNo, IoCont, End, Info).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Invoke one sub-shell  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%invokeSubShell(JobGrp, Stat, JMCnt, Rpt, SNG, NJMCnt, NRpt, NSNG,
+%        JobNo, IoCont, End, Info) :- true |
+%    SNG = [getNo(JobNo) | NSNG], Rpt = NRpt,
+%    shoen:raise(pimos_tag#shell, get_std_io, StdIo),
+%    shoen:raise(pimos_tag#shell, get_std_mes_dev, StdMes),
+%    JMCnt = [subShell(JobGrp, IoCont, StdIo,
+%            JobNo, StdMes, End, Stat, Info) | NJMCnt].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                                    %%%%%
+%%%%%  End of 'commandExecutor' module.  %%%%%
+%%%%%                                    %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+

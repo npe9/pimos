@@ -1,0 +1,203 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module fep_file_request_device.
+:- with_macro pimos.
+:- public request_device_process/4.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% request_device_process(Stream, Node, ^ID_manager, ^Send)
+%%      Stream     ::  stream of file request device
+%%      Node       ::  node mumber of FEP
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+request_device_process(fep#nil, _, ID_manager, Send) :-
+    true |
+        Send = [],
+        ID_manager = [].
+request_device_process(Stream, Node, ID_manager, Send) :-
+    Stream = {fep#reset, Abort, Attention, Status, Cdr} |
+        Status = fep#normal,
+        request_device_io(Cdr, Abort, Attention, Node, ID_manager, Send).
+otherwise.
+request_device_process(Stream, _, ID_manager, Send) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        ID_manager = [],
+        Send = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                "pimos:: fep_file_request_device: request_device_process/ 4"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% request_device_io(Stream, Abort, Attention, Node, ^ID_manager, ^Send)
+%%      Stream     ::  stream of file request device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Node       ::  node mumber of FEP
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+request_device_io(Stream, Abort, Attention, Node, ID_manager, Send) :-
+    wait(Abort) |
+        request_device_aborted(Stream, Abort, Attention, Node, 
+                ID_manager, Send).
+alternatively.
+request_device_io(Stream, Abort, Attention, Node, ID_manager, Send) :-
+    true |
+        request_device_io0(Stream, Abort, Attention, Node, ID_manager, Send).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% request_device_io0(Stream, Abort, Attention, Node, ^ID_manager, ^Send)
+%%      Stream     ::  stream of file request device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Node       ::  node mumber of FEP
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+request_device_io0(fep#nil, _, Attention, _, ID_manager, Send) :-
+    true |
+        Attention = fep#nil,
+        fep_utility:close_device(Attention, Send),
+        ID_manager =[].
+request_device_io0(Stream, _, Attention, Node, ID_manager, Send) :-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        Attention = fep#nil,
+        Status = fep#normal,
+        request_device_io(Cdr, NewAbort, NewAttention, Node, ID_manager, Send).
+request_device_io0(Stream, Abort, Attention, Node, ID_manager, Send) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Attention = fep#nil,
+        Status = fep#normal,
+        request_device_io(Cdr, Abort, NewAttention, Node, ID_manager, Send).
+request_device_io0(Stream, Abort, Attention, Node, ID_manager, Send) :-
+    Stream = {fep#read_open, _, _, _, _, _, _} |
+        set_vector_element(Stream, 6, Cdr, 0, Stream1),
+        ID_manager = [id(Result)|ID_Tail],
+        Send = {Send1, Send2},
+        fep_file_device_create(Result, Stream1, Node, Send1),
+        request_device_io(Cdr, Abort, Attention, Node, ID_Tail, Send2).
+request_device_io0(Stream, Abort, Attention, Node, ID_manager, Send) :-
+    Stream = {fep#write_open, _, _, _, _, _, _} |
+        set_vector_element(Stream, 6, Cdr, 0, Stream1),
+        ID_manager = [id(Result)|ID_Tail],
+        Send = {Send1, Send2},
+        fep_file_device_create(Result, Stream1, Node, Send1),
+        request_device_io(Cdr, Abort, Attention, Node, ID_Tail, Send2).
+request_device_io0(Stream, Abort, Attention, Node, ID_manager, Send) :-
+    Stream = {fep#append_open, _, _, _, _, _, _} |
+        set_vector_element(Stream, 6, Cdr, 0, Stream1),
+        ID_manager = [id(Result)|ID_Tail],
+        Send = {Send1, Send2},
+        fep_file_device_create(Result, Stream1, Node, Send1),
+        request_device_io(Cdr, Abort, Attention, Node, ID_Tail, Send2).
+request_device_io0(Stream, Abort, Attention, Node, ID_manager, Send) :-
+%    Stream = {fep#fep_attributes, _, _, _, _, _, _, _, _, _} |
+    Stream = {240, _, _, _, _, _, _, _, _, _} |
+        set_vector_element(Stream, 9, Cdr, 0, Stream1),
+        ID_manager = [id(Result)|ID_Tail],
+        Send = {Send1, Send2},
+        fep_file_device_create(Result, Stream1, Node, Send1),
+        request_device_io(Cdr, Abort, Attention, Node, ID_Tail, Send2).
+request_device_io0(Stream, Abort, Attention, Node, ID_manager, Send) :-
+    Stream = {fep#directory, _, _, _, _, _, _} |
+        set_vector_element(Stream, 6, Cdr, 0, Stream1),
+        ID_manager = [id(Result)|ID_Tail],
+        Send = {Send1, Send2},
+        fep_directory_device_create(Result, Stream1, Node, Send1),
+        request_device_io(Cdr, Abort, Attention, Node, ID_Tail, Send2).
+request_device_io0(Stream, Abort, Attention, Node, ID_manager, Send) :-
+%    Stream = {fep#make_directory, _, _, _, _, _, _} |
+    Stream = {205, _, _, _, _, _, _} |
+        set_vector_element(Stream, 6, Cdr, 0, Stream1),
+        ID_manager = [id(Result)|ID_Tail],
+        Send = {Send1, Send2},
+        fep_directory_device_create(Result, Stream1, Node, Send1),
+        request_device_io(Cdr, Abort, Attention, Node, ID_Tail, Send2).
+otherwise.
+request_device_io0(Stream, _, Attention, _, ID_manager, Send) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        Attention = fep#nil,
+        fep_utility:close_device(Attention, Send),
+        ID_manager = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_file_request_device: request_device_io/ 6"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% request_device_aborted(Stream, Abort, Attention, Node, ^ID_manager, ^Send)
+%%      Stream     ::  stream of file device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Node       ::  node mumber of FEP
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+request_device_aborted(fep#nil, _, Attention, _, ID_manager, Send) :-
+    true |
+        Attention = fep#nil,
+        fep_utility:close_device(Attention, Send),
+        ID_manager = [].
+request_device_aborted(Stream, _, Attention, Node, ID_manager, Send):-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        Attention = fep#nil,
+        Status = fep#normal,
+        request_device_io(Cdr, NewAbort, NewAttention, Node, ID_manager, Send).
+request_device_aborted(Stream, Abort, Attention, Node, ID_manager, Send) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#aborted,
+        NewAttention = fep#nil,
+        request_device_aborted(Cdr, Abort, Attention, Node, ID_manager, Send).
+otherwise.
+request_device_aborted(Stream, Abort, Attention, Node, ID_manager, Send) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#aborted,
+        request_device_aborted(Cdr, Abort, Attention, Node, ID_manager, Send).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% fep_file_device_create(Result, Stream, Node, ^Send)
+%%      Result     :: {normal,DevID,DS}|abnormal
+%%      Stream     ::  stream of file device
+%%      Node       ::  node mumber of FEP
+%%      Send       ::  send message for SCSI DRIVER
+
+fep_file_device_create(normal(DevID,DS), Stream, Node, Send) :-
+    true |
+        fep_file_device:device_create(Stream, Node, DevID, DS, Send).
+fep_file_device_create(abnormal, Stream, _, Send) :-
+    vector(Stream, Size),
+    display_console("SCSI I/O Error in file device creation") |
+        set_vector_element(Stream, ~(Size-2), fep#abnormal, 0, _),
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% fep_directory_device_create(Result, Stream, ^ID_manager, ^Send)
+%%      Result     :: {normal,DevID,DS}|abnormal
+%%      Stream     ::  stream of directory device
+%%      Node       ::  node mumber of FEP
+%%      Send       ::  send message for SCSI DRIVER
+
+fep_directory_device_create(normal(DevID,DS), Stream, Node, Send) :-
+    true |
+        fep_directory_device:device_create(Stream, Node, DevID, DS, Send).
+fep_directory_device_create(abnormal, Stream, _, Send) :-
+    vector(Stream, Size),
+    display_console("SCSI I/O Error in directory device creation") |
+        set_vector_element(Stream, ~(Size-2), fep#abnormal, 0, _),
+        Send = [].

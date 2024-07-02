@@ -1,0 +1,241 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%%
+%%   Output Module for
+%%
+%%   KL1/KL1 compiler
+%%
+
+
+:- module kl1cmp_output.
+:- public erace_or_convert_instruction/12.
+
+
+
+:- local_implicit from:oldnew, to:oldnew, reg:oldnew, 
+    type:oldnew, code:oldnew, pc:shared.
+
+erace_or_convert_instruction([H|T]) --> true |
+   erace_or_convert_one_instruction(H),
+   &pc <= &pc + 1,
+   erace_or_convert_instruction(T).
+erace_or_convert_instruction([]) --> true | true.
+
+:- local_implicit from:oldnew, to:oldnew, reg:oldnew, 
+    type:oldnew, code:oldnew, pc:shared.
+erace_or_convert_one_instruction(wait_variable(variable(X),variable(Y))) -->
+   vector_element(&reg(old), X, R), vector_element(&reg(old), Y, R)|
+   {{set_type_for_wait_variable(&type, X, Y)}}.
+erace_or_convert_one_instruction(put_value(variable(X),variable(Y))) --> 
+    vector_element(&reg(old), X, R), vector_element(&reg(old), Y, R) |
+   true.
+erace_or_convert_one_instruction(trans_value(variable(X),variable(Y))) --> 
+    vector_element(&reg(old), X, R), vector_element(&reg(old), Y, R) |
+   true.
+erace_or_convert_one_instruction(get_list_value(variable(X),variable(Y)))-->
+   vector_element(&reg(old), X, R), vector_element(&reg(old), Y, R) |
+   true.
+erace_or_convert_one_instruction(integer(variable(X))) -->
+    vector_element(&type(old), X, integer),
+    vector_element(&from(old), X, F),
+    vector_element(&to(old), X, T), F =< &pc, T >= &pc | true.
+erace_or_convert_one_instruction(floating_point(variable(X))) -->
+    vector_element(&type(old), X, floating_point),
+    vector_element(&from(old), X, F),
+    vector_element(&to(old), X, T), F =< &pc, T >= &pc | true.
+%% new 890525
+erace_or_convert_one_instruction(wait(variable(X))) -->
+    vector_element(&type(old), X, integer),
+    vector_element(&from(old), X, F),
+    vector_element(&to(old), X, T), F =< &pc, T >= &pc | true.
+erace_or_convert_one_instruction(wait(variable(X))) -->
+    vector_element(&type(old), X, floating_point),
+    vector_element(&from(old), X, F),
+    vector_element(&to(old), X, T), F =< &pc, T >= &pc | true.
+erace_or_convert_one_instruction(wait(variable(X))) -->
+    vector_element(&type(old), X, bound),
+    vector_element(&from(old), X, F),
+    vector_element(&to(old), X, T), F =< &pc, T >= &pc | true.
+erace_or_convert_one_instruction(atom(variable(X))) -->
+    vector_element(&type(old), X, atom),
+    vector_element(&from(old), X, F),
+    vector_element(&to(old), X, T), F =< &pc, T >= &pc | true.
+%% new end
+erace_or_convert_one_instruction(get_marked_value(Ai,Aj)) --> true |
+  {{convert_variable(&reg, &code, put_marked_value(Ai,Ai)),
+    convert_variable(&reg, &code, get_value(Ai,Aj))}}.
+erace_or_convert_one_instruction(commit) --> true | true.
+erace_or_convert_one_instruction('$Gc_code'(Code)) --> true |
+    erace_or_convert_gc_instruction([], Code).
+otherwise.
+erace_or_convert_one_instruction(wait_variable(Ai, Aj)) --> true |
+  {{convert_variable(&reg, &code, put_value(Aj, Ai))}}.
+erace_or_convert_one_instruction(trans_value(Ai, Aj)) --> true |
+  {{convert_variable(&reg, &code, put_value(Ai, Aj))}}.
+otherwise.
+erace_or_convert_one_instruction(Code0) --> true |
+  {{obtain_type_info(&type, Code0),    % debug 871014
+    convert_variable(&reg, &code, Code0)}}.
+
+:- local_implicit from:oldnew, to:oldnew, reg:oldnew, 
+    type:oldnew, code:oldnew, pc:shared.
+erace_or_convert_gc_instruction(COLLECTED0, [H|T]) --> true |
+    erace_or_convert_one_gc_instruction(COLLECTED0, COLLECTED, H),
+    erace_or_convert_gc_instruction(COLLECTED, T).
+erace_or_convert_gc_instruction(_, []) --> true | true.
+
+:- local_implicit from:oldnew, to:oldnew, reg:oldnew, 
+    type:oldnew, code:oldnew, pc:shared, collected:oldnew.
+erace_or_convert_one_gc_instruction(collect_value(variable(N))) -->
+    vector_element(&type(old), N, integer),
+    vector_element(&from(old), N, F),
+    vector_element(&to(old), N, T), F =< &pc, &pc =< T | true.
+erace_or_convert_one_gc_instruction(collect_value(variable(N))) -->
+    vector_element(&type(old), N, atom),
+    vector_element(&from(old), N, F),
+    vector_element(&to(old), N, T), F =< &pc, &pc =< T | true.
+erace_or_convert_one_gc_instruction(collect_value(variable(N))) -->
+    vector_element(&type(old), N, floating_point),
+    vector_element(&from(old), N, F),
+    vector_element(&to(old), N, T), F =< &pc, &pc =< T | true.
+otherwise.
+erace_or_convert_one_gc_instruction(collect_value(A)) --> true |
+  {{is_arg_collected(&reg, &collected, A, Ans),
+    erace_or_not_collect_value(&reg, &code, &collected, Ans, A)}}.
+otherwise.
+%% added for debugging
+%%erace_or_convert_one_gc_instruction(collect_value(_)) --> true | true.
+%%erace_or_convert_one_gc_instruction(collect_vector(_, _)) --> true | true.
+%%erace_or_convert_one_gc_instruction(collect_list(_)) --> true | true.
+%%otherwise.
+%% added for debugging
+erace_or_convert_one_gc_instruction(Code) --> true |
+  {{convert_variable(&reg, &code, Code)}}.
+
+is_arg_collected(Reg0, Reg, Clct0, Clct, variable(N), Ans) :- true |
+    set_vector_element(Reg0, N, R, R, Reg),
+    is_arg_in_collected(Clct0, Clct, R, Ans).
+
+is_arg_in_collected([R|Clct0], Clct, R, Ans) :- true |
+    Clct=[R|Clct0],
+    Ans=yes.
+otherwise.
+is_arg_in_collected([R|Clct0], Clct, R0, Ans) :- true |
+    Clct=[R|Clct1],
+    is_arg_in_collected(Clct0, Clct1, R0, Ans).
+is_arg_in_collected([], Clct, _, Ans) :- true | Clct = [], Ans=no.
+
+erace_or_not_collect_value(Reg0, Reg, Code0, Code, Clct0, Clct, yes, _) :- true |
+    Reg0=Reg,
+    Code0=Code,
+    Clct0=Clct.
+erace_or_not_collect_value(Reg0, Reg, Code0, Code, Clct0, Clct, no, variable(N)) :- true |
+    set_vector_element(Reg0, N, R, R, Reg1),
+    Clct=[R|Clct0],
+    convert_variable(Reg1, Reg, Code0, Code, collect_value(variable(N))).
+
+:- local_implicit type:oldnew.
+set_type_for_wait_variable(X, Y) -->
+    vector_element(&type(old), X, integer) |
+  set_vector_element(Y, integer).
+set_type_for_wait_variable(X, Y) -->
+    vector_element(&type(old), Y, integer) |
+  set_vector_element(X, integer).
+set_type_for_wait_variable(X, Y) -->
+    vector_element(&type(old), X, floating_point) |
+  set_vector_element(Y, floating_point).
+set_type_for_wait_variable(X, Y) -->
+    vector_element(&type(old), Y, floating_point) |
+  set_vector_element(X, floating_point).
+set_type_for_wait_variable(X, Y) -->
+    vector_element(&type(old), X, bound) |
+  set_vector_element(Y, bound).
+set_type_for_wait_variable(X, Y) -->
+    vector_element(&type(old), Y, bound) |
+  set_vector_element(X, bound).
+otherwise.
+set_type_for_wait_variable(_, _) --> true | true.
+
+obtain_type_info(integer(variable(N))) --> true |
+    set_vector_element(N, integer).
+%% new 880525
+obtain_type_info(wait(variable(N))) --> true |
+    set_vector_element(N, bound).
+obtain_type_info(atom(variable(N))) --> true |
+    set_vector_element(N, atom).
+obtain_type_info(floating_point(variable(N))) --> true |
+    set_vector_element(N, floating_point).
+obtain_type_info(put_constant(C, variable(N))) --> integer(C) |
+    set_vector_element(N, integer).
+obtain_type_info(put_constant(C, variable(N))) --> atom(C) |
+    set_vector_element(N, atom).
+obtain_type_info(put_constant(C, variable(N))) --> floating_point(C) |
+    set_vector_element(N, floating_point).
+%% deleted D.Sekita 891207
+%%obtain_type_info(put_structured_constant(variable(N), _)) --> true |
+%%    set_vector_element(N, bound).
+%% new ended
+obtain_type_info(builtin(X)) --> true |
+  {{kl1cmp_blttbl:builtin(X, _, _, _, _, Post, _, _, _)}},
+   obtain_builtin_info(Post).
+obtain_type_info(wait_variable(variable(M), variable(N))) -->
+   vector_element(&type(old), N, integer) |
+   set_vector_element(M, integer).
+obtain_type_info(wait_variable(variable(M), variable(N))) -->
+   vector_element(&type(old), N, floating_point) |
+   set_vector_element(M, floating_point).
+otherwise.
+obtain_type_info(_) --> true | true.
+
+obtain_builtin_info([integer(variable(N))|L]) --> true |
+   set_vector_element(N, integer),
+   obtain_builtin_info(L).
+obtain_builtin_info([floating_point(variable(N))|L]) --> true |
+   set_vector_element(N, integer),
+   obtain_builtin_info(L).
+otherwise.
+obtain_builtin_info([_|L]) --> true |
+   obtain_builtin_info(L).
+obtain_builtin_info([]) --> true | true.
+
+:- local_implicit reg:oldnew, code:oldnew.
+convert_variable(X) --> atom(X) |
+   &code<<=[X].
+convert_variable(X) --> integer(X) |
+   &code<<=[X].
+convert_variable(X) --> floating_point(X) |
+   &code<<=[X].
+convert_variable(builtin(X)) --> true | 
+   convert_variable(X).
+otherwise.
+convert_variable(X) --> vector(X, A) |
+   convert_args(A, X).
+
+convert_args(0, X) --> true | &code <<=[X].
+convert_args(A, X) --> A>0 |
+   {{A1 := A-1, set_vector_element(X, A1, Arg, New_arg, X1)}},
+    convert_one_arg(Arg, New_arg),
+    convert_args(A1, X1).
+
+convert_one_arg(Arg, New_arg) --> atom(Arg) | {{New_arg = Arg}}.
+convert_one_arg(Arg, New_arg) --> integer(Arg) | {{New_arg = Arg}}.
+convert_one_arg(variable(N), New_arg) --> true |
+  {{ref_vector_element(&reg, N, New_arg0),
+    convert_register_number(New_arg0, New_arg)}}.
+otherwise.
+convert_one_arg(Arg, New_arg) --> true | {{Arg=New_arg}}.
+
+convert_register_number(N, New_arg) :- N>0 |
+    New_arg := N-1.
+convert_register_number(0, New_arg) :- true | New_arg=31.
+
+set_vector_element(Tabs0, Tabs, Idx, Ele) :- true |
+   set_vector_element(Tabs0, Idx, _, Ele, Tabs).
+
+ref_vector_element(Tabs0, Tabs, Idx, Ele) :- true |
+   set_vector_element(Tabs0, Idx, Ele, Ele, Tabs).

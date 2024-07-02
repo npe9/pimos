@@ -1,0 +1,1337 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module login.
+:- with_macro pimos.
+:- public go/3, login/9, task_monitor/2, get_resource/2.
+:- public execute_user_goal/1.
+go(Req,Part,Log):- true|
+   shoen:raise(pimos_tag#task,general_request,GR),
+   GR = [number_of_feps(FEPS)|GRN],
+   status1(FEPS,Req,Part,Log,GRN).
+
+status1(normal(Fep),Req,Part,Log,GR):-
+   true|
+   current_node(_,Z),
+   syntax(Req,Part,Log,Fep,Z,Status),
+   status3(Status,GR,Fep).
+otherwise.
+status1(_,Req,Part,Log,GR):-
+   display_console(ascii#"LOGIN: Fatal ERROR!!")|
+   GR = [].
+
+syntax([{Fep,telnet(Port),Proc}|Next],Part,Log,Feps,Procs,Status):-
+   Port > 0|
+   requestPool([{Statf,normal(telnet(Port)),Statp}|NPool],Out),
+   status3(Out,Part,Log,Feps,Procs,Status),
+   syntax(Next,NPool,Feps,Procs,2),
+   fep(Fep,Feps,Statf,1),
+   proc(Proc,Procs,Statp,1).
+otherwise.
+syntax([{Fep,LAN,Proc}|Next],Part,Log,Feps,Procs,Status):-
+   true|
+   requestPool([{Statf,Statl,Statp}|NPool],Out),
+   status3(Out,Part,Log,Feps,Procs,Status),
+   syntax(Next,NPool,Feps,Procs,2),
+   fep(Fep,Feps,Statf,1),
+   lan(LAN,Statl,1),
+   proc(Proc,Procs,Statp,1).
+otherwise.
+syntax(_,_,_,_,_,Status):-
+   true|
+   login_error:e(login,syntax,1),
+   Status = abnormal.
+
+syntax([],Pool,_,_,_):-
+   true|
+   Pool = [].
+syntax([{Fep,telnet(Port),Proc}|Next],Pool,Feps,Procs,N):-
+   N1 := N + 1,
+   Port > 0|
+   Pool = [{Statf,normal(telnet(Port)),Statp}|NPool],
+   fep(Fep,Feps,Statf,N),
+   proc(Proc,Procs,Statp,N),
+   syntax(Next,NPool,Feps,Procs,N1).
+otherwise.
+syntax([{Fep,LAN,Proc}|Next],Pool,Feps,Procs,N):-
+   N1 := N + 1|
+   Pool = [{Statf,Statl,Statp}|NPool],
+   fep(Fep,Feps,Statf,N),
+   lan(LAN,Statl,N),
+   proc(Proc,Procs,Statp,N),
+   syntax(Next,NPool,Feps,Procs,N1).
+otherwise.
+syntax(_,Pool,_,_,N):-
+   true|
+   login_error:e(login,syntax,2,N),
+   Pool = [{abnormal,abnormal,abnormal}].
+
+requestPool(In,Out):-
+   true|
+   requestPool(In,[],[],[],Out).
+
+%requestPool(In,PSIIn,PSIOut,TELNET,Out)
+
+requestPool([{normal(Fep),normal(local),normal(Node)}|Next],
+            PsiIn,PsiOut,Telnet,Out):-
+   true|
+   modifyPsi(Fep,Node,local,PsiIn,PsiOut,PsiInN,PsiOutN),
+   requestPool(Next,PsiInN,PsiOutN,Telnet,Out).
+requestPool([{normal(Fep),normal(tcpip),normal(Node)}|Next],
+            PsiIn,PsiOut,Telnet,Out):-
+   true|
+   modifyPsi(Fep,Node,tcpip,PsiIn,PsiOut,PsiInN,PsiOutN),
+   requestPool(Next,PsiInN,PsiOutN,Telnet,Out).
+requestPool([{normal(Fep),normal(lia),normal(Node)}|Next],
+            PsiIn,PsiOut,Telnet,Out):-
+   true|
+   modifyPsi(Fep,Node,lia,PsiIn,PsiOut,PsiInN,PsiOutN),
+   requestPool(Next,PsiInN,PsiOutN,Telnet,Out).
+requestPool([{normal(Fep),normal(telnet(Port)),normal(Node)}|Next],
+            PsiIn,PsiOut,Telnet,Out):-
+   true|
+   modifyTelnet(Fep,Node,Port,Telnet,TelnetN),
+   requestPool(Next,PsiIn,PsiOut,TelnetN,Out).
+requestPool([],PsiIn,PsiOut,Telnet,Out):-
+   true|
+   Out = normal({PsiIn,PsiOut,Telnet}).
+otherwise.
+requestPool(_,_,_,_,Out):-
+   true|
+   Out = abnormal.
+
+%%%%%%%%
+modifyPsi(Fep,Node,Lan,PsiIn,PsiOut,PsiInN,PsiOutN):-
+   true|
+   modifyPsiIn(Fep,Node,Lan,PsiIn,PsiInN),
+   modifyPsiOut(Fep,Node,PsiOut,PsiOutN).
+
+modifyPsiIn(Fep,Node,Lan,[],PsiInN):-
+   true|
+   PsiInN = [{Fep,Node,[Lan]}].
+modifyPsiIn(Fep,_,Lan,[{Fep,Node0,LANS}|PsiIn2],PsiInN):-
+   true|
+   modifyLan(Lan,LANS,NLANS),
+   PsiInN = [{Fep,Node0,NLANS}|PsiIn2].
+modifyPsiIn(Fep,Node,Lan,[{Fep0,Node0,LANS}|PsiIn2],PsiInN):-
+   Fep \= Fep0|
+   PsiInN = [{Fep0,Node0,LANS}|PsiInN2],
+   modifyPsiIn(Fep,Node,Lan,PsiIn2,PsiInN2).
+
+modifyPsiOut(Fep,Node,[],PsiOutN):-
+   true|
+   PsiOutN = [{Fep,Node}].
+modifyPsiOut(Fep,_,[{Fep,Node0}|PsiOut2],PsiOutN):-
+   true|
+   PsiOutN = [{Fep,Node0}|PsiOut2].
+modifyPsiOut(Fep,Node,[{Fep0,Node0}|PsiOut2],PsiOutN):-
+   Fep \= Fep0|
+   PsiOutN = [{Fep0,Node0}|PsiOutN2],
+   modifyPsiOut(Fep,Node,PsiOut2,PsiOutN2).
+
+modifyLan(Lan,[],NLANS):-
+   true|
+   NLANS = [Lan].
+modifyLan(Lan,[Lan|LANS],NLANS):-
+   true|
+   NLANS = [Lan|LANS].
+modifyLan(Lan,[Lan0|LANS],NLANS):-
+   Lan \= Lan0 |
+   NLANS = [Lan0|NLANSN],
+   modifyLan(Lan,LANS,NLANSN).
+
+modifyTelnet(Fep,Node,Port,[],TelnetN):-
+   true|
+   TelnetN = [{Fep,Node,Port}].
+modifyTelnet(Fep,_,[{Fep,Node0,Port0}|Telnet2],Port,TelnetN):-
+   true|
+   TelnetN = [{Fep,Node0,Port0}|Telnet2].
+modifyTelnet(Fep,Node,Port,[{Fep0,Node0,Port0}|Telnet2],TelnetN):-
+   Fep \= Fep0|
+   TelnetN = [{Fep0,Node0,Port0}|TelnetN2],
+   modifyTelnet(Fep,Node,Port,Telnet2,TelnetN2).
+
+%%%%%%%
+fep(Fep,Feps,Statf,_):-
+   Fep < Feps,
+   0 =< Fep |
+   Statf = normal(Fep).
+otherwise.
+fep(Fep,Feps,Statf,N):-
+   true|
+   login_error:e(login,fep,1,N),
+   Statf = abnormal.
+
+lan(tcpip,Statl,_):-
+   true|
+   Statl = normal(tcpip).
+lan(lia,Statl,_):-
+   true|
+   Statl = normal(lia).
+lan(local,Statl,_):-
+   true|
+   Statl = normal(local).
+lan(telnet,Statl,_):-
+   true|
+   Statl = normal(telnet).
+otherwise.
+lan(_,Statl,N):-
+   true|
+   login_error:e(login,lan,1,N),
+   Statl = abnormal.
+
+proc(Proc,Procs,Statp,_):-
+   Proc < Procs,
+   0 =< Proc |
+   Statp = normal(Proc).
+otherwise.
+proc(_,_,Statp,N):-
+   true|
+   login_error:e(login,proc,1,N),
+   Statp = abnormal.
+
+status3(normal(Request),Part,Log,Feps,Procs,Status):-
+   true|
+   part(Part,Log,Request,Feps,Procs,Status).
+otherwise.
+status3(_,_,_,_,_,Status):-
+   true|
+   Status = abnormal.
+
+part([],Log,Request,_,_,Status):-
+%  default whole processors and multiple users
+   true|
+   log(Log,Request,none,Status).
+part([{Proc,Mode,FepList}*Parts|Next],Log,Req,Feps,Procs,Status):-
+   true|
+   partproc(Proc,Parts,Procs,NProcs,Statp,1),
+   partmode(Mode,Statm,1),
+   partfep(FepList,Feps,Statf,1),
+   partPool([{Statp,Statm,Statf}|NPool],Out),
+   part(Next,NPool,Feps,NProcs,2),
+   status4(Out,Log,Req,Status).
+part([{Proc,Mode,FepList}|Next],Log,Req,Feps,Procs,Status):-
+   Proc \= '*'|
+   partproc(Proc,1,Procs,NProcs,Statp,1),
+   partmode(Mode,Statm,1),
+   partfep(FepList,Feps,Statf,1),
+   partPool([{Statp,Statm,Statf}|NPool],Out),
+   part(Next,NPool,Feps,NProcs,2),
+   status4(Out,Log,Req,Status).
+otherwise.
+part(_,_,_,_,_,Status):-
+   true|
+   login_error:e(login,part,1),
+   Status = abnormal.
+
+part([{Proc,Mode,FepList}*Parts|Next],Pool,Feps,Procs,N):-
+   N1 := N + 1|
+   partproc(Proc,Parts,Procs,NProcs,Statp,N),
+   partmode(Mode,Statm,N),
+   partfep(FepList,Feps,Statf,N),
+   Pool = [{Statp,Statm,Statf}|NPool],
+   part(Next,NPool,Feps,NProcs,N1).
+part([{Proc,Mode,FepList}|Next],Pool,Feps,Procs,N):-
+   N1 := N + 1|
+   partproc(Proc,1,Procs,NProcs,Statp,N),
+   partmode(Mode,Statm,N),
+   partfep(FepList,Feps,Statf,N),
+   Pool = [{Statp,Statm,Statf}|NPool],
+   part(Next,NPool,Feps,NProcs,N1).
+part([],Pool,_,0,_):-
+   true|
+   Pool = [].
+part([],Pool,Feps,Procs,_):-
+   Procs \= 0|
+   login_error:e(login,part,2),
+   make_fep_list(Feps,FepList),
+   Pool = [{normal(Procs,1),normal(multiple),normal(FepList)}].
+otherwise.
+part(_,Pool,_,_,N):-
+   true|
+   login_error:e(login,part,3,N),
+   Pool = [{abnormal,abnormal,abnormal}].
+make_fep_list(Feps,FepList):-
+   true|
+   make_fep_list(Feps,[],FepList).
+make_fep_list(0,Result,FepList):-
+   true|
+   Result = FepList.
+otherwise.
+make_fep_list(N,Result,FepList):-
+   N1 := N - 1|
+   make_fep_list(N1,[N1|Result],FepList).
+
+partproc(Proc,Parts,Procs,NProcs,Statp,N):-
+   Proc > 0,
+   Parts > 0,
+   Procs1 := Proc*Parts,
+   Procs1 =< Procs|
+   NProcs  := Procs - Procs1,
+   Statp = normal(Proc,Parts).
+otherwise.
+partproc(_,_,Procs,NProcs,Statp,N):-
+   true|
+   login_error:e(login,partproc,1,N),
+   Statp = abnormal,
+   Procs = NProcs.
+partmode(single,Statm,_):-
+   true|
+   Statm = normal(single).
+partmode(multiple,Statm,_):-
+   true|
+   Statm = normal(multiple).
+otherwise.
+partmode(_,Statm,N):-
+   true|
+   login_error:e(login,partmode,1,N),
+   Statm = abnormal.
+partfep([],Feps,Statf,_):-
+   true|
+   Statf = normal([0]).
+otherwise.
+partfep(FepList,Feps,Statf,N):-
+   true|
+   partfep(FepList,Feps,Res,Res,Statf,N).
+partfep([],_,Tail,Top,Statf,_):-
+   true|
+   Tail = [],
+   Statf = normal(Top).
+partfep([F|Next],Feps,Tail,Top,Statf,N):-
+   F >= 0,
+   F < Feps|
+   Tail = [F|TailN],
+   partfep(Next,Feps,TailN,Top,Statf,N).
+otherwise.
+partfep(_,_,Tail,_,Statf,N):-
+   true|
+   login_error:e(login,partfep,1,N),
+   Tail = [],
+   Statf = abnormal.
+
+%partPool([{Statp,Statm,Statf}|NPool],Out),
+partPool(Pool,Out):-
+   true|
+   partPool(Pool,Res,Res,Out).
+partPool([],Tail,Head,Out):-
+   true|
+   Tail = [],
+   Out = normal(Head).
+partPool([{normal(Proc,1),normal(Mode),normal(FepList)}|Next],
+         Tail,Head,Out):-
+   true|
+   Tail = [{Proc,Mode,FepList}|TailN],
+   partPool(Next,TailN,Head,Out).
+partPool([{normal(Proc,N),normal(Mode),normal(FepList)}|Next],
+         Tail,Head,Out):-
+   N < 1|
+   partPool(Next,Tail,Head,Out).
+otherwise.
+partPool([{normal(Proc,Parts),normal(Mode),normal(FepList)}|Next],
+         Tail,Head,Out):-
+   Parts1 := Parts - 1|
+   Tail = [{Proc,Mode,FepList}|TailN],
+   partPool([{normal(Proc,Parts1),
+              normal(Mode),normal(FepList)}|Next],TailN,Head,Out).
+otherwise.
+partPool(_,Tail,_,Out):-
+   true|
+   Tail = [],
+   Out = abnormal.
+
+status4(normal(Procs),Log,Req,Status):-
+   true|
+   log(Log,Req,Procs,Status).
+otherwise.
+status4(_,_,_,Status):-
+   true|
+   login_error:e(login,status4,1),
+   Status = abnormal.
+
+log(on,Req,Procs,Status):-
+   true|
+   Status = normal(Req,Procs,on).
+log(off,Req,Procs,Status):-
+   true|
+   Status = normal(Req,Procs,off).
+otherwise.
+log(_,_,_,Status):-
+   true|
+   login_error:e(login,log,1),
+   Status = abnormal.
+
+%%%%%%%
+status3(abnormal,GR,_):-
+   true|
+   GR = [],
+   shutdown:go.
+status3(normal(Req,Procs,Log),GR,Feps):-
+   true|
+   GR = [request_anyway(login_server,_,Res)|GRN],
+   wait_status3(Res,{Req,Feps},Procs,Log,GRN).
+
+wait_status3(normal(LOGIN),Req,Procs,Log,GR):-
+   true|
+   LOGIN = [reset(RESET)|LOGINN],
+   wait_status31(RESET,LOGINN,Req,Procs,Log,GR).
+otherwise.
+wait_status3(_,Req,Procs,Log,GR):-
+   display_console(ascii#"LOGIN: NO LOGINS SERVER")|
+   GR = [].
+
+wait_status31(normal(_,_,_),LOGIN,Req,Procs,Log,GR):-
+   true|
+   GR = [file(FR)],
+   wait_status32(FR,LOGIN,Req,Procs,Log).
+otherwise.
+wait_status31(_,LOGIN,Req,Procs,Log,GR):-
+   display_console(ascii#"LOGIN: Fatal Error")|
+   LOGIN = [], GR = [].
+
+wait_status32(normal(FR,_,_),LOGIN,Req,Procs,Log):-
+   true|
+   user_and_group(FR,Status),
+   wait_status33(Status,LOGIN,Req,Procs,Log).
+otherwise.
+wait_status32(_,LOGIN,Req,Procs,Log):-
+   display_console(ascii#"LOGIN: Fatal Error")|
+   LOGIN = [].
+
+wait_status33(normal(U,G),LOGIN,Req,Procs,Log):-
+   true|
+   LOGIN = [setup_user_and_package(U,G,"pimos:pimos.logins",
+                                   "pimos:pimos.groups",Res)|LOGINN],
+   wait_status34(Res,LOGINN,Req,Procs,Log).
+otherwise.
+wait_status33(_,LOGIN,Req,Procs,Log):-
+   display_console(ascii#"LOGIN: Fatal Error")|
+   LOGIN = [].
+
+wait_status34(normal,LOGIN,Req,none,Log):-
+   true|
+   wait_status36(Log,LOGIN,Req).
+wait_status34(normal,LOGIN,Req,List,Log):-
+   list(List)|
+   current_node(S,N),
+   LOGIN = [setup_partition(List,S,N,Res)|LOGINN],
+   wait_status35(Res,LOGINN,Req,Log).
+otherwise.
+wait_status34(_,LOGIN,_,_,_):-
+   display_console(ascii#"LOGIN: ERROR IN USER OR GROUP FILE")|
+   LOGIN = [].
+
+wait_status35(normal,LOGIN,Req,Log):-
+   true|
+   wait_status36(Log,LOGIN,Req).
+otherwise.
+wait_status35(_,LOGIN,Req,Log):-
+   display_console(ascii#"LOGIN: ERROR IN USER OR GROUP FILE")|
+   LOGIN = [].
+
+wait_status36(on,LOGIN,Req):-
+   true|
+   LOGIN = [setup_logging(logon("pimos:pimos.log"),Res)|LOGINN],
+   wait_status37(Res,LOGINN,Req).
+otherwise.
+wait_status36(_,LOGIN,Req):-
+   true|
+   LOGIN = [],
+   request(Req).
+
+wait_status37(normal,LOGIN,Req):-
+   true|
+   LOGIN = [],
+   request(Req).
+otherwise.
+wait_status37(_,LOGIN,Req):-
+   display_console(ascii#"LOGIN: ERROR in LOGGING PARAM.")|
+   LOGIN = [].
+
+%%%% user & group
+%
+% user_setup(FR,User,UserN,Group,GroupN,Atom,AtomN,Mod,Status),
+%   status_request(Status,Req,UserN,GroupN,TR,AtomN,PART).
+
+%:- switch(machine).
+%:- case(vm).
+user_and_group(FR,Status):-
+   true|
+   FR = [open(string#"pimos:pimos.logins",read(F)),
+         open(string#"pimos:pimos.groups",read(F2))|FRN],
+   merge({FR1,FR2},FRN),
+   wait_setup(F,FR1,Status2),
+   wait_setup2(F2,Status2,FR2,Status3),
+   wait_setup3(Status3,Status).
+
+wait_setup(normal(In0,_,_),FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup(Res,InN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup(_,FR,Status):-
+   true|
+   login_error:i(request,wait_setup_success,2,0,C),
+   wait_setup_retry(C,FR,Status).
+
+wait_setup(normal(end_of_file),In,FR,Tail,Head,Status,C):-
+   true|
+   In = [],
+   Tail = [],
+   FR = [],
+   Status = normal(Head).
+wait_setup(normal(empty),In,FR,Tail,Head,Status,C):-
+   true|
+   In = [getwt(Res)|InN],
+   wait_setup(Res,InN,FR,Tail,Head,Status,C).
+otherwise.
+wait_setup(normal(WT),In,FR,Tail,Head,Status,C):-
+   variable:unwrap(WT,{_,T},NVP),
+   NVP = [count(N)],
+   wait_setup(N,T,In,FR,Tail,Head,Status,C).
+otherwise.
+wait_setup(abnormal(error({TL,Ps})),In,FR,Tail,_,Status,C0):-
+   true|
+   login_error:i(request,wait_setup,1,{C0,TL,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry(C,FR,Status).
+wait_setup(abnormal(error({TL,Reason,Ps})),In,FR,Tail,_,Status,C0):-
+   true|
+   login_error:i(request,wait_setup,2,{C0,TL,Reason,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry(C,FR,Status).
+wait_setup(abnormal(ambiguous({TL,Ps})),In,FR,Tail,_,Status,C0):-
+   true|
+   login_error:i(request,wait_setup,3,{C0,TL,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry(C,FR,Status).
+
+
+wait_setup(0,T,In,FR,Tail,Head,Status,C):-
+   true|
+   check_user_term(T,Status0),
+   wait_setup_term(Status0,In,FR,Tail,Head,Status,C).
+otherwise.
+wait_setup(_,_,In,FR,Tail,_,Status,C):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success(abnormal,FR,Status,C).
+
+wait_setup_term(normal(T),In,FR,Tail,Head,Status,C):-
+   C1:= C + 1|
+   Tail = [T|TailN],
+   In = [getwt(WT)|InN],
+   wait_setup(WT,InN,FR,TailN,Head,Status,C1).
+otherwise.
+wait_setup_term(_,In,FR,Tail,Head,Status,C):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success(abnormal,FR,Status,C).
+
+wait_setup_success(normal,FR,Status,_):-
+   true|
+   FR = [],
+   Status = normal.
+otherwise.
+wait_setup_success(_,FR,Status,Line):-
+   Line > 0|
+   login_error:i(request,wait_setup_success,1,Line,C),
+   wait_setup_retry(C,FR,Status).
+wait_setup_success(_,FR,Status,Line):-
+   Line < 0|
+   login_error:i(request,wait_setup_success,2,Line,C),
+   wait_setup_retry(C,FR,Status).
+wait_setup_success(_,FR,Status,Line):-
+   Line = 0|
+   login_error:i(request,wait_setup_success,3,Line,C),
+   wait_setup_retry(C,FR,Status).
+
+%:- switch(machine).
+%:- case(vm).
+wait_setup_retry(1,FR,Status):-
+   true|
+   FR = [open(string#"pimos:pimos.logins",read(F))|FRN],
+   wait_setup_retry0(F,FRN,Status).
+%:- default.
+%wait_setup_retry(1,FR,Status):-
+%   true|
+%   FR = [open(string#"pimos:pimos.logins",read(F))|FRN],
+%   wait_setup_retry0(F,FRN,Status).
+%:- end_switch.
+otherwise.
+wait_setup_retry(_,FR,Status):-
+   true|
+   FR = [],
+   Status = abnormal.
+
+wait_setup_retry0(normal(In0,_,_),FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup(Res,InN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup_retry0(_,FR,Status):-
+   true|
+   wait_setup_success(abnormal,FR,Status,-1).
+
+%%%%
+%  group
+
+
+wait_setup2(normal(In0,_,_),normal(US),FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   Status = {normal(US),Status1},
+   wait_setup2(Res,InN,FR,Top,Top,Status1,1).
+otherwise.
+wait_setup2(normal(In0,_,_),_,FR,Status):-
+   true|
+   In0 = [],
+   FR = [],
+   Status = abnormal.
+otherwise.
+wait_setup2(abnormal,_,FR,Status):-
+   true|
+   login_error:i(request,wait_setup_success2,2,0,C),
+   wait_setup_retry2(C,FR,Status).
+otherwise.
+wait_setup2(_,_,FR,Status):-
+   true|
+   FR = [],
+   Status = abnormal.
+
+wait_setup2(normal(end_of_file),In,FR,Tail,Head,Status,_):-
+   true|
+   In = [],
+   Tail = [],
+   FR = [],
+   Status = normal(Head).
+wait_setup2(normal(empty),In,FR,Tail,Head,Status,Line):-
+   true|
+   In = [getwt(Res)|InN],
+   wait_setup2(Res,InN,FR,Tail,Head,Status,Line).
+otherwise.
+wait_setup2(normal(WT),In,FR,Tail,Head,Status,Line):-
+   true|
+   variable:unwrap(WT,{_,T},NVP),
+   NVP = [count(N)],
+   wait_setup2(N,T,In,FR,Tail,Head,Status,Line).
+otherwise.
+wait_setup2(abnormal(error({TL,Ps})),In,FR,Tail,_,Status,Line):-
+   true|
+   login_error:i(request,wait_setup2,1,{Line,TL,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry2(C,FR,Status).
+wait_setup2(abnormal(error({TL,Reason,Ps})),In,FR,Tail,_,Status,Line):-
+   true|
+   login_error:i(request,wait_setup2,2,{Line,TL,Reason,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry2(C,FR,Status).
+wait_setup2(abnormal(ambiguous({TL,Ps})),In,FR,Tail,_,Status,Line):-
+   true|
+   login_error:i(request,wait_setup2,3,{Line,TL,Ps},C),
+   Tail = [],
+   In = [],
+   wait_setup_retry2(C,FR,Status).
+
+wait_setup2(0,T,In,FR,Tail,Head,Status,Line):-
+   true|
+   check_group_term(T,Status0),
+   wait_setup_term2(Status0,In,FR,Tail,Head,Status,Line).
+otherwise.
+wait_setup2(_,_,In,FR,Tail,_,Status,Line):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success2(abnormal,FR,Status,Line).
+
+wait_setup_term2(normal(T),In,FR,Tail,Head,Status,Line):-
+   Line1 := Line + 1|
+   Tail = [T|TailN],
+   In = [getwt(WT)|InN],
+   wait_setup2(WT,InN,FR,TailN,Head,Status,Line1).
+otherwise.
+wait_setup_term2(_,In,FR,Tail,_,Status,Line):-
+   true|
+   Tail = [],
+   In = [],
+   wait_setup_success2(abnormal,FR,Status,Line).
+
+wait_setup_success2(normal,FR,Status,_):-
+   true|
+   FR = [],
+   Status = normal.
+otherwise.
+wait_setup_success2(_,FR,Status,Line):-
+   Line > 0|
+   login_error:i(request,wait_setup_success2,1,Line,C),
+   wait_setup_retry2(C,FR,Status).
+wait_setup_success2(_,FR,Status,Line):-
+   Line < 0|
+   login_error:i(request,wait_setup_success2,2,Line,C),
+   wait_setup_retry2(C,FR,Status).
+wait_setup_success2(_,FR,Status,Line):-
+   Line = 0|
+   login_error:i(request,wait_setup_success2,3,Line,C),
+   wait_setup_retry2(C,FR,Status).
+
+wait_setup_retry2(1,FR,Status):-
+   true|
+   FR = [open(string#"pimos:pimos.groups",read(F))|FRN],
+   wait_setup_retry02(F,FRN,Status).
+otherwise.
+wait_setup_retry2(_,FR,Status):-
+   true|
+   FR = [],
+   Status = abnormal.
+
+wait_setup_retry02(normal(In0,_,_),FR,Status):-
+   true|
+   buffer:input_filter(In,In0),
+   In = [getwt(Res)|InN],
+   wait_setup2(Res,InN,FR,Top,Top,Status,1).
+otherwise.
+wait_setup_retry02(_,FR,Status):-
+   true|
+   wait_setup_success2(abnormal,FR,Status,-1).
+
+%%%%%%%%%%%%%%%%
+check_user_term({UN,Pass,UID,Max,Dir,PE,Prog,Com},Status):-
+   true|
+   username(UN,St0),
+   password(Pass,St1),
+   uid(UID,St2),
+   maxprio(Max,St3),
+   dir(Dir,St4),
+   pe(PE,St5),
+   prog(Prog,St6),
+   com(Com,St7),
+   wait_user_term(St0,St1,St2,St3,St4,St5,St6,St7,Status).
+otherwise.
+check_user_term(_,Status):-
+   true|
+   Status = abnormal.
+
+wait_user_term(normal(UN),normal(Pass),normal(UID),normal(Max),
+               normal(Dir),normal(PE),normal(Prog),normal(Com),Status):-
+   true|
+   Status = normal({UN,Pass,UID,Max,Dir,PE,Prog,Com}).
+otherwise.
+wait_user_term(_,_,_,_,_,_,_,_,Status):-
+   true|
+   Status = abnormal.
+
+check_group_term({GN,GID,UList,Com},Status):-
+   true|
+   groupname(GN,St0),
+   gid(GID,St1),
+   ulist(UList,St2),
+   com(Com,St3),
+   wait_group_term(St0,St1,St2,St3,Status).
+otherwise.
+check_group_term(_,Status):-
+   true|
+   Status = abnormal.
+
+wait_group_term(normal(GN),normal(GID),normal(UList),normal(Com),Status):-
+   true|
+   Status = normal({GN,GID,UList,Com}).
+otherwise.
+wait_group_term(_,_,_,_,Status):-
+   true|
+   Status = abnormal.
+
+username(UN,St):- string(UN,_,16)|St = normal(UN).
+otherwise.
+username(_,St):- true| St = abnormal.
+groupname(GN,St):- true| username(GN,St).
+password(Pass,St):- string(Pass,_,16)| St = normal(Pass).
+otherwise.
+password(_,St):- true| St = abnormal.
+uid(UID,St):- UID >= 0 | St = normal(UID).
+otherwise.
+uid(_,St):- true| St = abnormal.
+gid(GID,St):- GID >= 0 | St = normal(GID).
+otherwise.
+gid(_,St):- true| St = abnormal.
+maxprio(Max,St):- Max >= 0, Max =< 4096 | St = normal(Max).
+otherwise.
+maxprio(_,St):- true | St = abnormal.
+dir(Dir,St):- string(Dir,_,16)| St = normal(Dir).
+dir(*,St):-  true| St = normal(*).
+otherwise.
+dir(_,St):- true| St = abnormal.
+pe(PE,St):- 0 =< PE | St = normal(PE).
+pe(*,St):- true | St = normal(*).
+otherwise.
+pe(_,St):- true| St = abnormal.
+prog(Pak::Mod:Prog,St):- vector(Prog,N),N > 1,
+   atom(Pak),atom(Mod),vector_element(Prog,0,E),
+   atom(E)|
+   St = normal(Pak::Mod:Prog).
+prog(Mod:Prog,St):- vector(Prog,N),N > 1,
+   atom(Mod),vector_element(Prog,0,E),
+   atom(E)|
+   St = normal(Mod:Prog).
+prog(Pak::Mod:Prog,St):- atom(Prog),
+   atom(Pak),atom(Mod)|
+   St = normal(Pak::Mod:Prog).
+prog(Mod:Prog,St):- atom(Prog),
+   atom(Mod)|
+   St = normal(Mod:Prog).
+otherwise.
+prog(_,St):- true| St = abnormal.
+ulist(UList,St):- true|
+   ulist(UList,Tail,Tail,St).
+ulist([],Tail,Head,St):-
+   true|
+   Tail = [],
+   St = normal(Head).
+ulist([U|UList],Tail,Head,St):-
+   string(U,_,_)|
+   Tail = [U|TailN],
+   ulist(UList,TailN,Head,St).
+otherwise.
+ulist(_,_,_,St):-
+   true|
+   St = abnormal.
+
+com(Com,St):- true| com(Com,Med,Med,St).
+com([],Tail,Head,St):- true| Tail = [], St = normal(Head).
+com([S|Next],Tail,Head,St):- string(S,_,16)|
+   Tail = [S|TailN],
+   com(Next,TailN,Head,St).
+
+
+wait_setup3({normal(U),normal(G)},Status):-
+   true|
+   Status = normal(U,G).
+
+
+
+%%%%%%%%%%%%%% request
+
+%request(Req,Login)
+request({{PSIIN,PSIOUT,TELNET},Feps}):-
+   true|
+   make_psiout(PSIOUT,Status,Feps),
+   wait_request(Status,PSIIN,TELNET,Feps).
+
+wait_request(normal(PSIOUT),PSIIN,TELNET,Feps):-
+   vector(PSIOUT,N),N > 0|
+   make_psiin(PSIIN,PSIOUT,Feps),
+   telnet_login:make_telnet(TELNET,Feps).
+otherwise.
+wait_request(_,_,TELNET,Feps):-
+   true|
+   telnet_login:make_telnet(TELNET,Feps).
+
+make_psiout(In,Status,Feps):-
+   true|
+   make_new_vector(Vec,Feps),
+   make_psiout2(In,Status,Feps,Vec).
+
+make_new_vector(Vec,Feps):-
+   true|
+   new_vector(Vec0,Feps),
+   make_new_vector(Vec0,Vec,Feps).
+
+make_new_vector(Vec0,Vec,0):-
+   true|
+   Vec0 = Vec.
+otherwise.
+make_new_vector(Vec0,Vec,N):-
+   N1 := N - 1|
+   set_vector_element(Vec0,N1,_,_,Vec1),
+   make_new_vector(Vec1,Vec,N1).
+
+make_psiout2([],Status,_,Vec):-
+   true|
+   Status = normal(Vec).
+make_psiout2([{Fep,Node}|In],Status,Feps,Vec):-
+   true|
+   make_psiout21(Fep,Res)@node(Node),
+   wait_make_psiout2(Res,In,Status,Feps,Fep,Vec).
+
+make_psiout21(Fep,Res):-
+   true|
+   shoen:raise(pimos_tag#task,general_request(Fep),
+               [string_io(STR)]),
+   wait_psiout(STR,Res).
+
+wait_psiout(normal(STR,_,_),Res):-
+   true|
+   STR = [create(string#"pimos_remote_login_replier",St)],
+   wait_psiout3(St,Res).
+
+wait_psiout3(normal(Rep,_,_),Res):-
+   true|
+   Rep = [io(0,string#"",St)|RepN],
+   wait_psiout30(St,RepN,Res).
+
+wait_psiout30(normal(_),Rep,Res):-
+   true|
+   merge(RepIn,Rep),
+   Res = normal(RepIn).
+
+wait_make_psiout2(normal(Rep),In,Status,Feps,Fep,Vec):-
+   true|
+   set_vector_element(Vec,Fep,_,Rep,VecN),
+   make_psiout2(In,Status,Feps,VecN).
+
+make_psiin([],PSIOUT,_):-
+   true|
+   close_vector(PSIOUT).
+otherwise.
+make_psiin(In,PSIOUT,Feps):-
+   true|
+   make_psiin2(In,PSIOUT,Feps).
+
+make_psiin2([],PSIOUT,_):-
+   true|
+   close_vector(PSIOUT).
+make_psiin2([{Fep,Node,[LAN|LANS]}|In],PSIOUT,Feps):-
+   true|
+   get_psiout(Fep,Feps,Res,PSIOUT,PSIOUTN),
+   make_psiin21(Res,Fep,LAN)@node(Node),
+   make_psiin2([{Fep,Node,LANS}|In],PSIOUTN,Feps).
+make_psiin2([{_,_,[]}|In],PSIOUT,Feps):-
+   true|
+   make_psiin2(In,PSIOUT,Feps).
+
+close_vector(PSIOUT):- vector(PSIOUT,N)|
+   close_vector(N,PSIOUT).
+
+close_vector(0,PSIOUT):- true| true.
+otherwise.
+close_vector(N,PSIOUT):- N1 := N - 1 |
+   set_vector_element(PSIOUT,N1,[],0,PSIOUTN),
+   close_vector(N1,PSIOUTN).
+
+get_psiout(Fep,Feps,Res,PSIOUT,PSIOUTN):-
+   0 =< Fep,
+   Fep < Feps|
+   set_vector_element(PSIOUT,Fep,Out,Out2,PSIOUTN),
+   Out = {Out1,Out2},
+   Res = normal(Out1).
+otherwise.
+get_psiout(_,_,Res,PSIOUT,PSIOUTN):-
+   true|
+   Res = abnormal,
+   PSIOUT = PSIOUTN.
+
+make_psiin21(normal(Out),Fep,LAN):-
+   true|
+   shoen:raise(pimos_tag#task,general_request(Fep),
+               [string_io(STR)]),
+   wait_psiin(STR,LAN,Fep,Out).
+
+wait_psiin(normal(STR,_,_),LAN,Fep,Out):-
+   true|
+   STR = [create(string#"pimos_remote_login_server",St)],
+   wait_psiin3(St,LAN,Fep,Out).
+otherwise.
+wait_psiin(_,_,_,Out):-
+   true|
+   Out = [].
+
+wait_psiin3(normal(Ser,_,_),local,Fep,Out):-
+   true|
+   Ser = [io(0,"local",St)|SerN],
+   wait_psiin30(St,SerN,Fep,"local",Out).
+wait_psiin3(normal(Ser,_,_),tcpip,Fep,Out):-
+   true|
+   Ser = [io(0,"tcpip",St)|SerN],
+   wait_psiin30(St,SerN,Fep,"tcpip",Out).
+wait_psiin3(normal(Ser,_,_),lia,Fep,Out):-
+   true|
+   Ser = [io(0,"lia",St)|SerN],
+   wait_psiin30(St,SerN,Fep,"lia",Out).
+otherwise.
+wait_psiin3(_,_,_,Out):-
+   true|
+   Out = [].
+
+wait_psiin30(normal(_),Ser,Fep,"local",Out):-
+   display_console(ascii#"LOCAL  LOGIN SERVICE STARTS ***"),
+   display_console(Fep)|
+   Ser = [io(1,string#"  ",St)|SerN],
+   psi_login(St,SerN,Out,Fep,"local").
+wait_psiin30(normal(_),Ser,Fep,"tcpip",Out):-
+   display_console(ascii#"TCPIP  LOGIN SERVICE STARTS ***"),
+   display_console(Fep)|
+   Ser = [io(1,string#"  ",St)|SerN],
+   psi_login(St,SerN,Out,Fep,"tcpip").
+wait_psiin30(normal(_),Ser,Fep,"lia",Out):-
+   display_console(ascii#"LIA    LOGIN SERVICE STARTS ***"),
+   display_console(Fep)|
+   Ser = [io(1,string#"  ",St)|SerN],
+   psi_login(St,SerN,Out,Fep,"lia").
+otherwise.
+wait_psiin30(_,Ser,Fep,"local",Out):-
+   display_console(ascii#"CANNOT MAKE A LOCAL LOGIN SERVICE!!"),
+   display_console(Fep)|
+   Ser = [], Out = [].
+wait_psiin30(_,Ser,Fep,"tcpip",Out):-
+   display_console(ascii#"CANNOT MAKE A TCPIP LOGIN SERVICE!!"),
+   display_console(Fep)|
+   Ser = [], Out = [].
+wait_psiin30(_,Ser,Fep,"lia",Out):-
+   display_console(ascii#"CANNOT MAKE A LIA LOGIN SERVICE!!"),
+   display_console(Fep)|
+   Ser = [], Out = [].
+
+psi_login(normal(NI),Ser,Out,Fep,LAN):-
+   true|
+   get_node_info(NI,Fep,Res),
+   wait_psi_login(Res,Ser,Out,Fep,LAN).
+otherwise.
+psi_login(_,Ser,Out,Fep,_):-
+   display_console(ascii#"CANNOT MAKE A REMOTE DEVICE!!"),
+   display_console(Fep)|
+   Ser = [], Out = [].
+
+wait_psi_login(normal(ID,IONode,UN,UP,RN,RP),Ser,Out,Fep,LAN):-
+   true|
+   make_message(string#"Login procedure starts.",ID,Mes),
+%   make_id(MesID,ID),
+%   Out = [io(1,Mes,_),io(2,MesID,_)|OutN],
+   Out = [io(1,Mes,_)|{OutM,OutN}],
+   Ser = [io(1," ",Res)|SerN],
+   psi_login(Res,SerN,OutN,Fep,LAN),
+   shoen:raise(pimos_tag#task,general_request(Fep,IONode,RN,RP),
+               [file(FR)|GRN]),
+   psi_login2(FR,UN,UP,Fep,IONode,RN,RP,GRN,LAN,OutM,ID).
+otherwise.
+wait_psi_login(_,Ser,Out,Fep,LAN):-
+   display_console(ascii#"LOGIN:ERROR In SIMPOS DEVICE.")|
+   Ser = [io(1," ",Res)|SerN],
+   psi_login(Res,SerN,Out,Fep,LAN).
+
+psi_login2(normal(FR,_,_),UN,UP,Fep,IONode,RN,RP,GR,LAN,Out,ID):-
+   true|
+   get_window_param(FR,Res),
+   psi_login3(Res,UN,UP,Fep,IONode,RN,RP,GR,LAN,Out,ID).
+otherwise.
+psi_login2(_,_,_,_,_,_,_,GR,_,Out,_):-
+   true|
+   GR = [], Out = [].
+
+psi_login3(Param,UN,UP,Fep,IONode,RN,RP,GR,LAN,Out,ID):-
+   vector(Param,_)|
+   get_psi_login_code(UN,UP,Fep,IONode,RN,RP,LAN,Out,ID,Code,Args),
+   get_resource(RH,RL),
+   GR = [execute(Code,Args,
+                 [resource(RH,RL),
+%                  io_node(IONode),
+%                  remote(RN,RP),
+                  name("login"),
+                  tag(-1),
+                  stdio([in_out_inter({window_request,Param,St})],St2)],
+                 Res)|GRN],
+   wait_psi_login3(Res,St,St2,GRN).
+
+wait_psi_login3(normal(Cont,Rep),St,St2,GR):-
+   true|
+   wait_psi_login31(St,St2,GR,Rep,Cont).
+otherwise.
+wait_psi_login3(_,_,_,GR):-
+   true|
+   GR = [].
+
+wait_psi_login31(St1,St2,GR,Rep,Cont):-
+   wait(St1),wait(St2)|
+   GR = [],
+   task_monitor(Rep,Cont).
+
+
+login(UN,UP,Fep,IONode,RN,RP,LAN,Out,ID):-
+   true|
+   shoen:raise(pimos_tag#task,general_request,
+               [setenv(task:user,UN,_),
+                request(login_server,_,Res)]),
+   wait_login(Res,UN,UP,Fep,IONode,RN,RP,LAN,Out,ID).
+
+wait_login(normal(LS),UN,UP,Fep,IONode,RN,RP,LAN,Out,ID):-
+   true|
+   LS = [reset(_),login(UN,UP,Res)|LSN],
+   wait_login2(Res,LSN,UN,UP,Fep,IONode,RN,RP,LAN,Out,ID).
+otherwise.
+wait_login(_,_,_,_,_,_,_,_,_,_):-
+   true|
+   true.
+
+wait_login2(normal(Code,Args,UInfo,P,LO),LS,UN,_,Fep,IONode,RN,RP,LAN,Out,ID):-
+   true|
+   make_messagel("OK. Your initial program starts.",ID,Msg1),
+   make_messagel("Good luck!",ID,Msg2),
+   make_id(MesID,ID),
+   Out = [io(1,Msg1,_),io(1,Msg2,_),io(2,MesID,_)],
+   set_vector_element(UInfo,2,Dir,0,_),
+   login_p:go({P,Fep,IONode,RN,RP,LAN,Dir},Code,Args,UN,LO),
+   LS = [].
+otherwise.
+wait_login2(_,LS,_,_,_,_,_,_,_,Out,ID):-
+   true|
+   make_id(MesID,ID),
+   make_message("Login incorrect",ID,Msg),
+   Out = [io(1,Msg,_),io(2,MesID,_)],
+   LS = [].
+
+%%%%%%%%%%%%%%%  window init
+get_window_param(FR,Param):-
+   true|
+   FR = [open(string#"me:pimos.init",read(FF))],
+   wait_window_init2(FF,Param).
+
+wait_window_init2(normal(F,_,_),Param):-
+   true|
+   buffer:input_filter(FIn,F),
+   FIn = [getwt(WT)|FN],
+   wait_window_init3(WT,FN,Param).
+otherwise.
+wait_window_init2(_,Param):-
+   true|
+   window_default_init(Param).
+
+wait_window_init3(normal(end_of_file),F,Param):-
+   true|
+   F = [],
+   window_default_init(Param).
+wait_window_init3(normal(empty),F,Param):-
+   true|
+   F = [getwt(WT)|FN],
+   wait_window_init3(WT,FN,Param).
+otherwise.
+wait_window_init3(normal(WT),F,Param):-
+   true|
+   F = [],
+   variable:unwrap(WT,{_,T},[count(N)]),
+   wait_window_init4(N,T,Param).
+otherwise.
+wait_window_init3(_,F,Param):-
+   true|
+   F = [],
+   window_default_init(Param).
+
+wait_window_init4(0,console_window(Pos,Size,Font),Param):- string(Font,_,_)|
+   pos_check(Pos,ST1),
+   size_check(Size,ST2),
+   wait_window_init5(ST1,ST2,Font,Param).
+wait_window_init4(0,console_window(Pos,Size,Font),Param):- vector(Font,3),
+      vector_element(Font,1,(string)),
+      vector_element(Font,0,(#)),
+      vector_element(Font,2,Str),
+      string(Str,_,_)|
+   pos_check(Pos,ST1),
+   size_check(Size,ST2),
+   wait_window_init5(ST1,ST2,Font,Param).
+otherwise.
+wait_window_init4(_,_,Param):-
+   true|
+   window_default_init(Param).
+
+pos_check(at(X,Y),St):-
+   X >= 0, Y >= 0| St = normal(at(X,Y)).
+pos_check(mouse,St):-
+   true| St = normal(mouse).
+otherwise.
+pos_check(_,St):-
+   true| St = abnormal.
+size_check(char(X,Y),St):-
+   X >= 1, Y >= 1|
+   St = normal(char(X,Y)).
+size_check(mouse,St):-
+   true| St = normal(mouse).
+otherwise.
+size_check(_,St):-
+   true| St = abnormal.
+
+wait_window_init5(normal(Pos),normal(Size),Font,Param):-
+   true|
+   Param = {string#"PIMOS CONSOLE",Pos,Size,Font}.
+otherwise.
+wait_window_init5(_,_,_,Param):-
+   true|
+   window_default_init(Param).
+
+window_default_init(Param):-
+   true|
+   Param = {string#"PIMOS CONSOLE",
+            at(200,200),char(47,14),
+            string#"font:test_11.font"}.
+
+%%%% task_monitor
+task_monitor([],_):-
+   true|
+   true.
+task_monitor([terminated|Rep],Cont):-
+   true|
+   Cont = [],
+   task_monitor(Rep,_).
+task_monitor([resource_low|Rep],Cont):-
+   true|
+   get_resource(RSC1,RSC2),
+   Cont = [add_resource(RSC1,RSC2),resource_report_allowed|ContN],
+   task_monitor(Rep,ContN).
+task_monitor([aborted|Rep],Cont):-
+   true|
+   Cont = [],
+   task_monitor(Rep,_).
+task_monitor([exception(A,B,NC,NA)|Rep],Cont):-
+   display_console(ascii#"EXCEPTION:"),
+   display_console(A),
+   display_console(B)|
+   login_server:warning(A,B,Wait),
+   warn_task_monitor(Wait,NC,NA,Rep,Cont).
+otherwise.
+task_monitor([_|Rep],Cont):-
+   true|
+   task_monitor(Rep,Cont).
+
+warn_task_monitor(Wait,NC,NA,Rep,Cont):-
+   wait(Wait)|
+   predicate_to_code(module#login_server,dummy,1,NC),
+   NA = {Logout},
+   Cont = [abort(_)|ContN],
+   task_monitor(Rep,ContN).
+
+get_resource(RSC1,RSC2):-
+   true|
+   RSC1 = 16#"FFFFFF",
+   RSC2 = 16#"FFFFFFFF".
+
+make_message(Mes,ID,Out):-
+   string(Mes,N,E)|
+   new_string(Out0,~(N+1),E),
+   builtin#set_substring(Out0,1,Mes,Out1),
+   set_string_element(Out1,0,ID,Out).
+make_messagel(Mes,ID,Out):-
+   string(Mes,N,E)|
+   new_string(IDM,1,16),
+   set_string_element(IDM,0,ID,IDMN),
+   new_string(LF,1,16),
+   set_string_element(LF,0,key#lf,LFN),
+   builtin#append_string([IDMN,Mes,LFN],Out).
+
+make_id(Mes,ID):-
+   true|
+   new_string(Mes0,1,16),
+   set_string_element(Mes0,0,ID,Mes).
+
+%get_psi_login_code(UN,UP,Fep,IONode,RN,RP,LAN,Out,ID,Code,Args):-
+%   true|
+%   predicate_to_code(module#login,login,9,Code),
+%   Args = {UN,UP,Fep,IONode,RN,RP,LAN,Out,ID}.
+
+%execute_user_goal(Program)
+get_psi_login_code(UN,UP,Fep,IONode,RN,RP,LAN,Out,ID,Code,Args):-
+   true|
+   predicate_to_code(module#login,execute_user_goal,1,Code),
+   Args = {login:login(UN,UP,Fep,IONode,RN,RP,LAN,Out,ID)}.
+
+get_node_info(NI,Fep,Res):-
+    true|
+    Res = normal(ID,Node,UN,UP,RN,RP),
+    string_element(NI ,0,ID,NI0),
+    string_element(NI0,1,NOL,NI1),
+    string_element(NI1,2,RNL,NI2),
+    string_element(NI2,3,RPL,NI3),
+    string_element(NI3,4,UNL,NI4),
+    string_element(NI4,5,UPL,NI5),
+    local_check(Node0,Fep,Node),
+    get_node_info(NI5,6,[Node0,RN,RP,UN,UP],[NOL,RNL,RPL,UNL,UPL]).
+
+local_check(string#"local",Fep,Node):- true| Node = Fep.
+otherwise.
+local_check(Node0,_,Node):- true| Node0 = Node.
+
+get_node_info(NI,_,[],[]):- true| true.
+get_node_info(NI,From,[Var|NextV],[Len|NextL]):-
+    NextF := From + Len|
+    copy_str(NI,From,Len,Var,NI2),
+    get_node_info(NI2,NextF,NextV,NextL).
+
+copy_str(NI,From,Len,Var,NI2):-
+    true|
+    new_string(Var0,Len,16),
+    copy_str(0,Len,From,Var0,Var,NI,NI2).
+
+copy_str(N,N,_,Var0,Var,NI,NI2):-
+    true|
+    Var0 = Var,
+    NI = NI2.
+otherwise.
+copy_str(M,N,From,Var0,Var,NI,NI2):-
+    M1 := M + 1,
+    From1 := From + 1|
+    string_element(NI,From,E,NI1),
+    set_string_element(Var0,M,E,Var1),
+    copy_str(M1,N,From1,Var1,Var,NI1,NI2).
+
+%%%%%%%%%%%%%%% matsuo.kl1
+% Program = ModuleName:PredicateName(Args)
+%    ModuleName & PredicateName must be atom.
+
+execute_user_goal(Program) :- true |
+    shoen:raise(pimos_tag#task,get_std(switch),[detach(MAKE)|SW]),
+    execute_user_goal_with_stdmes(MAKE, Program, SW).
+
+execute_user_goal_with_stdmes(MAKE, Program, SW) :- wait(MAKE) |
+    shoen:raise(pimos_tag#task,get_std(out),StdMes),
+    waitStat(ID, SW, [attach(ID,_,Detect)|NSW]),
+    stdmes_handler(C, R, NSW, NStdMes, StdMes, ID, Detect),
+    current_node(CPE, _),
+    job:create(job(normal,Program,NStdMes),
+                    C, R, 0, ID, {CPE , 0, 4000, infinite}).
+% Minimum Priority = 0, Maximum Priority = 4000
+% Resource will be added infinitely.
+
+stdmes_handler(C, R, SW, In, Out, ID, Detect) :- wait(Detect) |
+    ( Detect = detected -> SW=[attach(ID,_,NDetect)|NSW] ;
+      Detect = disconnected -> SW=[attach(ID,_,NDetect)|NSW] ;
+      Detect = closed -> SW = NSW, NDetect = _ ;
+      Detect = deserted -> SW = NSW, NDetect = _ ;
+      Detect = non_existent -> SW = NSW, NDetect = _ ;
+      Detect = error -> SW = NSW, NDetect = _ ),
+    stdmes_handler(C, R, NSW, In, Out, ID, NDetect).
+alternatively.
+stdmes_handler(C, [], SW, _, Out, _, _) :- true | C = [], SW = [], Out = [].
+stdmes_handler(C, [Mes|R], SW, In, Out, ID, Detect) :- true |
+    ( Mes = terminated -> C = [],
+        stdmes_handler(_, R, SW, In, Out, ID, Detect) ;
+      Mes = jobTerminated(_,_) -> C = [], SW = [], Out = [] ;
+      Mes = resource_low ->
+        C = [add_resource(0, 1000000000), allow_resource_report | NC],
+        stdmes_handler(NC, R, SW, In, Out, ID, Detect) ;
+      Mes = closeIo(_, Stat) -> Stat = normal,
+        stdmes_handler(C, R, SW, In, Out, ID, Detect) ;
+     otherwise ;
+      true ->
+        stdmes_handler(C, R, SW, In, Out, ID, Detect) ).
+
+stdmes_handler(C, R, SW, [], Out, ID, Detect) :- true |
+    stdmes_handler(C, R, SW, _, Out, ID, Detect).
+
+% Standard Message Handling
+stdmes_handler(C, R, SW, [Mes|In], Out, ID, _) :- true |
+    SW = [detach(Stat1)|NSW],
+    waitStat(Stat1, Out, [Mes, flush(Stat2) | NOut]),
+    waitStat(Stat2, NSW, [attach(ID, Stat3, NDetect)|NNSW]),
+    waitStat(Stat3, R, NR), waitStat(Stat3, In, NIn),
+    stdmes_handler(C, NR, NNSW, NIn, NOut, ID, NDetect).
+
+waitStat(Stat, X, Y) :- wait(Stat) | X = Y.
+
+

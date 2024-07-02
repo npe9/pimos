@@ -1,0 +1,52 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>LIBRARY>error.kl1.13, 28-Nov-90 20:44:56, Edit by yashiro
+:- module '$plib$error'.
+:- with_macro pimos.
+:- public error/3, string/6, string_or_integer/6, integer/4, check_connection/2.
+
+% if other data type appear in the 1st and the 2nd arguments,
+% then reduction failure occured.
+
+error(ID,Info,Data) :-
+    atom(ID),
+    string(Info,_,16) |
+        shoen:raise(pimos_tag#error, '$PIMOS$'(ID,Info),Data).
+        
+string(String,_,_,NSize,NESize,NString) :-
+    string(String,Size,ESize) |
+        String=NString,Size=NSize,ESize=NESize.
+otherwise.
+string(String,Invoker,_,_,_,_) :-
+    true |
+        error(Invoker,string#"illegal input",String).
+
+string_or_integer(String,_,_,NSize,NESize,NString) :-
+    string(String,Size,ESize) |
+        String=NString,Size=NSize,ESize=NESize.
+string_or_integer(Integer,_,_,NSize,NESize,NInteger) :-
+    integer(Integer) |
+        Integer=NInteger,integer=NSize,integer=NESize.
+otherwise.
+string_or_integer(String,Invoker,_,_,_,_) :-
+    true |
+        error(Invoker,string#"illegal input",String).
+
+integer(Integer,_,_,NInteger) :-
+    integer(Integer) |
+        Integer=NInteger.
+otherwise.
+integer(Integer,Invoker,_,_) :-
+    true |
+        error(Invoker,string#"illegal input",Integer).
+
+
+% This predicate should be invoked only when request device creation fails.
+check_connection(normal,ID) :-
+    true |
+        error(ID,string#"cannot get device request",unknown).
+otherwise.
+check_connection(_,ID) :-
+    true |
+        error(ID,string#"cannot get device request",no_connection).
+

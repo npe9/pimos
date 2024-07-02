@@ -1,0 +1,98 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi206::>sys>user>sekita>wrap>errorfilter.kl1.6, 30-Nov-89 18:54:39, Edit by sekita
+:- module kl1cmp_error_filter.
+:- public error_filter/5, addErrorInfo/5, addPred/4, addErrorInfo/4.
+:- with_macro pimos.
+
+:- local_implicit out:oldnew.
+error_filter([error(FormStr, Args0)|Cdr], Tbl0, Tbl) --> true |
+ {{convert_variables(Args, [], Args0, Tbl0, Tbl1)}},
+   &out <<= [error(FormStr, Args)],
+   error_filter(Cdr, Tbl1, Tbl).
+error_filter([warning(FormStr, Args0)|Cdr], Tbl0, Tbl) --> true |
+ {{convert_variables(Args, [], Args0, Tbl0, Tbl1)}},
+   &out <<= [warning(FormStr, Args)],
+   error_filter(Cdr, Tbl1, Tbl).
+error_filter([message(FormStr, Args0)|Cdr], Tbl0, Tbl) --> true |
+ {{convert_variables(Args, [], Args0, Tbl0, Tbl1)}},
+   &out <<= [message(FormStr, Args)],
+   error_filter(Cdr, Tbl1, Tbl).
+otherwise.
+error_filter([Msg|Cdr], Tbl0, Tbl) --> true |
+   &out <<= [Msg],
+   error_filter(Cdr, Tbl0, Tbl).
+error_filter([], Tbl0, Tbl) --> true | Tbl0=Tbl.
+
+convert_variables([Arg0|Cdr], Tbl0, Tbl) --> true |
+ {{kl1cmp_variable_name:integer_to_string(Arg0, Tbl0, Tbl1, Arg1),
+   convert_integer_format_to_string(Arg1, Arg2)}},
+   &out <<= [Arg2],
+   convert_variables(Cdr, Tbl1, Tbl).
+convert_variables([], Tbl0, Tbl) --> true | Tbl0=Tbl.
+
+convert_integer_format_to_string(vector(Vect0), WVect) :- vector(Vect0, N) |
+   convert_integer_format_to_string(0, N, Vect0, Vect),
+   WVect=vector(Vect).
+convert_integer_format_to_string(list([Car|Cdr]), WList) :- true |
+   convert_integer_format_to_string(Car, NewCar),
+   convert_integer_format_to_string(Cdr, NewCdr),
+   WList=list([NewCar|NewCdr]).
+convert_integer_format_to_string(variable(Str)@_, Var) :- string(Str, _, _) |
+    Var=variable(Str).
+convert_integer_format_to_string(variable(Str), Var) :- string(Str, _, _) |
+   Var=variable(Str).
+convert_integer_format_to_string(variable(N), Var) :- integer(N) |
+   kl1cmp_reader:convert_integer_to_string(N, NStr),
+   builtin#append_string("GenVar", NStr, VarName),
+   Var=variable(VarName).
+convert_integer_format_to_string(variable(N)@_, Var) :- integer(N) |
+   kl1cmp_reader:convert_integer_to_string(N, NStr),
+   builtin#append_string("GenVar", NStr, VarName),
+   Var=variable(VarName).
+otherwise.
+convert_integer_format_to_string(Vect0, Vect) :- vector(Vect0, N) |
+   convert_integer_format_to_string(0, N, Vect0, Vect).
+convert_integer_format_to_string([Car|Cdr], List) :- true |
+   convert_integer_format_to_string(Car, NewCar),
+   convert_integer_format_to_string(Cdr, NewCdr),
+   List=[NewCar|NewCdr].
+otherwise.
+convert_integer_format_to_string(Arg0, Arg) :- true | Arg0=Arg.
+
+convert_integer_format_to_string(A, N, Arg0, Arg) :- A<N |
+   set_vector_element(Arg0, A, El0, El, Arg1),
+   convert_integer_format_to_string(El0, El),
+   A1 := A+1,
+   convert_integer_format_to_string(A1, N, Arg1, Arg).
+convert_integer_format_to_string(N, N, Arg0, Arg) :- true | Arg0=Arg.
+
+:- local_implicit err:oldnew.
+addErrorInfo(Str, Info0) --> true |
+    addErrorInfo(Str, Info0, _).
+
+addErrorInfo([{Msg, Str, Arg}|Rest], Info0, Info) --> true |
+    &err <<= [{Msg, Str, Arg, Info0}],
+    addErrorInfo(Rest, Info0, Info).
+otherwise.
+addErrorInfo([Msg|Rest], Info0, Info) --> true |
+    &err <<= [Msg],
+    addErrorInfo(Rest, Info0, Info).
+addErrorInfo([], Info0, Info) --> true | Info0=Info.
+
+:- local_implicit err:oldnew.
+addPred(F/A, [{Msg, Str, Arg, Info}|Cdr]) --> true |
+  {{builtin#append_string("in ~T : ", Str, NewStr)}},
+    &err <<= [{Msg, NewStr, [F/A|Arg], Info}],
+    addPred(F/A, Cdr).
+addPred(F/A, [{Msg, Str, Arg}|Cdr]) --> true |
+  {{builtin#append_string("in ~T : ", Str, NewStr)}},
+    &err <<= [{Msg, NewStr, [F/A|Arg]}],
+    addPred(F/A, Cdr).
+otherwise.
+addPred(Func, [Msg|Cdr]) --> true | &err <<= [Msg], addPred(Func, Cdr).
+addPred(_, []) --> true | true.

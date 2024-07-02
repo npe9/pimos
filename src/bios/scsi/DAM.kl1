@@ -1,0 +1,538 @@
+% icpsi606::>sys>user>yashiro>V35>scsi>DAM.kl1.3, 12-Aug-92 13:34:16, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi523::>sys>user>pimos>RELEASE>src>bios>scsi>DAM.kl1.7, 07-May-92 15:27:58, Edit by yashiro
+
+:- module scsi_direct_access.
+:- include("pimos.h").
+%:- with_macro 
+%        pimos,
+%        scsi_library.
+:- with_macro pimos.
+
+:- switch(fep_interface).
+:- case(kl1_network).
+:- public dummy/0.
+dummy :- true | true .
+:- default.
+:- public device_manager/5.
+
+
+%==================%
+% device_manager/5 %
+%==================%
+device_manager([Message|Stream], SCSI_OUT, Unit, LUN, MaxBufferSize):-
+    true |
+        scsi_direct_access_message:check(Message, MaxBufferSize, MessageStatus),
+        process(MessageStatus, SCSI_OUT, {Unit, LUN, MaxBufferSize},  NewSCSI_OUT),
+        device_manager(Stream, NewSCSI_OUT, Unit, LUN, MaxBufferSize).
+device_manager([], SCSI_OUT, _, _, _):-
+    true |
+        SCSI_OUT = [].
+
+%-----------%
+% process/4 %
+%-----------%
+process(normal(Message, Info), SCSI_OUT, Attributes,  NewSCSI_OUT):-
+    true |
+       do(Message, Info, SCSI_OUT, Attributes,  NewSCSI_OUT).
+process(abnormal, SCSI_OUT, _,  NewSCSI_OUT):-
+    true |
+        NewSCSI_OUT = SCSI_OUT.
+
+%------%
+% do/7 %
+%------%
+do(inquiry(Status), _, SCSI_OUT, {Unit, LUN, _},  NewSCSI_OUT):-
+    true |
+        scsi_common:inquiry(direct_access, Status, SCSI_OUT, NewSCSI_OUT, Unit, LUN).
+
+do(test_unit_ready(Status), _, SCSI_OUT, {Unit, LUN, _},  NewSCSI_OUT):-
+    true |
+        scsi_common:test_unit_ready(direct_access, Status, SCSI_OUT, NewSCSI_OUT, Unit, LUN).
+
+do(send_diagnostic(SelfTest, DevOffLine, UnitOffLine, Data, Status), _, SCSI_OUT, {Unit, LUN, _},
+                                                                                   NewSCSI_OUT):-
+    true |
+        Byte1 := (LUN << 5) \/ (SelfTest << 2) \/ (DevOffLine << 1) \/ UnitOffLine,
+        string(Data, Length, _, Data1),
+        Byte3 := (Length /\ 16#"FF00") >> 8,
+        Byte4 :=  Length /\ 16#"FF",
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#send_diagnostic_command, CDB1),
+        set_string_element(CDB1, 1, Byte1, CDB2),
+        set_string_element(CDB2, 3, Byte3, CDB4),
+        set_string_element(CDB4, 4, Byte4, CDB5),
+        SCSI_OUT = [command({Unit, LUN, CDB5, Length, scsi#direction_out, Data1, 0}, 
+                                                            _, _, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, Status, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT).
+
+do(receive_diagnostic_results(Status), _, SCSI_OUT, {Unit, LUN, MaxBufferSize},  NewSCSI_OUT):-
+    true |
+        Byte1 := LUN << 5,
+        ReducedMax := MaxBufferSize - 25,                    % Is this modification necessary ?
+        smaller(ReducedMax, 16#"FFFF", BufferSize),
+        new_string(Data, BufferSize, 8),
+        Byte3 := (BufferSize /\ 16#"FF00") >> 8,
+        Byte4 :=  BufferSize /\ 16#"FF",
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#receive_diagnostic_results_command, CDB1),
+        set_string_element(CDB1, 1, Byte1, CDB3),
+        set_string_element(CDB3, 3, Byte3, CDB4),
+        set_string_element(CDB4, 4, Byte4, CDB5),
+        SCSI_OUT = [command({Unit, LUN, CDB5, BufferSize, scsi#direction_in, Data, 0}, 
+                             NewData, TransferredLength, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, AnalyzedStatus, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT),
+        receive_diagnostic_results_status(AnalyzedStatus, NewData, TransferredLength, Status).
+
+do(format_unit(FmtData, DefectList, Designation, Completeness, Interleave, Modification, Status),
+                                                Info, SCSI_OUT, {Unit, LUN, _},  NewSCSI_OUT):-
+    true |
+%        fmtdata(DefectList, FmtData),
+        Byte1 := (LUN << 5) \/ (FmtData << 4) \/ (Completeness << 3) \/ Designation,
+        Byte3 := (Interleave /\ 16#"FF00") >> 8,
+        Byte4 :=  Interleave /\ 16#"FF",
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#format_unit_command, CDB1),
+        set_string_element(CDB1, 1, Byte1,        CDB2),
+        set_string_element(CDB2, 2, Modification, CDB3),
+        set_string_element(CDB3, 3, Byte3,        CDB4),
+        set_string_element(CDB4, 4, Byte4,        CDB5),
+        defect_list(Designation, DefectList, Info, Data, Length),
+        SCSI_OUT = [command({Unit, LUN, CDB5, Length, scsi#direction_out, Data, 0}, 
+                             _, _, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, Status, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT).
+
+do(read(Block, _, Buffer, Status), {NewLength, BufferSize}, SCSI_OUT, {Unit, LUN, _},  NewSCSI_OUT):-
+    Byte1 := LUN << 5,
+    Byte2 := (Block /\ 16#"FF000000") >> 24,
+    Byte3 := (Block /\ 16#"00FF0000") >> 16,
+    Byte4 := (Block /\ 16#"0000FF00") >> 8,
+    Byte5 := Block /\ 16#"000000FF",
+    Byte7 := (NewLength /\ 16#"FF00") >> 8,
+    Byte8 := NewLength /\ 16#"00FF" |
+%    true |
+%        Byte1 := (LUN << 5) \/ ((Block /\ 16#"001F0000") >> 16),
+%        Byte2 := (Block /\ 16#"FF00") >> 8,
+%        Byte3 :=  Block /\ 16#"FF",
+%        new_string(CDB, scsi#group_0_command_size, 8),
+%        set_string_element(CDB,  0, scsi#read_command, CDB1),
+        new_string(CDB, scsi#group_1_command_size, 8),
+        set_string_element(CDB,  0, 16#"28", CDB1),  % scsi#extended_read_command
+        set_string_element(CDB1, 1, Byte1,  CDB2),
+        set_string_element(CDB2, 2, Byte2,  CDB3),
+        set_string_element(CDB3, 3, Byte3,  CDB4),
+        set_string_element(CDB4, 4, Byte4,  CDB5),
+        set_string_element(CDB5, 5, Byte5,  CDB6),
+        set_string_element(CDB6, 7, Byte7,  CDB7),
+        set_string_element(CDB7, 8, Byte8,  CDB8),
+        SCSI_OUT = [command({Unit, LUN, CDB8, BufferSize, scsi#direction_in, Buffer, 0}, 
+                             NewBuffer, TransferredLength, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, AnalyzedStatus, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT),
+        io_status(AnalyzedStatus, NewBuffer, TransferredLength, Status).
+
+do(write(Block, _, Buffer, Status), {NewLength, BufferSize}, SCSI_OUT, {Unit, LUN, _},  NewSCSI_OUT):-
+    Byte1 := LUN << 5,
+    Byte2 := (Block /\ 16#"FF000000") >> 24,
+    Byte3 := (Block /\ 16#"00FF0000") >> 16,
+    Byte4 := (Block /\ 16#"0000FF00") >> 8,
+    Byte5 := Block /\ 16#"000000FF",
+    Byte7 := (NewLength /\ 16#"FF00") >> 8,
+    Byte8 := NewLength /\ 16#"00FF" |
+%    true |
+%        Byte1 := (LUN << 5) \/ ((Block /\ 16#"1F0000") >> 16),
+%        Byte2 := (Block /\ 16#"FF00") >> 8,
+%        Byte3 :=  Block /\ 16#"FF",
+%        new_string(CDB, scsi#group_0_command_size, 8),
+%        set_string_element(CDB,  0, scsi#write_command, CDB1),
+        new_string(CDB, scsi#group_1_command_size, 8),
+        set_string_element(CDB,  0, 16#"2A", CDB1),
+        set_string_element(CDB1, 1, Byte1,  CDB2),
+        set_string_element(CDB2, 2, Byte2,  CDB3),
+        set_string_element(CDB3, 3, Byte3,  CDB4),
+        set_string_element(CDB4, 4, Byte4,  CDB5),
+        set_string_element(CDB5, 5, Byte5,  CDB6),
+        set_string_element(CDB6, 7, Byte7,  CDB7),
+        set_string_element(CDB7, 8, Byte8,  CDB8),
+        SCSI_OUT = [command({Unit, LUN, CDB8, BufferSize, scsi#direction_out, Buffer, 0}, 
+                             NewData, TransferredLength, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, AnalyzedStatus, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT),
+        io_status(AnalyzedStatus, NewData, TransferredLength, Status).
+
+do(mode_select(MediumType, BlockDescriptor, Modification, Status), _, SCSI_OUT, {Unit, LUN, _}, 
+                                                                                 NewSCSI_OUT):-
+    true |
+        Byte1 := LUN << 5,
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#mode_select_command, CDB1),
+        set_string_element(CDB1, 1, Byte1,  CDB4),
+        set_string_element(CDB4, 4, Length, CDB5),
+        mode(BlockDescriptor, MediumType, Modification, Length, Data),
+        SCSI_OUT = [command({Unit, LUN, CDB5, Length, scsi#direction_out, Data, 0}, 
+                             _, _, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, Status, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT).
+
+do(mode_sense(Status), _, SCSI_OUT, {Unit, LUN, MaxBufferSize},  NewSCSI_OUT):-
+    true |
+        Byte1 := LUN << 5,
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#mode_sense_command, CDB1),
+        set_string_element(CDB1, 1, Byte1,  CDB4),
+        set_string_element(CDB4, 4, Length, CDB5),
+        smaller(MaxBufferSize, 16#"FF", Length),
+        new_string(Data, Length, 8),
+        SCSI_OUT = [command({Unit, LUN, CDB5, Length, scsi#direction_in, Data, 0}, 
+                             NewData, TransferredLength, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, AnalyzedStatus, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT),
+        mode_sense_status(AnalyzedStatus, NewData, TransferredLength, Status).
+
+do(reassign_blocks(Blocks, Status), Number, SCSI_OUT, {Unit, LUN, _},  NewSCSI_OUT):-
+    true |
+        Byte1    := LUN << 5,
+        DLLength := Number + 1,
+        Length   := DLLength << 2,
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#reassign_blocks_command, CDB1),
+        set_string_element(CDB1, 1, Byte1, CDB2),
+        new_string(DefectList, DLLength, 32),
+        set_string_element(DefectList, 0, ~(Number << 2), DefectList1),
+        set_blocks(Blocks, DefectList1, 1, NewDefectList),
+        change_element_size(NewDefectList, 8, Data),
+        SCSI_OUT = [command({Unit, LUN, CDB2, Length, scsi#direction_out, Data, 0}, 
+                             _, _, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, Status, direct_access, Unit, LUN,
+                                                                              SCSI_OUT1, NewSCSI_OUT).
+
+do(start_stop_unit(MotorSwitch, ReportTiming, Status), _, SCSI_OUT, {Unit, LUN, _},  NewSCSI_OUT):-
+    true |
+        Byte1 := (LUN << 5) \/ ReportTiming,
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#start_stop_unit_command, CDB1),
+        set_string_element(CDB1, 1, Byte1,  CDB4),
+        set_string_element(CDB4, 4, MotorSwitch,  CDB5),
+        new_string(DummyData, 0, 8),
+        SCSI_OUT = [command({Unit, LUN, CDB5, 0, scsi#no_direction, DummyData, 0}, 
+                             _, _, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, Status, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT).
+
+do(prevent_allow_medium_removal(Lock, Status), _, SCSI_OUT, {Unit, LUN, _},  NewSCSI_OUT):-
+    true |
+        Byte1 := LUN << 5,
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#prevent_allow_medium_removal_command, CDB1),
+        set_string_element(CDB1, 1, Byte1, CDB4),
+        set_string_element(CDB4, 4, Lock,  CDB5),
+        new_string(DummyData, 0, 8),
+        SCSI_OUT = [command({Unit, LUN, CDB5, 0, scsi#no_direction, DummyData, 0}, 
+                             _, _, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, Status, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT).
+
+%--------%
+% Group1 %
+%--------%
+do(read_capacity(Scope, Block, Modification, Status), _, SCSI_OUT, {Unit, LUN, _},  NewSCSI_OUT):-
+    true |
+        Byte1 := LUN << 5,
+        Byte2 := (Block /\ 16#"FF000000") >> 24,
+        Byte3 := (Block /\ 16#"FF0000") >> 16,
+        Byte4 := (Block /\ 16#"FF00") >> 8,
+        Byte5 := (Block /\ 16#"FF"),
+        Byte8 := (Modification << 6) \/ Scope,
+        new_string(CDB, scsi#group_1_command_size, 8),
+        set_string_element(CDB,  0, scsi#read_capacity_command, CDB1),
+        set_string_element(CDB1, 1, Byte1,  CDB2),
+        set_string_element(CDB2, 2, Byte2,  CDB3),
+        set_string_element(CDB3, 3, Byte3,  CDB4),
+        set_string_element(CDB4, 4, Byte4,  CDB5),
+        set_string_element(CDB5, 5, Byte5,  CDB8),
+        set_string_element(CDB8, 8, Byte8,  CDB9),
+        new_string(Data, 8, 8),
+        SCSI_OUT = [command({Unit, LUN, CDB9, 8, scsi#direction_in, Data, 0}, 
+                             NewData, TransferredLength, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, AnalyzedStatus, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT),
+        read_capacity_status(AnalyzedStatus, NewData, TransferredLength, Status).
+
+do(write_and_verify(Block, Length, Buffer, ByteCheck, Status), {BufferSize}, SCSI_OUT, {Unit, LUN, _},
+                                                                             NewSCSI_OUT):-
+    true |
+        Byte1 := (LUN << 5) \/ (ByteCheck << 1),
+        Byte2 := (Block  /\ 16#"FF000000") >> 24,
+        Byte3 := (Block  /\ 16#"FF0000") >> 16,
+        Byte4 := (Block  /\ 16#"FF00") >> 8,
+        Byte5 := (Block  /\ 16#"FF"),
+        Byte7 := (Length /\ 16#"FF00") >> 8,
+        Byte8 :=  Length /\ 16#"FF",
+        new_string(CDB, scsi#group_1_command_size, 8),
+        set_string_element(CDB,  0, scsi#write_and_verify_command, CDB1),
+        set_string_element(CDB1, 1, Byte1,  CDB2),
+        set_string_element(CDB2, 2, Byte2,  CDB3),
+        set_string_element(CDB3, 3, Byte3,  CDB4),
+        set_string_element(CDB4, 4, Byte4,  CDB5),
+        set_string_element(CDB5, 5, Byte5,  CDB7),
+        set_string_element(CDB7, 7, Byte7,  CDB8),
+        set_string_element(CDB8, 8, Byte8,  CDB9),
+        SCSI_OUT = [command({Unit, LUN, CDB9, BufferSize, scsi#direction_out, Buffer, 0}, 
+                             NewData, TransferredLength, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, AnalyzedStatus, direct_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT),
+        write_and_verify_status(AnalyzedStatus, NewData, TransferredLength, Status).
+
+
+% receive_diagnostic_results(c/G0/O) %
+
+%-------------------------------------%
+% receive_diagnostic_results_status/4 %
+%-------------------------------------%
+receive_diagnostic_results_status(normal, Data, TransferredLength, Status):-
+    true |
+        builtin#substring(Data, 0, TransferredLength, DiagnosticData, _),
+        Status = normal(DiagnosticData).
+otherwise.
+receive_diagnostic_results_status(Abnormal, _, _, Status):-
+    true |
+        Status = Abnormal.
+
+
+% format_unit(G0/M) %
+
+%-----------%
+% fmtdata/2 %
+%-----------%
+%fmtdata([], FmtData):-
+%    true |
+%        FmtData = 0.
+%otherwise.
+%fmtdata(_, FmtData):-
+%    true |
+%        FmtData = 1.
+
+%---------------%
+% defect_list/5 %
+%---------------%
+defect_list(4, DefectList, Number, Data, TransferLength):-
+    true |
+        Size := 1 + Number << 1,
+        TransferLength := Size << 2,
+        new_string(DefectString, Size, 32),
+        set_defects4(DefectList, DefectString, 1, Size, Data).
+defect_list(5, DefectList, Number, Data, TransferLength):-
+    true |
+        Size := 1 + Number << 1,
+        TransferLength := Size << 2,
+        new_string(DefectString, Size, 32),
+        set_defects4(DefectList, DefectString, 1, Size, Data).
+otherwise.
+% Designation = 0 ~ 3 (integer)
+defect_list(_, DefectList, Number, Data, TransferLength):-
+    true |
+        Size := 1 + Number,
+        TransferLength := Size << 2,
+        new_string(DefectString, Size, 32),
+        set_defects0(DefectList, DefectString, 1, Size, Data).
+
+%----------------%
+% set_defects0/5 %
+%----------------%
+set_defects0([Block|DefectList], String, Position, End,  Data):-
+    Position < End |
+        NextPosition := Position + 1,
+        set_string_element(String, Position, Block, String1),
+        set_defects0(DefectList, String1, NextPosition, End,  Data).
+set_defects0([], String, Position, End,  Data):-
+    Position =< End |
+        Length := (Position - 1) << 2,
+        set_string_element(String, 0, Length, String1),
+        change_element_size(String1, 8, Data).
+
+%----------------%
+% set_defects4/5 %
+%----------------%
+set_defects4([{Cylinder, Head, OffsetOrSector}|DefectList], String, Position, End,  Data):-
+    Position < End |
+        Element1 := (Cylinder << 8) \/ Head,
+        set_string_element(String,  Position, Element1, String1),
+        set_string_element(String1, ~(Position + 1), OffsetOrSector, String2),
+        NextPosition := Position + 2,
+        set_defects4(DefectList, String2, NextPosition, End, Data).
+set_defects4([], String, Position, End,  Data):-
+    Position =< End |
+        Length := (Position - 1) << 2,
+        set_string_element(String, 0, Length, String1),
+                                        % 0, 8, 16, ... as Position = 1, 3, 5, 7, ...
+        change_element_size(String1, 8, Data).
+
+
+% mode_select(G0/O) %
+
+%--------%
+% mode/5 %
+%--------%
+mode({}, MediumType, Modification,  Length, ModeString):-
+    true |
+        string(Modification, VULength, _, Modification1),
+        Length := VULength + 4,
+        new_string(String, Length, 8),
+        set_string_element(String, 1, MediumType, String1),
+        builtin#set_substring(String1, 4, Modification1, ModeString).
+mode({Density, BlockSize, TotalBlocks}, MediumType, Modification,  Length, ModeString):-
+    true |
+        Byte5  := (TotalBlocks /\ 16#"FF0000") >> 16,
+        Byte6  := (TotalBlocks /\ 16#"FF00") >> 8,
+        Byte7  :=  TotalBlocks /\ 16#"FF",
+        Byte9  := (BlockSize   /\ 16#"FF0000") >> 16,
+        Byte10 := (BlockSize   /\ 16#"FF00") >> 8,
+        Byte11 :=  BlockSize   /\ 16#"FF",
+        string(Modification, VULength, _, Modification1),
+        Length := VULength + 12,
+        new_string(String, Length, 8),
+        set_string_element(String,    1, MediumType, String3),
+        set_string_element(String3,   3, 8,          String4),
+        set_string_element(String4,   4, Density,    String5),
+        set_string_element(String5,   5, Byte5,      String6),
+        set_string_element(String6,   6, Byte6,      String7),
+        set_string_element(String7,   7, Byte7,      String9),
+        set_string_element(String9,   9, Byte9,      String10),
+        set_string_element(String10, 10, Byte10,     String11),
+        set_string_element(String11, 11, Byte11,     String12),
+        builtin#set_substring(String12, 12, Modification1, ModeString).
+
+
+% mode_sense(G0/O) %
+
+%---------------------%
+% mode_sense_status/4 %
+%---------------------%
+mode_sense_status(normal, Data, Length, Status):-
+    true |
+        builtin#substring(Data, 0, Length, Data0, _),
+        string_element(Data0, 0, SenseDataLength, Data1),
+        string_element(Data1, 1, MediumType, Data2),
+        string_element(Data2, 2, Byte2, Data3),
+        WriteProtect := Byte2 >> 7,
+        string_element(Data3, 3, DescriptorLength, Data4),
+        block_descriptor(DescriptorLength, Data4, BlockDescriptor, VUPosition),
+        mode_sense_vu_param_length(Length, SenseDataLength, DescriptorLength, ParamLength),
+        builtin#substring(Data4, VUPosition, ParamLength, VUParameters, _),
+        Status = normal(MediumType, WriteProtect, BlockDescriptor, VUParameters).
+otherwise.
+mode_sense_status(Abnormal, _, _, Status):-
+    true |
+        Status = Abnormal.
+
+%--------------------%
+% block_descriptor/4 %
+%--------------------%
+block_descriptor(0, _, Descriptor, NextPosition):-
+    true |
+        Descriptor = {},
+        NextPosition = 4.
+block_descriptor(8, Data4, Descriptor, NextPosition):-
+    true |
+        Descriptor = {Density, BlockSize, TotalBlocks},
+        string_element(Data4, 4, Density, Data5),
+        string_element(Data5, 5, Byte5,   Data6),
+        string_element(Data6, 6, Byte6,   Data7),
+        string_element(Data7, 7, Byte7,   Data9),
+        TotalBlocks := (Byte5 << 16) \/ (Byte6 << 8) \/ Byte7,
+        string_element(Data9,  9,  Byte9,  Data10),
+        string_element(Data10, 10, Byte10, Data11),
+        string_element(Data11, 11, Byte11, _),
+        BlockSize   := (Byte9 << 16) \/ (Byte10 << 8) \/ Byte11,
+        NextPosition = 12.
+
+%------------------------------%
+% mode_sense_vu_param_length/4 %   
+%------------------------------%
+mode_sense_vu_param_length(Length, SenseDataLength, BlockDescriptorLength, ParamLength):-
+    true |
+        ParamLength := Length - ( 4 + BlockDescriptorLength ),
+        RealLength  := SenseDataLength - ( 3 + BlockDescriptorLength ),
+        ParamLength  = RealLength.              % to debug
+
+
+% reassign_blocks(G0/O) %
+
+%--------------%
+% set_blocks/4 %
+%--------------%
+set_blocks([Block|Blocks], DefectList, Position, NewDefectList):-
+    true |
+        NextPosition := Position + 1,
+        set_string_element(DefectList, Position, Block, DefectList1),
+        set_blocks(Blocks, DefectList1, NextPosition, NewDefectList).
+set_blocks([], DefectList, _, NewDefectList):-
+    true |
+        NewDefectList = DefectList.
+
+
+% read_capacity(G1/E) %
+
+%------------------------%
+% read_capacity_status/4 %
+%------------------------%
+read_capacity_status(normal, Data, 8, Status):-
+    true |
+        Status = normal(LastBlock, BlockSize),
+        change_element_size(Data, 32, NewData),
+        string_element(NewData,  0, LastBlock, NewData1),
+        string_element(NewData1, 1, BlockSize, _).
+otherwise.
+read_capacity_status(Abnormal, _, _, Status):-
+    true |
+        Status = Abnormal.
+
+
+% write_and_verify(G1/E) %
+
+%---------------------------%
+% write_and_verify_status/4 %
+%---------------------------%
+write_and_verify_status(normal, Data, TransferredLength, Status):-
+    true |
+%        builtin#substring(Data, 0, TransferredLength, NewData, _),
+%        Status = normal(TransferredLength, NewData).
+        Status = normal(TransferredLength, Data).
+otherwise.
+write_and_verify_status(Abnormal, _, _, Status):-
+    true |
+        Status = Abnormal.
+
+%-------------%
+% io_status/4 %
+%-------------%
+io_status(normal, Buffer, TransferredLength, Status):-
+    true |
+%        builtin#substring(Buffer, 0, TransferredLength, NewBuffer, _),
+%        Status = normal(TransferredLength, NewBuffer).
+        Status = normal(TransferredLength, Buffer).
+otherwise.
+io_status(abnormal(Abnormal), Buffer, TransferredLength, Status):-
+    true |
+        Status = abnormal(Abnormal,TransferredLength,Buffer).
+
+%-----------%
+% smaller/3 %
+%-----------%
+smaller(MaxBufferSize, CDBMax, BufferSize):-
+    MaxBufferSize < CDBMax |
+        BufferSize = MaxBufferSize.
+otherwise.
+smaller(_, CDBMax, BufferSize):-
+    true |
+        BufferSize = CDBMax.
+
+:-end_switch.

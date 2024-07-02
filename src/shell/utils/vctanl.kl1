@@ -1,0 +1,147 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a vector-analizer module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module vctanl.
+:- public go/0, go/1.
+
+go :- true |
+    shoen:raise(pimos_tag#task, general_request, General),
+    General = [window(normal(WinDev, _, _))],
+    WinDev = [create(string#"Vector Analizer", normal(Stream, _, _))],
+    Stream = [show(_) | NewStream],
+    atom_table:cache_table(Atom), merge({Atom1, Atom2}, Atom),
+    buffer:interaction_filter([atom_table(Atom1)], Window, NewStream),
+    openSession(Window, Status, Atom2).
+
+go(Arg) :- true |
+    shoen:raise(pimos_tag#task, general_request, General),
+    General = [window(normal(WinDev, _, _))],
+    WinDev = [create(string#"UNIFY TEST", normal(Stream, _, _))],
+    Stream = [show(_) | NewStream],
+    atom_table:cache_table(Atom), merge({Atom1, Atom2}, Atom),
+    buffer:interaction_filter([atom_table(Atom1)], Window, NewStream),
+    Window = [putb(string#"Argument = "), putt(Arg), nl, flush(_) | NewWindow],
+    openSession(NewWindow, Status, Atom2).
+
+openSession(Window, normal, Atom) :- true |
+    buffer:character_pool([atom_table(Atom)], IO),
+    shellOperator:update(IO, NewIO),
+    sessionLoop(Window, NewIO, mode1).
+otherwise.
+openSession(_, _, Atom) :- true | Atom = [].
+
+sessionLoop(Window, IO, Mode) :- true |
+    Window = [putb(string#"DATA > "), getl(Line) | NewWindow],
+    IO = [putb(Line), putl(string#" ."), flush(_), gett(Term) | NewIO],
+    actionLoop(NewWindow, NewIO, Term, Mode).
+
+actionLoop(Window, IO, exit, _) :- true | Window = [], IO = [].
+actionLoop(Window, IO, operator(Operator), Mode) :- true |
+    IO = [operator(Operator, Definition), putt(Definition), nl | NewIO],
+    sessionLoop(Window, NewIO, Mode).
+actionLoop(Window, IO, addOp(Precedence, Type, OperatorName), Mode) :- true |
+    IO = [add_op(Precedence, Type, OperatorName) | NewIO],
+    sessionLoop(Window, NewIO, Mode).
+actionLoop(Window, IO, removeOp(Precedence, Type, OperatorName), Mode) :- true |
+    IO = [remove_op(Precedence, Type, OperatorName) | NewIO],
+    sessionLoop(Window, NewIO, Mode).
+actionLoop(Window, IO, change_mode, mode1) :- true |
+    sessionLoop(Window, IO, mode2).
+actionLoop(Window, IO, change_mode, mode2) :- true |
+    sessionLoop(Window, IO, mode1).
+otherwise.
+actionLoop(Window, IO, Token, Mode) :- true |
+    analLoop(Token, Window, Window0, Mode),
+    Window0 = [nl | NewWindow],
+    sessionLoop(NewWindow, IO, Mode).
+
+analLoop(Token, Win, NWin, _) :- atom(Token) | Win = [putt(Token) | NWin].
+analLoop(Token, Win, NWin, _) :-
+    vector(Token, _), vector_element(Token, 0, V0), V0 = '$error' |
+    Win = [putt('<< illegal input >>') | NWin].
+analLoop(Token, Win, NWin, _) :-
+    vector(Token, _), vector_element(Token, 0, V0), V0 = '$ambiguous' |
+    Win = [putt('<< illegal input >>') | NWin].
+otherwise.
+analLoop(Token, Win, NWin, mode1) :- vector(Token, Size) |
+    analLoop1(Token, Win, NWin, Size).
+analLoop(Token, Win, NWin, mode2) :- vector(Token, Size) |
+    analLoop2(Token, Win, NWin, Size, 0).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+analLoop1(Vctr, Win, NWin, Size) :- true |
+    Win = [putb(string#"vector(") | Win0],
+    NSize := Size - 1,
+    analLoopV(Vctr, Win0, Win1, 0, NSize),
+    Win1 = [putb(string#")") | NWin].
+
+analLoopV(Vctr, Win, NWin, Cnt, Size) :- Cnt >= Size |
+    vector_element(Vctr, Cnt, Elmnt, _),
+    analElmnt(Elmnt, Win, Win0),
+    NWin = Win0.
+analLoopV(Vctr, Win, NWin, Cnt, Size) :- Cnt < Size |
+    vector_element(Vctr, Cnt, Elmnt, NVctr),
+    NCnt := Cnt + 1,
+    analElmnt(Elmnt, Win, Win0),
+    Win0 = [putb(string#",") | Win1],
+    analLoopV(NVctr, Win1, NWin, NCnt, Size).
+
+analElmnt(Elmnt, Win, NWin) :- atom(Elmnt) |
+    Win = [putt(Elmnt) | NWin].
+analElmnt(Elmnt, Win, NWin) :- vector(Elmnt, Size) |
+    analLoop1(Elmnt, Win, NWin, Size).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+analLoop2(Vctr, Win, NWin, Size, Dpth) :- vector(Vctr, Size) |
+    printTab(Win, Win0, Dpth),
+    NDpth := Dpth + 1,
+    Win0 = [putb(string#"vector("), putt(Size), putb(string#" ,") | Win1],
+    NSize := Size - 1,
+    analLoopV2(Vctr, Win1, Win2, 0, NSize, NDpth),
+    Win2 = [putb(string#")") | NWin].
+
+analLoopV2(Vctr, Win, NWin, Cnt, Size, Dpth) :- Cnt >= Size |
+    vector_element(Vctr, Cnt, Elmnt, _),
+    analElmnt2(Elmnt, Win, Win0, Dpth),
+    NWin = Win0.
+analLoopV2(Vctr, Win, NWin, Cnt, Size, Dpth) :- Cnt < Size |
+    vector_element(Vctr, Cnt, Elmnt, NVctr),
+    NCnt := Cnt + 1,
+    analElmnt2(Elmnt, Win, Win0, Dpth),
+    Win0 = [putb(string#",") | Win1],
+    analLoopV2(NVctr, Win1, NWin, NCnt, Size, Dpth).
+
+analElmnt2(Elmnt, Win, NWin, _) :- atom(Elmnt) |
+    Win = [putt(Elmnt) | NWin].
+analElmnt2(Elmnt, Win, NWin, Dpth) :- vector(Elmnt, Size) |
+    analLoop2(Elmnt, Win, NWin, Size, Dpth).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+printTab(Win, NWin, Dpth) :- true | Win = [nl | Win0],
+    printTab1(Win0, NWin, Dpth).
+
+printTab1(Win, NWin, 0) :- true | Win = NWin.
+otherwise.
+printTab1(Win, NWin, Dpth) :- true |
+    Win = [putb(string#"  ") | Win0],
+    NDpth := Dpth - 1,
+    printTab1(Win0, NWin, NDpth).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of Vector-analizer module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

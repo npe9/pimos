@@ -1,0 +1,133 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%  This is 'tosMaker' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module tosMaker.
+:- public makeTos/3.
+
+%%%%%%%%%%%%%%%%%%%%%
+% makeTos(JobInfo)  %
+%%%%%%%%%%%%%%%%%%%%%
+
+makeTos(TosList, StdMes, Info) :-
+    merge(NStdMes, StdMes),
+    tosManager(TosCnt, TosRpt, NStdMes, Size),
+    makeTos1(TosList, TosCnt, TosRpt, Size, Info).
+
+%%%%%%%%%%%%%%%%%%%%
+%%%  makeTos1 :  %%%
+%%%%%%%%%%%%%%%%%%%%
+
+makeTos1(TosList, TosCnt, TosRpt, Size, Info) :- true |
+    countTos(TosList, TosList1, 0, Size),
+    makeTos2(Size, TosList1, TosCnt, TosRpt, Info).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  makeTos2 :                             %%%
+%%%    if the count of Tos is equal to 1    %%%
+%%%        then execute makeTos3            %%%
+%%%        else execute makeTos4            %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+makeTos2(Size, TosList, TosCnt, TosRpt, Info) :- Size =< 1 |
+    makeTos3(TosList, TosCnt, TosRpt, Info).
+makeTos2(Size, TosList, TosCnt, TosRpt, Info) :- Size > 1 |
+    makeTos4(TosList, TosCnt, TosRpt, Info).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  makeTos3 :                     %%%
+%%%    Job contains only one Tos.   %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+makeTos3(TosList, TosCnt, TosRpt, Info) :- true |
+    TosList = [Tos],
+    shoen:raise(pimos_tag#task,general_request,G),
+    tos:createTos(Tos, TosCnt, TosRpt, Info, G).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  makeTos4 :                     %%%
+%%%    Job contains plural Toses.   %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+makeTos4(TosList, TosCnt, TosRpt, {Min, Max}) :- true |
+    shoen:raise(pimos_tag#task,general_request,G), merge({G1,G2,G3},G),
+    separateTos(TosList, First, Med, Last),
+    tos:createFirst(First, TosCnt, TosRpt1, Pipe1, G1, {Min, Max}),
+    makeTos5(Med, TosRpt1, TosRpt2, Pipe1, Pipe2, G2, {Min, Max}),
+    tos:createLast(Last, TosRpt2, TosRpt, Pipe2, G3, {Min, Max}).
+
+%%%%%%%%%%%%%%%%%%%%%
+%%%  makeTos5 :   %%%
+%%%%%%%%%%%%%%%%%%%%%
+
+makeTos5([], TosCnt, TosRpt, PipeIn, PipeOut, G, _) :- true | G=[],
+    TosCnt = TosRpt,
+    PipeIn = PipeOut.
+makeTos5([Tos|TosList],TosCnt,TosRpt,PipeIn,PipeOut,G,{Min,Max}) :- true |
+    G={G1,G2},
+    tos:createMed(Tos,TosCnt,NewTosCnt,PipeIn,NewPipeIn,G1,{Min,Max}),
+    makeTos5(TosList,NewTosCnt,TosRpt,NewPipeIn,PipeOut,G2,{Min,Max}).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Count up the number of Tos  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+countTos([], Out, Cntr, Size) :- true | Cntr = Size, Out = [].
+countTos([Tos | In], Out, Cntr, Size) :- true | NewCntr := Cntr + 1,
+    Out = [Tos | NewOut],
+    countTos(In, NewOut, NewCntr, Size).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Separate TosList into First, Last and Others  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+separateTos([Tos | Remain], First, Med, Last) :- true | First = Tos,
+    separateTos1(Remain, Med, Last).
+
+separateTos1([Tos], Med, Last) :- true | Med = [], Last = Tos.
+otherwise.
+separateTos1([Tos | Remain], Med, Last) :- true | Med = [Tos | NewMed],
+    separateTos1(Remain, NewMed, Last).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% tosManager(TosCnt, TosRpt, StdIo, StdMes, Cntr)    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+tosManager(TosCnt, [], StdMes, _) :- true |
+    StdMes = [], TosCnt = [].
+tosManager(TosCnt, [terminated | TosRpt], StdMes, Cntr) :-
+    subtract(Cntr, 1, NCntr) |
+    tosManagerCheck(TosCnt, TosRpt, StdMes, NCntr).
+tosManager(TosCnt, [Mes | TosRpt], StdMes, Cntr) :- Mes \= terminated |
+    (Mes = close_std_io -> StdMes = [], NStdMes = _ ;
+     Mes = illegal_goal_name ->
+        shoen:raise(pimos_tag#tos, Mes, _), NStdMes = StdMes ;
+     Mes = pipe_server_error ->
+        shoen:raise(pimos_tag#tos, Mes, _), NStdMes = StdMes ;
+     Mes = undefined_code(Name,Status) ->
+        shoen:raise(pimos_tag#tos, Mes, _), NStdMes = StdMes ;
+     Mes = std_mes(S) -> StdMes = {NStdMes, S} ;
+    otherwise ;
+     true -> NStdMes = StdMes ),
+    tosManager(TosCnt, TosRpt, NStdMes, Cntr).
+
+tosManagerCheck(TosCnt, TosRpt, StdMes, Cntr) :- Cntr > 0 |
+    tosManager(TosCnt, TosRpt, StdMes, Cntr).
+tosManagerCheck(TosCnt, TosRpt, StdMes, Cntr) :- Cntr =< 0 |
+    StdMes = [], TosCnt = [],
+    tosManager(_, TosRpt, _, 0).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                             %%%%%
+%%%%%  End of 'tosMaker' module.  %%%%%
+%%%%%                             %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

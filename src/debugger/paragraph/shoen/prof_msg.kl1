@@ -1,0 +1,378 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+:- with_macro pimos.
+:- module profile_msg.
+:- public count/7.
+
+%% count msg%%
+ count(GoalList,At,Hid,Int,Par,Dp,Lis):- wait(GoalList) |
+        predicate_to_code(module#profiler_task,apply_goals,1,Task),
+        shoen:raise(pimos_tag#task,general_request,
+                [timer(normal(TR,_,_)),
+                getenv(paragraph:output_device,Output),
+                request(profiling_device,_,normal(PReq))|GRM]),
+        TR=[create(normal(Timer,_,_))],
+        parameter(Par,Time),
+        buffer:character_pool(Buf),Buf=[putwtq(Int),getb(40,String)],
+        check_output(Output,Dp,Dp1),
+        go_prof_msg(GRM,PReq,Task,GoalList,At,{Hid,String},Time,Timer,Dp1,Lis).
+
+
+%%%
+%%% output data to listener pool.
+%%%
+ check_output(normal(pool),Dp,Dp1):- true | Dp=Dp1.
+%%%
+%%% output data to std_out.
+%%%
+ check_output(normal(std_out),Dp,[put(Hid,{What,PeNum,0,msg(Int,Max,ExecTime,Ph1)})]):- true |
+        Dp=[],
+        shoen:raise(pimos_tag#task,get_std(out),STD),
+        In=msg(Int,ExecTime,PeNum,0,Max,What,Ph1),
+        x_profile_stdio:go(In,STD).
+%%%
+%%% output data to pg server of unix.
+%%%
+ check_output(normal(pg),Dp,[put(Hid,{What,PeNum,0,msg(Int,Max,ExecTime,Ph1)})]):- true |
+        Dp=[],
+        In=msg(Int,ExecTime,PeNum,0,Max,What,Ph1),
+        x_profile_tcpip:go(In).
+otherwise.
+ check_output(_,Dp,Dp1):- true | Dp = Dp1.
+
+ parameter(Value,Time):- Value>0|
+        Time=Value.
+otherwise.
+ parameter(_,Time):- true |Time=2000.
+
+%%%
+%%% profiling message.
+%%%
+ go_prof_msg(GRM,PReq,Task,GoalList,At,Int,Time,Timer,Dp,Lis):- true |
+        GRM=[execute(Task,{GoalList},"profiler",0,4000,0,Status)],   
+        PReq=[create(Time,[encoded_message_frequency,decoded_message_frequency],PStatus)],
+        Timer=[get_count(normal(St))|RTimer],
+        profile(PStatus,DataList,EndFlag),
+        go_prof1_msg(Status,St,At,Int,Time,RTimer,Dp,Lis,DataList,EndFlag).
+
+profile(normal(Prof,_,_),DataList,EndFlag):- true |
+       Prof = [get(Stat)|RProf],
+       profile1(EndFlag,Stat,RProf,DataList).
+
+%%% 93.9.24 By K.Nakao
+profile1(EndFlag,Stat,Prof,DataList):- wait(EndFlag)|
+      Prof = [stop(_)|RProf],
+      profile1(_,Stat,RProf,DataList).
+
+alternatively.
+profile1(_EndFlag,normal(end_of_data),Prof,DataList):- true|
+      Prof = [],
+      DataList = [].
+profile1(EndFlag,normal(Data),Prof,DataList):- Data \= end_of_data|
+      Prof = [get(Stat)|RProf],
+      DataList = [Data|RData],
+      profile1(EndFlag,Stat,RProf,RData).
+%%% 93.9.24 By K.Nakao 
+
+go_prof1_msg(normal(Ctr,Rpt),St,At,Int,Time,RTimer,Dp,Lis,DataList,EndFlag):- true |
+        msg_handler0(Rpt,Ctr,At,Int,1,St,Dp,Lis,DataList,EndFlag,RTimer).
+
+%%%%%%% handler %%%%%%
+ msg_handler0(Rpt,Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- wait(St) |
+    msg_handler(Rpt,Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+
+ msg_handler(Rpt,Ctr,[Attention|At],Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+    Ctr = [stop|Ctr1],
+    msg_attention(Rpt,Ctr1,before,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer). % before stopped
+
+ msg_handler([resource_low|Rpt],Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+    Ctr = [add_resource(0,100000000)|Ctr1],
+    msg_handler(Rpt,Ctr1,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+ msg_handler([resource_report_allowed|Rpt],Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+    msg_handler(Rpt,Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+ msg_handler([resource_added|Rpt],Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+   Ctr=[allow_resource_report|Ctr1],
+    msg_handler(Rpt,Ctr1,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+ msg_handler([return_resource(H,L)|Rpt],Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+    msg_handler(Rpt,Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+ msg_handler([started|Rpt],Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+    msg_handler(Rpt,Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+ msg_handler([terminated|Rpt],Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+    %% profile ?? %%
+     Timer = [get_count(normal(EndT))],
+     msg_wait_time(EndT,EndFlag,Rpt,Ctr,Int,Cy,St,Dp,Lis,DataList).
+ msg_handler([aborted|Rpt],Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+    msg_handler(Rpt,Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+
+otherwise.
+ msg_handler([_|Rpt],Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+    msg_handler(Rpt,Ctr,At,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+
+
+ msg_wait_time(End,EndFlag,Rpt,Ctr,{Hid,Int},Cy,St,Dp,Lis,DataList):- 
+        wait(End)|
+        EndFlag = terminated,
+        Ctr= [statistics|Ctr1],
+        ExecTime:=End-St,
+        as_make_data:go(DataList,Data1,Max),
+        all_processor_num(AllPE),
+        Dp=[put(Hid,{What1,AllPE,0,msg(Int,Max,ExecTime,Data1)})],
+        msg_name_table(What,Data1),
+        quicksort(What,What1),
+        status(Rpt,Ctr1,High,Low),
+        Lis={High,Low,ExecTime}.
+
+
+ msg_wait_time2(End,EndFlag,Rpt,Ctr,{Hid,Int},Cy,St,Dp,Lis,DataList):- 
+        wait(End)|
+        EndFlag = terminated,
+        Ctr= [statistics|Ctr1],
+        ExecTime:=End-St,
+        as_make_data:go(DataList,Data1,Max),
+        all_processor_num(AllPE),
+        Dp=[put(Hid,{What1,AllPE,0,msg(Int,Max,ExecTime,Data1)})],
+        msg_name_table(What,Data1),
+        quicksort(What,What1),
+        status2(Rpt,Ctr1,before,High,Low),
+        Lis={High,Low,ExecTime}.
+
+
+%% enter attention %%
+ msg_attention([resource_low|Rpt],Ctr,Type,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):-true|
+    Ctr = [add_resource(0,100000000)|Ctr1],
+    msg_attention(Rpt,Ctr1,Type,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+ msg_attention([resource_added|Rpt],Ctr,Type,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):-true|
+    Ctr = [allow_resource_report|Ctr1],
+    msg_attention(Rpt,Ctr1,Type,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+% before stopped and completed
+ msg_attention([terminated|Rpt],Ctr,before,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+     Timer = [get_count(normal(EndT))],
+     msg_wait_time2(EndT,EndFlag,Rpt,Ctr,Int,Cy,St,Dp,Lis,DataList).
+
+%% after stopped, but before completed
+ msg_attention([terminated|Rpt],Ctr,after(CV),Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+     CV=attention,
+     Timer = [get_count(normal(EndT))],
+     msg_wait_time(EndT,EndFlag,Rpt,Ctr,Int,Cy,St,Dp,Lis,DataList).
+ msg_attention([stopped(Reason,CV)|Rpt],Ctr,before,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+    Reason=[],
+    Ctr = [abort(_)|Ctr1],
+    msg_attention(Rpt,Ctr1,after(CV),Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).
+otherwise.
+ msg_attention([_|Rpt],Ctr,Type,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer):- true |
+     msg_attention(Rpt,Ctr,Type,Int,Cy,St,Dp,Lis,DataList,EndFlag,Timer).    
+
+ msg_name_table(What,DataList):- true |
+    get_message(MessageList),
+    msg_all_data(MessageList,What,DataList).
+
+
+   msg_all_data([],NewList,_):- true |
+      NewList = [].
+   msg_all_data([{Message,_,_,Id}|R],NewList,Data):- true |
+      count_total(Id,Data,0,D,0,E),
+      NewList = [{Message,D,E,Id}|RList],
+      msg_all_data(R,RList,Data).
+
+   count_total(Id,[],C1,D1,C2,E1):- true |
+      D1 = C1,E1 = C2.
+   count_total(Id,[profile(_,DataList)|RData],C1,D1,C2,E1):- true |
+     matching(Id,DataList,C1,TC1,C2,TC2),
+     count_total(Id,RData,TC1,D1,TC2,E1).
+
+   matching(Id,[],C1,TC1,C2,TC2):- true |
+     TC1 = C1, TC2 = C2.
+   matching(Id,[pe(_,DataList)|RPEData],C1,TC1,C2,TC2):- true |
+     match(Id,DataList,C1,NC1,C2,NC2),
+     matching(Id,RPEData,NC1,TC1,NC2,TC2).
+
+  match(_,[],C1,NC1,C2,NC2):- true|
+     NC1 = C1,
+     NC2 = C2.
+  match(Id,[{Id,Data1,Data2}|RData],C1,NC1,C2,NC2):- true|
+     NC1 := Data1 + C1,
+     NC2 := Data2 + C2.
+  match(Id,[{C,Data1,Data2}|RData],C1,NC1,C2,NC2):-  Id =\= C|
+     match(Id,RData,C1,NC1,C2,NC2).
+
+%%%%%%%%%%
+
+ status([statistics(High,Low)|Rpt],Ctr,High1,Low1):- true | 
+        High1=High,Low1=Low,Ctr=[].
+ status([resource_low|Rpt],Ctr,High,Low):- true | 
+        Ctr = [add_resource(0,100000000)|Ctr1],
+        status(Rpt,Ctr1,High,Low).
+ status([resource_added|Rpt],Ctr,High,Low):- true | 
+        Ctr = [allow_resource_report|Ctr1],
+        status(Rpt,Ctr1,High,Low).
+ status([stopped(Reason,CV)|Rpt],Ctr,High1,Low1):- true |
+        Reason=[],CV=attention,
+    status(Rpt,Ctr,High1,Low1).
+ otherwise.
+ status([_|Rpt],Ctr,High,Low):- true | status(Rpt,Ctr,High,Low).
+
+
+ %% before stopped
+ status2([statistics(High,Low)|Rpt],Ctr,before,High1,Low1):- true | 
+        High1=High,Low1=Low,report2(Rpt,Ctr).
+ %% after stopped
+ status2([statistics(High,Low)|Rpt],Ctr,after,High1,Low1):- true | 
+        High1=High,Low1=Low,Ctr=[].
+ status2([resource_low|Rpt],Ctr,Type,High,Low):- true | 
+        Ctr = [add_resource(0,100000000)|Ctr1],
+        status2(Rpt,Ctr1,Type,High,Low).
+ status2([resource_added|Rpt],Ctr,Type,High,Low):- true | 
+        Ctr = [allow_resource_report|Ctr1],
+        status2(Rpt,Ctr1,Type,High,Low).
+ status2([stopped(Reson,CV)|Rpt],Ctr,_,High1,Low1):- true |
+        Reson=[],CV=attention,
+        status2(Rpt,Ctr,after,High1,Low1).
+ otherwise.
+ status2([_|Rpt],Ctr,Type,High,Low):- true | status2(Rpt,Ctr,Type,High,Low).
+
+ report2([],Ctr):- true | Ctr=[].
+ report2([resource_low|Rpt],Ctr):- true | 
+        Ctr = [add_resource(0,100000000)|Ctr1],
+        report2(Rpt,Ctr1).
+ report2([resource_added|Rpt],Ctr):- true | 
+        Ctr = [allow_resource_report|Ctr1],
+        report2(Rpt,Ctr1).
+ report2([stopped(Reson,CV)|Rpt],Ctr):- true |
+        Reson=[],CV=attention,Ctr=[].
+ otherwise.
+ report2([_|Rpt],Ctr):- true | report2(Rpt,Ctr).
+
+ %% sorting %%
+    quicksort(Xs,Ys):- true |
+        qsort(Xs,Ys,[]).
+
+    qsort([],Ys0,Ys1):- true |
+        Ys0 = Ys1.
+
+    qsort([{P,M,N,Ar,Red,Susp,Id}|Xs],Ys0,Ys3):- true |
+        partition(Xs,Red,S,L),
+        qsort(L,Ys0,Ys1),
+        Ys1=[{P,M,N,Ar,Red,Susp,Id}|Ys2],
+        qsort(S,Ys2,Ys3).
+    qsort([{P,M,N,Red,Susp,Id}|Xs],Ys0,Ys3):- true |
+        partition(Xs,Red,S,L),
+        qsort(L,Ys0,Ys1),
+        Ys1=[{P,M,N,Red,Susp,Id}|Ys2],
+        qsort(S,Ys2,Ys3).
+    qsort([{N,Red,Susp,Id}|Xs],Ys0,Ys3):- true |
+        partition(Xs,Red,S,L),
+        qsort(L,Ys0,Ys1),
+        Ys1=[{N,Red,Susp,Id}|Ys2],
+        qsort(S,Ys2,Ys3).
+
+    partition([],A,S,L):- true |
+        S=[],L=[].
+    partition([{P,M,N,Ar,Red,Susp,Id}|Xs],A,S,L0):- A < Red |
+        L0=[{P,M,N,Ar,Red,Susp,Id}|L1],
+        partition(Xs,A,S,L1).
+    partition([{P,M,N,Red,Susp,Id}|Xs],A,S,L0):- A < Red |
+        L0=[{P,M,N,Red,Susp,Id}|L1],
+        partition(Xs,A,S,L1).
+    partition([{N,Red,Susp,Id}|Xs],A,S,L0):- A < Red |
+        L0=[{N,Red,Susp,Id}|L1],
+        partition(Xs,A,S,L1).
+
+    partition([{P,M,N,Ar,Red,Susp,Id}|Xs],A,S0,L):- A >= Red |
+        S0=[{P,M,N,Ar,Red,Susp,Id}|S1],
+        partition(Xs,A,S1,L).
+    partition([{P,M,N,Red,Susp,Id}|Xs],A,S0,L):- A >= Red |
+        S0=[{P,M,N,Red,Susp,Id}|S1],
+        partition(Xs,A,S1,L).
+    partition([{N,Red,Susp,Id}|Xs],A,S0,L):- A >= Red |
+        S0=[{N,Red,Susp,Id}|S1],
+        partition(Xs,A,S1,L).
+
+
+% 94.2.28 by K.Nakao
+:- switch(machine).
+:- case(mpsi,pimm).
+
+all_processor_num(AllPE):- true| current_node(_,AllPE).
+
+ get_message(List):-true |
+    List=[{throw_goal,0,0,1},
+          {ready,0,0,2},
+          {terminated,0,0,3},
+          {start,0,0,4},
+          {stop,0,0,5},
+          {abort,0,0,6},
+          {read,0,0,7},
+          {answer_value,0,0,8},
+          {release,0,0,9},
+          {unify,0,0,10},
+          {exception,0,0,11},
+          {reserved_11,0,0,12},
+          {reserved_12,0,0,13},
+          {reserved_13,0,0,14},
+          {request_wtc,0,0,15},
+          {supply_wtc,0,0,16},
+          {return_wtc,0,0,17},
+          {request_resource,0,0,18},
+          {supply_resource,0,0,19},
+          {return_resource,0,0,20},
+          {ask_statistics,0,0,21},
+          {answer_statistics,0,0,22},
+          {shoen_profile,0,0,23},
+          {shoen_profile_request,0,0,24},
+          {syncronized_GC,0,0,25},
+          {reserved_25,0,0,26},
+          {reserved_26,0,0,27},
+          {reserved_27,0,0,28},
+          {reserved_28,0,0,29},
+          {reserved_29,0,0,30},
+          {multi_packet_continued,0,0,31},
+          {multi_packet_last,0,0,32}].
+
+:- default.
+
+all_processor_num(AllPE):- true|
+    current_processor(_,NofPE),
+    current_node(_,NofNODE),
+    AllPE := NofNODE * NofPE.
+
+ get_message(List):-true |
+    List=[{throw_goal,0,0,1},
+          {ready,0,0,2},
+          {terminated,0,0,3},
+          {start,0,0,4},
+          {stop,0,0,5},
+          {abort,0,0,6},
+          {read,0,0,7},
+          {answer_value,0,0,8},
+          {release,0,0,9},
+          {unify,0,0,10},
+          {exception,0,0,11},
+          {reserved_11,0,0,12},
+          {reserved_12,0,0,13},
+          {reserved_13,0,0,14},
+          {request_wtc,0,0,15},
+          {supply_wtc,0,0,16},
+          {return_wtc,0,0,17},
+          {request_resource,0,0,18},
+          {supply_resource,0,0,19},
+          {return_resource,0,0,20},
+          {ask_statistics,0,0,21},
+          {answer_statistics,0,0,22},
+          {shoen_profile,0,0,23},
+          {shoen_profile_request,0,0,24},
+          {syncronized_GC,0,0,25},
+          {request_bexid_wex,0,0,26},
+          {request_bexid_bex,0,0,27},
+          {supply_bexid,0,0,28},
+          {nak_start,0,0,29},
+          {nak_stop,0,0,30},
+          {'multi_packet_#msgs',0,0,31},
+          {'multi_packet_#packets',0,0,32}].
+
+:-end_switch.

@@ -1,0 +1,69 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module resource_init.
+:- with_macro pimos.
+:- include("pimos.h").
+:- public top_tasks/1.
+
+top_tasks(List):-
+    true|
+    get_modules(Mod),
+    get_codes(Mod,List).
+
+get_codes([],List):-
+    true|
+    List = [].
+get_codes([{Mod,Com}|Next],List):-
+    wait(Mod)|
+    predicate_to_code(Mod,go,3,Code),
+    List = [{Code,Com}|LNext],
+    get_codes(Next,LNext).
+
+:- switch(fep_interface).
+:- case(scsi).
+get_modules(Mod):-
+    true|
+    Mod = [{module#scsi_request_server, "SCSI Server"}|Tail], % Machine dependent part
+    get_modules0(Tail).
+:- default.
+get_modules(Mod):-
+    true |
+    get_modules0(Mod).
+:-end_switch.
+get_modules0(Mod):- % Machine independent part
+    true|
+    system_defined_servers:modules(Tail),
+    Mod = [{module#fep_server,      "Fep Server"},
+           {module#atom_server,     "Atom Server"},
+           {module#module_server,   "Module Server"},
+           {module#user_server,     "User Server"},
+%           {module#telnet_server,   "Telnet Server"},
+           {module#pipe_server,     "Pipe Server"},
+           {module#profiling_server,"Profiling Server"},
+           {module#user_server_manager,    "User Server Manager"}|Tail].
+
+%%%%%%%%%%%%%%%%%%%
+%start(End):-
+%    true|
+%    fep_server:go(O4,End),
+%    atom_server:go(O1,End),
+%    module_server:go(O2,End),
+%    user_servers:go(O3,End),
+%    start2(O1,O2,O3,O4).
+
+%start2(ok,ok,ok,ok):-
+%    true|
+%    predicate_to_code(module#users,go,0,Code),
+%    shoen:raise(pimos_tag#task,general_request,
+%            [execute(Code,{},"Users",0,4090,-1,Result),
+%             bios(BIOS)]),
+%    wait_start2(Result,BIOS).
+
+%wait_start2(normal(Cont,Rep),BIOS):-
+%    true|
+%    task_monitor(Rep,Cont,BIOS).
+

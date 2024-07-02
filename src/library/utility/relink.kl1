@@ -1,0 +1,580 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Util>relink.kl1.5, 21-Apr-92 16:14:33, Edit by hori
+%%%%%%%%%%%%%
+% Re-Linker %
+%%%%%%%%%%%%%
+
+:- module relink.
+:- with_macro pimos.
+:- public usage/1.                      % usage
+:- public go/0, go/1, go/2, go/3.       % shell invocation entry
+:- public relink/4, relink/5, relink/6.
+:- public relink_with_pool/6, relink_with_pool/7.
+:- public package/0, package/1, package/4.
+:- public do/4, do/5.
+:- public search_program_modules/5.     % for unload:program
+:- public search_program_modules/7.     % for unload:program
+
+usage(Usage) :- true |
+    Usage = [{string#"Usage : relink([ModuleName, ...])~n",[]},
+             {string#"        relink(TopModuleName,[ModuleName, ...])~n",[]},
+             {string#"        relink(Package,TopModuleName,[ModuleName, ...])~n",[]},
+             {string#"        relink:package~n",[]},
+             {string#"        relink:package(PackageName)~n",[]}].
+
+go :- true | usage:go(relink).
+
+go(ModName) :- atom(ModName) |
+    kl1_library_message:message(MESG0),
+    module_table:cache_table(ModDev0),
+    merge(ModDev1,ModDev0),
+    get_module(ModName,Module,ModDev1,MESG0,MESG1,Status0),
+    relink_modules([Module],Status0,Status,MESG1,[]).
+go(PModName) :- PModName = {(::),Package,ModName}, atom(Package), atom(ModName) |
+    kl1_library_message:message(MESG0),
+    module_table:cache_table(ModDev0),
+    merge(ModDev1,ModDev0),
+    get_module(PModName,Module,ModDev1,MESG0,MESG1,Status0),
+    relink_modules([Module],Status0,Status,MESG1,[]).
+go(ModNames) :- list(ModNames) |
+    kl1_library_message:message(MESG0),
+    module_table:cache_table(ModDev0),
+    merge(ModDev1,ModDev0),
+    get_modules(ModNames,Modules,ModDev1,MESG0,MESG1,normal,Status1),
+    relink_modules(Modules,Status1,Status,MESG1,[]).
+otherwise.
+go(_) :- true | usage:go(relink).
+
+go(TopName,ModNames) :- list(ModNames) |
+    kl1_library_message:message(MESG0),
+    module_table:cache_table(ModDev0),
+    merge({ModDev1,ModDev2,ModDev3},ModDev0),
+    get_module(TopName,TopMod,ModDev1,MESG0,MESG1,Status0),
+    get_modules(ModNames,GMods,ModDev2,MESG1,MESG2,Status0,Status1),
+    get_option(DefaultPackage,LoadFlag,WP),
+    search_modules([TopMod],GMods,WP,ModDev3,MESG2,MESG3,Modules,Status1,Status2),
+    relink_modules(Modules,Status2,_,MESG3,[]).
+otherwise.
+go(TopName,ModName) :- true |
+    go(TopName,[ModName]).
+
+go(Package,TopName,ModNames) :- atom(Package) |
+    go([Package],TopName,ModNames).
+go(WP,TopName,ModNames) :- list(WP), list(ModNames) |
+    kl1_library_message:message(MESG0),
+    module_table:cache_table(ModDev0),
+    merge({ModDev1,ModDev2,ModDev3},ModDev0),
+    get_module(TopName,TopMod,ModDev1,MESG0,MESG1,Status0),
+    get_modules(ModNames,GMods,ModDev2,MESG1,MESG2,Status0,Status1),
+    search_modules([TopMod],GMods,WP,ModDev3,MESG2,MESG3,Modules,Status1,Status2),
+    relink_modules(Modules,Status2,_,MESG3,[]).
+otherwise.
+go(WP,TopName,ModName) :- true |
+    go(WP,TopName,[ModName]).
+
+package :- true |
+    module_table:cache_table([get_default_package(Status0)]),
+    default_package(Status0,Package),
+    package(Package).
+
+package(Package) :- atom(Package) |
+    module_table:cache_table([get_all_modules(Package,St)]),
+    get_all_modules(St,Modules),
+    kl1_library_message:message(MESG),
+    relink_modules(Modules,normal,Status,MESG,[]).
+otherwise.
+package(_) :- true | usage:go(relink).
+
+package(Package,STDOUT,STDMES,Status) :- atom(Package) |
+    module_table:cache_table([get_all_modules(Package,St)]),
+    get_all_modules(St,Modules),
+    kl1_library_message:message(MESG,STDOUT,STDMES),
+    relink_modules(Modules,normal,Status,MESG,[]).
+
+do(ModNames,STDOUT,STDMES,Status) :- true |
+    kl1_library_message:message(MESG,STDOUT,STDMES),
+    relink(ModNames,MESG,[],Status).
+
+do(TopName,ModNames,STDOUT,STDMES,Status) :- true |
+    kl1_library_message:message(MESG,STDOUT,STDMES),
+    relink(TopName,ModNames,MESG,[],Status).
+
+relink(ModNames,MESG0,MESG,Status) :- true |
+    module_table:cache_table(ModDev0),
+    merge(ModDev1,ModDev0),
+    get_modules(ModNames,Modules,ModDev1,MESG0,MESG1,normal,Status1),
+    relink_modules(Modules,Status1,Status,MESG1,MESG).
+
+relink(TopName,ModNames,MESG0,MESG,Status) :- true |
+    module_table:cache_table(ModDev0),
+    merge({ModDev1,ModDev2,ModDev3},ModDev0),
+    get_module(TopName,TopMod,ModDev1,MESG0,MESG1,Status0),
+    get_modules(ModNames,GMods,ModDev2,MESG1,MESG2,Status0,Status1),
+    get_option(DefaultPackage,LoadFlag,WP),
+    search_modules([TopMod],GMods,WP,ModDev3,MESG2,MESG3,Modules,Status1,Status2),
+    relink_modules(Modules,Status2,Status,MESG3,MESG).
+
+relink(Package,TopName,ModNames,MESG0,MESG,Status) :- atom(Package) |
+    relink([Package],TopName,ModNames,MESG0,MESG,Status).
+relink(WP,TopName,ModNames,MESG0,MESG,Status) :- list(WP) |
+    module_table:cache_table(ModDev0),
+    merge({ModDev1,ModDev2,ModDev3},ModDev0),
+    get_module(TopName,TopMod,ModDev1,MESG0,MESG1,Status0),
+    get_modules(ModNames,GMods,ModDev2,MESG1,MESG2,Status0,Status1),
+    search_modules([TopMod],GMods,WP,ModDev3,MESG2,MESG3,Modules,Status1,Status2),
+    relink_modules(Modules,Status2,Status,MESG3,MESG).
+otherwise.
+relink(_,_,_,MESG0,MESG,Status) :- true |
+    MESG0 = [info(string#"illegal relink argument(s)",[])|MESG],
+    Status = abnormal.
+
+relink_with_pool(ModNames,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = [get_module_table({ModDev0,ModDev1})|VP1],
+    get_modules(ModNames,Modules,ModDev0,MESG0,MESG1,normal,Status1),
+    relink_modules_0(Modules,Status1,Status,ModDev1,MESG1,MESG,VP1,VP).
+
+relink_with_pool([],GoalModules,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = VP,
+    MESG0 = MESG,
+    Status = normal.
+relink_with_pool(TopNames,GoalModules,VP0,VP,MESG0,MESG,Status) :- list(TopNames) |
+    VP0 = [get_working_packages(WP),
+           get_module_table({ModDev1,ModDev2,ModDev3,ModDev4})|VP1],
+    get_modules(TopNames,TopMods,ModDev1,MESG0,MESG1,normal,Status0),
+    get_modules(GoalModules,GMods,ModDev2,MESG1,MESG2,Status0,Status1),
+    search_modules(TopMods,GMods,WP,ModDev3,MESG2,MESG3,Modules,Status1,Status2),
+    relink_modules_0(Modules,Status2,Status,ModDev4,MESG3,MESG,VP1,VP).
+
+%%%%%%%%%%%%%%%%%%%
+%%  GET_MODULES  %%
+%%%%%%%%%%%%%%%%%%%
+
+get_modules([ModuleName|Rest],Modules,ModDev0,MESG0,MESG,Status0,Status) :- 
+    true |
+    ModDev0 = {ModDev1,ModDev2},
+    get_module(ModuleName,Module,ModDev1,MESG0,MESG1,Status1),
+    Modules = [Module|ModRest],
+    set_status(Status0,Status1,Status2),
+    get_modules(Rest,ModRest,ModDev2,MESG1,MESG,Status2,Status).
+get_modules([],Modules,ModDev0,MESG0,MESG,Status0,Status) :- true |
+    Modules = [],
+    ModDev0 = [],
+    MESG0 = MESG,
+    Status0 = Status.
+
+set_status(normal,normal,Status) :- true | Status = normal.
+otherwise.
+set_status(_,_,Status) :- true | Status = abnormal.
+
+get_module(ModuleName,Module,ModDev0,MESG0,MESG,Status) :-
+    atom(ModuleName) |
+    ModDev0 = [get_module(ModuleName,GetModuleStatus)],
+    check_get_module(GetModuleStatus,Module,ModuleName,MESG0,MESG,Status).
+get_module(ModuleName,Module,ModDev0,MESG0,MESG,Status) :-
+    ModuleName = {(::),Package,ModName}, atom(Package), atom(ModName) |
+    ModDev0 = [get_module(ModuleName,GetModuleStatus)],
+    check_get_module(GetModuleStatus,Module,ModuleName,MESG0,MESG,Status).
+otherwise.
+get_module(ModuleName,Module,ModDev0,MESG0,MESG,Status) :- true |
+    ModDev0 = [],
+    MESG0 = [error(string#"illegal module name specification : ~t",[ModuleName])|MESG],
+    Status = abnormal.
+
+check_get_module(normal(Mod),Module,ModuleName,MESG0,MESG,Status) :- vector(ModuleName,_) |
+    module:get_module_name(Mod,ModName),
+    Module = {ModName,Mod},
+    MESG0 = MESG,
+    Status = normal.
+check_get_module(normal(Mod),Module,ModuleName,MESG0,MESG,Status) :- atom(ModuleName) |
+    module:get_module_name(Mod,ModName),
+    Module = {ModName,Mod},
+    MESG0 = MESG,
+    Status = normal.
+otherwise.
+check_get_module(_,Module,ModuleName,MESG0,MESG,Status) :- true |
+    Module = 0,
+    MESG0 = [error(string#"non existent module : ~t",[ModuleName])|MESG],
+    Status = abnormal.
+
+%%%%%%%%%%%%%%
+%%  SEARCH  %%
+%%%%%%%%%%%%%%
+
+search_modules(TopMods,Goals,WP,ModDev0,MESG0,MESG,Modules,normal,Status) :- true |
+    ref_DB({RDB1,RDB2}),
+    make_rdb(TopMods,WP,ModDev0,MESG0,MESG,RDB1,Status),
+    RDB2 = [search(Goals,Modules)].
+otherwise.
+search_modules(_,_,_,ModDev0,MESG0,MESG,Modules,_,Status) :- true |
+    ModDev0 = [],
+    MESG0 = MESG,
+    Modules = [],
+    Status = abnormal.
+
+search_program_modules(ModNames,MESG0,MESG,ProgramModules,Status) :- true |
+    get_option(DefaultPackage,LoadFlag,Packages),
+    module_table:cache_table(ModDev0),
+    merge({ModDev1,ModDev2},ModDev0),
+    get_modules(ModNames,Modules,ModDev1,MESG0,MESG1,normal,Status0),
+    check_and_go(Status0,Modules,Packages,ProgramModules,ModDev2,MESG1,MESG,Status).
+
+search_program_modules(ModNames,VP0,VP,MESG0,MESG,ProgramModules,Status) :- true |
+    VP0 = [get_working_packages(Packages),
+           get_module_table({ModDev1,ModDev2})|VP],
+    get_modules(ModNames,Modules,ModDev1,MESG0,MESG1,normal,Status0),
+    check_and_go(Status0,Modules,Packages,ProgramModules,ModDev2,MESG1,MESG,Status).
+
+check_and_go(normal,Modules,Packages,ProgramModules,ModDev0,MESG0,MESG,Status) :- true |
+    ref_DB({RDB1,RDB2}),
+    make_rdb(Modules,Packages,ModDev0,MESG0,MESG,RDB1,Status),
+    RDB2 = [get_all(ProgramModules)].
+otherwise.
+check_and_go(_,Modules,Packages,ProgramModules,ModDev0,MESG0,MESG,Status) :- true |
+    ProgramModules = [],
+    ModDev0 = [],
+    MESG0 = MESG,
+    Status = abnormal.
+
+make_rdb(Module,WP,ModDev0,MESG0,MESG,RDB0,Status) :-
+    make_rdb(Module,WP,ModDev0,MESG0,MESG,RDB0,normal,Status).
+
+make_rdb(Module,WP,ModDev0,MESG0,MESG,RDB0,Status0,Status) :-
+    Module = {ModName,Mod} |
+    ModDev0 = {ModDev1,ModDev2},
+    get_ex_mods(Module,ExModules,N,WP,ModDev1,MESG0,MESG1,Status0,Status1),
+    RDB0 = [ref(Module,N,ExModules,Done)|RDB1],
+    make_rdb(Done,Module,ExModules,WP,ModDev2,MESG1,MESG,RDB1,Status1,Status).
+make_rdb([Module|Rest],WP,ModDev0,MESG0,MESG,RDB0,Status0,Status) :- true |
+    ModDev0 = {ModDev1,ModDev2,ModDev3},
+    get_ex_mods(Module,ExModules,N,WP,ModDev1,MESG0,MESG1,Status0,Status1),
+    RDB0 = [ref(Module,N,ExModules,Done)|{RDB1,RDB2}],
+    make_rdb(Done,Module,ExModules,WP,ModDev2,MESG1,MESG2,RDB1,Status1,Status2),
+    make_rdb(Rest,WP,ModDev3,MESG2,MESG,RDB2,Status2,Status).
+make_rdb([],WP,ModDev0,MESG0,MESG,RDB0,Status0,Status) :- true |
+    ModDev0 = [],
+    MESG0 = MESG,
+    RDB0 = [],
+    Status = Status0.
+
+make_rdb(not_yet,Module,ExModules,WP,ModDev0,MESG0,MESG,RDB0,Status0,Status) :- true |
+    fork_search(ExModules,WP,ModDev0,MESG0,MESG,RDB0,Status0,Status).
+make_rdb(already,Module,ExModules,WP,ModDev0,MESG0,MESG,RDB0,Status0,Status) :- true |
+    ModDev0 = [],
+    MESG0 = MESG,
+    RDB0 = [],
+    Status = Status0.
+
+fork_search([Module|Rest],WP,ModDev0,MESG0,MESG,RDB0,Status0,Status) :- true |
+    ModDev0 = {ModDev1,ModDev2},
+    RDB0 = {RDB1,RDB2},
+    make_rdb(Module,WP,ModDev1,MESG0,MESG1,RDB1,Status0,Status1),
+    fork_search(Rest,WP,ModDev2,MESG1,MESG,RDB2,Status1,Status).
+fork_search([],WP,ModDev0,MESG0,MESG,RDB0,Status0,Status) :- true |
+    ModDev0 = [],
+    MESG0 = MESG,
+    RDB0 = [],
+    Status = Status0.
+
+ref_DB(In0) :- true |                   % a pool process to make dependency network
+    pool:keyed_set(P,100),
+    merge(In0,In1),
+    ref_DB_0(In1,P).
+
+ref_DB_0([ref({Name,Module},N,ExModules,Status)|In],P0) :- true |   % makeing net from call relation
+    P0 = [get_if_any_and_put(Name,Old,New)|P1],   % check if already searched
+    ref_DB(Old,New,Module,N,Status),
+    make_inv_ref(ExModules,{Name,Module},P1,P2),
+    ref_DB_0(In,P2).
+ref_DB_0([search(Goals,Modules)|In],P0) :- true |   % search dependency from leaves to top
+    ref_DB_1(In,P0,Goals,Modules).
+ref_DB_0([get_all(Modules)|In],P0) :- true |% get all dependent modules
+    ref_DB_2(In,P0,Modules).
+
+%%%% ref_DB_1 (state 1) after getting search massage
+
+ref_DB_1([ref({Name,Module},N,ExModules,Status)|In],P0,Goals,Modules) :- true |
+    P0 = [get_if_any_and_put(Name,Old,New)|P1],   % Module refers to ExModules
+    ref_DB(Old,New,Module,N,Status),
+    make_inv_ref(ExModules,{Name,Module},P1,P2),
+    ref_DB_1(In,P2,Goals,Modules).
+ref_DB_1([],P0,Goals,Modules) :- true |
+    mark_goals(Goals,P0,P1),            % mark goal modules (leaves in the network)
+    P1 = [carbon_copy(All0)|P2],
+    search_DB(All0,P2,P3),
+    extract(Goals,P3,[get_all(All1)]),  % extract the modules on the path from goal to top
+    transform(All1,Modules).
+
+transform([{Name,{Module,marked}}|Rest],Names0) :- true | 
+    Names0 = [{Name,Module}|Names1],
+    transform(Rest,Names1).
+transform([],Names0) :- true | Names0 = [].
+otherwise.
+transform([_|Rest],Names) :- true | 
+    transform(Rest,Names).
+
+%%%% ref_DB_2 (state 2) after getting the get_all message
+
+ref_DB_2([ref({Name,Module},N,ExModules,Status)|In],P0,Modules) :- true |
+    P0 = [get_if_any_and_put(Name,Old,New)|P1],
+    ref_DB(Old,New,Module,N,Status),
+    make_inv_ref(ExModules,{Name,Module},P1,P2),
+    ref_DB_2(In,P2,Modules).
+ref_DB_2([],P0,Modules) :- true |
+    P0 = [get_all(All)],
+    extract_module(All,Modules).
+
+extract_module([{_,{Module,_,_}}|RestA],Modules) :- true |
+    Modules = [Module|RestB],
+    extract_module(RestA,RestB).
+extract_module([],Modules) :- true |
+    Modules = [].
+
+ref_DB({{_,Count,Refered}},New,Module,N,Status) :- integer(Count) |
+    New = {Module,Count,Refered},       % Counter is the number of modules refering this
+    Status = already.
+ref_DB({{[],[],Refered}},New,Module,N,Status) :- true |
+    New = {Module,N,Refered},
+    Status = not_yet.
+ref_DB({},New,Module,N,Status) :- true |
+    New = {Module,N,[]},
+    Status = not_yet.                   % reverse the call-called relation pointer
+
+make_inv_ref([{ExModule,_}|Rest],Module,P0,P) :- true |
+    P0 = [get_if_any_and_put(ExModule,Old,New)|P1],
+    make_inv_ref_0(Old,New,Module),
+    make_inv_ref(Rest,Module,P1,P).
+make_inv_ref([],ExMod,P0,P) :- true | P0 = P.
+
+make_inv_ref_0({{ExMod,N,Old}},New,Module) :- true |
+    New = {ExMod,N,Refered},
+    add_if_not_yet(Module,Old,Refered).
+make_inv_ref_0({},New,Module) :- true |
+    New = {[],[],[Module]}.
+
+mark_goals([{Goal,_}|Rest],P0,P) :- true |
+    P0 = [get_and_put_if_any(Goal,Old,New,_)|P1],
+    mark_goal(Old,New),
+    mark_goals(Rest,P1,P).
+mark_goals([],P0,P) :- true | P0 = P.
+
+mark_goal({{Mod,N,Refered}},New) :- true |
+    New ={Mod,goal,Refered}.
+mark_goal({},New) :- true | true.
+
+search_DB([{Name,{Module,Count,Refered}}|Rest],P0,P) :-  true |
+    search_DB(Name,Module,Count,Refered,P0,P1),
+    search_DB(Rest,P1,P).
+search_DB([],P0,P) :- true | P0 = P.
+
+search_DB(Name,Module,0,Refered,P0,P) :- true |
+    P0 = [get(Name,_)|P1],              % extract the module which refers nothing
+    decrement_ref_count(Refered,P1,P).
+otherwise.
+search_DB(Name,Module,Count,Refered,P0,P) :- true | P0 = P.
+
+decrement_ref_count([{Name,_}|Rest],P0,P) :- true |
+    P0 = [get(Name,{Module,Count,Refered})|P1], % decrement reference count
+    decrement_ref_count(Name,Module,Count,Refered,P1,P2),
+    decrement_ref_count(Rest,P2,P).
+decrement_ref_count([],P0,P) :- true | P0 = P.
+
+decrement_ref_count(Name,Module,goal,Refered,P0,P) :- true |
+    P0 = [put(Name,{Module,goal,Refered},_)|P].  % goal modules should be retained
+decrement_ref_count(Name,Module,1,Refered,P0,P) :- true |
+    decrement_ref_count(Refered,P0,P).  % propagate the extraction of non-referenced module
+decrement_ref_count(Name,Module,Count,Refered,P0,P) :- Count > 1 |
+    Count1 := Count - 1,
+    P0 = [put(Name,{Module,Count1,Refered},_)|P].
+
+extract([{Goal,_}|Rest],P0,P) :- true |
+    P0 = [get_if_any(Goal,Cont)|P1],
+    extract_0(Cont,Goal,P1,P2),
+    extract(Rest,P2,P).
+extract([],P0,P) :- true | P0 = P.
+
+extract_0({},Goal,P0,P) :- true | P0 = P.
+extract_0({{Module,marked}},Goal,P0,P) :- true |
+    P0 = [put(Goal,{Module,marked},_)|P].
+extract_0({{Module,goal,Refered}},Goal,P0,P) :- true |
+    P0 = [put(Goal,{Module,goal,Refered},_)|P1],
+    extract_1(Refered,P1,P).
+
+extract_1([{Name,Module}|Rest],P0,P) :- true |
+    P0 = [get_if_any(Name,Cont)|P1],
+    extract_mark(Cont,Name,P1,P2),
+    extract_1(Rest,P2,P).
+extract_1([],P0,P) :- true | P0 = P.
+
+extract_mark({{Module,goal,Refered}},Goal,P0,P) :- true |
+    P0 = [put(Goal,{Module,marked},_)|P1],
+    extract_1(Refered,P1,P).
+extract_mark({{Module,Count,Refered}},Goal,P0,P) :- integer(Count) |
+    P0 = [put(Goal,{Module,marked},_)|P1],
+    extract_1(Refered,P1,P).
+extract_mark({{Module,marked}},Goal,P0,P) :- true |
+    P0 = [put(Goal,{Module,marked},_)|P].
+extract_mark({},Goal,P0,P) :- true |
+    P0 = P.
+
+member([Obj|_],Obj,YorN) :- true | YorN = yes.
+member([],_,YorN) :- true | YorN = no.
+otherwise.
+member([_|Rest],Obj,YorN) :- true | member(Rest,Obj,YorN).
+
+add_if_not_yet(ExMod,ExMods0,ExMods1) :- ExMods0 = [ExMod|_] |
+    ExMods1 = ExMods0.
+add_if_not_yet(ExMod,[],ExMods1) :- true |
+    ExMods1 = [ExMod].
+otherwise.
+add_if_not_yet(ExMod,ExMods0,ExMods1) :- ExMods0 = [ExMod0|ExMods2] |
+    ExMods1 = [ExMod0|ExMods3],
+    add_if_not_yet(ExMod,ExMods2,ExMods3).
+
+%%%%---------------------------------------------%%%%
+%%%% Extract External Module by scanning GC area %%%%
+%%%%---------------------------------------------%%%%
+
+get_ex_mods({Name,Module},ExMods,N,WP,ModDev0,MESG0,MESG,Status0,Status) :- true |
+    module_utility:get_ex_mods(Module,BagOfExNames),
+    bag_to_set(BagOfExNames,[],SetOfExNames),
+    get_modules(SetOfExNames,ExMods0,ModDev0,MESG0,MESG,Status0,Status),
+    limit_within_the_scope(ExMods0,WP,ExMods,0,N).
+
+bag_to_set([{Name,_}|Bag],L,Set) :- true |
+    member(L,Name,YorN),
+    bag_to_set(YorN,Name,Bag,L,Set).
+bag_to_set([Name|Bag],L,Set) :- Name = {(::),_,_} |
+    member(L,Name,YorN),
+    bag_to_set(YorN,Name,Bag,L,Set).
+bag_to_set([],L,Set) :- true | Set = L.
+
+bag_to_set(yes,_,Bag,L,Set) :- true |
+    bag_to_set(Bag,L,Set).
+bag_to_set(no,X,Bag,L,Set) :- true |
+    bag_to_set(Bag,[X|L],Set).
+
+limit_within_the_scope([Module|Rest],WP,Modules0,N0,N) :-
+    Module = {Name,Mod} |
+    module_utility:get_module_name(Mod,Package,_),
+    package_scope(Package,WP,YorN),
+    limit_within_the_scope(YorN,Module,Rest,WP,Modules0,N0,N).
+limit_within_the_scope([0|Rest],WP,Modules0,N0,N) :- true |
+    limit_within_the_scope(Rest,WP,Modules0,N0,N).
+limit_within_the_scope([],WP,Modules0,N0,N) :- true |
+    Modules0 = [],
+    N0 = N.
+
+limit_within_the_scope(yes,Module,Rest,WP,Modules0,N0,N) :- true |
+    N1 := N0 + 1,
+    Modules0 = [Module|Modules1],
+    limit_within_the_scope(Rest,WP,Modules1,N1,N).
+limit_within_the_scope(no,Module,Rest,WP,Modules0,N0,N) :- true |
+    limit_within_the_scope(Rest,WP,Modules0,N0,N).
+
+package_scope(_,[('*')],YorN) :- true | YorN = yes.
+otherwise.
+package_scope(Package,Packages,YorN) :- true |
+    member(Packages,Package,YorN).
+
+%%%%%%%%%%%%%%
+%%  RELINK  %%
+%%%%%%%%%%%%%%
+
+relink_modules(Modules,normal,Status,MESG0,MESG) :- list(Modules) |
+    get_option(DP,LF,_),
+    loader_module_table:module_table(ModTbl),
+    shoen:raise(pimos_tag#task,general_request,[timer(normal(TimerReq,_,_))]),
+    TimerReq = [create(normal(Timer,_,_))],
+    Timer = [get_date_time(normal(Date,Time))],
+    relink_modules(Modules,ModTbl,[],Status,Date,Time,DP,LF,MESG0,MESG1),
+    MESG1 = [report_total_error(string#"Relink")|MESG].
+relink_modules([],normal,Status,MESG0,MESG) :- true |
+    MESG0 = [warning(string#"nothing to relink",[])|MESG],
+    Status = normal.
+relink_modules(Modules,abnormal,Status,MESG0,MESG) :- true |
+    Status = abnormal,
+    MESG0 = [report_total_error(string#"Relink")|MESG].
+
+relink_modules_0(Modules,normal,Status,CT,MESG0,MESG,VP0,VP) :- list(Modules) |
+    VP0 = [get_package(DP),
+           get_original_package(LF),
+           get_loader_table(ModTbl0,ModTbl),
+           get_date_time(Date,Time),
+           get_auto_link(AL),
+           get_link_error(LE)|VP],
+    relink_modules_1(Modules,ModTbl0,ModTbl,Status,Date,Time,DP,LF,AL,LE,CT,MESG0,MESG1),
+    MESG1 = [report_total_error(string#"Relink")|MESG].
+relink_modules_0([],normal,Status,CT,MESG0,MESG,VP0,VP) :- true |
+    Status = normal,
+    CT = [],
+    MESG0 = [warning(string#"nothing to relink",[]),
+             report_total_error(string#"Relink")|MESG],
+    VP0 = VP.
+relink_modules_0(Modules,abnormal,Status,CT,MESG0,MESG,VP0,VP) :- true |
+    Status = abnormal,
+    CT = [],
+    MESG0 = [report_total_error(string#"Relink")|MESG],
+    VP0 = VP.
+
+get_option(DefaultPackage,LoadFlag,WP) :- true |
+    shoen:raise(pimos_tag#task,general_request,
+        [getenv(task:package,DP),
+         getenv(compile:working_packages,PS),
+         getenv(compile:original_package,LF)]),
+    default_package(DP,DefaultPackage),
+    package_scope_option(PS,DefaultPackage,WP),
+    load_flag(LF,LoadFlag).
+
+default_package(normal(DP),DefaultPackage) :- atom(DP) |
+    DefaultPackage = DP.
+otherwise.
+default_package(_,DefaultPackage) :- true |
+    DefaultPackage = work.
+
+package_scope_option(normal(PS),_,WP) :- atom(PS) |
+    WP = [PS].
+package_scope_option(normal(PS),_,WP) :- list(PS) |
+    WP = PS.
+otherwise.
+package_scope_option(_,DefaultPackage,WP) :- true |
+    WP = [DefaultPackage].
+
+load_flag(normal(_),LoadFlag) :- true |
+    LoadFlag = on.
+otherwise.
+load_flag(_,LoadFlag) :- true |
+    LoadFlag = off.
+
+relink_modules([{_,Module}|Rest],ModTbl0,ModTbl,Status,Date,Time,DP,LF,MESG0,MESG) :-
+    module(Module,_) |
+    module_utility:relink_module(Module,ModTbl0,ModTbl1,Date,Time,DP,LF),
+    relink_modules(Rest,ModTbl1,ModTbl,Status,Date,Time,DP,LF,MESG0,MESG).
+relink_modules([],ModTbl0,ModTbl,Status,_,_,_,_,MESG0,MESG) :- true |
+    ModTbl0 = [flush(MESG0,MESG,Status)|ModTbl].
+
+relink_modules_1([{_,Module}|Rest],ModTbl0,ModTbl,Status,Date,Time,DP,LF,AL,LE,CT,MESG0,MESG) :-
+    module(Module,_) |
+    module_utility:relink_module(Module,ModTbl0,ModTbl1,Date,Time,DP,LF),
+    relink_modules_1(Rest,ModTbl1,ModTbl,Status,Date,Time,DP,LF,AL,LE,CT,MESG0,MESG).
+relink_modules_1([],ModTbl0,ModTbl,Status,_,_,_,_,on,LE,CT,MESG0,MESG) :- true |
+    ModTbl0 = [flush(LE,CT,MESG0,MESG,Status)|ModTbl].
+relink_modules_1([],ModTbl0,ModTbl,Status,_,_,_,_,off,LE,CT,MESG0,MESG) :- true |
+    ModTbl0 = ModTbl,
+    Status = normal,
+    MESG0 = MESG.
+
+get_all_modules(normal(List),Modules) :- true |
+    get_all_modules_0(List,Modules).
+otherwise.
+get_all_modules(_,Modules) :- true | Modules = [].
+
+get_all_modules_0([{Name,Module,_}|Next],Modules) :- true |
+    Modules = [{Name,Module}|Modules0],
+    get_all_modules_0(Next,Modules0).
+get_all_modules_0([],Modules) :- true | Modules = [].

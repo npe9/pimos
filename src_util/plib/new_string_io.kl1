@@ -1,0 +1,99 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>LIBRARY>new_string_io.kl1.9, 28-Nov-90 19:37:30, Edit by yashiro
+:- with_macro pimos.
+:- module '$plib$string_io'.
+:- public string_io/4, string_io/7, password_window/2.
+
+string_io(DeviceName,STR,Ab,At) :-
+    true |
+        '$plib$error':string(DeviceName,plib_string_io,1,_,_,NDeviceName),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[string_io(St)|GR1],
+        check_string_io_request(St,GR1,NDeviceName,STR,Ab,At,plib_string_io).
+
+string_io(Node,Username,Password,DeviceName,STR,Ab,At) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_string_io,1,_,_,NNode),
+        '$plib$error':string(Username,plib_string_io,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_string_io,3,_,_,NPassword),
+        '$plib$error':string(DeviceName,plib_string_io,4,_,_,NDeviceName),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[strIng_io(St)|GR1],
+        check_string_io_request(St,GR1,NDeviceName,STR,Ab,At,plib_string_io).
+
+password_window(Title,Win) :-
+    true |
+        '$plib$error':string(Title,plib_password_window,1,_,_,NTitle),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[string_io(St)|GR1],
+        check_string_io_request(St,GR1,"mpsicsp##pimos_echo_off_window",STR,_,_,plib_password_window),
+        send_message(STR,Title,Win).
+
+check_string_io_request(normal(STRREQ,_,_),GR,DeviceName,STR,Ab,At,ID) :-
+    true |
+        GR=[],
+        STRREQ=[create(DeviceName,St)],
+        check_string_io(St,STR,Ab,At,DeviceName,ID).
+otherwise.
+check_string_io_request(_,GR,_,_,_,_,ID) :-
+    true |
+        GR=[connection(St)],
+        '$plib$error':check_connection(St,ID).
+
+check_string_io(normal(STR,Ab,At),NSTR,NAb,NAt,_,_) :-
+    true |
+        STR=NSTR,Ab=NAb,At=NAt.
+otherwise.
+check_string_io(_,_,_,_,DeviceName,ID) :-
+    true |
+        '$plib$error':error(ID,string#"cannot create string io device",DeviceName).
+
+send_message(STR,Title,Win) :-
+    true |
+        STR=[io(0,Title,St)|STR1],
+        check_title(St,STR1,Win).
+
+check_title(normal(_),STR,Win) :-
+    true |
+        translator(Win,STR).
+otherwise.
+check_title(_,STR,Win) :-
+    true |
+        '$plib$error':error(plib_password_window,string#"cannot set title",[]).
+
+translator([putb(String,Result)|STR],Win) :-
+    true |
+        '$plib$error':string(String,plib_password_window,_,_,_,NString),
+        Win=[io(1,String,St)|Win1],
+        check_putb(St,Result,STR,Win1).
+translator([getb(NResult)|STR],Win) :-
+    true |
+        Win=[io(2,"",Result)|Win1],
+        wait_result(Result,NResult,STR,Win1).
+translator([getb_with_echo_off(NResult)|STR],Win) :-
+    true |
+        Win=[io(3,"",Result)|Win1],
+        wait_result(Result,NResult,STR,Win1).
+translator([],Win) :-
+    true |
+        Win=[].
+otherwise.
+translator([Com|STR],Win) :-
+    true | 
+        '$plib$error':error(plib_password_window,string#"illegal command",Com).
+
+check_putb(normal(_),Result,STR,Win) :-
+    true |
+        Result=normal,
+        translator(STR,Win).
+otherwise.
+check_putb(_,Result,STR,Win) :-
+    true |
+        Result=abnormal,
+        translator(STR,Win).
+
+wait_result(Result,NResult,STR,Win) :-
+    wait(Result) |
+        Result=NResult,
+        translator(STR,Win).

@@ -1,0 +1,72 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module task_std_abnormal.
+:- with_macro pimos.
+:- public handler/1, handler/2, dummy/1, filter/3 .
+
+handler0(Cont,SShut):-
+    true|
+    hfil(Cont,Cont1,SShut),
+    handler(Cont1,SShut).
+
+handler(Cont):-
+    true|
+    hfil(Cont,Cont1,SShut),
+    handler(Cont1,SShut).
+
+hfil([Msg|Cont],Cont1,SShut):-
+    true|
+    Cont1 = [Msg|Cont1N],
+    hfil(Cont,Cont1N,SShut).
+hfil([],Cont1,SShut):-
+    true|
+    Cont1 = [],
+    SShut = abort.
+
+handler([open({_,_,Out},switch(C1,_),io(C2,_))|Cont],SShut):-
+    true|
+    Out = [],
+    C1 = [],
+    C2 = [],
+    handler(Cont,SShut).
+handler([open({Type,Out},switch(C1,_),io(C2,_))|Cont],SShut):-
+    atom(Type)|
+    C1 = [],
+    C2 = [],
+    Out = [],
+    handler(Cont,SShut).
+handler([request(Type,_,Comm,FInfo)|Cont],SShut):-
+    true|
+%   std_abnormal(Comm),
+    FInfo = Type,
+    handler(Cont,SShut).
+handler([make_branch(SCont,CShut,_,_,CSShut)|Cont],SShut):-
+    true|
+    CSShut = SShut,
+    handler(SCont,SShut),
+    handler(Cont,SShut).
+handler([make_branch(SCont,CShut,_,_)|Cont],SShut):-
+    true|
+    handler(SCont,SShut),
+    handler(Cont,SShut).
+handler([],SShut):- true| true.
+handler(_,SShut):- 
+    wait(SShut)|
+    true.
+
+%%%%%%
+
+dummy(In):-
+    true|
+    predicate_to_code(module#task_std_abnormal,filter,3,Code),
+    merge(In,InOut),
+    task_std_handler:inOutInter(InOut,Dev,Code,1,SShut),
+    handler0(Dev,SShut).
+
+filter(Type,In,_):-
+    true|
+    true.

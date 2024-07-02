@@ -1,0 +1,456 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module x_profile_tcpip.
+:- public go/1.
+
+ go(InStream):- true |
+        shoen:raise(pimos_tag#task,general_request,GenReq),
+        shoen:raise(pimos_tag#task,get_std(out),StdOut),
+        GenReq = [connection(Result)|GenReq1],
+        check_my_node(Result,GenReq1,StdOut,InStream).
+
+%%%
+%%% check my-node.
+%%%
+% 94.4.13 K.Nakao
+check_my_node(normal(MyNode),GenReq,StdOut,InSt):- integer(MyNode) |
+%        buffer:character_pool(F),
+%        check_display_node(GenReq,MyNode,F,StdOut,InSt).
+        check_display_node(GenReq,MyNode,StdOut,InSt).
+check_my_node(normal(MyNode),GenReq,StdOut,InSt):- string(MyNode,_,_) |
+%        buffer:character_pool(F),
+%        F=[do([putb(MyNode),putl(" . "),flush(_),getwt(normal(atom(MyNode1))),flush(_)])|B],
+%        check_display_node(GenReq,MyNode1,B,StdOut,InSt).
+        atom_table:intern(MyNode,{_,MyNode1}),
+        check_display_node(GenReq,MyNode1,StdOut,InSt).
+%check_my_node(normal(MyNode),GenReq,StdOut,InSt):- integer(MyNode) |
+%        buffer:character_pool(F),
+%        check_display_node(GenReq,MyNode,F,StdOut,InSt).
+%check_my_node(normal(MyNode),GenReq,StdOut,InSt):- string(MyNode,_,_) |
+%        buffer:character_pool(F),
+%        F=[do([putb(MyNode),putl(" . "),flush(_),getwt(normal(atom(MyNode1))),flush(_)])|B],
+%        check_display_node(GenReq,MyNode1,B,StdOut,InSt).           Deleted By Kiyohara 1993/1/8
+otherwise.
+check_my_node(_,GenReq,StdOut,InSt):- true |
+        StdOut = [putb(" Cannot connect my_node!"),nl,flush(_)],
+        GenReq = [].
+
+%%% 
+%%% check display_node
+%%%
+check_display_node(GenReq,MyNode,StdOut,InSt):- integer(MyNode) |
+        shoen:raise(pimos_tag#task,general_request(MyNode),DGR),
+        DGR=[connection(Result)|DGR1],
+        check_display_user0(Result,DGR1,GenReq,MyNode,StdOut,InSt).
+check_display_node(GenReq,MyNode,StdOut,InSt):- atom(MyNode) |
+        atom_table:get_atom_name(MyNode,normal(MyNodes)),
+        shoen:raise(pimos_tag#task,general_request(MyNodes),DGR),
+        DGR=[connection(Result)|DGR1],
+        check_display_user0(Result,DGR1,GenReq,MyNode,StdOut,InSt).
+otherwise.
+check_display_node(GenReq,MyNode,StdOut,InSt):- true |
+        StdOut = [putb(" Cannot connect display_node!"),nl,flush(_)],
+        GenReq=[].
+
+%%%%%%%%
+check_display_user0(normal(DNode),DGR1,GenReq1,MyNode,StdOut,InSt):- true |
+       DGR1 = [socket(Result)],
+       check_node(Result,GenReq1,MyNode,StdOut,InSt).
+check_display_user0(abnormal,DGR1,GenReq1,MyNode,StdOut,InSt):- true |
+        DGR1 = [],
+        StdOut = [putb(" Cannot connect display_node!"),nl,flush(_)],
+        GenReq1 = [].
+
+%%%
+%%% set paragraph displaying node for checking environment variable.
+%%%
+check_node(normal(Request,_,_),GenReq1,MyNode,StdOut,InSt):- true |
+       GenReq1 = [getenv(paragraph:display_node,Display)|GenReq2],
+       check_disp_node(Display,Request,GenReq2,MyNode,StdOut,InSt).
+check_node(abnormal,GenReq1,MyNode,StdOut,InSt):- true |
+        StdOut = [putb(" Cannot connect display_node!"),nl,flush(_)],
+        GenReq1 = [].
+
+check_disp_node(normal(Display),Request,GenReq1,MyNode,StdOut,InSt):- true |
+       check_nodes(Display,Request,DisplayNode),
+       create_paragraph(DisplayNode,GenReq1,StdOut,InSt).
+check_disp_node(abnormal,Request,GenReq1,MyNode,StdOut,InSt):- true |
+       GenReq1 = [getenv(task:io_node,IO)|GenReq2],
+       check_io_node(IO,Request,DisplayNode),
+       create_paragraph(DisplayNode,GenReq2,StdOut,InSt).
+otherwise.
+check_disp_node(_,Request,GenReq1,MyNode,StdOut,InSt):- true |
+        StdOut = [putb(" Cannot connect display_node!"),nl,flush(_)],
+        Request = [], GenReq1 = [].
+
+%check_nodes([],Request,DisplayNode):- true |
+%       Request = [] , DisplayNode  = [].         Deleted By Kiyohara  1993/1/8
+check_nodes([NodeName|R],Request,DisplayNode):- string(NodeName,_,_)|
+       Port=4000,
+       Request = [connect({NodeName,Port},SocketD)|RReq],
+       connect(SocketD,DisplayNode,NewDN),
+       check_nodes(R,RReq,NewDN).
+check_nodes([NodeName|R],Request,DisplayNode):- atom(NodeName)|
+       atom_table:get_atom_name(NodeName,normal(NodeNames)),
+       Port=4000,
+       Request = [connect({NodeNames,Port},SocketD)|RReq],
+       connect(SocketD,DisplayNode,NewDN),
+       check_nodes(R,RReq,NewDN).
+check_nodes([{A,B,C,D}|R],Request,DisplayNode):-           % 93.5.10 K.Nakao
+       integer(A),integer(B),integer(C),integer(D)|
+       Port = 4000,
+       Request = [connect({NodeName,Port},SocketD)|RReq],
+       connect(SocketD,DisplayNode,NewDN),
+       check_nodes(R,RReq,NewDN).
+check_nodes(NodeName,Request,DisplayNode):- string(NodeName,_,_)|
+       Port=4000,
+       Request = [connect({NodeName,Port},SocketD)],
+       connect(SocketD,DisplayNode,NewDN),
+       NewDN = [].
+check_nodes(NodeName,Request,DisplayNode):- atom(NodeName)|
+       atom_table:get_atom_name(NodeName,normal(NodeNames)),
+       Port=4000,
+       Request = [connect({NodeNames,Port},SocketD)],
+       connect(SocketD,DisplayNode,NewDN),
+       NewDN = [].
+check_nodes({A,B,C,D},Request,DisplayNode):-               % 93.5.10 K.Nakao
+       integer(A),integer(B),integer(C),integer(D)|
+       Port = 4000,
+       Request = [connect({{A,B,C,D},Port},SocketD)],
+       connect(SocketD,DisplayNode,NewDN),
+       NewDN = [].
+otherwise.
+check_nodes(_,Request,DisplayNode):- true|
+       Request = [], DisplayNode  = [].
+
+check_io_node(normal(NodeName),Request,DisplayNode):- 
+       string(NodeName,_,_)|
+       Port=4000,
+       Request = [connect({NodeName,Port},SocketD)],
+       connect(SocketD,DisplayNode,NewDN),
+       NewDN = [].
+otherwise.
+check_io_node(_,Request,DisplayNode):- true |
+       Request = [],
+       DisplayNode = [].
+
+connect(normal(SockD,_,_),DisplayNode,Status):- true |
+   DisplayNode = [SockD | R],
+   Status = R.
+connect(abnormal,DisplayNode,Status):- true |
+   Status = DisplayNode.
+
+ %%%%%%% create_paragraph %%%%%%%%
+ create_paragraph([],GenReq,StdOut,InSt) :- true | 
+   StdOut = [putb(" Cannot connect display_node!"),nl,flush(_)],
+   GenReq = [].
+otherwise.
+ create_paragraph(DisplayNode,GenReq,StdOut,InSt) :- true |
+        StdOut = [],
+        GenReq = [],
+        buffer:character_pool(In),
+        In=[print_length(1000),
+            print_string_length(10000),
+            print_atom_length(1000)|Out],
+        out(InSt,Out,String,SendStream),
+        send_socket(String,DisplayNode,RDisplayNode),
+        send_data(SendStream,RDisplayNode).
+
+%% 9 --> tab code , 10 --> nl code %%
+    out(goal(Int,ExecTime,PeNum,0,Max,What,Ph),Out,NS,SendStream):- true |
+        remove_blank(Int,NewInt),
+        Out=[putb("Type"),putc(9),putb("profile"),putc(10),
+             putb("Goal"),putc(9),puttq(NewInt),putc(10),
+             putb("Execution_time"),putc(9),putt(ExecTime),putc(10),
+             putb("Nodes"),putc(9),putt(PeNum),putc(10),
+             putb("Cycles"),putc(9),putt(Max),putc(10),putc(10),
+             putb("Name"),putc(9),putb("Id"),putc(9),
+             putb("Reductions"),putc(9),putb("Suspensions"),putc(10)|Out1],
+        write(npe,What,Out1,Out2),
+        Out2=[putc(10),putc(0),flush(Status1)|Out3],
+        count_element(What,0,Total),
+        Length := Total * 100 + 100,
+        new_string(String,Length,8),
+        get_character(Out3,0,String,NS0),
+        data_write(Ph,Total,PeNum,SendStream),
+        NS = {Max,PeNum,Total,NS0}.
+
+    out(msg(Int,ExecTime,PeNum,0,Max,What,Ph),Out,NS,SendStream):- true |
+        remove_blank(Int,NewInt),
+        Out=[putb("Type"),putc(9),putb("profile_msg"),putc(10),
+             putb("Goal"),putc(9),puttq(NewInt),putc(10),
+             putb("Execution_time"),putc(9),putt(ExecTime),putc(10),
+             putb("Nodes"),putc(9),putt(PeNum),putc(10),
+             putb("Cycles"),putc(9),putt(Max),putc(10),putc(10),
+             putb("Name"),putc(9),putb("Id"),putc(9),
+             putb("Receive"),putc(9),putb("Send"),putc(10)|Out1],
+        write(npe,What,Out1,Out2),
+        Out2=[putc(10),putc(0),flush(Status1)|Out3],
+        Total = 32,
+        Length := Total * 100 + 100,
+        new_string(String,Length,8),
+        get_character(Out3,0,String,NS0),
+        data_write(Ph,Total,PeNum,SendStream),
+        NS = {Max,PeNum,Total,NS0}.
+
+    out(pe(Int,ExecTime,PeNum,0,Max,What,Ph),Out,NS,SendStream):- true |
+        remove_blank(Int,NewInt),
+        Out=[putb("Type"),putc(9),putb("profile_node"),putc(10),
+             putb("Goal"),putc(9),puttq(NewInt),putc(10),
+             putb("Execution_time"),putc(9),putt(ExecTime),putc(10),
+             putb("Nodes"),putc(9),putt(PeNum),putc(10),
+             putb("Cycles"),putc(9),putt(Max),putc(10),putc(10),
+             putb("Name"),putc(9),putb("Id"),putc(9),
+             putb("Average"),putc(10)|Out1],
+        write(pe,What,Out1,Out2),
+        Out2=[putc(10),putc(0),flush(Status1)|Out3],
+        Total = 4,
+        Length := Total * 100 + 100,
+        new_string(String,Length,8),
+        get_character(Out3,0,String,NS0),
+        data_write(Ph,Total,PeNum,SendStream),
+        NS = {Max,PeNum,Total,NS0}.
+
+    count_element([],Count,Total):- true |
+        Total = Count.
+    count_element([Elm|R],Count,Total):- true|
+        Count1 := Count + 1,
+        count_element(R,Count1,Total).
+
+
+    write(Type,[],File,OutFile):- true | File=OutFile.
+
+%% Pack::Mode:Pred/Arity Red Susp NameId %%
+    write(npe,[{Pack,Mod,Pred,Arity,Red,Susp,NameId}|Rest],File,OutFile1):- true |
+        File=[puttq(Pack),putb("::"),puttq(Mod),putb(":"),puttq(Pred),
+              putb("/"),puttq(Arity),putc(9),putt(NameId),putc(9),
+              putt(Red),putc(9),putt(Susp),putc(10)|OutFile],
+        write(npe,Rest,OutFile,OutFile1).
+
+%% Pack::Mode:Pred Red Susp NameId %%
+    write(npe,[{Pack,Mod,Pred,Red,Susp,NameId}|Rest],File,OutFile1):- true |
+        File=[puttq(Pack),putb("::"),puttq(Mod),putb(":"),puttq(Pred),
+              putc(9),putt(NameId),putc(9),
+              putt(Red),putc(9),putt(Susp),putc(10)|OutFile],
+        write(npe,Rest,OutFile,OutFile1).
+
+%% BltName Red Susp NameId %%
+    write(npe,[{BltName,Red,Susp,NameId}|Rest],File,OutFile1):- true |
+        File=[puttq(BltName),putc(9),putt(NameId),
+              putc(9),putt(Red),putc(9),putt(Susp),putc(10)|OutFile],
+        write(npe,Rest,OutFile,OutFile1).
+
+
+    write(pe,[{BltName,Ave,_,NameId}|Rest],File,OutFile1):- true |
+        File=[puttq(BltName),putc(9),putt(NameId),
+              putc(9),putt(Ave),putc(10)|OutFile],
+        write(pe,Rest,OutFile,OutFile1).
+
+  data_write([],_,_,Str):- true |
+        Str = [].
+  data_write([profile(Cycle,PeData)|Rest],Total,PE,Str):- true |
+        Length := Total * PE * 5,
+        new_string(NewString,Length,32),
+        data_write1(PeData,Cycle,0,NewString,String),
+        Str = [send(String,Status)|RStr],
+        check_data_write(Status,Rest,Total,PE,RStr).
+
+  check_data_write(End,Rest,Total,PE,RStr):- wait(End) |
+        check_data_write1(End,Rest,Total,PE,RStr).
+
+  check_data_write1(next,Rest,Total,PE,RStr):- true |
+        data_write(Rest,Total,PE,RStr).
+  check_data_write1(end,_,_,_,RStr):- true |
+        RStr=[].
+
+   data_write1([],Cycle,Count,Str,Str1):- true |
+        builtin#substring(Str,0,Count,Str1,_).
+   data_write1([pe(PE,PredData)|Rest],Cycle,Count,String,NewStr):- true |
+        data_write2(PredData,Cycle,PE,Count,Count1,String,Str0),
+        data_write1(Rest,Cycle,Count1,Str0,NewStr).
+
+   data_write2([],Cycle,PE,Count,NewCount,Str,Str1):- true | 
+        NewCount = Count,
+        Str1=Str.
+   data_write2([{NameId,Red,Susp}|Rest],Cycle,PE,Count,NewCount,Str,Str1):- true |
+        Po1 := Count + 1,
+        Po2 := Count + 2,
+        Po3 := Count + 3,
+        Po4 := Count + 4,
+        Po5 := Count + 5,
+        set_string_element(Str,Count,Cycle,NewString1),
+        set_string_element(NewString1,Po1,PE,NewString2),
+        set_string_element(NewString2,Po2,NameId,NewString3),
+        set_string_element(NewString3,Po3,Red,NewString4),
+        set_string_element(NewString4,Po4,Susp,NewString5),
+        data_write2(Rest,Cycle,PE,Po5,NewCount,NewString5,Str1).
+
+%%%
+%%% remove blank from input-goals
+%%%
+    remove_blank(String,NewString):- string(String,Size,ElementSize) |
+        new_string(NewString1,Size,ElementSize),
+        remove_blank1(String,0,Size,NewString1,NS2,0,Blank),
+        NewSize:=Size-Blank,
+        builtin#substring(NS2,0,NewSize,NewString,_).
+
+    remove_blank1(String,Pos,Max,NewString,AnsString,Num,Blank):-
+        Pos < Max,
+        string_element(String,Pos,Char), Char = #" " |
+        Num1 := Num + 1,
+        Pos1 := Pos + 1,
+        remove_blank1(String,Pos1,Max,NewString,AnsString,Num1,Blank).
+
+    remove_blank1(String,Pos,Max,NewString,AnsString,Num,Blank):-
+        Pos = Max |
+        AnsString = NewString, Blank = Num.
+
+otherwise.
+    remove_blank1(String,Pos,Max,NewString,AnsString,Num,Blank):- 
+        string_element(String,Pos,Char) |
+        Pos1 := Pos + 1,
+        NewPos := Pos - Num,
+        set_string_element(NewString,NewPos,Char,NewString1),
+        remove_blank1(String,Pos1,Max,NewString1,AnsString,Num,Blank).
+
+%%%
+%%% get JIS-code 
+%%%
+ get_character(In,Count,String,NS):- true |
+        In=[getc(Code)|In1],
+        check_code(Code,In1,Count,String,NS).
+
+ check_code(Code,In,Count,String,NS):- wait(Code)|
+        check_code1(Code,In,Count,String,NS).
+
+%%%
+%%% and trans JIS-code to ASCII-code and create string.
+%%%
+ check_code1(0,In,Count,String,NS):- true |
+        builtin#substring(String,0,Count,NS,NString),
+        In=[].
+ check_code1(Code,In,Count,String,NS):- Code =\= 0 |
+        trans_eight_bit(Code,NCode),
+        set_string_element(String,Count,NCode,NString),
+        NCount:=Count+1,
+        get_character(In,NCount,NString,NS).
+
+%%%
+%%% send string to socket device.
+%%%
+send_socket(_,[],RSock):- true | 
+        RSock=[].
+send_socket({Cycle,PE,IndexSize,Str0},[SockD|R],RSock):- 
+        string(Str0,S0,_) |
+        new_string(String3,1,16),
+        set_string_element(String3,0,5,String4),
+        change_element_size(String4,8,String5),
+        new_string(String0,4,32),
+        set_string_element(String0,0,S0,String01),
+        set_string_element(String01,1,IndexSize,String02),
+        set_string_element(String02,2,Cycle,String03),
+        set_string_element(String03,3,PE,String1),
+        change_element_size(String1,8,String2),
+        SockD=[send(String5,_),send(String2,_),send(Str0,Status)|RSockD],
+        RSock = [RSockD|Rest],
+        check_send_socket(Status,{Cycle,PE,IndexSize,Str0},R,Rest).
+
+check_send_socket(Status,{Cycle,PE,IndexSize,Str0},R,Rest):- wait(Status) |
+        send_socket({Cycle,PE,IndexSize,Str0},R,Rest).
+
+close_socket([]):- true | true. 
+close_socket([S|R]):- true | 
+    S = [],
+    close_socket(R).
+send_data(_,[]):- true | true.
+otherwise.
+send_data([],SockNode):- true |
+    close_socket(SockNode).
+send_data([send(String,Status)|RString],SockNode):- true |
+    send_data1(String,SockNode,RSock,Status1),
+    check_socket(RSock,RString,Status1,Status).
+
+check_socket(Sock,RString,Status1,Status):- wait(Status1)|
+    check_socket1(Sock,RString,Status1,Status).
+
+check_socket1([],RString,_,Status):- true |
+    Status = end, RString = [].
+otherwise.
+check_socket1(RSock,RString,Status1,Status):- true |
+    Status = Status1,
+    send_data(RString,RSock).
+
+    
+send_data1(_,[],RSock,Status):- true | 
+        RSock = [],
+        Status = next.
+send_data1(String,[SockD|R],RSock,Status):-
+        string(String,S0,_) |
+        new_string(String0,1,32),
+        set_string_element(String0,0,S0,String1),
+        change_element_size(String1,8,String2),
+        change_element_size(String,8,Str),
+        SockD=[send(String2,_),send(Str,Stat)|RSockD],
+        check_send_data1(Stat,String,RSock,RSockD,R,Status).
+
+check_send_data1(abnormal,String,RSock,RSockD,R,Status):- true |
+        RSockD = [],
+        send_data1(String,R,RSock,Status).
+otherwise.
+check_send_data1(_,String,RSock,RSockD,R,Status):- true |
+        RSock = [RSockD|Rest],          
+        send_data1(String,R,Rest,Status).
+        
+%%% translation table from JIS-code to ASCII-code.
+%%%
+trans_eight_bit(#"!",Ans):- true | Ans=c#"!".
+trans_eight_bit(#"@",Ans):- true | Ans=c#"@".
+trans_eight_bit(#"#",Ans):- true | Ans=c#"#".
+trans_eight_bit(#"$",Ans):- true | Ans=c#"$".
+trans_eight_bit(#"%",Ans):- true | Ans=c#"%".
+trans_eight_bit(#"^",Ans):- true | Ans=c#"^".
+trans_eight_bit(#"&",Ans):- true | Ans=c#"&".
+trans_eight_bit(#"*",Ans):- true | Ans=c#"*".
+trans_eight_bit(#"(",Ans):- true | Ans=c#"(".
+trans_eight_bit(#")",Ans):- true | Ans=c#")".
+trans_eight_bit(#"+",Ans):- true | Ans=c#"+".
+trans_eight_bit(#"-",Ans):- true | Ans=c#"-".
+trans_eight_bit(#"_",Ans):- true | Ans=c#"_".
+trans_eight_bit(#"=",Ans):- true | Ans=c#"=".
+trans_eight_bit(#"~",Ans):- true | Ans=c#"~".
+trans_eight_bit(#"`",Ans):- true | Ans=c#"`".
+trans_eight_bit(#"{",Ans):- true | Ans=c#"{".
+trans_eight_bit(#"}",Ans):- true | Ans=c#"}".
+trans_eight_bit(#"[",Ans):- true | Ans=c#"[".
+trans_eight_bit(#"]",Ans):- true | Ans=c#"]".
+trans_eight_bit(#";",Ans):- true | Ans=c#";".
+trans_eight_bit(#":",Ans):- true | Ans=c#":".
+trans_eight_bit(#"""",Ans):- true| Ans=c#"""".
+trans_eight_bit(#"'",Ans):- true | Ans=c#"'".
+trans_eight_bit(#"<",Ans):- true | Ans=c#"<".
+trans_eight_bit(#">",Ans):- true | Ans=c#">".
+trans_eight_bit(#",",Ans):- true | Ans=c#",".
+trans_eight_bit(#".",Ans):- true | Ans=c#".".
+trans_eight_bit(#"/",Ans):- true | Ans=c#"/".
+trans_eight_bit(#"?",Ans):- true | Ans=c#"?".
+trans_eight_bit(#"\",Ans):- true | Ans=c#"\".
+trans_eight_bit(#"|",Ans):- true | Ans=c#"|".
+trans_eight_bit(#" ",Ans):- true | Ans=c#" ".
+trans_eight_bit(   0,Ans):- true | Ans=0. % null code for EOF
+trans_eight_bit(   9,Ans):- true | Ans=9. % TAB code
+trans_eight_bit(  10,Ans):- true | Ans=10. % NL code
+% 0-9 & a-Z
+trans_eight_bit(Code,Ans):- Code >= #"0", Code =< #"9" | 
+        Ans:=Code /\ 16#"FF". 
+trans_eight_bit(Code,Ans):- Code >= #"a", Code =< #"z" | 
+        Ans:=Code /\ 16#"FF". 
+trans_eight_bit(Code,Ans):- Code >= #"A", Code =< #"Z" | 
+        Ans:=Code /\ 16#"FF". 
+otherwise.
+trans_eight_bit(Code,Ans):- true | Ans=c#"?".

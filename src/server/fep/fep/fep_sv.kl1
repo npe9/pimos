@@ -1,0 +1,641 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module fep_server.
+:- with_macro pimos.
+:- public go/3, go/2.
+
+go(OK1,OK,AB):-
+    wait(OK1)|
+    go(OK,AB).
+
+go(OK,Abort):-
+    true|
+    shoen:raise(pimos_tag#task,bios,BIOS),
+    merge(BIOSIn,BIOS),
+    pool:keyed_set(Pool),
+    Pool = [put(fep,BIOSIn,_)|PoolN],
+    init_server(PoolN,OK,Abort).
+
+init_server(Pool,OK,Abort):-
+    true|
+    fep_loop(In,Pool),
+%    fep_merge(InIn,In),
+    merge(InIn,In),
+    init_server2(InIn,OK,Abort).
+
+init_server2(Conf,OK,Abort):-
+    true|
+    Conf = {SO,W,F,T,S,Fep},
+    socket(OKso,Abort,SO),
+    window(OKw,Abort,W),
+    file(OKf,Abort,F),
+    timer_server:go(OKt,Abort,T),
+    string_io(OKs,Abort,S),
+    fep(OKfep,Abort,Fep),
+    wait_OK(OKso,OKw,OKf,OKt,OKs,OKfep,OK).
+
+wait_OK(ok,ok,ok,ok,ok,ok,OK):-
+    true|
+    OK = ok.
+
+socket(OK,ABORT,Conf):- true|
+       shoen:raise(pimos_tag#task,general_request,GR),
+       stdio_server:go(GR,GROut),
+       GROut = [register(socket_request,{0,0,7},Res)],
+       wait_(Res,socket,"socket_request",OK,ABORT,Conf).
+window(OK,ABORT,Conf):- true|
+       shoen:raise(pimos_tag#task,general_request,GR),
+       stdio_server:go(GR,GROut),
+       GROut = [register(window_request,{0,0,7},Res)],
+       wait_(Res,window,"window_request",OK,ABORT,Conf).
+file(OK,ABORT,Conf):- true|
+       shoen:raise(pimos_tag#task,general_request,GR),
+       stdio_server:go(GR,GROut),
+       GROut = [register(file_request,{0,0,7},Res)],
+       wait_(Res,file,"file_request",OK,ABORT,Conf).
+/*
+timer(OK,ABORT,Conf):- true|
+       shoen:raise(pimos_tag#task,general_request,GR),
+       GR = [register(timer_request,{0,0,7},Res)],
+       wait_(Res,timer,"timer_request",OK,ABORT,Conf).
+*/
+string_io(OK,ABORT,Conf):- true|
+       shoen:raise(pimos_tag#task,general_request,GR),
+       stdio_server:go(GR,GROut),
+       GROut = [register(string_io_request,{0,0,7},Res)],
+       wait_(Res,string_io,"string_io_request",OK,ABORT,Conf).
+fep(OK,ABORT,Conf):- true|
+       shoen:raise(pimos_tag#task,general_request,GR),
+       GR = [register(fep_info,{0,0,7},Res)],
+       wait_(Res,fep_info,"fep_information",OK,ABORT,Conf).
+
+wait_(normal(St,Ab,_),Type,Comm,OK,ABORT,Conf):-
+    true|
+    OK = ok,
+    get_filter_code(Type,Code),
+    St = [get_request(Code,Comm,Res)|Next],
+    wait_2(Res,Next,Code,Type,Ab,Comm,ABORT,Conf).
+
+%wait_2(general_request(SCont,Ab,Att,SInfo,FInfo,In),Next,Code,Type,RAb,
+%                      Comm,ABORT,Conf):-
+%    Type \= fep_info|
+%    Next = [get_request(Code,Comm,Res)|Next1],
+%    Conf = [do([get_if_any(FepNum,Info0)|DNext0])|ConfN],
+%    get_fep_stream(Info0,Info,FepNum,DNext0,DNext),
+%    wait_2(Res,Next1,Code,Type,RAb,Comm,ABORT,ConfN),
+%    FInfo = [],
+%    set_vector_element(SInfo,2,Remote,RemoteN,SInfoN),
+%    set_vector_element(Remote,0,Fep,Fep,Remote1),
+%    set_vector_element(Remote1,1,IONode,IONode,RemoteN),
+%    get_fep_num(Fep,IONode,FepNum),
+%    merge(SContIn,SCont),
+%    wait_25(Info,FepNum,DNext,SInfoN,In,Att,Ab,SContIn,Type).
+%wait_2(general_request(SCont,Ab,Att,SInfo,FInfo,In),Next,Code,fep_info,RAb,
+%                      Comm,ABORT,Conf):-
+%    true|
+%    Next = [get_request(Code,Comm,Res)|Next1],
+%    Conf = [do([get_if_any(FepNum,Info0)|DNext0])|ConfN],
+%    get_fep_stream_and_max(Info0,Info,FepNum,DNext0,DNext,Max),
+%    wait_2(Res,Next1,Code,fep_info,RAb,Comm,ABORT,ConfN),
+%    FInfo = [],
+%    set_vector_element(SInfo,2,Remote,RemoteN,SInfoN),
+%    set_vector_element(Remote,0,Fep,Fep,Remote1),
+%    set_vector_element(Remote1,1,IONode,IONode,RemoteN),
+%    get_fep_num(Fep,IONode,FepNum),
+%    merge(SContIn,SCont),
+%    wait_25(Info,FepNum,DNext,SInfoN,In,Att,Ab,SContIn,fep_info(Max)).
+wait_2(general_request(SCont,Ab,Att,SInfo,FInfo,In),Next,Code,Type,RAb,
+                      Comm,ABORT,Conf):-
+    true |
+    set_vector_element(SInfo,2,Remote,RemoteN,SInfoN),
+    set_vector_element(Remote,0,Fep,Fep,Remote1),
+    set_vector_element(Remote1,1,IONode,IONode,RemoteN),
+    wait_21(general_request(SCont,Ab,Att,SInfoN,FInfo,In),Next,Code,Type,RAb,
+                      Comm,ABORT,Conf,{Fep,IONode}).
+wait_2(standard_io(SContIn,Att,SInfo),Next,Code,Type,RAb,
+                      Comm,ABORT,Conf):-
+    true|
+    Next = [get_request(Code,Comm,Res)|Next1],
+    wait_2(Res,Next1,Code,Type,RAb,Comm,ABORT,Conf),
+    merge(SContIn,SCont),
+    task_std_abnormal:handler(SCont).
+wait_2(_,Next,Code,Type,RAb,Comm,ABORT,Conf):-
+    wait(ABORT)|
+    RAb = abort,
+    Next = [],
+    Conf = [].
+wait_2(abnormal,Next,Code,Type,RAb,Comm,ABORT,Conf):-
+    true|
+    Next = [],
+    Conf = [].
+wait_2(aborted,Next,Code,Type,RAb,Comm,ABORT,Conf):-
+    true|
+    Next = [],
+    Conf = [].
+
+
+wait_21(general_request(SCont,Ab,Att,SInfo,FInfo,In),Next,Code,Type,RAb,
+                      Comm,ABORT,Conf,{Fep,IONode}):-
+    Type \= fep_info |
+    Next = [get_request(Code,Comm,Res)|Next1],
+%
+%    Conf = [do([get_if_any(FepNum,Info0)|DNext0]),
+%                    do([carbon_copy(attri(IONode),FF0)|DN1])|ConfN],
+%    Conf = [do([carbon_copy(attri(IONode),FF0)|DN1]),
+%                    do([get_if_any(FepNum,Info0)|DNext0])|ConfN],
+%    Conf1 = [do([carbon_copy(attri(IONode),FF0)|DN1]),
+%                    do([get_if_any(FepNum,Info0)|DNext0])],
+    Conf1 = [do([carbon_copy(attri(IONode),FF0)|DN1])],
+%    Conf4 = [do([get_if_any(FepNum,Info0)|DNext0])],
+
+%    get_fep_stream(S,Info0,Info,FepNum,DNext0,DNext),
+    get_fep_stream_wait(S,Info,FepNum,DNext,Conf4,ABORT),
+
+    get_fep_attributes(S,FF0,FF,FepNum,IONode,DN1,
+                        {SInfo,Att,Ab,SCont2},Conf3,ABORT),
+    merge({SContIn,SCont2},SCont),
+%
+    merge({Conf1,Conf2,Conf3,Conf4},Conf),
+%
+%    wait_2(Res,Next1,Code,Type,RAb,Comm,ABORT,ConfN),
+    wait_2(Res,Next1,Code,Type,RAb,Comm,ABORT,Conf2),
+    FInfo = [],
+    get_fep_num(Fep,IONode,FepNum),
+    wait_25(Info,FepNum,DNext,SInfo,In,Att,Ab,SContIn,Type,FF).
+wait_21(general_request(SCont,Ab,Att,SInfo,FInfo,In),Next,Code,fep_info,RAb,
+                      Comm,ABORT,Conf,{Fep,IONode}):-
+    true |
+    Next = [get_request(Code,Comm,Res)|Next1],
+%
+%    Conf = [do([get_if_any(FepNum,Info0)|DNext0]),
+%                    do([carbon_copy(attri(IONode),FF0)|DN1])|ConfN],
+%    Conf = [do([carbon_copy(attri(IONode),FF0)|DN1]),
+%                    do([get_if_any(FepNum,Info0)|DNext0])|ConfN],
+%    Conf1 = [do([carbon_copy(attri(IONode),FF0)|DN1]),
+%                    do([get_if_any(FepNum,Info0)|DNext0])],
+    Conf1 = [do([carbon_copy(attri(IONode),FF0)|DN1])],
+%    Conf4 = [do([get_if_any(FepNum,Info0)|DNext0])],
+
+%    get_fep_stream_and_max(S,Info0,Info,FepNum,DNext0,DNext,Max),
+    get_fep_stream_and_max_wait(S,Info,FepNum,DNext,Max,Conf4,ABORT),
+
+    get_fep_attributes(S,FF0,FF,FepNum,IONode,DN1,
+                        {SInfo,Att,Ab,SCont2},Conf3,ABORT),
+    merge({SContIn,SCont2},SCont),
+%
+    merge({Conf1,Conf2,Conf3,Conf4},Conf),
+%
+%    wait_2(Res,Next1,Code,fep_info,RAb,Comm,ABORT,ConfN),
+    wait_2(Res,Next1,Code,fep_info,RAb,Comm,ABORT,Conf2),
+    FInfo = [],
+    get_fep_num(Fep,IONode,FepNum),
+    wait_25(Info,FepNum,DNext,SInfo,In,Att,Ab,SContIn,fep_info(Max),FF).
+
+
+%wait_25(V,_,DNext,SInfo,User,Att,Ab,SCont,Type,FF):- V=[] |
+%    User = abnormal,
+%    DNext = [],
+%    SCont = [],
+%    Ab = abort.
+%otherwise.
+
+wait_25(V,_,DNext,SInfo,User,Att,Ab,SCont,fep_info(M),FF):- V=[] |
+%    User = abnormal,
+    DNext = [],
+    SCont = [],
+    Ab = abort,
+    set_vector_element(SInfo,3,ANode,0,_),
+    internal_handler:get_relative_node(ANode,Node),
+    fep_info(User,M,Att,_,SCont,Ab,abnormal,FF)@node(Node).
+otherwise.
+wait_25(V,_,DNext,SInfo,User,Att,Ab,SCont,Type,FF):- V=[] |
+    User = abnormal,
+    DNext = [],
+    SCont = [],
+    Ab = abort.
+otherwise.
+wait_25(V,_,DNext,SInfo,User,Att,Ab,SCont,fep_info(M),FF):-
+    vector(V,0)|
+    DNext = [],
+    set_vector_element(SInfo,3,ANode,0,_),
+    internal_handler:get_relative_node(ANode,Node),
+    fep_info(User,M,Att,_,SCont,Ab,abnormal,FF)@node(Node).
+otherwise.
+wait_25(V,_,DNext,SInfo,User,Att,Ab,SCont,Type,FF):-
+    vector(V,0)|
+    User = abnormal,
+    DNext = [],
+    SCont = [],
+    Ab = abort.
+otherwise.
+wait_25(V,N,DNext,SInfo,User,Att,Ab,SCont,fep_info(M),FF):-
+    vector_element(V,0,Conf)|
+    DNext = [put(N,ConfN,_)],
+    Conf = [confirm(fep_info,IONode,RU,RP,Att,Result)|ConfN], 
+    set_vector_element(SInfo,2,Remote,RemoteN,SInfo1),
+    set_vector_element(SInfo1,3,ANode,ANode,SInfoN),
+    set_vector_element(Remote,1,IONode,IONode,Remote1),
+    set_vector_element(Remote1,2,RU,RU,Remote2),
+    set_vector_element(Remote2,3,RP,RP,RemoteN),
+    internal_handler:get_relative_node(ANode,Node),
+    wait_3(Result,SInfoN,User,Att,Ab,SCont,fep_info(M),FF)@node(Node).
+otherwise.
+wait_25(V,N,DNext,SInfo,User,Att,Ab,SCont,Type,FF):-
+    vector_element(V,0,Conf)|
+    DNext = [put(N,ConfN,_)],
+    Conf = [confirm(Type,IONode,RU,RP,Att,Result)|ConfN], 
+    set_vector_element(SInfo,2,Remote,RemoteN,SInfo1),
+    set_vector_element(SInfo1,3,ANode,ANode,SInfoN),
+    set_vector_element(Remote,1,IONode,IONode,Remote1),
+    set_vector_element(Remote1,2,RU,RU,Remote2),
+    set_vector_element(Remote2,3,RP,RP,RemoteN),
+    internal_handler:get_relative_node(ANode,Node),
+    wait_3(Result,SInfoN,User,Att,Ab,SCont,Type,FF)@node(Node).
+
+wait_3(normal(Conf,Fep,Dir),SInfo,User,Att,Ab,SCont,fep_info(M),FF):-
+    true|
+    Fep = fep#nil,
+    set_vector_element(SInfo,2,Remote,0,_),
+    set_vector_element(Remote,1,IONode,0,_),
+    fep_info(User,M,Att,Conf,SCont,Ab,normal(IONode),FF).
+%wait_3(normal(Conf,Fep,_),SInfo,User,Att,Ab,SCont,file):-
+%    true|
+%    user_server:get_user_info(SInfoN,UInfo),
+%    set_vector_element(SInfo,2,Tmp,TmpN,SInfoN),
+%    set_vector_element(Tmp,4,Dir,Dir,TmpN),
+%    wait_4(file,User,Fep,Att,{Dir,UInfo},Conf,SCont,Ab,IONode).
+otherwise.
+wait_3(normal(Conf,Fep,Dir),SInfo,User,Att,Ab,SCont,Type,FF):-
+    true|
+%    user_server:get_user_info(SInfo,UInfo),
+    User = normal(In),
+    wait_4(Type,In,Fep,Att,SInfo,Conf,SCont,Ab,IONode,FF).
+otherwise.
+wait_3(Status,SInfo,User,Att,Ab,SCont,fep_info(M),FF):-
+    true|
+    fep_info(User,M,Att,_,SCont,Ab,abnormal,FF).
+otherwise.
+wait_3(Status,SInfo,User,Att,Ab,SCont,Type,FF):-
+    true|
+    Status = User,
+    SCont = [],
+    Ab = abort.
+ 
+wait_4(socket,User,Fep,Att,UInfo,Conf,SCont,Ab,IONode,FF):-
+    true|
+    socket_request_device:driver(User,Fep,Att,UInfo,Conf,SCont,Ab).
+wait_4(window,User,Fep,Att,UInfo,Conf,SCont,Ab,IONode,FF):-
+    true|
+    window_request_device:driver(User,Fep,Att,UInfo,Conf,SCont,Ab).
+wait_4(file,User,Fep,Att,UInfo,Conf,SCont,Ab,IONode,FF):-
+    true|
+    file_request_device:driver(User,Fep,Att,UInfo,Conf,SCont,Ab,FF).
+wait_4(timer,User,Fep,Att,UInfo,Conf,SCont,Ab,IONode,FF):-
+    true|
+    timer_request_device:driver(User,Fep,Att,UInfo,Conf,SCont,Ab).
+wait_4(string_io,User,Fep,Att,UInfo,Conf,SCont,Ab,IONode,FF):-
+    true|
+    string_io_request_device:driver(User,Fep,Att,UInfo,Conf,SCont,Ab).
+
+fep_info(_,_,Att,Conf,SCont,Ab,_,FF):-
+    wait(Att)|
+    Ab = abort,
+    Conf = [],
+    SCont = [].
+alternatively.
+fep_info(ipl_versions(St),M,Att,Conf,SCont,Ab,_,FF):-
+    true|
+    shoen:raise(pimos_tag#task,bios,[ipl_comments(St)]),
+    Conf = [],
+    SCont = [].
+fep_info(connection(St),M,Att,Conf,SCont,Ab,Status,FF):-
+    true|
+    St = Status,
+    Conf = [],
+    SCont = [].
+fep_info(number_of_feps(St),M,Att,Conf,SCont,Ab,_,FF):-
+    true|
+    St = normal(M),
+    Conf = [],
+    SCont = [].
+fep_info(fep_attributes(St),M,Att,Conf,SCont,Ab,_,FF):-
+    true|
+    fep_info2(St,FF),
+    Conf = [],
+    SCont = [].
+
+fep_info2(St,{Code,OS,Host,FEPVer,Dir,FileVer,Comme})
+:- true | St=normal(Code,OS,Host,FEPVer,Dir,FileVer,Comme).
+otherwise.
+fep_info2(St,FF):- true | St=FF.
+
+fep_loop([Msg|In],Feps):-
+    true|
+    Feps = [Msg|FepsN],
+    fep_loop(In,FepsN).
+fep_loop([],Feps):-
+    true|
+    Feps = [get_all(FepV)],
+    close_feps(FepV).
+
+close_feps([{{attri,_},E}|FepV]):-
+    true|
+    close_feps(FepV).
+otherwise.
+close_feps([{_,E}|FepV]):-
+    true|
+    E = [],
+    close_feps(FepV).
+otherwise.
+close_feps([]):-
+    true|
+    true.
+
+get_filter_code(socket,Code):-
+    true|
+    predicate_to_code(module#fep_filter,socket_filter,3,Code).
+get_filter_code(window,Code):-
+    true|
+    predicate_to_code(module#fep_filter,window_filter,3,Code).
+get_filter_code(file,Code):-
+    true|
+    predicate_to_code(module#fep_filter,file_filter,3,Code).
+get_filter_code(timer,Code):-
+    true|
+    predicate_to_code(module#fep_filter,timer_filter,3,Code).
+get_filter_code(string_io,Code):-
+    true|
+    predicate_to_code(module#fep_filter,string_io_filter,3,Code).
+get_filter_code(fep_info,Code):-
+    true|
+    predicate_to_code(module#fep_filter,fep_info_filter,3,Code).
+
+/*
+fep_merge(In,Out):-
+    vector(In,N)|
+    fep_merge(N,In,Out).
+fep_merge([Msg|In],Out):-
+    true|
+    Out = [Msg|OutN],
+    fep_merge(In,OutN).
+fep_merge([],Out):-
+    true|
+    Out = [].
+fep_merge(N,In,Out):-
+    N > 2,
+    N1 := N - 1,
+    N2 := N - 2|
+    set_vector_element(In,N1,E1,0,In2),
+    set_vector_element(In2,N2,E2,E3,In3),
+    fep_merge0(E1,E2,E3),
+    fep_merge(N1,In3,Out).
+fep_merge(2,In,Out):-
+    true|
+    set_vector_element(In,0,E1,0,In2),
+    set_vector_element(In2,1,E2,0,_),
+    fep_merge0(E1,E2,Out).
+fep_merge(1,In,Out):-
+    true|
+    fep_merge(In,Out).
+
+fep_merge0([],In2,Out):-
+    true|
+    In2 = Out.
+fep_merge0(In1,[],Out):-
+    true|
+    In1 = Out.
+fep_merge0([Msg|In1],In2,Out):-
+    true|
+    Out = [Msg|OutN],
+    fep_merge0(In1,In2,OutN).
+fep_merge0(In1,[Msg|In2],Out):-
+    true|
+    Out = [Msg|OutN],
+    fep_merge0(In1,In2,OutN).
+fep_merge0(In1,In2,Out):-
+    vector(In1,N)|
+    fep_merge(N,In1,In3),
+    fep_merge0(In3,In2,Out).
+fep_merge0(In1,In2,Out):-
+    vector(In2,N)|
+    fep_merge(N,In2,In3),
+    fep_merge0(In1,In3,Out).
+*/
+
+%wait_and_unify_nil(ATT,ABORT):-
+%    wait(ATT)|
+%    ABORT = fep#nil.
+
+%%
+get_fep_num(_,IONode,FepNum):-
+    integer(IONode)|
+    FepNum = IONode.
+otherwise.
+get_fep_num(Fep,_,FepNum):-
+    true|
+    Fep = FepNum.
+
+%init_fep([],Pool,OK,Abort,N):-
+%    true|
+%    init_server(Pool,OK,Abort,N).
+%otherwise.
+%init_fep([{Desc,Unit,normal(Fep)}|Next],Pool,OK,Abort,N):-
+%    true|
+%    Fep = {fep#reset,ABORT,ATT,STATUS,FepN},
+%    wait_init_fep(STATUS,ABORT,ATT,FepN,Next,Pool,OK,Abort,N).
+%otherwise.
+%init_fep([{Desc,Unit,_}|Next],Pool,OK,Abort,N):-
+%    N1 := N + 1|
+%    init_fep(Next,Pool,OK,Abort,N1).
+
+%wait_init_fep(fep#normal,ABORT,ATT,Fep,Next,Pool,OK,Abort,N):-
+%    N1 := N + 1|
+%    wait_and_unify_nil(ATT,ABORT),
+%    merge(FepIn,Conf),
+%    io_node_confirm:go(Conf,Fep),
+%    Pool = [put(N,{Desc,Unit,FepIn},_)|PoolN],
+%    init_fep(Next,PoolN,OK,Abort,N1).
+
+get_fep_stream_wait(F,Info,FepNum,DNext,Conf,AB):- wait(AB) |
+    Info=[],DNext=Conf.
+alternatively.
+get_fep_stream_wait(F,Info,FepNum,DNext,Conf,AB):- wait(F) |
+    Conf = [do([get_if_any(FepNum,Info0)|DNext0])],
+    get_fep_stream(F,Info0,Info,FepNum,DNext0,DNext).
+
+get_fep_stream_and_max_wait(F,Info,FepNum,DNext,Max,Conf,AB):- wait(AB) |
+    Info=[],DNext=Conf.
+alternatively.
+get_fep_stream_and_max_wait(F,Info,FepNum,DNext,Max,Conf,AB):- wait(F) |
+    Conf = [do([get_if_any(FepNum,Info0)|DNext0])],
+    get_fep_stream_and_max(F,Info0,Info,FepNum,DNext0,DNext,Max).
+
+get_fep_stream_and_max(yes,Info0,Info,FepNum,DNext0,DNext,Max):- true |
+    get_fep_stream_and_max0(Info0,Info,FepNum,DNext0,DNext,Max).
+get_fep_stream_and_max(no,{Conf},Info,FepNum,DNext0,DNext,Max):- true |
+    Info=[],DNext0=[put(FepNum,Conf,_)|DNext].
+get_fep_stream_and_max(no,{},Info,FepNum,DNext0,DNext,Max):- true |
+    Info=[],DNext0=DNext.
+
+get_fep_stream(yes,Info0,Info,FepNum,DNext0,DNext):- true |
+    get_fep_stream0(Info0,Info,FepNum,DNext0,DNext).
+get_fep_stream(no,{Conf},Info,FepNum,DNext0,DNext):- true |
+    Info=[],DNext0=[put(FepNum,Conf,_)|DNext].
+get_fep_stream(no,{},Info,FepNum,DNext0,DNext):- true |
+    Info=[],DNext0=DNext.
+
+get_fep_stream_and_max0(Info0,Info,FepNum,DNext0,DNext,Max):-
+    vector(Info0,1)|
+    Info0 = Info,
+    DNext0 = [put(fep,FepsN,{Feps})|DNext],
+    Feps = [number_of_fep(Result)|FepsN],
+    wait_max(Result,Max).
+otherwise.
+get_fep_stream_and_max0(_,Info,FepNum,DNext0,DNext,Max):-
+    true|
+    DNext0 = [put(fep,FepsN,{Feps})|DNext],
+    Feps = [number_of_fep(ResultMax),fep(FepNum,Result)|FepsN],
+    wait_max(ResultMax,Max),
+    get_fep_stream2(Result,Info).
+
+get_fep_stream0(Info0,Info,FepNum,DNext0,DNext):-
+    vector(Info0,1)|
+    Info0 = Info,
+    DNext0 = DNext.
+otherwise.
+get_fep_stream0(_,Info,FepNum,DNext0,DNext):-
+    true|
+    DNext0 = [put(fep,FepsN,{Feps})|DNext],
+    Feps = [fep(FepNum,Result)|FepsN],
+    get_fep_stream2(Result,Info).
+
+get_fep_stream2(normal(Fep),Info):-
+    true|
+    merge(FepIn,Fep),
+    io_node_confirm:go(Conf,FepIn),
+    merge(ConfIn,Conf),
+    Info = {ConfIn}.
+otherwise.
+get_fep_stream2(_,Info):-
+    true|
+    Info = {}.
+
+wait_max(normal(Feps),Max):-
+    true|
+    Feps = Max.
+otherwise.
+wait_max(_,Max):-
+    true|
+    Max = 0.
+
+
+get_fep_attributes(_,_,FF,_,_,DNext0,{SInfo,Att,Ab,SCont},Conf,AB)
+:- wait(AB) |
+%    FF=aborted,DNext0=[],SCont=[],Conf=[].
+    FF=aborted,DNext0=[],SCont=[],Conf=[],Att=abort.
+alternatively.
+get_fep_attributes(S,[Attri],FF,FepNum,IONode,DNext0,{SInfo,Att,Ab,SCont},Conf,AB)
+:- true |
+    S=yes,FF=Attri,DNext0=[],SCont=[],Conf=[].
+get_fep_attributes(S,[],FF,FepNum,IONode,DNext0,DD,Conf,AB):- true |
+%    DNext0 = [put(fep,FepsN,{Feps})|DNext],
+    DNext0 = [put(fep,FepsN,{Feps})],
+    Feps = [fep(FepNum,Result)|FepsN],
+%    get_fep_attributes2(S,FF,FepNum,IONode,DNext,DD,Result).
+%    get_fep_attributes2(S,FF,FepNum,IONode,Conf,DD,Result,AB).
+    get_fep_attributes1(S,FF,FepNum,IONode,Conf,DD,Result,AB).
+
+get_fep_attributes1(_,FF,_,_,Conf,{SInfo,Att,Ab,SCont},_,AB)
+:- wait(AB) |
+%    FF=aborted,Conf=[],SCont=[].
+    FF=aborted,Conf=[],SCont=[],Att=abort.
+alternatively.
+get_fep_attributes1(S,FF,FepNum,IONode,Conf,DD,Result,AB)
+:- vector(Result,_) |
+    get_fep_attributes2(S,FF,FepNum,IONode,Conf,DD,Result,AB).
+get_fep_attributes1(S,FF,FepNum,IONode,Conf,DD,Result,AB)
+:- atom(Result) |
+    get_fep_attributes2(S,FF,FepNum,IONode,Conf,DD,Result,AB).
+
+get_fep_attributes2(_,FF,_,_,DNext,{SInfo,Att,Ab,SCont},_,AB)
+:- wait(AB) |
+%    FF=aborted,DNext=[],SCont=[].
+    FF=aborted,DNext=[],SCont=[],Att=abort.
+alternatively.
+get_fep_attributes2(S,FF,FepNum,IONode,DNext,DD,normal(Fep),AB)
+:- integer(IONode) |
+    Fep=[file(Status)],
+    get_fep_attributes3(S,Status,FF,FepNum,IONode,DNext,DD,AB).
+%otherwise.
+%get_fep_attributes2(S,FF,FepNum,IONode,DNext,DD,normal(Fep),AB)
+%:- true |
+%    Fep=[remote_file(IONode,Status)],
+%    get_fep_attributes3(S,Status,FF,FepNum,IONode,DNext,DD,AB).
+%otherwise.
+%get_fep_attributes2(S,FF,FepNum,IONode,DNext,{SInfo,Att,Ab,SCont},Result,AB):- true |
+%    S=no,FF=Result,DNext=[],SCont=[].
+get_fep_attributes2(S,FF,FepNum,IONode,DNext,DD,normal(Fep),AB)
+:- string(IONode,_,_) |
+    Fep=[remote_file(IONode,Status)],
+    get_fep_attributes3(S,Status,FF,FepNum,IONode,DNext,DD,AB).
+get_fep_attributes2(S,FF,FepNum,IONode,DNext,{SInfo,Att,Ab,SCont},Result,AB)
+:- atom(Result) |
+    S=no,FF=Result,DNext=[],SCont=[].
+
+get_fep_attributes3(_,_,FF,_,_,DNext,{SInfo,Att,Ab,SCont},AB)
+:- wait(AB) |
+%    FF=aborted,DNext=[],SCont=[].
+    FF=aborted,DNext=[],SCont=[],Att=abort.
+alternatively.
+get_fep_attributes3(S,normal(Str),FF,FepNum,IONode,DNext,{SInfo,Att,Ab,SCont},AB)
+:- true |
+    file_request_device:driver([reset(Status)|Next],
+                                Str,Att,SInfo,_,SCont,Ab,{_,_,_,_,_,_,_}),
+    get_fep_attributes4(S,Status,Next,FF,FepNum,IONode,DNext,Att,AB,Ab).
+%otherwise.
+%get_fep_attributes3(S,Result,FF,FepNum,IONode,DNext,{SInfo,Att,Ab,SCont},AB):- true |
+get_fep_attributes3(S,Result,FF,FepNum,IONode,DNext,{SInfo,Att,Ab,SCont},AB)
+:- atom(Result) |
+    S=no,FF=Result,DNext=[],SCont=[].
+
+get_fep_attributes4(S,_,Next,FF,FepNum,IONode,DNext,Att,AB,Ab):- wait(AB) |
+%    Next=[],FF=aborted,DNext=[],Ab=abort.
+    Next=[],FF=aborted,DNext=[],Att=abort.
+%get_fep_attributes4(S,_,Next,FF,FepNum,IONode,DNext,Att,AB,Ab):- wait(Att) |
+%    S=no,Next=[],FF=aborted,DNext=[],Ab=abort.
+alternatively.
+%get_fep_attributes4(S,normal(_,_,_),Next,FF,FepNum,IONode,DNext,Att,AB,Ab):- true |
+get_fep_attributes4(S,normal(DAb,_,_),Next,FF,FepNum,IONode,DNext,Att,AB,Ab):- true |
+    Next=[fep_attributes(Result)],
+    get_fep_attributes5(S,Result,FF,FepNum,IONode,DNext,Att,AB,Ab,DAb).
+get_fep_attributes4(S,abnormal,Next,FF,FepNum,IONode,DNext,Att,AB,Ab):- true |
+    S=no,Next=[],FF=abnormal,DNext=[].
+get_fep_attributes4(S,aborted,Next,FF,FepNum,IONode,DNext,Att,AB,Ab):- true |
+    S=no,Next=[],FF=aborted,DNext=[].
+get_fep_attributes4(S,disconnected,Next,FF,FepNum,IONode,DNext,Att,AB,Ab):- true |
+    S=no,Next=[],FF=disconnected,DNext=[].
+
+get_fep_attributes5(S,_,FF,FepNum,IONode,DNext,Att,AB,Ab,DAb):- wait(AB) |
+%    FF=aborted,DNext=[],Ab=abort,DAb=abort.
+%    FF=aborted,DNext=[],Att=abort,DAb=abort.
+    FF=aborted,DNext=[],Att=abort.
+%get_fep_attributes5(S,_,FF,FepNum,IONode,DNext,Att,AB,Ab,DAb):- wait(Att) |
+%    S=no,FF=aborted,DNext=[],Ab=abort,DAb=abort.
+alternatively.
+get_fep_attributes5(S,normal(Code,OS,Host,FEPVer,Dir,FileVer,Comme),
+        FF,FepNum,IONode,DNext,Att,AB,Ab,DAb)
+:- true |
+    S=yes,
+    FF={Code,OS,Host,FEPVer,Dir,FileVer,Comme},
+    DNext=[put(attri(IONode),{Code,OS,Host,FEPVer,Dir,FileVer,Comme},_)].
+get_fep_attributes5(S,abnormal,FF,FepNum,IONode,DNext,Att,AB,Ab,DAb):- true |
+    S=no,FF=abnormal,DNext=[].
+get_fep_attributes5(S,aborted,FF,FepNum,IONode,DNext,Att,AB,Ab,DAb):- true |
+    S=no,FF=aborted,DNext=[].
+get_fep_attributes5(S,disconnected,FF,FepNum,IONode,DNext,Att,AB,Ab,DAb):- true |
+    S=no,FF=disconnected,DNext=[].

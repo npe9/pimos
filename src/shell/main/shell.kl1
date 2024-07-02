@@ -1,0 +1,775 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%  This is a 'shell' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module shell.
+:- public usage/1, shell_internal_handler/3,
+%%%%%  Shell external entry ( with new Stdio )
+          go/0, go/2, go/3, go/4, go/5,
+          login/0, login/2, login/3, login/4, login/5,
+%%%%%  Shell external entry ( with User Specified Stdio )
+          stdio/2,
+%%%%%  Shell internal entry
+          internal/1,
+%%%%%  Shell external entry ( use ordinary Stdio )
+          shell/0, shell/1, invoke/2.
+
+usage(Usage) :- true |
+    Usage = [{string#"~s~n~s~n~s~n~s~n~s~n", [S1, S2, S3, S4, S5]}],
+    S1 = string#"Usage : shell",
+    S2 = string#"Usage : shell(at(X, Y), char(W, H))",
+    S3 = string#"Usage : shell(X, Y, W, H)",
+    S4 = string#"Usage : shell(at(X, Y), char(W, H), Font)",
+    S5 = string#"Usage : shell(X, Y, W, H, Font)".
+
+%%%%%%%%%
+% shell %
+%%%%%%%%%
+
+%%%%%  Normal Shell  %%%%%
+go :- true | start_main(normal,{}).
+
+go(X,Y,W,H) :- true |
+    shellUtils:posCheck(at(X,Y),Pos),shellUtils:sizeCheck(char(W,H),Size),
+    start_main(normal,{Pos,Size}).
+
+go(X,Y,W,H,Font) :- true |
+    shellUtils:posCheck(at(X,Y),Pos),shellUtils:sizeCheck(char(W,H),Size),
+    (string(Font,_,_) -> Param = {Pos,Size,Font} ;
+     otherwise;
+     true -> Param = {Pos,Size}),
+    start_main(normal,Param).
+
+go(At,Char) :- true |
+    shellUtils:posCheck(At,Pos),shellUtils:sizeCheck(Char,Size),
+    start_main(normal,{Pos,Size}).
+
+go(At,Char,Font) :- true |
+    shellUtils:posCheck(At,Pos),shellUtils:sizeCheck(Char,Size),
+    ( string(Font,_,_) -> Param = {Pos,Size,Font} ;
+     otherwise ;
+      true -> Param = {Pos,Size}),
+    start_main(normal,Param).
+
+%%%%%  Login Shell  %%%%%
+login :- true | start_main(login,{}).
+
+login(X,Y,W,H) :- true |
+    shellUtils:posCheck(at(X,Y),Pos),shellUtils:sizeCheck(char(W,H),Size),
+    start_main(login,{Pos,Size}).
+
+login(X,Y,W,H,Font) :- true |
+    shellUtils:posCheck(at(X,Y),Pos),shellUtils:sizeCheck(char(W,H),Size),
+    ( string(Font,_,_) -> Param = {Pos,Size,Font} ;
+     otherwise ;
+      true -> Param = {Pos,Size}),
+    start_main(login,Param).
+
+login(At,Char) :- true |
+    shellUtils:posCheck(At,Pos),shellUtils:sizeCheck(Char,Size),
+    start_main(login,{Pos,Size}).
+
+login(At,Char,Font) :- true |
+    shellUtils:posCheck(At,Pos),shellUtils:sizeCheck(Char,Size),
+    ( string(Font,_,_) -> Param = {Pos,Size,Font} ;
+     otherwise ;
+      true -> Param = {Pos,Size}),
+    start_main(login,Param).
+
+%%%%%  Start Shell Main-procedure  %%%%%
+start_main(Mode,IOParam) :- true |
+    shoen:raise(pimos_tag#task,general_request,
+        [getenv(task:make_window,MAKE)|Gen]),
+    check_make_window(MAKE,Gen,Mode,IOParam).
+
+check_make_window(MAKE,Gen,Mode,IOParam) :- true |
+    ( MAKE=normal(no) -> Gen=[unsetenv(task:top_task,Stat)],
+        start_using_stdio(Stat,Mode) ;
+     otherwise ;
+      true -> Gen=[getenv(task:top_task,TOP)|NGen],
+        check_top_task(TOP,NGen,Mode,IOParam) ).
+
+check_top_task(TOP,Gen,Mode,IOParam) :- true |
+    ( TOP=normal(_) -> Gen=[unsetenv(task:top_task,Stat)],
+        start_using_stdio(Stat,Mode) ;
+     otherwise ;
+      true -> start_using_new_window(Gen,Mode,IOParam) ).
+
+start_using_stdio(Stat,Mode) :- wait(Stat) |
+    ( Mode=login -> login_shell:go ;
+     otherwise ;
+      true -> normal_shell:go ).
+
+start_using_new_window(Gen,Mode,IOParam) :- true |
+    predicate_to_code(module#shell,internal,1,Code),
+    getTitle(Gen, NGen, Title),
+    NGen = [execute(Code,{Mode},"ShellInvoker",
+                         0,4096,0,Param,normal(Cnt,Rpt))],
+    Param = [resource(0,1000000000), stdio(S_PARAM,normal(ID,ELSE))],
+    S_PARAM = [in_out_inter({window_request,WinParam,Status})],
+    makeParam(IOParam,Title,WinParam),
+%    shoen:raise(pimos_tag#task,get_std(switch),SW),
+%    check_stdio(ELSE, Stat),
+%    check_stdio_id(ID, NID),
+%    waitStat(Stat,SW,[attach(NID,_,Detect),NSW]),
+%    check_attention(NID, Detect, NSW),
+    check_stdio_status(Status,End),
+    shell_internal_handler(Cnt,Rpt,End).
+
+%%%%%  Use User Specified Device as StdIo  %%%%
+stdio(Mode, {Server,IoParam}) :- true |
+    predicate_to_code(module#shell,internal,1,Code),
+    shoen:raise(pimos_tag#task,general_request,Gen),
+    Gen = [execute(Code,{Mode},"ShellInvoker",
+                         0,4096,0,Param,normal(Cnt,Rpt))],
+    Param = [resource(0,1000000000), stdio(S_PARAM,normal(ID,ELSE))],
+    S_PARAM = [in_out_inter({Server,IoParam,Status})],
+    check_stdio_status(Status,End),
+    shell_internal_handler(Cnt,Rpt,End).
+
+check_stdio_status(Status,End) :- true |
+    ( Status = normal -> true ;otherwise; true -> End=end ).
+%check_stdio_id(ID,NID) :- true | ( ID<0 -> NID=0 ;otherwise; true -> NID=ID ).
+
+%check_attention(ID, Detect, SW) :- wait(Detect) |
+%    ( Detect = detected ->
+%        shoen:raise(pimos_tag#tos, attention_detected, []),
+%        SW=[attach(ID,_,NDetect)|NSW], check_attention(ID,NDetect,NSW) ;
+%      Detect = disconnected ->
+%        SW=[attach(ID,_,NDetect)|NSW], check_attention(ID,NDetect,NSW) ;
+%      Detect = closed -> SW = [] ;
+%      Detect = deserted -> SW = [] ;
+%      Detect = non_existent -> SW = [] ;
+%      Detect = error -> SW = []).
+
+%check_stdio([], Status) :- Status = normal.
+%check_stdio([{_,Stat}|ELSE], Status) :- true |
+%    ( Stat=normal -> check_stdio(ELSE, Status) ;
+%     otherwise ;
+%      true -> Status = abnormal).
+
+shell_internal_handler(Cnt,Rpt,End) :- wait(End) | Cnt = [abort(_)|NCnt],
+    shell_internal_handler(NCnt,Rpt,_).
+shell_internal_handler(Cnt,[],_) :- true | Cnt = [].
+shell_internal_handler(Cnt,[Mes|Rpt],End) :- true |
+    ( Mes = resource_low ->
+        Cnt = [add_resource(0, 1000000000), allow_resource_report | NCnt],
+        shell_internal_handler(NCnt,Rpt,End) ;
+      Mes = terminated ->
+        Cnt = [],
+        shell_internal_handler(_,Rpt,End) ;
+     otherwise ;
+      true ->
+        shell_internal_handler(Cnt,Rpt,End)).
+%        shellUtils:error_raise(Mes, string#"shell_internal_handler: ~w~n")).
+
+internal(Mode) :- true |
+    shoen:raise(pimos_tag#task,get_std(switch),[detach(MAKE)|SW]),
+    internal1(MAKE, Mode, SW).
+
+internal1(MAKE, Mode, SW) :- wait(MAKE) |
+    shoen:raise(pimos_tag#task,get_std(out),StdMes),
+    waitStat(ID, SW, [attach(ID,_,Detect)|NSW]),
+    shell_handler(C, R, NSW, NStdMes, StdMes, ID, Detect),
+    current_node(CPE, _),
+    job:create(job(normal,shell:shell(Mode),NStdMes),
+                    C, R, 0, ID, {CPE , 0, 4000, infinite}).
+
+shell_handler(C, R, SW, In, Out, ID, Detect) :- wait(Detect) |
+    ( Detect = detected -> SW=[attach(ID,_,NDetect)|NSW] ;
+      Detect = disconnected -> SW=[attach(ID,_,NDetect)|NSW] ;
+      Detect = closed -> SW = NSW, NDetect = _ ;
+      Detect = deserted -> SW = NSW, NDetect = _ ;
+      Detect = non_existent -> SW = NSW, NDetect = _ ;
+      Detect = error -> SW = NSW, NDetect = _ ),
+    shell_handler(C, R, NSW, In, Out, ID, NDetect).
+alternatively.
+shell_handler(C, [], SW, _, Out, _, _) :- true | C = [], SW = [], Out = [].
+shell_handler(C, [Mes|R], SW, In, Out, ID, Detect) :- true |
+    ( Mes = terminated -> C = [],
+        shell_handler(_, R, SW, In, Out, ID, Detect) ;
+      Mes = jobTerminated(_,_) -> C = [], SW = [], Out = [] ;
+      Mes = resource_low ->
+        C = [add_resource(0, 1000000000), allow_resource_report | NC],
+        shell_handler(NC, R, SW, In, Out, ID, Detect) ;
+      Mes = closeIo(_, Stat) -> Stat = normal,
+        shell_handler(C, R, SW, In, Out, ID, Detect) ;
+     otherwise ;
+      true ->
+        shell_handler(C, R, SW, In, Out, ID, Detect) ).
+%        shellUtils:error_raise(Mes, string#"shell_handler: ~w~n") ).
+shell_handler(C, R, SW, [], Out, ID, Detect) :- true |
+    shell_handler(C, R, SW, _, Out, ID, Detect).
+shell_handler(C, R, SW, [Mes|In], Out, ID, _) :- true |
+    SW = [detach(Stat1)|NSW], %    SW = [attach(0,Stat1, _)|NSW],
+%    Out = [Mes, flush(Stat2) | NOut],
+    waitStat(Stat1, Out, [Mes, flush(Stat2) | NOut]),
+    waitStat(Stat2, NSW, [attach(ID, Stat3, NDetect)|NNSW]),
+    waitStat(Stat3, R, NR), waitStat(Stat3, In, NIn),
+    shell_handler(C, NR, NNSW, NIn, NOut, ID, NDetect).
+
+makeParam(Param,Title,WinParam) :- true |
+    ( Param = {} -> WinParam = {Title} ;
+      Param = {Pos,Size} -> WinParam = {Title,Pos,Size} ;
+      Param = {Pos,Size,Font} -> WinParam = {Title,Pos,Size,Font} ).
+
+getTitle(Gen, NGen, Version) :- true |
+    Gen = [getenv(task:user, UserWithStatus)|NGen],
+    getTitle1(UserWithStatus, Version).
+
+getTitle1(normal(UserName), Version) :- string(UserName, _, _) | 
+    builtin#append_string(string#" Shell for ", UserName, Version).
+otherwise.
+getTitle1(_, Version) :- true | get_version(Version).
+
+get_version(Version) :- true |
+    pimos_version:version(Ver),
+    pimos_version:date(Date),
+    builtin#append_string([string#"SHELL Version ", Ver, string#" ", Date],
+                            Version).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+shell :- true | invoke(normal, []).
+shell(Mode) :- true |
+    ( Mode = normal -> NMode = normal ;
+      Mode = login  -> NMode = login ;
+    otherwise ;
+      true -> NMode = normal ),
+    invoke(NMode, []).
+
+invoke(Mode, CMD) :- true |
+    shoen:raise(pimos_tag#task, get_std(switch), [detach(MAKE)|SW]),
+    invoke1(MAKE, Mode, CMD, SW).
+
+invoke1(MAKE, Mode, CMD, SW) :- wait(MAKE) |
+    buffer:character_pool([atom_table(Atom1)], IO1),
+    buffer:character_pool([atom_table(Atom2)], IO2),
+    shellMsgs:messageTranslator(NStdIo1, StdIo1, NP2, IO1),
+    shellMsgs:messageTranslator(JMRpt, StdMes, NP3, IO2),
+    merge({NCRRpt, CERpt}, NStdIo1),
+    shellUtils:detecter(CRRpt, NCRRpt, End),
+%%%%%
+%    SW = [attach(0,Stat,_)|NSW], merge({IoH1, IoH2}, NSW),
+    Stat = normal, merge({IoH1, IoH2}, SW),
+%    Stat = MAKE, merge({IoH1, IoH2}, SW),
+%%%%%
+    jobManager:create(JMCnt, JMRpt, IoH1),
+    makeSTK(Mode, STK, CMD),
+    waitComReadInit(Stat, Root, StdIo2, CRRpt, Cmd, Atom4, NP4, STK),
+    commandExecutor:create(Cmd, JMCnt, CERpt, IoH2, NP1, Atom5),
+    atom_table:cache_table(Atom),
+    merge({Atom1, Atom2, Atom3, Atom4, Atom5}, Atom),
+%%%%%  Dummy StdMes  %%%%%
+    getStdIoAndPool(Root, StdIo, StdMes, Atom3, NP, Mode),
+    merge({NP1, NP2, NP3, NP4}, NP),
+    merge({StdIo1, StdIo2}, StdIo).
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+waitComReadInit(Stat,Root,StdIo2,CRRpt,Cmd,Atom4,NP4,STK) :- wait(Stat) |
+         comReadInit(Root,StdIo2,CRRpt,Cmd,Atom4,NP4,STK).
+
+makeSTK(empty, STK, CMD) :- true | STK = CMD.
+makeSTK(normal, STK, CMD) :- true |
+    STK = [string#"take(home(""shell.com""))" | CMD].
+makeSTK(login,  STK, CMD) :- true |
+    STK = [string#"take(home(""shell.com""))",
+           string#"take(home(""pimos.com""))" | CMD].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% getStdIo(-StdIo, -StdMes, Cont)  %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+getStdIoAndPool(Root, StdIo, StdMes, Atom, NPool, Mode) :- true |
+%%%%% shell-variables pool %%%%%
+    Prtd = 20, Prtl = 20, Prtal = 80, Prtsl = 80,
+    current_node(CPE, _),
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:directory,CWD)]),
+    checkInitCWD(CWD, DIR),
+    pool:keyed_set(Pool),
+    Pool = [put(node,CPE,_), put(minprio,0,_), put(maxprio,4000,_),
+            put(def, [], _),            % for Secret Command
+            put(alias, [], _), put(echo, off, _), put(dir, DIR, _),
+            put(rscinc,infinite,_), put(pl,Prtl,_), put(pd,Prtd,_),
+            put(pal,Prtal,_), put(psl,Prtsl,_), put(mode,Mode,_) | NPool],
+%%%%% standard-io %%%%%
+    shoen:raise(pimos_tag#task, get_std(io), RootStdIo),
+    shoen:raise(pimos_tag#shell, get_std_mes, StdMes),
+%    std_io_filter:std_io_filter(Io1, RootStdIo),
+%    stdio:create(Io1, Io2, Cont),
+    merge({Root, Io3}, RootStdIo),
+    buffer:interaction_filter([atom_table(Atom)], Io4, Io3),
+%    shellIoUtils:ioUtils(Io4, Io3, Atom),
+    shellOperator:update(Io4, Io5),
+    Io5 = [print_depth(Prtd), print_length(Prtl),
+            print_atom_length(Prtal), print_string_length(Prtsl) | StdIo].
+
+checkInitCWD(normal(CWD), DIR) :- string(CWD,_,_) | DIR = [CWD].
+otherwise.
+checkInitCWD(_, DIR) :- true | DIR = [string#""].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% comRead([Mes | StdIo], [Mes | StdMes], [Mes | Cmd], IO, Prompt, Atom, Queue) %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+comReadInit(Root,StdIo,CRRpt,Cmd,Atom,Pool,STK) :- true | Atom = {A1,A2},
+    buffer:character_pool([atom_table(A1)], IO),
+    shellOperator:update(IO, NIO),
+    shellUtils:finiteQueue([changeSize(0) | Q]),
+    Root = [reset(normal(Abt, Att, _)) | NRoot],
+    comRead(NRoot,
+        Abt,Att,StdIo,CRRpt,Cmd,NIO,string#"Shell>> ",A2,Q,Pool,STK,[]).
+
+waitComRead(COMPLETE,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,UNGET) :-
+    wait(COMPLETE) |
+    ( COMPLETE = detected(JobId) ->
+        Cmd = [{attention(JobId), Status}|NCmd],
+        waitComRead(Status,
+            Root,Abt,Att,StdIo,Rpt,NCmd,IO,Prompt,Atom,Q,P,STK,UNGET) ;
+      COMPLETE = detected ->
+        Cmd = [{attention, Status}|NCmd],
+        waitComRead(Status,
+            Root,Abt,Att,StdIo,Rpt,NCmd,IO,Prompt,Atom,Q,P,STK,UNGET) ;
+     otherwise ;
+      true -> comRead(Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,UNGET)).
+
+comRead(Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,UNGET) :-
+        wait(Att) |
+        Root = [next_attention(normal(NAtt)) | NRoot],
+    comRead(NRoot,Abt,NAtt,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,UNGET).
+alternatively.
+comRead(Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,[],UNGET) :- true |
+    Root = [am_I_there(Status) | NRoot],
+    getPrompt(Prompt, NPrmpt, Q, NQ, IO, NIO),
+    ( string(UNGET,_,_) ->
+        MSGS = [prompt(NPrmpt),ungetb(UNGET,_),flush(_),getl(Line)] ;
+     otherwise ;
+     true -> MSGS = [prompt(NPrmpt),flush(_),getl(Line)] ),
+    waitStat(Status,StdIo,[do(MSGS)|NStdIo]),
+    cmdSlct1(Line,NRoot,Abt,Att,NStdIo,Rpt,Cmd,NIO,Prompt,Atom,NQ,P,[]).
+comRead(Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,[Line|STK],_) :-
+        true |
+    Root = [am_I_there(Status) | NRoot], waitStat(Status, Line, NLine),
+    P = [get_and_put(echo, EMode, EMode) | NP],
+    cmdEcho(EMode, Line, Rpt, NRpt),
+    cmdSlct1(NLine,NRoot,Abt,Att,StdIo,NRpt,Cmd,IO,Prompt,Atom,Q,NP,STK).
+
+cmdEcho(off, Line, Rpt, NRpt) :- true | NRpt = Rpt.
+otherwise.
+cmdEcho(_, Line, Rpt, NRpt) :- true | Rpt = [command_line(Line) | NRpt].
+
+getPrompt(Prompt, NPrompt, Q, NQ, IO, NIO) :- true |
+    ( string(Prompt,Size,_), Size >= 2 ->
+        convertPrompt( ~(Size - 2), Size, Prompt, NPrompt, Q, NQ, IO, NIO) ;
+     otherwise ;
+        true -> NPrompt = Prompt, NQ = Q, NIO = IO ).
+
+convertPrompt(Pos, Size, Prompt, NPrompt, Q, NQ, IO, NIO) :- true |
+    ( Pos >= 0,
+            string_element(Prompt,Pos,#"\"),
+            string_element(Prompt,~(Pos + 1), #"!") ->
+        builtin#substring(Prompt, 0, Pos, Bef, Prompt1),
+        getAft(Pos, Size, Prompt1, Aft),
+        Q = [getNext(C) | NNQ],
+        IO = [putt(C), nl, flush(_), getl(Med), abandon_pool | NNIO],
+        builtin#append_string([Bef, Med, Aft], NNPrompt),
+        getPrompt(NNPrompt, NPrompt, NNQ, NQ, NNIO, NIO) ;
+     Pos < 0 -> NPrompt = Prompt, NQ = Q, NIO = IO ;
+    otherwise ;
+     true -> convertPrompt(~(Pos - 1),Size,Prompt,NPrompt,Q,NQ,IO,NIO) ).
+
+getAft(Pos, Size, Prompt, Aft) :- true |
+    ( Size > ~(Pos + 2) ->
+        builtin#substring(Prompt, ~(Pos + 2), ~(Size - Pos - 2), Aft, _) ;
+     otherwise ;
+     true -> Aft = string#"").
+
+cmdSlct1(Int,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :-
+        integer(Int) |
+    (Int = -1 -> true ;
+     Int = -2 -> true ;
+    otherwise ;
+     true -> true ),
+    cmdSlct4(exit,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK).
+cmdSlct1(Null, Root, Abt, Att, StdIo, Rpt, Cmd, IO, Prompt, Atom, Q, P, STK) :-
+    string(Null, 0, _) |
+    comRead(Root, Abt, Att, StdIo, Rpt, Cmd, IO, Prompt, Atom, Q, P, STK, []).
+cmdSlct1(Line, Root, Abt, Att, StdIo, Rpt, Cmd, IO, Prompt, Atom, Q, P, STK) :-
+        string(Line, Size, _), string_element(Line, 0, #"!") |
+    (Size = 1 -> NNLine = "",NRpt=Rpt,NQ=Q,StdIo=NStdIo,NIO=IO,Stat=normal ;
+     Size = 2, string_element(Line, 1, L1), L1 = #"!" -> No:=Next-1, NRpt=Rpt,
+%        StdIo = [ungetb(NNLine,Stat) | StdIo0], waitStat(Stat,StdIo0,NStdIo),
+        UNGET = NNLine, NStdIo = StdIo, Stat = normal,
+        NIO = IO, Q = [getNext(Next), get(No, NNLine) | NQ] ;
+     Size > 2, string_element(Line, 1, L1), L1 = #"!" ->
+        No:=Next-1, NRpt=Rpt, NIO=IO, SubSize:=Size-2,
+        builtin#substring(Line, 2, SubSize, NLine2, _),
+        builtin#append_string(NLine1, NLine2, NNLine),
+%        StdIo = [ungetb(NNLine,Stat) | StdIo0], waitStat(Stat,StdIo0,NStdIo),
+        UNGET = NNLine, NStdIo = StdIo, Stat = normal,
+        Q = [getNext(Next), get(No, NLine1) | NQ] ;
+     Size > 1, string_element(Line, 1, L1), L1 \= #"!" ->
+        L := Size - 1, builtin#substring(Line, 1, L, NLine, _),
+        Q = [get_all(History) | Q0],
+        shellUtils:reverse(History, RHist),
+        devide_string_by_first_space(NLine, NLineBef, NLineAft),
+        retrieveHistory(RHist,NLineBef,NLine1,Rpt,NRpt,IO,NIO,Q0,NQ,Stat),
+        builtin#append_string(NLine1, NLineAft, NNLine),
+        UNGET = NNLine, waitStat(Stat,StdIo,NStdIo) ),
+%        waitStat(Stat1,StdIo,[ungetb(NNLine,Stat) | StdIo0]),
+%        waitStat(Stat,StdIo0,NStdIo) ),
+    waitComRead(Stat,
+        Root,Abt,Att,NStdIo,NRpt,Cmd,NIO,Prompt,Atom,NQ,P,STK,UNGET).
+%    cmdSlct1(NNLine,Root,Abt,Att,NStdIo,NRpt,Cmd,IO,Prompt,Atom,NQ,P,STK).
+otherwise.
+cmdSlct1(Line,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :- true |
+    P = [get_and_put(alias, Aliases, Aliases) | NP],
+    shl_alias:expand(Line, NLine, Aliases),
+    shellUtils:insert_delimiter(NLine, NNLine),
+    IO = [putl(NNLine), putl(string#" . "), flush(_),
+                                getwt(Term), abandon_pool | NewIO],
+    checkTerm(Term, NTerm, C),
+    Q = [put(Line) | NQ],
+    cmdSlct2(C,NTerm,Root,Abt,Att,StdIo,Rpt,Cmd,NewIO,Prompt,Atom,NQ,NP,STK).
+
+%%%%%
+devide_string_by_first_space(Str, Str1, Str2) :- string(Str,L,_) |
+    srchSpace(Str, 0, L, Pos), Length := L - Pos,
+    builtin#substring(Str, 0, Pos, Str1, NStr),
+    getRestString(NStr, Pos, Length, Str2).
+
+getRestString(Str, Pos, Length, Str2) :- true |
+    ( Length = 0 -> Str2 = string#"" ;
+    otherwise ;
+      true -> builtin#substring(Str, Pos, Length, Str2, _) ).
+
+srchSpace(Str, CP, L, Pos) :- CP >= L | Pos := L.
+srchSpace(Str, CP, L, Pos) :- CP < L |
+    ( string_element(Str, CP, Elmnt), Elmnt = #" " -> Pos = CP ;
+    otherwise ;
+      true -> NCP := CP + 1, srchSpace(Str, NCP, L, Pos) ).
+%%%%%
+retrieveHistory([], NLine, NNLine, Rpt, NRpt, IO, NIO, Q, NQ, Stat) :- true |
+    NNLine=string#"", Rpt = [not_in_history(NLine, Stat) | NRpt], NIO=IO, NQ=Q.
+otherwise.
+retrieveHistory(History,NLine,NNLine,Rpt,NRpt,IO,NIO,Q,NQ,Stat) :- true |
+    IO = [putl(NLine), putl(string#" . "), flush(_),
+                                getwt(Term), abandon_pool | NIO],
+    checkTerm(Term, NTerm, C),
+%    IO = [putb(NLine), putl(string#" . "), flush(_),
+%                                gett(NTerm), abandon_pool | NIO],
+    retrieveHistoryCheckVar(C,NTerm,History,NLine,NNLine,Rpt,NRpt,Q,NQ,Stat).
+
+retrieveHistoryCheckVar(C,Term,History,NLine,NNLine,Rpt,NRpt,Q,NQ,Stat) :- 
+    true |
+    ( C = 0 -> retrieveHistory0(Term,History,NLine,NNLine,Rpt,NRpt,Q,NQ,Stat) ;
+     otherwise ;
+      true -> NNLine=string#"", NQ=Q, Rpt=[not_in_history(NLine,Stat)|NRpt] ).
+
+retrieveHistory0(No,Hist,NLine,NNLine,Rpt,NRpt,Q,NQ,Stat) :- integer(No) |
+    (No = 0 -> NNo:=Next-1, Q = [getNext(Next),get(NNo,NNLine) | NQ];
+     No > 0 -> Q = [get(No, NNLine) | NQ] ;
+     No < 0 -> NNLine = string#"", NQ = Q ), NRpt = Rpt, Stat = normal.
+otherwise.
+retrieveHistory0(_,Hist,NLine,NNLine,Rpt,NRpt,Q,NQ,Stat) :- true | NQ=Q,
+    retrieveHistory1(Hist,NLine,NNLine,Rpt,NRpt,Stat).
+
+retrieveHistory1([], NLine, NNLine, Rpt, NRpt, Stat) :- true |
+    NNLine = string#"", Rpt = [not_in_history(NLine, Stat) | NRpt].
+retrieveHistory1([{_,Data}|History],NLine,NNLine,Rpt,NRpt,Stat) :- true |
+    compareLines(Data, NLine, Status),
+    retrieveHistoryCheck(Status, History, NLine, NNLine, Rpt, NRpt, Stat).
+
+retrieveHistoryCheck(included(Data),_,_,NNLine,Rpt,NRpt,Stat) :- true |
+    NNLine = Data, Rpt = NRpt, Stat = normal.
+retrieveHistoryCheck(excluded,History,NLine,NNLine,Rpt,NRpt,Stat) :- true |
+    retrieveHistory1(History,NLine,NNLine,Rpt,NRpt,Stat).
+
+compareLines(_, string#"", Status) :- true | Status = excluded.
+otherwise.
+compareLines(Data,Line,Status) :- string(Data,L1,_),string(Line,L2,_),L1<L2 |
+    Status = excluded.
+compareLines(Data,Line,Status) :- string(Data,L1,_),string(Line,L2,_),L1>=L2 |
+    builtin#substring(Data, 0, L2, SubData, NData),
+    equalString(L2, SubData, Line, NData, Status).
+
+equalString(0, _, _, NData, Status) :- true | Status = included(NData).
+otherwise.
+equalString(L, S1, S2, NData, Status) :-
+        NL:=L-1, string_element(S1,NL,E1), string_element(S2,NL,E2), E1 = E2 |
+    equalString(NL, S1, S2, NData, Status).
+otherwise.
+equalString(_, _, _, _, Status) :- true | Status = excluded.
+%%%%%
+checkTerm(normal(WT), NT, C) :- WT \= end_of_file, WT \= empty |
+    variable:unwrap(WT, {_, NT}, [count(C)]).
+checkTerm(normal(end_of_file), NT, C) :- true |  NT = [], C = -1.
+checkTerm(normal(empty), NT, C) :- true | NT = [], C = empty.
+checkTerm(abnormal(ErrorInfo), NT, C) :- true | NT = ErrorInfo, C = error.
+%%%%%
+% Check Syntax Error
+%%%%%
+cmdSlct2(N, _, Root, Abt, Att, StdIo, Rpt, Cmd, IO, Prompt, Atom, Q, P, STK) :-
+        integer(N), N > 0 |
+    Rpt = [include_var(Stat) | NRpt], waitStat(Stat, StdIo, NStdIo),
+    waitComRead(Stat,Root,Abt,Att,NStdIo,NRpt,Cmd,IO,Prompt,Atom,Q,P,STK,[]).
+cmdSlct2(N, _, Root, Abt, Att, StdIo, Rpt, Cmd, IO, Prompt, Atom, Q, P, STK) :-
+        integer(N), N < 0 |
+    Rpt = [syntax_error(Stat) | NRpt], waitStat(Stat, StdIo, NStdIo),
+    waitComRead(Stat,Root,Abt,Att,NStdIo,NRpt,Cmd,IO,Prompt,Atom,Q,P,STK,[]).
+cmdSlct2(error,ErrInfo,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :-
+        true |
+    Rpt = [syntax_error(ErrInfo, Stat) | NRpt], waitStat(Stat, StdIo, NStdIo),
+    waitComRead(Stat,Root,Abt,Att,NStdIo,NRpt,Cmd,IO,Prompt,Atom,Q,P,STK,[]).
+cmdSlct2(empty,_,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :- true |
+    comRead(Root, Abt, Att, StdIo, Rpt, Cmd, IO, Prompt, Atom, Q, P, STK, []).
+otherwise.
+cmdSlct2(0,Line,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :- true |
+    cmdSlct3(Line,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK).
+
+%%%%% Old Style History Expansion
+cmdSlct3(No,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :- integer(No)|
+    (No = 0 -> NNo := Next - 1,
+        Q = [putBack, getNext(Next), get(NNo, Line) | NQ],
+        cmdSlct1(Line,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,NQ,P,STK) ;
+     No > 0 ->
+        Q = [putBack, get(No, Line) | NQ],
+        cmdSlct1(Line,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,NQ,P,STK) ;
+     No < 0 ->
+        comRead(Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,[]) ).
+otherwise.
+%%%%% Shell & Env. Variable Expansion
+cmdSlct3(Line,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :- true |
+    shl_var:expand(Line,NLine,P,NP),
+    cmdSlct4(NLine,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,NP,STK).
+
+cmdSlct4(exit_immediately,Root,Abt,Att,StdIo,Rpt,Cmd,IO,_,Atom,Q,P,_) :-
+        true |
+    StdIo = [], Rpt = [], Cmd =[{exit, _}], IO = [], Atom = [], Q = [], P = [],
+    Root = [], shoen:raise(pimos_tag#shell, close_std_io, _).
+cmdSlct4(get,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :- true |
+    Q = [getSize(HL) | NQ],
+    Rpt = [shell_var(prompt, {Prompt}), shell_var(hl, {HL}) | NRpt],
+    Cmd = [{get(NRpt, NNRpt), Stat} | NCmd],
+    waitStat(Stat, StdIo, NStdIo),
+    waitComRead(Stat,Root,Abt,Att,NStdIo,NNRpt,NCmd,IO,Prompt,Atom,NQ,P,STK,[]).
+cmdSlct4(do(CmdList),Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :-
+        true |
+    pushSTK(CmdList, STK, NSTK),
+    comRead(Root, Abt, Att, StdIo, Rpt, Cmd, IO, Prompt, Atom, Q, P, NSTK, []).
+cmdSlct4(clear_stack,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,_) :-
+        true |
+    comRead(Root, Abt, Att, StdIo, Rpt, Cmd, IO, Prompt, Atom, Q, P, [], []).
+cmdSlct4(exit,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,_) :- true |
+    P = [get_and_put(mode, Mode, Mode) | NP],
+    cmdSlctExit(Mode,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,NP).
+cmdSlct4(take(F),Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :- true |
+    (F = if_exist(FF) -> File = FF, Mode = if_exist ;
+     F = home(FF) -> File = FF, Mode = home ;
+    otherwise ;
+     true -> File = F, Mode = normal ),
+    waitStat(Stat, StdIo, NStdIo),
+    shoen:raise(pimos_tag#task, general_request, [file(FileDev)|GR]),
+    shellUtils:file_type(DLM, GR),
+%        DLM = { 0:Type, 1:D_string, 2:D_char, 3:D_atom }
+    makeDevReq(FileDev,File,Root,Abt,Att,NStdIo,Rpt,Cmd,IO,Prompt,
+               Atom,Q,P,Mode,Stat,STK,DLM).
+otherwise.
+cmdSlct4(Com,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK) :- true |
+    (Com = history -> NRoot=Root,NCmd=Cmd,NPrompt=Prompt,NAtom=Atom,NP=P,
+        Q = [get_all(History) | NQ], waitStat(Stat, StdIo, NStdIo),
+        Rpt = [history(History, Stat) | NRpt] ;
+     Com = history(N) -> NRoot=Root,NCmd=Cmd,NPrompt=Prompt,NAtom=Atom,NP=P,
+        Q = [get_all(History) | NQ], waitStat(Stat, StdIo, NStdIo),
+        Rpt = [history(History, N, Stat) | NRpt] ;
+     Com = get(hl) -> NRoot=Root,NCmd=Cmd,NPrompt=Prompt,NAtom=Atom,NP=P,
+        Q = [getSize(Size) | NQ], waitStat(Stat, StdIo, NStdIo),
+        Rpt = [shell_var(hl, {Size}), flush(Stat) | NRpt] ;
+     Com = {set, {'=', hl, L}}, integer(L), L >= 0 ->
+        NRoot=Root,NCmd=Cmd,NPrompt=Prompt,NAtom=Atom,
+        Q = [changeSize(L) | NQ], waitStat(Stat, StdIo, NStdIo),
+        Rpt = [shell_var(hl, {L}), flush(Stat) | NRpt],
+        P = [put(hl, L, _) | NP] ;
+     Com = {set, {'=', hl, L}}, L = infinite -> 
+        NRoot=Root,NCmd=Cmd,NPrompt=Prompt,NAtom=Atom,
+        Q = [changeSize(infinite) | NQ], waitStat(Stat, StdIo, NStdIo), 
+        Rpt = [shell_var(hl, {infinite}), flush(Stat) | NRpt],
+        P = [put(hl, infinite, _) | NP] ;
+     Com = get(prompt) ->
+        NRoot=Root,NCmd=Cmd,NPrompt=Prompt,NAtom=Atom,NQ=Q,NP=P,
+        waitStat(Stat, StdIo, NStdIo),
+        Rpt = [shell_var(prompt, {NPrompt}), flush(Stat) | NRpt] ;
+     Com = {set, {'=', prompt, Prm}}, string(Prm, _, _) ->
+        NRoot=Root,NCmd=Cmd,NPrompt=Prm,NAtom=Atom,NQ=Q,
+        waitStat(Stat, StdIo, NStdIo),
+        Rpt = [shell_var(prompt, {NPrompt}), flush(Stat) | NRpt],
+        P = [put(prompt, NPrompt, _) | NP] ;
+     Com = {set, {'=', prompt, Prm}}, atom(Prm) -> NRoot=Root,NCmd=Cmd,NQ=Q,
+        waitStat(Stat, StdIo, NStdIo),
+        Rpt = [shell_var(prompt, {NPrompt}), flush(Stat) | NRpt],
+        Atom = [get_atom_name(Prm, normal(NPrompt)) | NAtom],
+        P = [put(prompt, NPrompt, _) | NP] ;
+    otherwise ;
+     true -> NRpt=Rpt,NPrompt=Prompt,NAtom=Atom,NQ=Q,NP=P,Cmd=[{Com,Stat}|NCmd],
+        waitStat(Stat, StdIo, NStdIo), waitStat(Stat, Root, NRoot) ),
+    waitComRead(Stat,
+        NRoot,Abt,Att,NStdIo,NRpt,NCmd,IO,NPrompt,NAtom,NQ,NP,STK,[]).
+
+cmdSlctExit(Mode,Root,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P) :- true |
+    (Mode = login -> cmdSlct4(take(home(string#"logout.com")),Root,Abt,Att,
+            StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,[string#"exit_immediately"]) ;
+    otherwise ;
+     true -> cmdSlct4(exit_immediately,Root,Abt,Att,
+                        StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,[])).
+
+pushSTK([], STK, NSTK) :- true | NSTK = STK.
+pushSTK([Cmd | CmdList], STK, NSTK) :- true |
+    ( string(Cmd,_,_) -> NSTK = [Cmd | NNSTK] ;
+    otherwise ;
+      true -> NNSTK = NSTK ),
+    pushSTK(CmdList, STK, NNSTK).
+otherwise.
+pushSTK(_, STK, NSTK) :- true | NSTK = STK.
+
+makeDevReq(normal(FileDev,_,_),File,Rt,Abt,Att,
+        StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,Mode,Stat,STK,DLM) :- true |
+    set_vector_element(DLM,0,Type,Type,DLM1),
+    set_vector_element(DLM1,1,D_str,D_str,DLM2),
+    set_vector_element(DLM2,2,D_char,D_char,DLM3),
+    set_vector_element(DLM3,3,D_atom,D_atom,DLM4),
+    NDLM = { Type, D_str, D_char, D_atom },
+    ( string(File,_,_) -> FileName = File, NAtom = Atom ;
+    otherwise ;
+      true -> shellUtils:expand_pathname(File,FileName,Atom,NAtom,DLM4) ),
+    FileDev = [open(FileName, read(FS)) | NFD],
+    makeDev(FS,File,Rt,Abt,Att,
+        StdIo,Rpt,Cmd,IO,Prompt,NAtom,Q,P,Mode,Stat,STK,NFD,NDLM).
+otherwise.
+makeDevReq(_,File,Rt,Abt,Att,StdIo,Rpt,Cmd,IO,
+           Prompt,Atom,Q,P,Mode,Stat,STK,_) :- true |
+    (Mode = if_exist -> Stat = normal,
+        comRead(Rt,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,[]) ;
+    otherwise ;
+     true -> Rpt = [illegal_take_device(File, Stat) | NRpt],
+        waitComRead(Stat,Rt,Abt,Att,
+                    StdIo,NRpt,Cmd,IO,Prompt,Atom,Q,P,STK,[]) ).
+
+makeDev(normal(S,_,_),_,Rt,Abt,_,
+        StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,_,Stat,STK,FD,_) :- true |
+    buffer:input_filter([atom_table(Atom1)],NS,S),Atom={Atom1,Atom2},FD=[], 
+    Rt = [next_attention(normal(Att)) | NRt],
+    comTake(NS, STK, NSTK, Stat, Abt, NAbt, Att, NAtt),
+    waitComRead(Stat,NRt,NAbt,NAtt,StdIo,Rpt,Cmd,IO,Prompt,Atom2,Q,P,NSTK,[]).
+otherwise.
+makeDev(_,File,Rt,Abt,Att,
+        StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,Mode,Stat,STK,FD,DLM) :- true |
+    set_vector_element(DLM,0,Type,Type,DLM1),
+    set_vector_element(DLM1,1,D_str,D_str,DLM2),
+    set_vector_element(DLM2,2,D_char,D_char,DLM3),
+    set_vector_element(DLM3,3,D_atom,D_atom,DLM4),
+    NDLM = { Type, D_str, D_char, D_atom },
+    ( string(File,_,_) -> NAtom = Atom, ExpFile = File,
+        shellUtils:append_extention(ExpFile,"com",FileName,D_str,D_char) ;
+    otherwise ;
+      true -> shellUtils:expand_pathname(File,ExpFile,Atom,NAtom,DLM4),
+        shellUtils:append_extention(ExpFile,"com",FileName,D_str,D_char) ),
+    makeDevChk(ExpFile,FileName,File,Rt,Abt,Att,
+        StdIo,Rpt,Cmd,IO,Prompt,NAtom,Q,P,Mode,Stat,STK,FD,NDLM).
+
+
+makeDevChk(ExpFile,FileName,File,Rt,Abt,Att,
+        StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,Mode,Stat,STK,FD,DLM) :- true |
+    ( ExpFile = FileName -> FS = abnormal, NFD = FD ;
+     otherwise;
+      true -> FD = [open(FileName, read(FS)) | NFD] ),
+    makeDevExp(FS,File,Rt,Abt,Att,
+        StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,Mode,Stat,STK,NFD,DLM).
+
+makeDevExp(normal(S,_,_),_,Rt,Abt,_,StdIo,Rpt,Cmd,IO,
+        Prompt,Atom,Q,P,_,Stat,STK,FD,DLM) :- true |
+    buffer:input_filter([atom_table(Atom1)],NS,S),Atom={Atom1,Atom2},FD=[],
+    Rt = [next_attention(normal(Att)) | NRt],
+    comTake(NS, STK, NSTK, Stat, Abt, NAbt, Att, NAtt),
+    waitComRead(Stat,NRt,NAbt,NAtt,StdIo,Rpt,Cmd,IO,Prompt,Atom2,Q,P,NSTK,[]).
+otherwise.
+makeDevExp(_,File,Rt,Abt,Att,StdIo,Rpt,Cmd,IO,
+        Prompt,Atom,Q,P,Mode,Stat,STK,FD,DLM) :- true | FD = [],
+    (Mode = normal -> Rpt = [illegal_take_file(File, Stat) | NRpt],
+        waitComRead(Stat,Rt,Abt,Att,StdIo,NRpt,Cmd,IO,Prompt,Atom,Q,P,STK,[]) ;
+     Mode = if_exist -> Stat = normal,
+        comRead(Rt,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,[]) ;
+     Mode = home ->
+        getHomeDir(File,Stat,Rt,Abt,Att,
+                   StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,DLM) ).
+
+getHomeDir(FName,Stat,Rt,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,DLM) :-
+        true |
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:home,HomeDir)|GR]),
+    chkHomeDir(HomeDir,FName,
+                Stat,Rt,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,GR,DLM).
+
+chkHomeDir(normal(HomeDir),FileName,Stat,Rt,Abt,Att,StdIo,
+            Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,Gen,DLM) :- string(HomeDir,_,_) |
+    set_vector_element(DLM,0,Type,Type,DLM1),
+    set_vector_element(DLM1,1,D_str,D_str,DLM2),
+    set_vector_element(DLM2,2,D_char,D_char,DLM3),
+    set_vector_element(DLM3,3,D_atom,D_atom,DLM4),
+    NDLM = { Type, D_str, D_char, D_atom },
+    (string(FileName,_,_) -> NAtom = Atom,
+        builtin#append_string([HomeDir, D_str, FileName], PathName) ;
+     otherwise ;
+        true -> 
+        shellUtils:expand_pathname({D_atom,'~',FileName},
+                                   PathName,Atom,NAtom,DLM4) ),
+    Gen = [file(FileDev)],
+    makeDevReq(FileDev,PathName,Rt,Abt,Att,StdIo,Rpt,Cmd,IO,
+                    Prompt,NAtom,Q,P,if_exist,Stat,STK,NDLM).
+otherwise.
+chkHomeDir(_,_,Stat,Rt,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,Gen,_) :-
+        true | Stat = normal, Gen = [],
+    comRead(Rt,Abt,Att,StdIo,Rpt,Cmd,IO,Prompt,Atom,Q,P,STK,[]).
+
+waitStat(Stat, Old, New) :- wait(Stat) | Old = New.
+
+comTake(S, STK, NSTK, Stat, Abt, NAbt, Att, NAtt) :- true |
+    S = [getl(Line) | NS],
+    comTake1(Line, NS, CMDS, Stat, Abt, NAbt, Att, NAtt),
+    shellUtils:append(CMDS, STK, NSTK).
+
+comTake1(Line, S, CMDS, Stat, Abt, NAbt, Att, NAtt) :- wait(Att) |
+    ( Line = -1 -> CMDS = [] ;
+      Line = -2 -> CMDS = [] ;
+      string(Line,0,_) -> CMDS = [] ;
+    otherwise ;
+      true -> CMDS = [Line]),
+    Stat = normal, S = [], NAbt = Abt, NAtt = Att.
+alternatively.
+comTake1(Line, S, CMDS, Stat, Abt, NAbt, Att, NAtt) :- integer(Line) |
+    ( Line = -1 -> true ;
+      Line = -2 -> true ),
+    Stat = abnormal, S = [], CMDS = [], NAbt = Abt, NAtt = Att.
+alternatively.
+comTake1(Line, S, CMDS, Stat, Abt, NAbt, Att, NAtt) :- string(Line, 0, _) |
+    S = [getl(NLine) | NS],
+    comTake1(NLine, NS, CMDS, Stat, Abt, NAbt, Att, NAtt).
+%otherwise.
+comTake1(Line, S, CMDS, Stat, Abt, NAbt, Att, NAtt) :-
+        string(Line, N, _), N > 0 |
+    CMDS = [Line | NCMDS],
+    S = [getl(NLine) | NS],
+    comTake1(NLine, NS, NCMDS, Stat, Abt, NAbt, Att, NAtt).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                          %%%%%
+%%%%%  End of 'shell' module.  %%%%%
+%%%%%                          %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,0 +1,515 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module xref.
+:- public go/0, usage/1.
+:- public go/1, go/2, go/3.
+:- public pred/1, pred/2, pred/3.
+:- public ext/1, ext/2.
+:- public top_down/1, top_down/2.
+:- public bottom_up/1, bottom_up/2, bottom_up/3.
+:- with_macro pimos.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+% Xref User Interfaces %
+%%%%%%%%%%%%%%%%%%%%%%%%
+go(M:P/A          ) :- true| pred(M:P/A).
+otherwise.
+go(Names          ) :- true|
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:package,normal(Pac))]),
+    xref(Names,Pac,Xref), print_xref(Xref).
+
+go(M:P/A,Pacs     ) :- true| pred(M:P/A,Pacs).
+otherwise.
+go(Names,Pacs     ) :- true| xref(Names,Pacs,Xref), print_xref(Xref).
+
+go(M:P/A,Pacs,Xref) :- true| pred(M:P/A,Pacs,Xref).
+otherwise.
+go(Names,Pacs,Xref) :- true| xref(Names,Pacs,Xref).
+
+
+%%%%%%%%%%%%%
+% Xref Main %
+%%%%%%%%%%%%%
+xref(Names,Pacs,Xref) :- true|
+    module_table:cache_table([get_all_modules(normal(Modules))|MT]),
+    check_package(Modules,Pacs,Modules1),
+    xref1(Names,Modules1,MT,Xref).
+
+
+xref1([Name|L],Modules,MT,Xref) :- true |
+    MT=[get_module(Name,Status)|MT1],
+    xref2(Status,Name,L,Modules,MT1,Xref).
+xref1([],     _Modules,MT,Xref) :- true | MT=[], Xref=[].
+otherwise.
+xref1(Name,    Modules,MT,Xref) :- true |
+    MT=[get_module(Name,Status)|MT1],
+    xref2(Status,Name,[],Modules,MT1,Xref).
+
+
+xref2(normal(Module),_Name,L,Modules,MT,Xref) :- true|
+    module:get_module_name(Module,Name),
+    ref_table(Modules,Module,Table),
+    Xref=[{Name,normal(Table)}|Xref1],
+    xref1(L,Modules,MT,Xref1).
+otherwise.
+xref2(Abnormal,Name,L,Modules,MT,Xref) :- true|
+    Xref=[{Name,Abnormal}|Xref1],
+    xref1(L,Modules,MT,Xref1).
+
+
+%%%%%%%%%%%%%%
+% Print Xref %
+%%%%%%%%%%%%%%
+print_xref(Xref) :- true|
+    shoen:raise(pimos_tag#task,get_std(out),OUT),
+    print_xref(Xref,OUT).
+
+print_xref([{Name,normal(List)}|Xref],    OUT) :- list(List) | 
+    OUT=[putf("[~t] is referred from;~n",[Name])|OUT1],
+    print(List,OUT1,OUT2),
+    print_xref(Xref,OUT2).
+print_xref([],OUT) :- true| OUT=[].
+otherwise.
+print_xref([{Name,Abnormal}|Xref],OUT) :- true|
+    OUT=[putf("[~t] (~t)~n",[Name,Abnormal])|OUT1],
+    print_xref(Xref,OUT1).
+    
+print([],OUT,OUT1) :- true | OUT1=OUT.
+print([{Pac,normal(Modules)}|Tbl],OUT,OUT3) :- true |
+    OUT=[putf("  ~t::~n",[Pac])|OUT1],
+    print1(Modules,OUT1,OUT2),
+    print(Tbl,OUT2,OUT3).
+otherwise.
+print([{Pac,Abnormal}|Tbl],OUT,OUT2) :- true |
+    OUT=[putf("  ~t:: (~t)~n",[Pac,Abnormal])|OUT1],
+    print(Tbl,OUT1,OUT2).
+
+print1([Name|L],OUT,OUT2) :- true | 
+    OUT=[putf("    ~t~n",[Name])|OUT1], 
+    print1(L,OUT1,OUT2).
+print1([],OUT,OUT1) :- true | OUT1=OUT.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Xref Predicate User Interfaces %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+pred(Names          ) :- true|
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:package,normal(Pac))]),
+    xrefp(Names,Pac,Xref), print_xref(Xref).
+pred(Names,Pacs     ) :- true| xrefp(Names,Pacs,Xref), print_xref(Xref).
+pred(Names,Pacs,Xref) :- true| xrefp(Names,Pacs,Xref).
+
+
+%%%%%%%%%%%%%%%%%%
+% Xref Pred Main %
+%%%%%%%%%%%%%%%%%%
+xrefp(Preds,Pacs,Xref) :- true|
+    module_table:cache_table([get_all_modules(normal(Modules))|MT]),
+    check_package(Modules,Pacs,Modules1),
+    xrefp1(Preds,Modules1,MT,Xref).
+
+
+xrefp1([(M:P/A)|L],Modules,MT,Xref) :- true |
+    MT=[get_code(M,P,A,Status)|MT1],
+    xrefp2(Status,(M:P/A),L,Modules,MT1,Xref).
+xrefp1([],        _Modules,MT,Xref) :- true | MT=[], Xref=[].
+otherwise.
+xrefp1((M:P/A),    Modules,MT,Xref) :- true |
+    MT=[get_code(M,P,A,Status)|MT1],
+    xrefp2(Status,(M:P/A),[],Modules,MT1,Xref).
+otherwise.
+xrefp1(P,_,MT,Xref) :- true|
+    MT=[], Xref=[],
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(xref:pred,"Illegal predicate specification."),P).
+
+xrefp2(normal(Code),_,L,Modules,MT,Xref) :- true|
+    code_to_predicate(Code,Module,P,A,_),
+    module:get_module_name(Module,M),
+    ref_table(Modules,Module,P,A,Table),
+    Xref=[{(M:P/A),normal(Table)}|Xref1],
+    xrefp1(L,Modules,MT,Xref1).
+otherwise.
+xrefp2(Abnormal,Pred,L,Modules,MT,Xref) :- true|
+    Xref=[{Pred,Abnormal}|Xref1],
+    xrefp1(L,Modules,MT,Xref1).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Top-down cross reference %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+top_down(Name) :- true |
+    top_down(Name,Aux),
+    print_top_down(Aux).
+
+top_down(Name,Aux) :- true |
+    module_table:cache_table([get_module(Name,Status)]),
+    top_down1(Status,Aux).
+
+top_down1(normal(Mod),Aux) :- true| 
+    Aux=normal(Ext),
+    table([get(Mod,Status)|PL1]),
+    td2(Status,PL1,[],Ext).
+otherwise.
+top_down1(Abnormal,   Aux) :- true| Aux=Abnormal.
+
+td1([{_,Mod}|L],PL,PL3,Aux) :- true|
+    Aux=[Ext|Aux1],
+    PL=[get(Mod,Status)|PL1],
+    td2(Status,PL1,PL2,Ext),
+    td1(L,PL2,PL3,Aux1).
+td1([],         PL,PL1,Aux) :- true| PL1=PL, Aux=[].
+otherwise.
+td1([Name|L],   PL,PL1,Aux) :- true|
+    Aux=[Name|Aux1],
+    td1(L,PL,PL1,Aux1).
+
+td2(    existent(Mod,ID),PL,PL1,Ext) :- true| Ext={Mod,ID}, PL1=PL.
+td2(non_existent(Mod,ID),PL,PL1,Ext) :- true|
+    Ext={Mod,ID,Ext1},
+    module_utility:get_ex_mods(Mod,List),
+    td1(List,PL,PL1,Ext1).
+
+print_top_down(Aux) :- true|
+    shoen:raise(pimos_tag#task,get_std(out),OUT),
+    print_top_down(Aux,OUT).
+
+print_top_down(normal(Aux),OUT) :- true|
+    print_top_down1([Aux],0,OUT,[]).
+otherwise.
+print_top_down(Abnormal,   OUT) :- true| OUT=[putf(" ~t~n",[Abnormal])].
+
+print_top_down1([{Mod,ID,Ext}|Aux],Tab,OUT,OUT3) :- true|
+    module:get_module_name(Mod,Name),
+    OUT=[tab(Tab),putf("~t ~t~n",[Name,ID])|OUT1],
+    print_top_down1(Ext,~(Tab+3),OUT1,OUT2),
+    print_top_down1(Aux,Tab,OUT2,OUT3).
+print_top_down1([{Mod,ID}|Aux],Tab,OUT,OUT2) :- true|
+    module:get_module_name(Mod,Name),
+    OUT=[tab(Tab),putf("~t (~t)~n",[Name,ID])|OUT1],
+    print_top_down1(Aux,Tab,OUT1,OUT2).
+print_top_down1([],_,OUT,OUT1) :- true| OUT1=OUT.
+
+%%%%%%%%%%%%%%%%%%%%%%
+% Ext User Interface %
+%%%%%%%%%%%%%%%%%%%%%%
+ext(Names) :- true | ext(Names,brief).
+
+ext(Names,Mode) :- list(Names) |
+    module_table:cache_table(MT),
+    ext1(Names,MT,Aux),
+    print_ext(Aux,Mode).
+otherwise.
+ext(Name,Mode) :- true |
+    module_table:cache_table(MT),
+    ext1([Name],MT,Aux),
+    print_ext(Aux,Mode).
+
+ext1([Name|Names],MT,Aux) :- true |
+    MT=[get_module(Name,Status)|MT1],
+    ext2(Status,Name,Aux,Aux1),
+    ext1(Names,MT1,Aux1).
+ext1([],MT,Aux) :- true | MT=[], Aux=[].
+
+ext2(normal(Module),Name,Aux,Aux1) :- true |
+    module_utility:get_ex_preds(Module,List),
+    Aux=[{Name,normal(List)}|Aux1].
+otherwise.
+ext2(Abnormal,Name,Aux,Aux1) :- true | Aux=[{Name,Abnormal}|Aux1].
+
+
+%%%%%%%%%%%%%
+% Print Ext %
+%%%%%%%%%%%%%
+print_ext(Aux,Mode) :- true|
+    shoen:raise(pimos_tag#task,get_std(out),OUT),
+    print_ext(Aux,Mode,OUT).
+
+print_ext([{Name,normal(List)}|Aux],Mode,OUT) :- true|
+    OUT=[putf("[~t] refers;~n",[Name])|OUT1],
+    print_ext1(List,Mode,OUT1,OUT2),
+    print_ext(Aux,Mode,OUT2).
+otherwise.
+print_ext([{Name,Abnormal}|Aux],Mode,OUT) :- true|
+    OUT=[putf("[~t] (~t)~n",[Name,Abnormal])|OUT1],
+    print_ext(Aux,Mode,OUT1).
+print_ext([],_Mode,OUT) :- true| OUT=[].
+
+print_ext1(List,detail,OUT,OUT1) :- true|
+    sorter:sort(List,List1),
+    get_mods(List1,0,List2),
+    sorter:sort(List2,Mods),
+    print_ext_detail(Mods,0,OUT,OUT1).
+print_ext1(List,pred,OUT,OUT1) :- true|
+    sorter:sort(List,List1),
+    get_preds(List1,0,List2),
+    sorter:sort(List2,Preds),
+    print_ext_pred(Preds,0,0,OUT,OUT1).
+otherwise.
+print_ext1(List,_,   OUT,OUT1) :- true|
+    sorter:sort(List,List1),
+    get_mods(List1,0,List2),
+    sorter:sort(List2,Mods),
+    print_ext2(Mods,0,OUT,OUT1).
+
+get_mods([{_,Mod}|L],Mod,Mods) :- true| get_mods(L,Mod,Mods).
+otherwise.
+get_mods([{_,Mod}|L],_,Mods) :- true|
+    module:get_module_name(Mod,Pac,Name),
+    Mods=[{Pac,Name,Mod}|Mods1],
+    get_mods(L,Mod,Mods1).
+get_mods([],_,Mods) :- true| Mods=[].
+
+get_preds([Pred|L],Pred,Preds) :- true| get_preds(L,Pred,Preds).
+otherwise.
+get_preds([{(M:P/A),Mod}|L],_,   Preds) :- true|
+    module:get_module_name(Mod,Pac,_),
+    Preds=[{Pac,M,P,A}|Preds1],
+    get_preds(L,{(M:P/A),Mod},Preds1).
+get_preds([],_,Preds) :- true| Preds=[].
+
+print_ext_detail([{Pac,Name,Mod}|L],Pac,OUT,OUT2) :- true|
+    module:get_attributes(Mod,Status),
+    print_ext_attr(Status,Name,OUT,OUT1),
+    print_ext_detail(L,Pac,OUT1,OUT2).
+print_ext_detail([],_,OUT,OUT1) :- true| OUT1=OUT.
+otherwise.
+print_ext_detail([{Pac,Name,Mod}|L],_,OUT,OUT3) :- true |    % Different package
+    OUT=[putf("  ~t::~n",[Pac])|OUT1],
+    module:get_attributes(Mod,Status),
+    print_ext_attr(Status,Name,OUT1,OUT2),
+    print_ext_detail(L,Pac,OUT2,OUT3).
+
+print_ext_pred([{Pac,M,P,A}|L],Pac,M,OUT,OUT2) :- true|
+    OUT=[putf("      ~t/~t~n",[P,A])|OUT1],
+    print_ext_pred(L,Pac,M,OUT1,OUT2).
+otherwise.
+print_ext_pred([{Pac,M,P,A}|L],Pac,_,OUT,OUT2) :- true|
+    OUT=[putf("    ~t:~n      ~t/~t~n",[M,P,A])|OUT1],
+    print_ext_pred(L,Pac,M,OUT1,OUT2).
+print_ext_pred([],_,_,OUT,OUT1) :- true| OUT1=OUT.
+otherwise.
+print_ext_pred([{Pac,M,P,A}|L],_,_,OUT,OUT2) :- true |  
+    OUT=[putf("  ~t::~n    ~t:~n      ~t/~t~n",[Pac,M,P,A])|OUT1],
+    print_ext_pred(L,Pac,M,OUT1,OUT2).
+
+print_ext2([{Pac,Name,_}|L],Pac,OUT,OUT2) :- true|
+    OUT=[putf("    ~t~n",[Name])|OUT1],
+    print_ext2(L,Pac,OUT1,OUT2).
+print_ext2([],_,OUT,OUT1) :- true| OUT1=OUT.
+otherwise.
+print_ext2([{Pac,Name,_}|L],_,OUT,OUT2) :- true |    % Different package
+    OUT=[putf("  ~t::~n    ~t~n",[Pac,Name])|OUT1],
+    print_ext2(L,Pac,OUT1,OUT2).
+
+print_ext_attr(normal({{Date,Time},{DateL,TimeL},Src,_,_}),Name,OUT,OUT1) :- true |
+    timer_utility: get_date_string(Date,DS),
+    timer_utility: get_time_string(Time,TS),
+    timer_utility: get_date_string(DateL,DLS),
+    timer_utility: get_time_string(TimeL,TLS),
+    OUT=[putf("    ~t (~s ~s  ~s ~s)~n      ~s~n",[Name,DS,TS,DLS,TLS,Src])|OUT1].
+otherwise.
+print_ext_attr(_,Name,OUT,OUT1) :- true |
+    OUT=[putf("    ~t~n",[Name])|OUT1].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Xref Bottom_up User Interface %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+bottom_up(Names          ) :- true |
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:package,normal(Pac))]),
+    bottom_up(Names,Pac,Bottom_up), print_bottom_up(Bottom_up).
+bottom_up(Names,Pacs     ) :- true| bottom_up(Names,Pacs,Bottom_up), print_bottom_up(Bottom_up).
+bottom_up(Names,Pacs,Bottom_up) :- true|
+    module_table:cache_table([get_all_modules(normal(Modules))|MT]),
+    merge(MT1,MT),
+    check_package(Modules,Pacs,Modules1),
+    table(PL),
+    bottom_up2(Names,Modules1,MT1,Bottom_up,[],PL,[]). 
+
+bottom_up2([Name|L],Modules,MT,Bottom_up,Bottom_up1,PL,PL1) :- true |
+    MT=[get_module(Name,Status)|MT1],
+    bottom_up3(Status,Name,L,Modules,MT1,Bottom_up,Bottom_up1,PL,PL1).
+bottom_up2([],_,MT,Bottom_up,Bottom_up1,PL,PL1) :- true | MT=[], Bottom_up1=Bottom_up, PL1=PL.
+otherwise.
+bottom_up2(Name,Modules,MT,Bottom_up,Bottom_up1,PL,PL1) :- true |
+    MT=[get_module(Name,Status)|MT1],
+    bottom_up3(Status,Name,[],Modules,MT1,Bottom_up,Bottom_up1,PL,PL1).
+
+bottom_up3(normal(Module),_Name,L,Modules,MT,Bottom_up,Bottom_up1,PL,PL2) :- true|
+    module:get_module_name(Module,Name),
+    PL=[get(Name,Status)|PL1],
+    bottom_up4(Status,Module,L,Modules,MT,Bottom_up,Bottom_up1,PL1,PL2).
+otherwise.
+bottom_up3(Abnormal,Name,L,Modules,MT,Bottom_up,Bottom_up2,PL,PL1) :- true |
+    Bottom_up=[{Name,Abnormal}|Bottom_up1],
+    bottom_up2(L,Modules,MT,Bottom_up1,Bottom_up2,PL,PL1).
+
+bottom_up4(existent(Name,ID),_Module,L,Modules,MT,Bottom_up,Bottom_up2,PL,PL1) :- true|
+    Bottom_up=[{Name,ID}|Bottom_up1],
+    bottom_up2(L,Modules,MT,Bottom_up1,Bottom_up2,PL,PL1).
+bottom_up4(non_existent(Name,ID),Module,L,Modules,MT,Bottom_up,Bottom_up2,PL,PL2) :- true|
+    Bottom_up=[{Name,ID,Bu}|Bottom_up1],
+    MT={MT1,MT2},
+    ref_table(Modules,Module,Table),
+    conv(Table,List),
+    bottom_up2(List,Modules,MT1,Bu,        [],        PL, PL1),
+    bottom_up2(L,   Modules,MT2,Bottom_up1,Bottom_up2,PL1,PL2).
+
+conv([{Pac,normal(Tbl)}|S],List) :- true|
+    conv1(Pac,Tbl,List,List1),
+    conv(S,List1).
+conv([],List) :- true| List=[].
+
+conv1(Pac,[Name|Tbl],L,L2) :- true|
+    L=[Pac::Name|L1],
+    conv1(Pac,Tbl,L1,L2).
+conv1(_,  [],        L,L1) :- true| L1=L.
+
+table(PL) :- true| 
+    merge(PL,PL1),
+    pool:keyed_bag(Bag,64),
+    tbl(PL1,1,Bag).
+
+tbl([get(Name,ID)|PL],Cn,Bag) :- true|
+    Bag=[carbon_copy(Name,S)|Bag1],
+    tbl1(S,Name,ID,PL,Cn,Bag1).
+tbl([],_Cn,Bag) :- true | Bag=[].
+
+tbl1([Num],Name,ID,PL,Cn,Bag) :- true|
+    ID=existent(Name,Num),
+    tbl(PL,Cn,Bag).
+tbl1([],Name,ID,PL,Cn,Bag) :- true|
+    ID=non_existent(Name,Cn),
+    Bag=[put(Name,Cn)|Bag1],
+    tbl(PL,~(Cn+1),Bag1).    
+
+
+%%%%%%%%%
+% Table %
+%%%%%%%%%
+ref_table([{Pac,normal(Modules)}|L],Mod,Table) :- true |
+    Table=[{Pac,normal(Tbl)}|Table1],
+    ref_tbl(Modules,Mod,Tbl),
+    ref_table(L,Mod,Table1).
+ref_table([],_,Table) :- true | Table=[].
+otherwise.
+ref_table([Abnormal|L],Mod,Table) :- true |
+    Table=[Abnormal|Table1],
+    ref_table(L,Mod,Table1).
+
+ref_tbl([{ModName,Module,_Size}|Mods],Mod,Tbl) :- true |
+    module_utility:get_ex_mods(Module,List),
+    make_table(List,Mod,ModName,Tbl,Tbl1),
+    ref_tbl(Mods,Mod,Tbl1).
+ref_tbl([],_,Tbl) :- true | Tbl=[].
+
+make_table([{_,Mod}|_], Mod,ModName,Tbl,Tbl1) :- true | Tbl=[ModName|Tbl1].
+%make_table([Name|_],   Mod,ModName,Tbl,Tbl1) :- true | Tbl=[ModName|Tbl1]. % Undef
+make_table([],_,_,Tbl,Tbl1) :- true | Tbl1=Tbl.
+otherwise.
+make_table([_|L],Mod,ModName,Tbl,Tbl1) :- true | make_table(L,Mod,ModName,Tbl,Tbl1).
+
+
+ref_table([{Pac,normal(Modules)}|L],Mod,P,A,Table) :- true |
+    Table=[{Pac,normal(Tbl)}|Table1],
+    ref_tbl(Modules,Mod,P,A,Tbl),
+    ref_table(L,Mod,P,A,Table1).
+ref_table([],_,_,_,Table) :- true | Table=[].
+otherwise.
+ref_table([Abnormal|L],Mod,P,A,Table) :- true |
+    Table=[Abnormal|Table1],
+    ref_table(L,Mod,P,A,Table1).
+
+ref_tbl([{ModName,Module,_Size}|Mods],Mod,P,A,Tbl) :- true |
+    module_utility:get_ex_preds(Module,List),
+    make_table(List,Mod,P,A,ModName,Tbl,Tbl1),
+    ref_tbl(Mods,Mod,P,A,Tbl1).
+ref_tbl([],_,_,_,Tbl) :- true | Tbl=[].
+
+make_table([{(_:P/A),Mod}|_],Mod,P,A,ModName,Tbl,Tbl1) :- true| Tbl=[ModName|Tbl1].
+%make_table([(M:P/A)|_],     Mod,P,A,ModName,Tbl,Tbl1) :- true| Tbl=[ModName|Tbl1]. % Undef
+make_table([],_,_,_,_,Tbl,Tbl1) :- true | Tbl1=Tbl.
+otherwise.
+make_table([_|L],Mod,P,A,ModName,Tbl,Tbl1) :- true | make_table(L,Mod,P,A,ModName,Tbl,Tbl1).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+% Print Xref Bottom_up %
+%%%%%%%%%%%%%%%%%%%%%%%%
+print_bottom_up(Bottom_up) :- true|
+    shoen:raise(pimos_tag#task,get_std(out),OUT),
+    print_bottom_up(Bottom_up,OUT,[],0).
+
+print_bottom_up([{Name,ID,Xref}|Bottom_up],OUT,OUT3,Tab) :- true|
+    OUT=[tab(Tab),putf("~t ~t~n",[Name,ID])|OUT1],
+    print_bottom_up(Xref,OUT1,OUT2,~(Tab+3)),
+    print_bottom_up(Bottom_up,OUT2,OUT3,Tab).
+print_bottom_up([{Name,ID}|Bottom_up],OUT,OUT2,Tab) :- integer(ID) |
+    OUT=[tab(Tab),putf("~t (~t)~n",[Name,ID])|OUT1],
+    print_bottom_up(Bottom_up,OUT1,OUT2,Tab).
+print_bottom_up([],OUT,OUT1,_Tab) :- true| OUT1=OUT.
+otherwise.
+print_bottom_up([{Name,Abnormal}|Bottom_up],OUT,OUT2,Tab) :- true|
+    OUT=[tab(Tab),putf("[~t] (~t)~n",[Name,Abnormal])|OUT1],
+    print_bottom_up(Bottom_up,OUT1,OUT2,Tab).
+
+%%%%%%%%%%%
+% Utility %
+%%%%%%%%%%%
+check_package(Modules,*,ML) :- true | ML=Modules.
+otherwise.
+check_package([{Pac,Modules}|L],Pacs,ML) :- true |
+    member(Pac,Pacs,YorN),
+    check_package1(YorN,Pac,Modules,ML,ML1),
+    check_package(L,Pacs,ML1).
+check_package([],_,ML) :- true | ML=[].
+
+check_package1(yes,Pac,Modules,ML,ML1) :- true | ML=[{Pac,Modules}|ML1].
+check_package1(no, _,  _,      ML,ML1) :- true | ML1=ML.
+
+member(A,A,    YorN) :- true | YorN=yes.
+member(A,[A|_],YorN) :- true | YorN=yes.
+member(_,[],   YorN) :- true | YorN=no.
+otherwise.
+member(A,[_|B],YorN) :- true | member(A,B,YorN).
+otherwise.
+member(_,_,YorN) :- true | YorN=no.
+
+
+%%%%%%%%%
+% Usage %
+%%%%%%%%%
+go :- true | usage:go(xref).
+
+usage(X) :- true |
+    X=[ {" xref(ModuleSpec,PackageNameOrList)~n",[]}, 
+        {"   Outputs modules in PackageNameOrList referring~n",[]},
+        {"   to ModuleSpec. If PackageNameOrList is omitted,~n",[]},
+        {"   checks modules in the default-package.~2n",[]},
+
+        {" xref:pred(ModuleSpec:Pred/Arity,PackageNameOrList)~n",[]},
+        {"   Outputs modules in PackageNameOrList referring~n",[]},
+        {"   to the predicate Mod:Pred/Arity.~2n",[]},
+
+        {" xref:bottom_up(ModuleSpec,PackageNameOrList)~n",[]}, 
+        {"   Outputs the bottom-up cross reference.~2n",[]},
+
+        {" xref:top_down(ModuleSpec)~n",[]}, 
+        {"   Outputs the top-down cross reference.~2n",[]},
+
+        {" xref:ext(ModuleSpec,Mode)~n",[]},
+        {"   Outputs the external references in ModuleSpec.~n",[]},
+        {"   Mode takes the following values:~n",[]},
+        {"     brief  - Outputs the external modules.~n",[]},
+        {"     detail - Outputs the external modules~n",[]},
+        {"              with time-stamp informations.~n",[]},
+        {"     pred   - Outputs the external predicates.~n",[]},
+        {"   If Mode is omitted, checks in brief mode.",[]}].
+

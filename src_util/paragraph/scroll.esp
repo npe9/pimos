@@ -1,0 +1,251 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class scroll has 
+
+ :create(Class,Obj):-
+    :new(Class,Obj);
+   
+ instance
+    attribute
+      p_size,
+      n_size,
+      unit_x_max,
+      x_scale_max,
+      x_scale_max_now;
+
+%%%%%%%% time scale %%%%%%%%
+
+  :next_page_time(Obj):-
+      NextStart = Obj!x_scale_max+1,
+      Obj!p_size=PoolSize,
+      Obj!n_size=NSize,
+      Max = (PoolSize-1)/NSize,
+      NextStart =< Max,!,
+      :scroll(Obj,NextStart);
+ :next_page_time(Obj):-!;
+    
+ :previous_page_time(Obj):-
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      Start > 0,!,
+      PreStart0=Obj!x_scale_max-(Obj!unit_x_max+Obj!x_scale_max_now+1),
+     (PreStart0=<0,!,
+      PreStart = 0;
+      PreStart = PreStart0),
+      :scroll(Obj,PreStart);
+ :previous_page_time(Obj):-!;
+
+ :next_time(Obj):-
+      MoveWidth=Obj!unit_x_max/10,
+      NextStart = Obj!x_scale_max-(Obj!unit_x_max)+MoveWidth,
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      NextStart > Start,!,
+      Obj!p_size=PoolSize,
+      Obj!n_size=NSize,
+      Min = PoolSize/NSize-Obj!unit_x_max-1,
+      Start < Min,!,
+      Max = (PoolSize-1)/NSize,
+      NextStart =< Max,!,
+      :scroll(Obj,NextStart);
+ :next_time(Obj):-!;
+
+ :previous_time(Obj):-
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      Start > 0,!,
+      MoveWidth=Obj!unit_x_max/10,
+      PreStart0 = Obj!x_scale_max-Obj!x_scale_max_now-MoveWidth,
+     (PreStart0=<0,!,
+      PreStart = 0;
+      PreStart = PreStart0),
+      :scroll(Obj,PreStart);
+ :previous_time(Obj):-!;
+
+ :bottom_time(Obj):-
+      Obj!p_size=PoolSize,
+      Obj!n_size=NSize,
+      NextStart = PoolSize/NSize-Obj!unit_x_max-1,
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      Start =\= NextStart ,!,
+      :scroll(Obj,NextStart);
+ :bottom_time(Obj):-!;
+    
+ :top_time(Obj):-
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      Start > 0,!,
+      :scroll(Obj,0);
+ :top_time(Obj):-!;
+
+ %%%%%%%% node scale %%%%%%%%
+
+  :next_page_node(Obj):-
+      NextStart = Obj!x_scale_max+1,
+      Obj!p_size=PoolSize,
+      Obj!n_size=NSize,
+      Max = (PoolSize-1)/NSize,
+      NextStart =< Max,!,
+      :scroll(Obj,NextStart);
+ :next_page_node(Obj):-!;
+    
+ :previous_page_node(Obj):-
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      Start > 0,!,
+      PreStart0=Obj!x_scale_max-(Obj!unit_x_max+Obj!x_scale_max_now+1),
+     (PreStart0=<0,!,
+      PreStart = 0;
+      PreStart = PreStart0),
+      :scroll(Obj,PreStart);
+ :previous_page_node(Obj):-!;
+                         
+ :next_node(Obj):-
+      MoveWidth=Obj!unit_x_max/10,
+      NextStart = Obj!x_scale_max-(Obj!unit_x_max)+MoveWidth,
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      NextStart > Start,!,
+      Obj!p_size=PoolSize,
+      Obj!n_size=NSize,
+      Min = PoolSize/NSize-Obj!unit_x_max,
+      Start < Min,!,
+      Max = (PoolSize-1)/NSize,
+      NextStart =< Max,!,
+      :scroll(Obj,NextStart);
+ :next_node(Obj):-!;
+
+ :previous_node(Obj):-
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      Start > 0,!,
+      MoveWidth=Obj!unit_x_max/10,
+      PreStart0 = Obj!x_scale_max-Obj!x_scale_max_now-MoveWidth,
+     (PreStart0=<0,!,
+      PreStart = 0;
+      PreStart = PreStart0),
+      :scroll(Obj,PreStart);
+ :previous_node(Obj):-!;
+
+ :bottom_node(Obj):-
+      Obj!p_size=PoolSize,
+      Obj!n_size=NSize,
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      NextStart = PoolSize/NSize-Obj!unit_x_max,
+      Start =\= NextStart,!,
+      :scroll(Obj,NextStart);
+ :bottom_node(Obj):-!;
+    
+ :top_node(Obj):-
+      Start = Obj!x_scale_max-Obj!x_scale_max_now,
+      Start > 0,!,
+      :scroll(Obj,0);
+ :top_node(Obj):-!;
+
+
+ :scroll(Obj,From):-
+      Obj!draw_flag\==invisible,!,
+      set_pool_size(Obj,From,PoolSize,NSize),
+      new_heap_vector(ElmPoolS,PoolSize),
+      set_scroll_pool(Obj,From*NSize,PoolSize,0,ElmPoolS),
+      Obj!element_pool:= ElmPoolS,
+      Obj!window = G_Win,
+      G_Win!window = Win,
+      G_Win!font = Font_7,
+      Obj!x=X,Obj!y=Y,
+      Obj!x_size = W,
+      integer_to_floating_point(Obj!y_unit,YUnitF),
+      integer_to_floating_point(Obj!y_max,YMaxF),
+      integer_to_floating_point(Obj!unit_height,UnitHeightF),
+      HF= UnitHeightF * YMaxF / YUnitF * 11.0/10.0,
+      floating_point_to_integer(HF,H),
+      :clear(Win,X+1,Y,W+10,H),
+      :clear(Win,X-25,Y+H+1,W+47,15),
+      as_x_scale_max(Obj,PoolSize,NSize,From,WX,XSM,XSML),
+      List = [{draw_line,
+              {X,Y+H,X+WX,Y+H,1,solid,set}}|List2],
+      draw_x_scale_scroll(Win,Obj,Font_7,X,Y+H,X+WX,0,List2,R,From),
+     (Obj!drawing_graph = bar,!,
+      X2 = X + Obj!unit_width/2,
+      R = [{draw_string,
+           {X+W+15,Y+H-4,Obj!x_name,Font_7,set}},
+           {draw_string,
+           {X2+WX-XSML*7/2,Y+H+3,XSM,Font_7,set}}|R11];
+      R = [{draw_string,
+           {X+W+15,Y+H-4,Obj!x_name,Font_7,set}},
+           {draw_line,
+           {X+WX,Y+H,X+WX,Y+H+2,1,solid,set}},
+           {draw_string,
+           {X+WX-XSML*7/2,Y+H+3,XSM,Font_7,set}}|R11]),
+     (Obj!x_scale_max < Obj!p_size/NSize-1,!,
+      R11 = [{draw_string,                                  
+                {X+WX+XSML*7/2,Y+H+2,"...",Font_7,set}}|R1];    
+      R11 = R1),
+      draw_title(Obj,Font_7,X,Y,W,H,R1,R2),
+      :execute_graphics_command(Win,List),
+      :draw(Obj);
+   :scroll(Obj,From):-!;
+
+ local
+  as_x_scale_max(Obj,PoolSize,NSize,From,WX,XSM,XSML):-
+      XSM0=(PoolSize/NSize-1)*Obj!x_unit,
+      Obj!x_scale_max_now:=XSM0,
+      Obj!x_scale_max:=From+XSM0,
+      :get_number_string(#symbolizer,Obj!x_scale_max,XSM),
+      string(XSM,XSML,XSMT),
+      WX=Obj!unit_width*(PoolSize/NSize-1);
+      
+  draw_x_scale_scroll(Win,Obj,Font_7,X,Y,MaxSize,C,R,R,From):-
+        X >= MaxSize,!;
+ %       UnitWidth = Obj!unit_width*10,
+ %       X+UnitWidth > MaxSize,!;
+  draw_x_scale_scroll(Win,Obj,Font_7,X,Y,MaxSize,C,List,RList,From):-
+        Obj!drawing_graph = bar,!,
+        UnitWidth = Obj!unit_width*10,
+        D = C*10+From,
+        :get_number_string(#symbolizer,D,XSS_String),
+        string(XSS_String,L,T),
+        X2 = X + Obj!unit_width/2,
+        List = [{draw_string,
+                {X2-L*7/2,Y+2,XSS_String,Font_7,set}}|R],
+      draw_x_scale_scroll(Win,Obj,Font_7,X+UnitWidth,Y,MaxSize,C+1,R,RList,From);
+
+  draw_x_scale_scroll(Win,Obj,Font_7,X,Y,MaxSize,C,List,RList,From):-
+        UnitWidth = Obj!unit_width*10,
+        D = C*10+From,
+        :get_number_string(#symbolizer,D,XSS_String),
+        string(XSS_String,L,T),
+        List = [{draw_line,
+                {X,Y,X,Y+2,1,solid,set}},
+                {draw_string,
+                {X-L*7/2,Y+3,XSS_String,Font_7,set}}|R],
+      draw_x_scale_scroll(Win,Obj,Font_7,X+UnitWidth,Y,MaxSize,C+1,R,RList,From);
+
+
+  set_scroll_pool(Obj,From,PoolSize,PoolSize,ElmPoolS);
+  set_scroll_pool(Obj,From,PoolSize,C,ElmPoolS):-
+         vector_element(Obj!element_pool1,From,Count),
+         set_vector_element(ElmPoolS,C,Count),
+         set_scroll_pool(Obj,From+1,PoolSize,C+1,ElmPoolS); 
+
+   set_pool_size(Obj,From,PoolSize,NSize):-
+         Obj!unit_x_max = Xmax0,
+         Obj!p_size=Size,
+         Obj!n_size=NSize,
+        (Obj!drawing_graph = bar,!,
+         Xmax1 = Xmax0;
+         Xmax1 = Xmax0+1),
+        (Xmax1 < (Size-From*NSize)/NSize,
+         PoolSize = (Xmax1)*NSize;
+         PoolSize = Size-From*NSize);
+
+    draw_title(Obj,Font_7,X,Y,W,H,List,RList):-
+     ( Obj!limit==nil,!,
+       TitleLength = W/10;
+       TitleLength = Obj!limit/10),
+     ( string(Obj!title,L,B),!,
+       (TitleLength >= L,!,
+        TitleLength1 = L;
+        TitleLength1 = TitleLength),
+       substring(Obj!title,0,TitleLength1,Title),  
+       X1 = X+W/2-TitleLength1*7/2,
+     ( X1 =< 10,!,
+       X2 = 11;
+       X2 =X1),
+       List = [{draw_string,{X2,Y+H+3,Title,Font_7,set}}|RList] ;
+       List = RList);
+
+end.

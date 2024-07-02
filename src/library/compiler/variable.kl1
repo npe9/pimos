@@ -1,0 +1,71 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_variable.
+:- public nameVariables/2, nameVariablesVoid/2.
+:- with_macro pimos.
+
+nameVariablesVoid(Arg0, Arg) :- true |
+    pool:keyed_bag(Pool0),
+    nameANMVar(Pool0, Pool1, Pool1, [], 0, 0, Nv, NewVar0, void, Arg0, Arg),
+    merge(NewVar0, NewVar),
+    kl1cmp_vargen:variable_generator(Nv, _, NewVar).
+
+nameVariables(Arg0, Arg) :- true |
+    pool:keyed_bag(Pool0),
+    nameANMVar(Pool0, Pool1, Pool1, [], 0, 0, _, _, noVoid, Arg0, Arg).
+
+:- local_implicit set:oldnew, ref:oldnew, c:shared, nv:oldnew, var:stream, void:shared.
+
+nameANMVar(vector(Vect0), WVect) --> vector(Vect0, N) |
+    nameANMVar(0, N, Vect0, Vect),
+    WVect=vector(Vect).
+nameANMVar(list([Car0|Cdr0]), WList) --> true |
+    nameANMVar(Car0, Car),
+    nameANMVar(Cdr0, Cdr),
+    WList=list([Car|Cdr]).
+nameANMVar(variable("_"), Var) --> &void=void |
+    &var<<=[new_variable(variable(N))],
+  {{nameANMVar_(&ref, &c, yes, N, Var)}}.
+otherwise.
+nameANMVar(variable(Str), Var) --> string(Str, _, _) |
+    &set <<= [put(Str, 0)],
+    Var=variable(Str).
+nameANMVar(variable(N), Var) --> integer(N) |
+    &ref <<= [empty(N, YorN)],
+  {{returnBigger(&nv, N)}},
+  {{nameANMVar_(&ref, &c, YorN, N, Var)}}.
+otherwise.
+nameANMVar(Arg0, Arg) --> true | Arg0=Arg.
+
+returnBigger(N0, N, Var) :- Var < N0 | N=N0.
+otherwise.
+returnBigger(_, N0, Var) :- true | N0=Var.
+
+nameANMVar(A, N, Arg0, Arg) --> A<N |
+  {{set_vector_element(Arg0, A, Elm0, Elm, Arg1)}},
+    nameANMVar(Elm0, Elm),
+    A1 := A+1,
+    nameANMVar(A1, N, Arg1, Arg).
+nameANMVar(N, N, Arg0, Arg) --> true | Arg0=Arg.
+
+:- local_implicit ref:oldnew, c:shared.
+nameANMVar_(yes, N, Var) --> true |
+  {{kl1cmp_reader:convert_integer_to_string(&c, Str),
+    builtin#append_string("GenVar", Str, Name)}},
+    &ref <<= [empty(Name, YorN)],
+    isNotRegistrated(YorN, N, Name, Var).
+nameANMVar_(no, N, Var) --> true |
+    &ref <<= [get_and_put(N, Name, Name)],
+    Var=variable(Name).
+
+isNotRegistrated(yes, N, Name, Var) --> true |
+    &ref <<= [put(N, Name), put(Name, 0)],
+    &c <= &c + 1,
+    Var=variable(Name).
+isNotRegistrated(no, N, _, Var) --> true |
+    &c <= &c+1,
+    nameANMVar_(yes, N, Var).

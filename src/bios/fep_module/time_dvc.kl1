@@ -1,0 +1,911 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module fep_timer_device.
+:- with_macro pimos.
+:- public device_create/4.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_create(Stream, Node, ^ID_manager, ^Send)
+%%      Stream     ::  stream of timer request device
+%%      Node       ::  node number of FEP
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+device_create(Stream, Node, ID_manager, Send) :-
+    true |
+        ID_manager = [id(Result)|ID_Tail],
+        device_create(Result, Stream, Node, ID_Tail, Send).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_create(Result, Stream, Node, ^ID_manager, ^Send)
+%%      Result     ::  {normal, DevID, DS}|abnormal
+%%      Stream     ::  stream of timer request device
+%%      Node       ::  node number of FEP
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+device_create(normal(DevID, DS), Stream, Node, ID_manager, Send) :-
+    Stream = {fep#create, Username, Password, Timer, Status, _} |
+        Send = [send({DevID, fep#create_timer, 
+                Node, Username, Password}, Result)|SendTail],
+        check_send_status(Result, Timer, Node, Username, Password, DevID,
+                    DS, ID_manager, SendTail, {DevID, Status}).
+device_create(abnormal, Stream, _, ID_manager, Send) :-
+    vector(Stream, Size),
+    display_console("SCSI I/O Error in timer device creation") |
+        set_vector_element(Stream, ~(Size-2), fep#abnormal, 0, _),
+        Send = [],
+        ID_manager = [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_status(Status, Stream, Node, Username, Password, DevID, Reply,
+%%                   ^ID_manager, ^Send, ^Result)
+%%      Status     ::  status of device create message
+%%      Stream     ::  stream of timer device
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      Result     ::  value of I/O message
+
+check_send_status(normal, Stream, Node, Username, Password, DevID, Reply,
+                  ID_manager, Send, Result) :-
+    true |
+        reply(Stream, Node, Username, Password, DevID, Reply, ID_manager, Send,
+              Result).
+check_send_status(abnormal, _, _, _, _, _, _, ID_manager, Send, Result) :-
+    display_console("SCSI I/O Error in timer device creation") |
+        fep_utility:device_abnormal(Result),
+        ID_manager = [],
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% reply(Stream, Node, Username, Password, DevID, Reply, ^ID_manager, ^Send,
+%%       ^Result)
+%%      Stream     ::  stream of timer device
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      Result     ::  value of I/O message
+
+reply(Stream, Node, Username, Password, DevID, [normal(Value)|Reply],
+      ID_manager, Send, Result) :-
+    vector_element(Value, 1, Response),
+    Response = fep#normal |
+        fep_utility:set_value(Value, Result),
+        device_process(Stream, Node, Username, Password, DevID, Reply,
+                       ID_manager, Send).
+otherwise.
+reply(_, _, _, _, _, [normal(Value)|_], ID_manager, Send, Result) :-
+    true |
+        fep_utility:set_value(Value, Result),
+        ID_manager = [],
+        Send = [].
+reply(_, _, _, _, _, [abnormal(Value)|_], ID_manager, Send, Result) :-
+    true |
+        fep_utility:set_value(Value, Result),
+        ID_manager = [],
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_process(Stream, Node, Username, Password, DevID, Reply, ^ID_manager,
+%%                ^Send)
+%%      Stream     ::  stream of timer device
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+device_process(fep#nil, _, _, _, _, _, ID_manager, Send) :-
+    true |
+        ID_manager = [],
+        Send = [].
+device_process(Stream, Node, Username, Password, DevID, Reply, ID_manager,
+               Send) :-
+    Stream = {fep#reset, Abort, Attention, Status, Cdr} |
+        Status = fep#normal,
+        device_io(Cdr, Abort, Attention1, Atts, FepLine, Node, Username,
+                  Password, DevID, ID_manager, Send, AtMsg, Receive),
+        merge(Atts, Atts1),
+        attention_monitor(Attention, fep#nil, Atts1),
+        fep_receiver:reply_with_attention([reset(_,Attention1)|AtMsg], fep#nil,
+                     _, FepLine, Reply, Receive).
+otherwise.
+device_process(Stream, _, _, _, _, _, ID_manager, Send) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        ID_manager = [],
+        Send = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_timer_device: device_process/ 9"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_io(Stream, Abort, ^Attention, ^Atts, FepLine, Node, Username,
+%%           Password, DevID, ^ID_manager, ^Send, ^AtMsg, ^Receive)
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attenion line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_io(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+          DevID, ID_manager, Send, AtMsg, Receive) :-
+    wait(FepLine) |
+        device_disconnected(Stream, Abort, Attention, Atts, FepLine, Node,
+                            Username, Password, DevID, ID_manager, Send, AtMsg,
+                            Receive).
+alternatively.
+device_io(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+          DevID, ID_manager, Send, AtMsg, Receive) :-
+    true |
+        device_io0(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                   Password, DevID, ID_manager, Send, AtMsg, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_disconnected(Stream, Abort, ^Attention, ^Atts, FepLine, Node,
+%%                     Username, Password, DevID, ^ID_manager, ^Send, ^AtMsg,
+%%                     ^Receive)
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attenion line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_disconnected(fep#nil, _, Attention, Atts, _, _, _, _, DevID, ID_manager, 
+                    Send, AtMsg, Receive) :-
+    true |
+        Atts = [Attention],
+        AtMsg = [],
+        ID_manager = [],
+        Send = [send({DevID, fep#close}, Result)|SendTail],
+        device_terminate(Result, Attention, DevID, SendTail, Receive).
+device_disconnected(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                    Password, DevID, ID_manager, Send, AtMsg, Receive):-
+    Stream = {fep#reset, _, NewAttention, Status, Cdr} |
+        Status = fep#disconnected,
+        NewAttention = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, Atts, FepLine, Node,
+                            Username, Password, DevID, ID_manager, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                    Password, DevID, ID_manager, Send, AtMsg, Receive):-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#disconnected,
+        NewAttention = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, Atts, FepLine, Node,
+                            Username, Password, DevID, ID_manager, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                    Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#get_date_time, Date, Time, Status, Cdr} |
+        Status = fep#disconnected,
+        Date = fep#nil,
+        Time = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, Atts, FepLine, Node,
+                            Username, Password, DevID, ID_manager, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                    Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#get_count, Count, Status, Cdr} |
+        Status = fep#disconnected,
+        Count = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, Atts, FepLine, Node,
+                            Username, Password, DevID, ID_manager, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                    Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#on_at, _, Now, Status, Cdr} |
+        Status = fep#disconnected,
+        Now = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, Atts, FepLine, Node,
+                            Username, Password, DevID, ID_manager, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                    Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#on_after, _, Now, Status, Cdr} |
+        Status = fep#disconneted, 
+        Now = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, Atts, FepLine, Node,
+                            Username, Password, DevID, ID_manager, Send, AtMsg,
+                            Receive).
+otherwise.
+device_disconnected(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                    Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#disconneted,
+        device_disconnected(Cdr, Abort, Attention, Atts, FepLine, Node,
+                            Username, Password, DevID, ID_manager, Send, AtMsg,
+                            Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_io0(Stream, Abort, ^Attention, ^Atts, FepLine, Node, Username,
+%%            Password, DevID, ID_manager, ^Send, ^AtMsg, ^Receive)
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attenion line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_io0(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+           DevID, ID_manager, Send, AtMsg, Receive) :-
+    wait(Abort) |
+        Send = [send({DevID, fep#abort}, Result)|SendTail],
+        device_abort0(Result, Stream, Abort, Attention, Atts, FepLine, Node,
+                      Username, Password, DevID, ID_manager, SendTail, AtMsg,
+                      Receive).
+alternatively.
+device_io0(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+           DevID, ID_manager, Send, AtMsg, Receive) :-
+    true |
+        device_io1(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                   Password, DevID, ID_manager, Send, AtMsg, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_io1(Stream, Abort, ^Attention, ^Atts, FepLine, Node, Username,
+%%            Password, DevID, ^ID_manager, ^Send, ^AtMsg, ^Receive)
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attenion line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_io1(fep#nil, _, Attention, Atts, _, _, _, _, DevID, ID_manager, Send,
+           AtMsg, Receive) :-
+    true |
+        Atts = [Attention],
+        AtMsg = [],
+        ID_manager = [],
+        Send = [send({DevID, fep#close}, Result)|SendTail],
+        device_terminate(Result, Attention, DevID, SendTail, Receive).
+device_io1(Stream, _, Attention, Atts, FepLine, Node, Username, Password, DevID,
+           ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        Atts = [Attention|Atts1],
+        AtMsg = [reset(Attention,NewAttention)|AtMsgTail],
+        Status = fep#normal,
+        device_io(Cdr, NewAbort, NewAttention, Atts1,FepLine, Node, Username,
+                  Password, DevID, ID_manager, Send, AtMsgTail, Receive).
+device_io1(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+           DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Atts = [Attention|Atts1],
+        AtMsg = [reset(Attention,NewAttention)|AtMsgTail],
+        Status = fep#normal,
+        device_io(Cdr, Abort, NewAttention, Atts1, FepLine, Node, Username,
+                  Password, DevID, ID_manager, Send, AtMsgTail, Receive).
+device_io1(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+           DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#get_count, Count, Status, Cdr} |
+        Send = [send({DevID, fep#get_count}, Result)|SendTail],
+        check_send_status(Result, Cdr, Abort, Attention, Atts, FepLine, Node,
+                    Username, Password, DevID, ID_manager, SendTail,
+                    {DevID, Status, Count}, AtMsg, Receive).
+device_io1(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+           DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#on_at, Count, Now, Status, Cdr} |
+        Atts = {Atts1, Atts2},
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        Send1 = [send({DevID, fep#on_at, Count}, Result)|SendTail],
+        End = {fep#reset, _, _, _, fep#nil},
+        check_send_status(Result, End, Abort, Attention, Atts1, FepLine, Node,
+                    Username, Password, DevID, ID_manager1, SendTail,
+                    {DevID, _, Now}, AtMsg, Receive),
+        device_create0(Cdr, Abort, Atts2, Node, Username, Password, ID_manager2,
+                       Send2).
+device_io1(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+           DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#on_after, Count, Now, Status, Cdr} |
+        Atts = {Atts1, Atts2},
+        Send = {Send1, Send2},
+        ID_manager = {ID_manager1, ID_manager2},
+        Status = fep#normal,
+        Send1 = [send({DevID, fep#on_after, Count}, Result)|SendTail],
+        End = {fep#reset, _, _, _, fep#nil},
+        check_send_status(Result, End, Abort, Attention, Atts1, FepLine, Node,
+                    Username, Password, DevID, ID_manager1, SendTail,
+                    {DevID, _, Now}, AtMsg, Receive),
+        device_create0(Cdr, Abort, Atts2, Node, Username, Password, ID_manager2,
+                       Send2).
+device_io1(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+           DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#get_date_time, Date, Time, Status, Cdr} |
+        Send = [send({DevID, fep#get_date_time}, Result)|SendTail], 
+        check_send_status(Result, Cdr, Abort, Attention, Atts, FepLine, Node,
+                    Username, Password, DevID, ID_manager, SendTail,
+                   {DevID, Status, Date, Time}, AtMsg, Receive).
+otherwise.
+device_io1(Stream, _, Attention, Atts, _, _, _, _, _, ID_manager, Send, AtMsg,
+           Receive) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        fep_utility:close_device(Attention, Send),
+        Atts = [Attention],
+        ID_manager = [],        
+        AtMsg =[],
+        Receive = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_timer_device: device_io1/ 13"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_aborted(Stream, Abort, ^Attention, ^Atts, FepLine, Node, Username,
+%%                Password, DevID, ^ID_manager, ^Send, ^AtMsg, ^Receive)
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attention line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_aborted(fep#nil, _, Attention, Atts, _, _, _, _, DevID, ID_manager, Send,
+               AtMsg, Receive) :-
+    true |
+        Atts = [Attention],
+        AtMsg = [],
+        ID_manager = [],
+        Send = [send({DevID, fep#close}, Result)|SendTail],
+        device_terminate(Result, Attention, DevID, SendTail, Receive).
+device_aborted(Stream, _, Attention, Atts, FepLine, Node, Username, Password,
+               DevID, ID_manager, Send, AtMsg, Receive):-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        Atts = [Attention|Atts1],
+        AtMsg = [reset(Attention,NewAttention)|AtMsgTail],
+        Status = fep#normal,
+        device_io(Cdr, NewAbort, NewAttention, Atts1, FepLine, Node, Username,
+                  Password, DevID, ID_manager, Send, AtMsgTail, Receive).
+device_aborted(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+               Password, DevID, ID_manager, Send, AtMsg, Receive):-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#aborted,
+        NewAttention = fep#nil,
+        device_aborted(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                       Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_aborted(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+               Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#get_date_time, Date, Time, Status, Cdr} |
+        Status = fep#aborted,
+        Date = fep#nil,
+        Time = fep#nil,
+        device_aborted(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                       Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_aborted(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+               Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#get_count, Count, Status, Cdr} |
+        Status = fep#aborted,
+        Count = fep#nil,
+        device_aborted(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                       Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_aborted(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+               Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#on_at, _, Now, Status, Cdr} |
+        Status = fep#aborted,
+        Now = fep#nil,
+        device_aborted(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                       Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_aborted(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+               Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#on_after, _, Now, Status, Cdr} |
+        Status = fep#aborted, 
+        Now = fep#nil,
+        device_aborted(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                       Password, DevID, ID_manager, Send, AtMsg, Receive).
+otherwise.
+device_aborted(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+               Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#aborted,
+        device_aborted(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                       Password, DevID, ID_manager, Send, AtMsg, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abnormal(Stream, Abort, ^Attention, ^Atts, FepLine, Node, Username,
+%%                 Password, DevID, ^ID_manager, ^Send, ^AtMsg, ^Receive)
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attention line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_abnormal(fep#nil, _, Attention, Atts, _, _, _, _, _, ID_manager, Send,
+                AtMsg, Receive) :-
+    true |
+        Atts = [Attention],
+        AtMsg = [],
+        ID_manager = [],
+        Send = [],
+        Receive = [].
+device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username, Password,
+                DevID, ID_manager, Send, AtMsg, Receive):-
+    Stream = {fep#reset, _, NewAttention, Status, Cdr} |
+        Status = fep#abnormal,
+        NewAttention = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                Password, DevID, ID_manager, Send, AtMsg, Receive):-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#abnormal,
+        NewAttention = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+               Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#get_date_time, Date, Time, Status, Cdr} |
+        Status = fep#abnormal,
+        Date = fep#nil,
+        Time = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#get_count, Count, Status, Cdr} |
+        Status = fep#abnormal,
+        Count = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#on_at, _, Now, Status, Cdr} |
+        Status = fep#abnormal,
+        Now = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    Stream = {fep#on_after, _, Now, Status, Cdr} |
+        Status = fep#abnormal, 
+        Now = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+otherwise.
+device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#abnormal,
+        device_abnormal(Cdr, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_status(Status, Stream, Abort, ^Attention, ^Atts, FepLine, Node,
+%%                   Username, Password, DevID, ^ID_manager, ^Send, Vars,
+%%                   ^AtMsg, ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attention line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      Vars       ::  variables of I/O message
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+check_send_status(normal, Stream, Abort, Attention, Atts, FepLine, Node,
+                  Username, Password, DevID, ID_manager, Send, Vars, AtMsg,
+                  Receive) :-
+    true |
+        Receive = [receive(Vars, Result)|ReceiveTail],
+        check_send_normal(Result, Stream, Abort, Attention, Atts, FepLine, Node,
+                          Username, Password, DevID, ID_manager, Send, AtMsg,
+                          ReceiveTail).
+otherwise.
+check_send_status(abnormal, Stream, Abort, Attention, Atts, FepLine, Node,
+                  Username, Password, DevID, ID_manager, Send, Vars, AtMsg,
+                  Receive) :-
+    true |
+        fep_utility:device_abnormal(Vars),
+        device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_normal(Status, Stream, Abort, ^Attention, ^Atts, FepLine, Node,
+%%                   Username, Password, DevID, ID_manager, ^Send, ^AtMsg,
+%%                   ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attention line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+check_send_normal(Result, Stream, Abort, Attention, Atts, FepLine, Node,
+                  Username, Password, DevID, ID_manager, Send, AtMsg,
+                  Receive) :-
+    wait(Abort) |
+        Send = [send({DevID, fep#abort}, Result1)|SendTail],
+        device_abort1(Result1, Result, Stream, Abort, Attention, Atts, FepLine,
+                      Node, Username, Password, DevID, ID_manager, SendTail,
+                      AtMsg, Receive).
+alternatively.
+check_send_normal(normal, Stream, Abort, Attention, Atts, FepLine, Node,
+                  Username, Password, DevID, ID_manager, Send, AtMsg,
+                  Receive) :-
+    true |
+        device_io(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                  Password, DevID, ID_manager, Send, AtMsg, Receive).
+check_send_normal(abnormal, Stream, Abort, Attention, Atts, FepLine, Node,
+                  Username, Password, DevID, ID_manager, Send, AtMsg,
+                  Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abort0(Status, Stream, Abort, ^Attention, ^Atts, FepLine, Node,
+%%               Username, Password, DevID, ID_manager, ^Send, ^AtMsg, ^Receive)
+%%      Status     ::  status of device abort message
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attention line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_abort0(normal, Stream, Abort, Attention, Atts, FepLine, Node, Username,
+              Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    true |
+        device_aborted(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                       Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_abort0(abnormal, Stream, Abort, Attention, Atts, FepLine, Node, Username,
+              Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abort1(StatusA, StatusI, Stream, Abort, ^Attention, ^Atts, FepLine,
+%%               Node, Username, Password, DevID, ^ID_manage, ^Send, ^AtMsg,
+%%               ^Receive)
+%%      StatusA    ::  status of device abort message
+%%      StatusI    ::  status of device I/O message
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      Atts       ::  attention line of attention monitor
+%%      FepLine    ::  line status of FEP
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_abort1(normal, normal, Stream, Abort, Attention, Atts, FepLine, Node,
+              Username, Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    true |
+        device_aborted(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                       Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_abort1(abnormal, _, Stream, Abort, Attention, Atts, FepLine, Node,
+              Username, Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+device_abort1(_, abnormal, Stream, Abort, Attention, Atts, FepLine, Node,
+              Username, Password, DevID, ID_manager, Send, AtMsg, Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, Atts, FepLine, Node, Username,
+                        Password, DevID, ID_manager, Send, AtMsg, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_terminate(Status, ^Attention, DevID, ^Send, ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Attention  ::  attention line from FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      Receive    ::  result of I/O message
+
+device_terminate(normal, Attention, DevID, Send, Receive) :-
+    true |
+        Receive = [receive({DevID, _}, Result)],
+        device_terminate1(Result, Attention, Send).
+device_terminate(abnormal, _, _, Send, Receive) :-
+    display_console("SCSI I/O Error in timer device termination") |
+        Send = [],
+        Receive = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_terminate1(Status, ^Attention, ^Send)
+%%      Status     ::  status of device I/O message
+%%      Attention  ::  attention line from FEP
+%%      Send       ::  send message for SCSI DRIVER
+
+device_terminate1(normal, Attention, Send) :-
+    true |
+        fep_utility:close_device(Attention, Send).
+device_terminate1(abnormal, Attention, Send) :-
+    true |
+        fep_utility:close_device(Attention, Send).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_create0(Stream, Abort, ^Atts, Node, Username, Password, ^ID_manager,
+%%                ^Send)
+%%      Stream     ::  stream of timer request device
+%%      Abort      ::  abort line from OS
+%%      Atts       ::  attention line of attention monitor
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+device_create0(Stream, Abort, Atts, Node, Username, Password, ID_manager,
+               Send) :-
+    true |
+        NStream = {fep#create, Username, Password, Timer, _, 0},
+        Timer = {fep#reset, Abort, _, _, Stream},
+        device_create1(NStream, Atts, Node, ID_manager, Send).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_create1(Stream, ^Atts, Node, ^ID_manager, ^Send)
+%%      Stream     ::  stream of timer request device
+%%      Atts       ::  attention line of attention monitor
+%%      Node       ::  node number of FEP
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+device_create1(Stream, Atts, Node, ID_manager, Send) :-
+    true |
+        ID_manager = [id(Result)|ID_Tail],
+        device_create1(Result, Stream, Atts, Node, ID_Tail, Send).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_create1(Result, Stream, ^Atts, Node, ^ID_manager, ^Send)
+%%      Result     ::  {normal, DevID, DS}|abnormal
+%%      Stream     ::  stream of timer request device
+%%      Atts       ::  attention line of attention monitor
+%%      Node       ::  node number of FEP
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+device_create1(normal(DevID, DS), Stream, Atts, Node, ID_manager, Send) :-
+    Stream = {fep#create, Username, Password, Timer, Status, _} |
+        Send = [send({DevID, fep#create_timer, 
+                Node, Username, Password}, Result)|SendTail],
+        check_send_status0(Result, Timer, Atts, Node, Username, Password, DevID,
+                           DS, ID_manager, SendTail, {DevID, Status}).
+device_create1(abnormal, Stream, Atts, _, ID_manager, Send) :-
+    vector(Stream, Size),
+    display_console("SCSI I/O Error in timer device creation") |
+        set_vector_element(Stream, ~(Size-2), fep#abnormal, 0, _),
+        Atts = [],
+        ID_manager = [],
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_status0(Status, Stream, ^Atts, Node, Username, Password, DevID,
+%%                    Reply, ^ID_manager, ^Send, ^Result)
+%%      Status     ::  status of device create message
+%%      Stream     ::  stream of timer device
+%%      Atts       ::  attention line of attention monitor
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      Result     ::  value of I/O message
+
+check_send_status0(normal, Stream, Atts, Node, Username, Password, DevID, Reply,
+                   ID_manager, Send, Result) :-
+    true |
+        reply0(Stream, Atts, Node, Username, Password, DevID, Reply, ID_manager,
+               Send, Result).
+check_send_status0(abnormal, _, Atts, _, _, _, _, _, ID_manager, Send,
+                   Result) :-
+    display_console("SCSI I/O Error in timer device creation") |
+        fep_utility:device_abnormal(Result),
+        Atts = [],
+        ID_manager = [],
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% reply0(Stream, Atts, Node, Username, Password, DevID, Reply, ^ID_manager,
+%%        ^Send, ^Result)
+%%      Stream     ::  stream of timer device
+%%      Atts       ::  attention line of attention monitor
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+%%      Result     ::  value of I/O message
+
+reply0(Stream, Atts, Node, Username, Password, DevID, [normal(Value)|Reply],
+       ID_manager, Send, Result) :-
+    vector_element(Value, 1, Response),
+    Response = fep#normal |
+        fep_utility:set_value(Value, Result),
+        device_process0(Stream, Atts, Node, Username, Password, DevID, Reply,
+                        ID_manager, Send).
+otherwise.
+reply0(_, Atts, _, _, _, _, [normal(Value)|_], ID_manager, Send, Result) :-
+    true |
+        fep_utility:set_value(Value, Result),
+        Atts = [],
+        ID_manager = [],
+        Send = [].
+reply0(_, Atts, _, _, _, _, [abnormal(Value)|_], ID_manager, Send, Result) :-
+    true |
+        fep_utility:set_value(Value, Result),
+        Atts = [],
+        ID_manager = [],
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_process0(Stream, Atts, Node, Username, Password, DevID, Reply,
+%%                 ^ID_manager, ^Send)
+%%      Stream     ::  stream of timer device
+%%      Atts       ::  attention line of attention monitor
+%%      Node       ::  node number of FEP
+%%      Username   ::  Username of login FEP
+%%      Password   ::  Password of login FEP
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      ID_manager ::  device ID and stream of the device
+%%      Send       ::  send message for SCSI DRIVER
+
+device_process0(fep#nil, Atts, _, _, _, _, _, ID_manager, Send) :-
+    true |
+        Atts = [],
+        ID_manager = [],
+        Send = [].
+device_process0(Stream, Atts, Node, Username, Password, DevID, Reply,
+                ID_manager, Send) :-
+    Stream = {fep#reset, Abort, Attention, Status, Cdr} |
+        Status = fep#normal,
+        Atts = [Attention|Atts1],
+        device_io(Cdr, Abort, Attention, Atts1, FepLine, Node, Username,
+                  Password, DevID, ID_manager, Send, AtMsg, Receive),
+        fep_receiver:reply_with_attention([reset(_,Attention)|AtMsg], fep#nil,
+                     _, FepLine, Reply, Receive).
+otherwise.
+device_process0(Stream, Atts, _, _, _, _, _, ID_manager, Send) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        Atts = [],
+        ID_manager = [],
+        Send = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_timer_device: device_process/ 9"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% attention_monitor(^Attention, Val, Atts)
+%%      Attention  ::  atention line from FEP
+%%      Val        ::  temporary value of attention line
+%%      Atts       ::  attention line of attention monitor
+
+
+attention_monitor(Attention, fep#attention, []) :-
+    true |
+        Attention = fep#attention.
+attention_monitor(Attention, fep#nil, []) :-
+    true |
+        Attention = fep#nil.
+otherwise.
+attention_monitor(Attention, _, [fep#attention|Rest]) :-
+    true |
+        attention_monitor(Attention, fep#attention, Rest).
+attention_monitor(Attention, Val, [fep#nil|Rest]) :-
+    true |
+        attention_monitor(Attention, Val, Rest).

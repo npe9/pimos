@@ -1,0 +1,168 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module timer_utility_date.
+:- with_macro pimos.
+:- public get_date_string/2,get_date_value/5,get_date_count/4,
+    month/4,day/3.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% get_date_string(Date,^Str)
+%%      Date    :: Date count from 01-Jan-1901 (integer)
+%%      Str     :: Date String
+
+get_date_string(Date,Str) :- Date >= -693975 |
+        get_date_value(Date,Year,Mon,Day,_),
+        make_date_string(Year,Mon,Day,Str).
+otherwise.
+get_date_string(Date,Str) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_date_count"),get_date_string(Date,Str)).
+
+make_date_string(Year,Mon,Day,Str) :- true |
+        timer_utility:get_number_string(Year,4,YearS),
+        month(Mon,_,MonS,_),
+        timer_utility:get_number_string(Day,2,DayS),
+        builtin#new_string(S,11),
+        builtin#set_substring(S,0,2,DayS,S1,_),
+        builtin#set_substring(S1,2,1,string#"-",S2,_),
+        builtin#set_substring(S2,3,3,MonS,S3,_),
+        builtin#set_substring(S3,6,1,string#"-",S4,_),
+        builtin#set_substring(S4,7,4,YearS,Str,_).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% get_date_value(Date,^Year,^Mon,^Day,^Week)
+%%      Date    :: Date count from 01-Jan-0001 (integer)
+%%      Year    :: Year count (integer: 1~)
+%%      Mon     :: Month count (integer: 1~12)
+%%      Day     :: Day count (integer: 1~31)
+%%      Week    :: Day index of the week (integer: 0~6)
+
+get_date_value(C,Year,Mon,Day,Week) :- C >= -693975,C0:=C+693975,C0 mod 1461 =:= 1460 |
+        Year := C0/1461*4 + 4,
+        get_month(Year,Mon,365,D),
+        Day := D+1,
+        Week := C0 mod 7.
+get_date_value(C,Year,Mon,Day,Week) :- C >= -693975,C0:=C+693975,C1:=C0 mod 1461,C1<1460 |
+        Year := C0/1461*4 + C1/365 + 1,
+        get_month(Year,Mon,~(C1 mod 365),D),
+        Day := D+1,
+        Week := C0 mod 7.
+otherwise.
+get_date_value(C,Year,Mon,Day,Week) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_date_count"),get_date_value(C,Year,Mon,Day,Week)).
+
+get_month(Year,Mon,D,D1) :- Year mod 4 =:= 0, Year mod 100 =\=0 |
+        month(1,_,_,Days),
+        get_month_in_leap_year(1,Mon,D,D1,Days).
+get_month(Year,Mon,D,D1) :- Year mod 4 =:= 0, Year mod 400 =:=0 |
+        month(1,_,_,Days),
+        get_month_in_leap_year(1,Mon,D,D1,Days).
+otherwise.
+get_month(_,Mon,D,D1) :- true |
+        month(1,_,_,Days),
+        get_month_in_usual(1,Mon,D,D1,Days).
+        
+get_month_in_usual(M,M1,D,D1,Days) :- D<Days | M1:=M,D1:=D.
+get_month_in_usual(M,M1,D,D1,Days) :- D>=Days,M0:=M+1 |
+        month(M0,_,_,NDays),
+        get_month_in_usual(M0,M1,~(D-Days),D1,NDays).
+
+get_month_in_leap_year(2,M1,D,D1,Days) :- true |
+        get_month_in_leap_year1(2,M1,D,D1,~(Days+1)).
+get_month_in_leap_year(M,M1,D,D1,Days) :- M=\=2 |
+        get_month_in_leap_year1(M,M1,D,D1,Days).
+
+get_month_in_leap_year1(M,M1,D,D1,Days) :- D<Days | M1:=M,D1:=D.
+get_month_in_leap_year1(M,M1,D,D1,Days) :- D>=Days,M0:=M+1 |
+        month(M0,_,_,NDays),
+        get_month_in_leap_year(M0,M1,~(D-Days),D1,NDays).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% get_date_count(Year,Mon,Day,^Date)
+%%      Year    :: Year count (integer: 1~)
+%%      Mon     :: Month count (integer: 1~12)
+%%      Day     :: Day count (integer: 1~31)
+%%      Date    :: Date count from 01-Jan-1901 (integer)
+
+get_date_count(Year,Mon,Day,Date) :- Year>=0,12>=Mon,Mon>=1 |
+        get_days_in_month(Year,Mon,Days),
+        check_input(Year,Mon,Day,Date,Days).
+otherwise.
+get_date_count(Year,Mon,Day,Date) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_data"),get_date_count(Year,Mon,Day,Date)).
+
+check_input(Year,Mon,Day,Date,Days0) :- Days0>=Day,Day>=1,
+    Y:=Year-1900-1 |
+        sum_months(Year,~(Mon-1),0,D),
+        sum_all(~(Y*365),~(Y/4),D,~(Day-1),Date).
+otherwise.
+check_input(Year,Mon,Day,Date,_) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_data"),get_date_count(Year,Mon,Day,Date)).
+
+sum_months(_,0,D,D1) :- true | D=D1.
+sum_months(Year,Mon,D,D1) :- Mon>0 |
+        get_days_in_month(Year,Mon,Days),
+        sum_months(Year,~(Mon-1),~(D+Days),D1).
+
+get_days_in_month(Year,Mon,Days) :- Year mod 4 =:= 0, Year mod 100 =\= 0, Mon=:=2 |
+        month(Mon,_,_,Days0),
+        Days:=Days0+1.
+get_days_in_month(Year,Mon,Days) :- Year mod 4 =:= 0, Year mod 400 =:= 0, Mon=:=2 |
+        month(Mon,_,_,Days0),
+        Days:=Days0+1.
+otherwise.
+get_days_in_month(_,Mon,Days) :- true |
+        month(Mon,_,_,Days).
+
+sum_all(D,D1,D2,D3,Date) :- Date0:=D+D1+D2+D3 | Date=Date0.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% month(Month_idx,Name,AbbrName,Days)
+%%      Month_idx :: Month (integer: 1~12)
+%%      Name    :: Month name
+%%      AbbrName:: Month name in abbreviation
+%%      Days    :: Days in month
+
+month(1,Name,AName,Days) :- true | Name=string#"January",AName=string#"Jan",Days:=31.
+month(2,Name,AName,Days) :- true | Name=string#"February",AName=string#"Feb",Days:=28.
+month(3,Name,AName,Days) :- true | Name=string#"March",AName=string#"Mar",Days:=31.
+month(4,Name,AName,Days) :- true | Name=string#"April",AName=string#"Apr",Days:=30.
+month(5,Name,AName,Days) :- true | Name=string#"May",AName=string#"May",Days:=31.
+month(6,Name,AName,Days) :- true | Name=string#"June",AName=string#"Jun",Days:=30.
+month(7,Name,AName,Days) :- true | Name=string#"July",AName=string#"Jul",Days:=31.
+month(8,Name,AName,Days) :- true | Name=string#"August",AName=string#"Aug",Days:=31.
+month(9,Name,AName,Days) :- true | Name=string#"September",AName=string#"Sep",Days:=30.
+month(10,Name,AName,Days) :- true | Name=string#"October",AName=string#"Oct",Days:=31.
+month(11,Name,AName,Days) :- true | Name=string#"November",AName=string#"Nov",Days:=30.
+month(12,Name,AName,Days) :- true | Name=string#"December",AName=string#"Dec",Days:=31.
+otherwise.
+month(Month_idx,Name,AName,Days) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_data"),month(Month_idx,Name,AName,Days)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% day(Day_idx,^Name,^AbbrName)
+%%      Day_idx :: Index of the day of the week (integer: 0~6)
+%%      Name    :: Name of the day of the week
+%%      AbbrName :: Name of the day of the week in abbreviation
+%%      JapaneseName :: Name of the day of the week in Japanese,
+%%                      not supported from on PIMOS 3.5
+
+day(0,Name,AName) :- true | Name=string#"Sunday",AName=string#"Sun".
+day(1,Name,AName) :- true | Name=string#"Monday",AName=string#"Mon".
+day(2,Name,AName) :- true | Name=string#"Tuesday",AName=string#"Tue".
+day(3,Name,AName) :- true | Name=string#"Wednesday",AName=string#"Wed".
+day(4,Name,AName) :- true | Name=string#"Thursday",AName=string#"Thu".
+day(5,Name,AName) :- true | Name=string#"Friday",AName=string#"Fri".
+day(6,Name,AName) :- true | Name=string#"Saturday",AName=string#"Sat".
+otherwise.
+day(Day_idx,Name,AName) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_data"),day(Day_idx,Name,AName)).

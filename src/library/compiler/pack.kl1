@@ -1,0 +1,50 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_pack.
+:- public pack_body_goal/3.
+
+%%%%%% Pack body goals %%%%%%
+
+% for V2 !!!
+max_goal_slots(X) :- true | X=11.
+
+pack_body_goal(Goal0, Goal, Label) :- true |
+    max_goal_slots(Max),
+    kl1cmp_reader:functor(Goal0, F, A),
+    Label=F/A,
+    pack_body_goal(A, Max, Goal0, Goal).
+
+pack_body_goal(A, Max, Goal0, Goal) :- A =< Max | Goal0=Goal.
+otherwise.
+pack_body_goal(A, Max, Goal0, Goal) :- true |
+    Gsize := Max+1, Arg := Max-1, Vsize := A-Arg, 
+    new_vector(Vect0, Vsize),
+    new_vector(Goal1, Gsize),
+    copy_args_of_goal(0, Max, Goal0, OldGoal, Goal1, Goal2),
+    copy_args_to_vect(0, Max, Vsize, OldGoal, Vect0, Vect),
+    set_vector_element(Goal2, Max, _, vector(Vect), Goal).
+
+copy_args_of_goal(_, 0, Old0, Old, New0, New) :- true |
+    Old0=Old, New0=New.
+otherwise.
+copy_args_of_goal(A, N, Old0, Old, New0, New) :- true |
+    set_vector_element(Old0, A, E, [], Old1),
+    set_vector_element(New0, A, _, E, New1),
+    A1 := A+1, N1 := N-1,
+    copy_args_of_goal(A1, N1, Old1, Old, New1, New).
+
+copy_args_to_vect(A, _, A, _, V0, V) :- true | V0=V.
+otherwise.
+copy_args_to_vect(VN, A, N, Old, V0, V) :- true |
+    A1 := A+1, VN1 := VN+1,
+    set_vector_element(Old, A, E, [], Old1),
+    set_vector_element(V0, VN, _, E, V1),
+    copy_args_to_vect(VN1, A1, N, Old1, V1, V).
+
+
+
+

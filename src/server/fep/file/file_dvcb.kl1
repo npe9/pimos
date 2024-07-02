@@ -1,0 +1,741 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module file_device_binary.
+:- with_macro pimos.
+:- public driver/5.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver(CAbort,DS,F,If,FA)
+%%      CAbort  :: Termination variable from the client task
+%%                 = abort ; []
+%%      DS      :: Input stream from the client task
+%%      F       :: Output stream to scsi_fep_module (vector stream)
+%%      If      :: ={0,Conf,SCont,SAbort}
+%%                 Conf  :: Output stream to confirmation device (merged)
+%%                 SCont :: Server control stream
+%%                 SAbort:: Server control abortion variable
+%%      FA      :: FEP Attributes
+
+driver(CAbort,DS,F,If,FA) :- true |
+        id_table:id_table(T),
+        driver_0(CAbort,DS,F,T,If,A,A,dummy_attention,_,
+                FA,{ascii#"",0,normal}).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_0(CAb,DS,F,T,A,A1,AtF,Att,G)
+%%      T       :: Output stream to the keyed_bag which is used to store the
+%%                      list of the aborted requests with the key ID.
+%%      A,A1    :: d-list for aborted messages
+%%      Att     :: Attention line to OS
+%%      FA      :: FEP Attributes
+
+driver_0(CAb,_,F,T,If,_,_,_,_,FA,G) :- wait(CAb) |
+        device_driver:abort(If,F,T,fep#normal,_).
+alternatively.
+driver_0(CAb,[reset(Args)|DS],F,T,If,A,A1,AtF,Att,FA,G) :- true |
+        F={fep#reset,AbF1,AtF1,S,F1},
+        wait_01(CAb,DS,F1,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S,FA,G).
+driver_0(_,[close(S)|_],F,T,If,A,A1,_,Att,FA,G) :- true |
+        device_driver:terminate(If,S,F,T,Att,_,A,A1).
+driver_0(CAb,[Req|DS],F,T,If,A,A1,AtF,Att,FA,G) :- 
+    vector_element(Req,0,MsgName),MsgName\=reset,MsgName\=close |
+        A1=[Req|A2],
+        driver_0(CAb,DS,F,T,If,A,A2,AtF,Att,FA,G).
+driver_0(_,[],F,T,If,A,A1,_,Att,FA,G) :- true |
+        device_driver:terminate(If,_,F,T,Att,_,A,A1).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_01(CAb,DS,F,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S,FA,G)
+%%      Args    :: = normal(Ab,Att,ID)
+%%                      Ab      :: New abort line from OS
+%%                      Att     :: New attention line to OS
+%%                      ID      :: Id number for aborted messages
+%%                 ; abnormal
+%%                 ; disconnected
+%%      AbF1    :: New abort line to fep
+%%      FA      :: FEP Attributes
+
+wait_01(CAb,DS,F,T,If,A,A1,_,Att,Args,AtF1,AbF1,fep#normal,FA,G) :- true |
+        Att=[],
+        A1=[],
+        T=[put_with_new_id(ID,A)|T1],
+        Args=normal(Ab1,Att1,ID),
+        driver_1(CAb,DS,F,T1,If,Ab1,B,B,AtF1,Att1,AbF1,FA,G).
+wait_01(CAb,DS,F,T,If,A,A1,AtF,Att,Args,_,AbF1,fep#abnormal,FA,G) :- true |
+        Args=abnormal,
+        AbF1=fep#nil,
+        driver_0(CAb,DS,F,T,If,A,A1,AtF,Att,FA,G).
+wait_01(CAb,DS,F,T,If,A,A1,_,Att,Args,_,AbF1,fep#disconnected,FA,G) :- true |
+        Args=disconnected,
+        AbF1=fep#nil,
+        device_driver:disconnected(CAb,DS,F,T,If,A,A1,Att,_).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_1(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,FA,G)
+%%      Ab      :: Abort line from OS
+%%      AbF     :: Abort line to fep
+
+driver_1(CAb,_,F,T,If,_,_,_,_,_,AbF,FA,G) :- wait(CAb) |
+        device_driver:abort(If,F,T,fep#normal,AbF).
+driver_1(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,FA,G) :- wait(Ab) |
+        AbF=fep#abort,
+        driver_0(CAb,DS,F,T,If,A,A1,AtF,Att,FA,G).
+alternatively.
+driver_1(CAb,[Req|DS],F,T,If,Ab,A,A1,AtF,Att,AbF,FA,G) :- true |
+        io_req(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,FA,G).
+driver_1(_,[],F,T,If,_,A,A1,_,Att,AbF,FA,G) :- true |
+        F={fep#flush,S,F1},
+        terminate(If,_,F1,T,Att,AbF,A,A1,S).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% io_req(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,FA,G)
+%%      Req     :: Io_request message
+
+io_req(CAb,DS,F,T,If,_,A,A1,AtF,Att,AbF,{reset,Args},FA,G) :- true |
+        AbF=fep#abort,
+%        F={fep#reset,AbF1,AtF1,S,F1},                          % patch for fep
+%        wait_01(CAb,DS,F1,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S).
+        fep_patch(CAb,DS,F,T,If,_,A,A1,AtF,Att,_,Args,FA,G).
+io_req(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,{next_attention,Args},FA,G) :- true |
+        Att=[],
+        Args=normal(Att1),
+        driver_1(CAb,DS,F,T,If,Ab,A,A1,AtF,Att1,AbF,FA,G).
+io_req(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,{resend,ID,S},FA,G) :- true |
+        device_driver:resend(DS,DS1,T,T1,ID,S),
+        driver_1(CAb,DS1,F,T1,If,Ab,A,A1,AtF,Att,AbF,FA,G).
+io_req(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,{cancel,ID,S},FA,G) :- true |
+        device_driver:cancel(T,T1,ID,S),
+        driver_1(CAb,DS,F,T1,If,Ab,A,A1,AtF,Att,AbF,FA,G).
+
+/*
+% never receives from NEW resource tree
+io_req(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,{change_processor,PE,S}) :- true |
+        change_processor(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,S)@processor(PE).
+*/
+
+io_req(_,_,F,T,If,_,A,A1,_,Att,AbF,{close,S},FA,G) :- true |
+        F={fep#flush,S0,F1},
+        terminate(If,S,F1,T,Att,AbF,A,A1,S0).
+
+otherwise.
+io_req(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,FA,G) :- true |
+        send_message(Req,Req1,F,Val,S,F1,{},G,G1),
+        driver_2(CAb,DS,F1,T,If,Ab,A,A1,AtF,Att,AbF,Req1,Val,S,FA,G1).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% change_processor(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,S)
+
+/*
+change_processor(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,S) :- true |
+        S=normal,
+        driver_1(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF).
+*/
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_2(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,S,FA,G)
+%%      Req     :: Io_request message that is processing now
+%%      Val     :: Values from fep (vector)
+
+driver_2(CAb,_,F,T,If,_,_,_,_,_,AbF,_,_,S,FA,G) :- wait(CAb) |
+        device_driver:abort(If,F,T,S,AbF).
+driver_2(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,S,FA,G) :- wait(Ab) |
+        AbF=fep#abort,
+        wait_20(CAb,DS,F,T,If,A,A1,AtF,Att,Req,Val,S,FA,G).
+alternatively.
+driver_2(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,fep#normal,FA,G) :- true |
+%        vector_element(FA,0,Code,FA0),
+%        vector_element(FA0,1,OS,FA1),
+%        return_values(Req,Val,{Code,OS},G,G1),
+%        driver_1(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,FA1,G1).
+        driver_20(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,FA,G).
+driver_2(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,_,fep#abnormal,FA,G) :- true |
+        device_driver:return_ab_status(Req,abnormal),
+        driver_1(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,FA,G).
+driver_2(CAb,DS,F,T,If,_,A,A1,_,Att,AbF,Req,_,fep#disconnected,FA,G) :- true |
+        device_driver:return_ab_status(Req,disconnected),
+        device_driver:disconnected(CAb,DS,F,T,If,A,A1,Att,AbF).
+driver_2(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,_,fep#aborted,FA,G) :- true |
+%        A1=[Req|A2],
+%        driver_1(CAb,DS,F,T,If,Ab,A,A2,AtF,Att,AbF,FA,G).
+        driver_21(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,FA,G).
+driver_2(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,_,fep#eod,FA,G) :- true |
+%        device_driver:return_ab_status(Req,end_of_file),
+        vector_element(FA,0,Code,FA0),
+        vector_element(FA0,1,OS,FA1),
+        return_values(Req,{eod},{Code,OS},G,G1),
+        driver_1(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,FA1,G1).
+
+
+driver_21(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,{get_attributes,_,Args},FA,G)
+:- true |
+        A1=[{get_attributes,Args}|A2],
+        driver_1(CAb,DS,F,T,If,Ab,A,A2,AtF,Att,AbF,FA,G).
+otherwise.
+driver_21(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,FA,G):- true |
+        A1=[Req|A2],
+        driver_1(CAb,DS,F,T,If,Ab,A,A2,AtF,Att,AbF,FA,G).
+
+
+driver_20(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,{get_attributes,_,Args},V0,FA,G)
+:- true |
+        send_message({get_attributes,attributes,Args},Req1,F,V1,S,F1,{},G,G1),
+        driver_2(CAb,DS,F1,T,If,Ab,A,A1,AtF,Att,AbF,Req1,{V0,V1},S,FA,G1).
+otherwise.
+driver_20(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,FA,G):- true |
+        vector_element(FA,0,Code,FA0),
+        vector_element(FA0,1,OS,FA1),
+        return_values(Req,Val,{Code,OS},G,G1),
+        driver_1(CAb,DS,F,T,If,Ab,A,A1,AtF,Att,AbF,FA1,G1).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_20(CAb,DS,F,T,If,A,A1,Att,AtF,Req,Val,S,FA,G)
+
+wait_20(CAb,DS,F,T,If,A,A1,AtF,Att,Req,Val,fep#normal,FA,G) :- true |
+%        vector_element(FA,0,Code,FA0),
+%        vector_element(FA0,1,OS,FA1),
+%        return_values(Req,Val,{Code,OS},G,G1),
+%        driver_0(CAb,DS,F,T,If,A,A1,AtF,Att,FA1,G1).
+        wait_200(CAb,DS,F,T,If,A,A1,AtF,Att,Req,Val,FA,G).
+wait_20(CAb,DS,F,T,If,A,A1,AtF,Att,Req,_,fep#abnormal,FA,G) :- true |
+        device_driver:return_ab_status(Req,abnormal),
+        driver_0(CAb,DS,F,T,If,A,A1,AtF,Att,FA,G).
+wait_20(CAb,DS,F,T,If,A,A1,_,Att,Req,_,fep#disconnected,FA,G) :- true |
+        device_driver:return_ab_status(Req,disconnected),
+        device_driver:disconnected(CAb,DS,F,T,If,A,A1,Att,_).
+wait_20(CAb,DS,F,T,If,A,A1,AtF,Att,Req,_,fep#eod,FA,G) :- true |
+%        device_driver:return_ab_status(Req,end_of_file),
+        vector_element(FA,0,Code,FA0),
+        vector_element(FA0,1,OS,FA1),
+        return_values(Req,{eod},{Code,OS},G,G1),
+        driver_0(CAb,DS,F,T,If,A,A1,AtF,Att,FA1,G1).
+wait_20(CAb,DS,F,T,If,A,A1,AtF,Att,Req,_,fep#aborted,FA,G) :- true |
+%        A1=[Req|A2],
+%        driver_0(CAb,DS,F,T,If,A,A2,AtF,Att,FA,G).
+        wait_201(CAb,DS,F,T,If,A,A1,AtF,Att,Req,FA,G).
+
+
+wait_201(CAb,DS,F,T,If,A,A1,AtF,Att,{get_attributes,_,Args},FA,G)
+:- true |
+        A1=[{get_attributes,Args}|A2],
+        driver_0(CAb,DS,F,T,If,A,A2,AtF,Att,FA,G).
+otherwise.
+wait_201(CAb,DS,F,T,If,A,A1,AtF,Att,Req,FA,G):- true |
+        A1=[Req|A2],
+        driver_0(CAb,DS,F,T,If,A,A2,AtF,Att,FA,G).
+
+
+wait_200(CAb,DS,F,T,If,A,A1,AtF,Att,{get_attributes,_,Args},Val,FA,G)
+:- true |
+        A1=[{get_attributes,Args}|A2],
+        driver_0(CAb,DS,F,T,If,A,A2,AtF,Att,FA,G).
+otherwise.
+wait_200(CAb,DS,F,T,If,A,A1,AtF,Att,Req,Val,FA,G):- true |
+        vector_element(FA,0,Code,FA0),
+        vector_element(FA0,1,OS,FA1),
+        return_values(Req,Val,{Code,OS},G,G1),
+        driver_0(CAb,DS,F,T,If,A,A1,AtF,Att,FA1,G1).
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% send_message(Req,Req1,F,Val,S,F1,FA,G,G1)
+%%      Req     :: Io_request message
+%%      Req1    :: New io_request message
+%%      F,F1    :: Output stream to fep (vector)
+%%      Val     :: Values from fep (vector)
+%%      S       :: Status from fep
+%%      FA      :: {}
+
+%% put type messages
+send_message({putb,Str,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+        G=G1,
+        change_element_size(Str,8,Str2),
+        F0={fep#putb,Str2,S,F1},
+        wait_and_send(F,F0),
+        Req={putb,Str,Args},
+        Val={}.
+send_message({write,Str,Args},Req,F,Val,S,F1,FA,G,G1) :- string(Str,_,8) |
+        G=G1,
+        F={fep#putb,Str,S,F1},
+        Req={write,Str,Args},
+        Val={}.
+send_message({write,Str,Args},Req,F,Val,S,F1,FA,G,G1) :- string(Str,_,1) |
+        G=G1,
+        S=fep#abnormal,
+        F=F1,
+        Req={write,Str,Args},
+        Val={}.
+send_message({write,Str,Args},Req,F,Val,S,F1,FA,G,G1) :- string(Str,_,16) |
+        G=G1,
+        S=fep#abnormal,
+        F=F1,
+        Req={write,Str,Args},
+        Val={}.
+send_message({write,Str,Args},Req,F,Val,S,F1,FA,G,G1) :- string(Str,_,32) |
+        G=G1,
+        S=fep#abnormal,
+        F=F1,
+        Req={write,Str,Args},
+        Val={}.
+send_message({flush,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+        G=G1,
+        F={fep#flush,S,F1},
+        Req={flush,Args},
+        Val={}.
+
+%% get type messages
+
+% getb %
+send_message({getb,Size,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+%        vector_element(FA,0,Code,_),
+%        send_message_getb({getb,Size,Args},Req,F,Val,S,F1,Code,G,G1).
+        send_message_buffer({getb,Size,Args},Req,F,Val,S,F1,G,G1,~(Size*2)).
+% read %
+send_message({read,Size,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+%        vector_element(FA,0,Code,_),
+%        send_message_read({read,Size,Args},Req,F,Val,S,F1,Code).
+        send_message_buffer({read,Size,Args},Req,F,Val,S,F1,G,G1,Size).
+
+send_message({prompt,Str,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+        G=G1,
+        S=fep#normal,
+        F=F1,
+        Req={prompt,Str,Args},
+        Val={}.
+send_message({ungetb,Str,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+        G=G1,
+        S=fep#normal,
+        F=F1,
+        Req={ungetb,Str,Args},
+        Val={}.
+send_message({pathname,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+        G=G1,
+        F={fep#pathname,Pathname,S,F1},
+        Req={pathname,Args},
+        Val={Pathname}.
+send_message({end_of_file,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+%        G=G1,
+%        F={fep#end_of_file,YorN,S,F1},
+        Req={end_of_file,Args},
+%        Val={YorN}.
+        send_message_eof(F,Val,S,F1,G,G1).
+send_message({attributes,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+        G=G1,
+        F={fep#attributes,Str,S,F1},
+        Req={attributes,Args},
+        Val={Str}.
+
+% get_attributes %
+send_message({get_attributes,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+        G=G1,
+        F={fep#pathname,Pathname,S,F1},
+        Req={get_attributes,pathname,Args},
+        Val={Pathname}.
+send_message({get_attributes,attributes,Args},Req,F,Val,S,F1,FA,G,G1) :- true |
+        G=G1,
+        F={fep#attributes,Str,S,F1},
+        Req={get_attributes,Args},
+        Val={Str}.
+
+otherwise.
+send_message(Req1,Req,F,Val,S,F1,FA,G,G1) :- true |
+        G=G1,
+        S=fep#abnormal,
+        F=F1,
+        Req=Req1,
+        Val={}.
+
+
+send_message_eof(F,Val,S,F1,{Data,0,Sta},G1):- true |
+        G1={Data,0,Sta},
+        F={fep#end_of_file,YorN,S,F1},
+        Val={YorN}.
+otherwise.
+send_message_eof(F,Val,S,F1,G,G1):- true |
+        G=G1,
+        F=F1,
+        S=fep#normal,
+        Val={fep#no}.
+
+/*
+send_message_getb({getb,Size,Args},Req,F,Val,S,F1,0):- true |
+        F={fep#getb,Size,Str,S,F1},
+        Req={getb,Size,Args},
+        Val={Str}.
+send_message_getb({getb,Size,Args},Req,F,Val,S,F1,1):- true |
+        Size2:=Size*2,
+        F0={fep#getb,Size2,Str,S,F1},
+        wait_and_send(F,F0),
+        Req={getb,Size,Args},
+        Val={Str}.
+otherwise.
+send_message_getb({getb,Size,Args},Req,F,Val,S,F1,_):- true |
+        S=fep#abnormal,
+        F=F1,
+        Req={getb,Size,Args},
+        Val={}.
+*/
+send_message_buffer({Com,Size,Args},Req,F,Val,S,F1,{Data,DLen,Sta},G1,Size2)
+%:- Sta=normal,Size2=<DLen |
+:- Sta=normal,Size2<DLen |
+        S=fep#normal,
+        F=F1,
+        Req={Com,Size,Args},
+        builtin#substring(Data,0,Size2,Str,Data0),
+        builtin#substring(Data0,Size2,~(DLen-Size2),Data1,_),
+        G1={Data1,~(DLen-Size2),Sta},
+        Val={ok(Str)}.
+send_message_buffer({Com,Size,Args},Req,F,Val,S,F1,{Data,DLen,Sta},G1,Size2)
+%:- Sta=normal,Size2>DLen |
+:- Sta=normal,Size2>=DLen |
+        F0={fep#getb,~(Size2+1),Str,S,F1},
+        wait_and_send(F,F0),
+        Req={Com,Size,Args},
+        G1={Data,DLen,Sta},
+        Val={continue(Str)}.
+send_message_buffer({Com,Size,Args},Req,F,Val,S,F1,{Data,DLen,Sta},G1,Size2)
+:- Sta=abnormal |
+        S=fep#abnormal,
+        F=F1,
+        Req={Com,Size,Args},
+        G1={Data,DLen,Sta},
+        Val={}.
+send_message_buffer({Com,Size,Args},Req,F,Val,S,F1,{Data,0,Sta},G1,Size2)
+:- Sta=eod |
+        S=fep#eod,
+        F=F1,
+        Req={Com,Size,Args},
+        G1={Data,0,abnormal},
+        Val={}.
+send_message_buffer({Com,Size,Args},Req,F,Val,S,F1,{Data,DLen,Sta},G1,Size2)
+:- Sta=eod,DLen=\=0,Size2=<DLen |
+        S=fep#normal,
+        F=F1,
+        Req={Com,Size,Args},
+        builtin#substring(Data,0,Size2,Str,Data0),
+        builtin#substring(Data0,Size2,~(DLen-Size2),Data1,_),
+        G1={Data1,~(DLen-Size2),Sta},
+        Val={ok(Str)}.
+send_message_buffer({Com,Size,Args},Req,F,Val,S,F1,{Data,DLen,Sta},G1,Size2)
+:- Sta=eod,DLen=\=0,Size2>DLen |
+        S=fep#normal,
+        F=F1,
+        Req={Com,Size,Args},
+        G1={ascii#"",0,Sta},
+        Val={ok(Data)}.
+
+/*
+send_message_read({read,Size,Args},Req,F,Val,S,F1,0):- true |
+        F={fep#getb,Size,Str,S,F1},
+        Req={read,Size,Args},
+        Val={Str}.
+send_message_read({read,Size,Args},Req,F,Val,S,F1,1):- true |
+        F={fep#getb,Size,Str,S,F1},
+        Req={read,Size,Args},
+        Val={Str}.
+otherwise.
+send_message_read({read,Size,Args},Req,F,Val,S,F1,_):- true |
+        S=fep#abnormal,
+        F=F1,
+        Req={read,Size,Args},
+        Val={}.
+*/
+
+wait_and_send(F,F0):- vector_element(F0,1,E),wait(E) | F=F0.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_values(Req,Val,FA,G,G1)
+%%      Req     :: io_request message
+%%      Val     :: Values from fep (vector)
+%%      FA      :: {Code,OS}
+
+return_values({getb,Size,Args},{Str},FA,G,G1) :- true |
+        return_values_buffer({getb,Size,Args},{Str},G,G1).
+return_values({read,Size,Args},{Str},FA,G,G1) :- true |
+        return_values_buffer({read,Size,Args},{Str},G,G1).
+return_values({pathname,Args},{Pathname},FA,G,G1) :- true |
+        G=G1,
+        vector_element(FA,0,Code,_),
+        pathname({pathname,Args},{Pathname},Code).
+return_values({end_of_file,Args},{YorN0},FA,G,G1) :- true |
+        G=G1,
+        Args=normal(YorN),
+        yes_or_no(YorN0,YorN).
+return_values({attributes,Args},{Str},FA,G,G1) :- true |
+        G=G1,
+        vector_element(FA,0,Code,FA1),
+        vector_element(FA1,1,OS,_),
+        string(OS,Len,_,OS2),
+        string_cut(Len,OS2,OS3),
+        attributes0({attributes,Args},{Str},Code,OS3).
+return_values({get_attributes,Args},{{Pathname},{Str}},FA,G,G1) :- true |
+        vector_element(FA,0,Code,FA1),
+        get_pathname(Pathname,Code,Ans),
+        get_attributes(Ans,Args,Str,FA1,G,G1).
+otherwise.
+return_values(Req,Val,FA,G,G1) :- true |
+        G=G1,
+        device_driver:return_values(Req,Val).
+
+% get_attributes %
+get_attributes(abnormal,Args,Str,FA,G,G1):- true |
+        G=G1,Args=abnormal.
+otherwise.
+get_attributes(Ans,Args,Str,FA,G,G1):- true |
+        G=G1,
+        vector_element(FA,0,Code,FA1),
+        vector_element(FA1,1,OS,_),
+        string(OS,Len,_,OS2),
+        string_cut(Len,OS2,OS3),
+        attributes0({Ans,Args},{Str},Code,OS3).
+
+% getb , read %
+return_values_buffer({getb,Size,Args},{ok(Str)},G,G1):- true |
+        G=G1,
+        change_element_size(Str,16,Str2),
+        device_driver:return_values({getb,Size,Args},{Str2}).
+return_values_buffer({read,Size,Args},{ok(Str)},G,G1):- true |
+        G=G1,
+        device_driver:return_values({read,Size,Args},{Str}).
+
+return_values_buffer({Com,Size,Args},{continue(Str)},{Data,DLen,Sta},G1)
+:- true |
+%        string(Str,StrLen,8,Str0),
+        string(Str,StrLen,_,Str0),
+        builtin#append_string(Data,Str0,NewData),
+        return_values_buffer2({Com,Size,Args},{NewData,~(DLen+StrLen),Sta},G1).
+return_values_buffer({Com,Size,Args},{eod},{Data,DLen,normal},G1):- true |
+        return_values_buffer2({Com,Size,Args},{Data,DLen,eod},G1).
+
+return_values_buffer({Com,Size,Args},{eod},{Data,DLen,abnormal},G1):- true |
+        G1={Data,DLen,abnormal},
+        device_driver:return_ab_status({Com,Size,Args},end_of_file).
+
+return_values_buffer2({getb,Size,Args},{Data,DLen,Sta},G1)
+:- DLen=\=0,Size2:=Size*2,Size2=<DLen |
+        builtin#substring(Data,0,Size2,Str,Data0),
+        builtin#substring(Data0,Size2,~(DLen-Size2),Data1,_),
+        G1={Data1,~(DLen-Size2),Sta},
+        change_element_size(Str,16,Str2),
+        device_driver:return_values({getb,Size,Args},{Str2}).
+return_values_buffer2({getb,Size,Args},{Data,DLen,Sta},G1)
+:- DLen=\=0,Size2:=Size*2,Size2>DLen |
+        G1={ascii#"",0,Sta},
+        change_element_size(Data,16,Str2),
+        device_driver:return_values({getb,Size,Args},{Str2}).
+return_values_buffer2({getb,Size,Args},{Data,0,Sta},G1)
+:- true |
+        G1={Data,0,abnormal},
+        device_driver:return_ab_status({getb,Size,Args},end_of_file).
+
+return_values_buffer2({read,Size,Args},{Data,DLen,Sta},G1)
+:- DLen=\=0,Size2=Size,Size2=<DLen |
+        builtin#substring(Data,0,Size2,Str,Data0),
+        builtin#substring(Data0,Size2,~(DLen-Size2),Data1,_),
+        G1={Data1,~(DLen-Size2),Sta},
+        device_driver:return_values({read,Size,Args},{Str}).
+return_values_buffer2({read,Size,Args},{Data,DLen,Sta},G1)
+:- DLen=\=0,Size2=Size,Size2>DLen |
+        G1={ascii#"",0,Sta},
+        device_driver:return_values({read,Size,Args},{Data}).
+return_values_buffer2({read,Size,Args},{Data,0,Sta},G1)
+:- true |
+        G1={Data,0,abnormal},
+        device_driver:return_ab_status({read,Size,Args},end_of_file).
+
+% attributes %
+string_cut(Len,OS,OS2):- Len<6 | builtin#substring(OS,0,Len,OS2,_).
+string_cut(Len,OS,OS2):- Len>=6 | builtin#substring(OS,0,6,OS2,_).
+
+attributes0({attributes,Args},{Str},Code,OS):- OS="SIMPOS" |
+        change_element_size(Str,16,Str2),
+        attributes(Str2,Args).
+attributes0({Ans,Args},{Str},Code,OS):- string(Ans,_,_),OS="SIMPOS" |
+        change_element_size(Str,16,Str2),
+        attributes(Ans,Str2,Args).
+otherwise.
+attributes0({attributes,Args},{Str},1,OS):- true |
+        code_convert:euc_to_jis(Str,Str2),
+        attributes_unix(Str2,Args).
+attributes0({Ans,Args},{Str},1,OS):- string(Ans,_,_) |
+        code_convert:euc_to_jis(Str,Str2),
+        attributes_unix(Ans,Str2,Args).
+otherwise.
+%attributes0({attributes,Args},{Str},_,OS):- true |
+attributes0({_,Args},{Str},_,OS):- true |
+        device_driver:return_ab_status({attributes,Args},abnormal).
+
+pathname({pathname,Args},{Pathname},0):- true | % 16bit JIS
+        change_element_size(Pathname,16,P2),
+        device_driver:return_values({pathname,Args},{P2}).
+pathname({pathname,Args},{Pathname},1):- true | % EUC
+        code_convert:euc_to_jis(Pathname,P2),
+        device_driver:return_values({pathname,Args},{P2}).
+otherwise.
+pathname({pathname,Args},{Pathname},_):- true |
+        device_driver:return_ab_status({pathname,Args},abnormal).
+
+get_pathname(Pathname,0,Ans):- true |
+        change_element_size(Pathname,16,Ans).
+get_pathname(Pathname,1,Ans):- true |
+        code_convert:euc_to_jis(Pathname,Ans).
+otherwise.
+get_pathname(Pathname,_,Ans):- true | Ans=abnormal.
+
+yes_or_no(fep#yes,YorN) :- true | YorN=yes.
+yes_or_no(fep#no,YorN) :- true | YorN=no.
+
+%% Args=normal(Owner,UpdateUser,CDate,CTime,MDate,MTime,LinkCnt,FSize,RSize)
+attributes(Str,Args) :- string(Str,N,_) |
+        new_vector(Args0,10),
+        set_vector_element(Args0,0,_,normal,Args1),
+        attributes(0,N,Str,1,Args1,Args2),
+        return_attributes(Args2,Args).
+otherwise.
+attributes(_,Args) :- true | Args=abnormal.
+
+attributes(Ans,Str,Args) :- string(Str,N,_) |
+        new_vector(Args0,10),
+        set_vector_element(Args0,0,_,normal,Args1),
+        attributes(0,N,Str,1,Args1,Args2),
+        return_attributes(Ans,Args2,Args).
+otherwise.
+attributes(_,_,Args) :- true | Args=abnormal.
+
+attributes_unix(Str,Args) :- string(Str,N,_) |
+        new_vector(Args0,10),
+        set_vector_element(Args0,0,_,normal,Args1),
+        attributes(0,N,Str,1,Args1,Args2),
+        return_attributes_unix(Args2,Args).
+otherwise.
+attributes_unix(_,Args) :- true | Args=abnormal.
+
+attributes_unix(Ans,Str,Args) :- string(Str,N,_) |
+        new_vector(Args0,10),
+        set_vector_element(Args0,0,_,normal,Args1),
+        attributes(0,N,Str,1,Args1,Args2),
+        return_attributes_unix(Ans,Args2,Args).
+otherwise.
+attributes_unix(_,_,Args) :- true | Args=abnormal.
+
+attributes(I,N,Str,J,Args,Args1) :- J<7,I<N |
+        get_data(I,N,I,P,Str,Str1,Data),
+        set_vector_element(Args,J,_,Data,Args0),
+        attributes(P,N,Str1,~(J+1),Args0,Args1).
+otherwise.
+attributes(I,N,Str,J,Args,Args1) :- true |
+        attributes_int(I,N,Str,J,Args,Args1).
+
+attributes_int(I,N,Str,J,Args,Args1) :- J<10,I<N |
+        get_data(I,N,I,P,Str,Str1,Data),
+        string_to_integer(0,~(P-I-2),Data,X,X,Res),
+        if_integer_data(P,N,Str1,J,Args,Args1,Res).
+attributes_int(N,N,_,10,Args,Args1) :- true |
+        Args=Args1.
+otherwise.
+attributes_int(_,_,_,_,_,Args) :- true | Args=abnormal.
+
+if_integer_data(I,N,Str,J,Args,Args1,Int) :- integer(Int) |
+        set_vector_element(Args,J,_,Int,Args0),
+        attributes(I,N,Str,~(J+1),Args0,Args1).
+if_integer_data(_,_,_,_,_,Args,abnormal) :- true | Args=abnormal.
+
+get_data(I,N,P,Q,Str,Str1,Data) :- true |
+        string_element(Str,I,E,Str0),
+        if_lf(~(I+1),N,P,Q,Str0,Str1,Data,E).
+
+if_lf(I,_,P,Q,Str,Str1,Data,10) :- true |
+        Q:=I,
+        builtin#substring(Str,P,~(I-P-1),Data,Str1).
+otherwise.
+if_lf(I,N,P,Q,Str,Str1,Data,_) :- I<N |
+        string_element(Str,I,E,Str0),
+        if_lf(~(I+1),N,P,Q,Str0,Str1,Data,E).
+if_lf(N,N,P,Q,Str,Str1,Data,_) :- true |
+        Q:=N,
+        builtin#substring(Str,P,~(N-P),Data,Str1).
+
+string_to_integer(I,P,Str,X,X1,Int) :- I=<P |
+        string_element(Str,I,E,Str1),
+        get_int(E,N),
+        if_integer(I,P,Str1,X,X1,Int,N).
+string_to_integer(I,P,_,X,X1,Int) :- I>P | X1:=0,Int:=X.
+
+if_integer(I,P,Str,X,X1,Int,N) :- integer(N) |
+        get_keta(~(P-I),K),
+        X1:=N*K+X2,
+        string_to_integer(~(I+1),P,Str,X,X2,Int).
+if_integer(_,_,_,_,X1,Int,abnormal) :- true | X1:=0,Int=abnormal.
+
+get_int(#"0",N) :- true | N:=0.
+get_int(#"1",N) :- true | N:=1.
+get_int(#"2",N) :- true | N:=2.
+get_int(#"3",N) :- true | N:=3.
+get_int(#"4",N) :- true | N:=4.
+get_int(#"5",N) :- true | N:=5.
+get_int(#"6",N) :- true | N:=6.
+get_int(#"7",N) :- true | N:=7.
+get_int(#"8",N) :- true | N:=8.
+get_int(#"9",N) :- true | N:=9.
+otherwise.
+get_int(_,N) :- true | N=abnormal.
+
+get_keta(I,K) :- I>0 |
+        K:=10*K1,
+        get_keta(~(I-1),K1).
+get_keta(0,K) :- true | K:=1.
+
+return_attributes(Args0,Args) :- vector_element(Args0,0,normal) | Args=Args0.
+return_attributes(abnormal,Args) :- true | Args=abnormal.
+
+return_attributes(Ans,
+        normal(Owner,UpdateUser,CDate,CTime,MDate,MTime,LinkCnt,FSize,RSize),
+        Args)
+:- true |
+        Args=normal(file,[pathname(Ans),owner(Owner),update_user(UpdateUser),
+                          creation_date(CDate),creation_time(CTime),
+                          modification_date(MDate),modification_time(MTime),
+                          link_count(LinkCnt),file_size(FSize),
+                          record_size(RSize)]).
+return_attributes(Ans,abnormal,Args) :- true | Args=abnormal.
+
+%% Args=normal(Owner,UpdateUser,CDate,CTime,MDate,MTime,LinkCnt,FSize,RSize)
+%% Args=normal({Owner,Group},[],SCDate,SCTime,MDate,MTime,LinkCnt,FSize,RSize)
+return_attributes_unix(
+        normal(Owner,Group,SCDate,SCTime,MDate,MTime,LinkCnt,FSize,RSize),Args)
+:- true |
+        Args=normal({Owner,Group},[],
+                SCDate,SCTime,MDate,MTime,LinkCnt,FSize,RSize).
+return_attributes_unix(abnormal,Args) :- true | Args=abnormal.
+
+return_attributes_unix(Ans,
+        normal(Owner,Group,SCDate,SCTime,MDate,MTime,LinkCnt,FSize,RSize),Args)
+:- true |
+        Args=normal(file,[pathname(Ans),owner(Owner),group(Group),
+                          status_change_date(SCDate),status_change_time(SCTime),
+                          modification_date(MDate),modification_time(MTime),
+                          link_count(LinkCnt),file_size(FSize),
+                          record_size(RSize)]).
+return_attributes_unix(Ans,abnormal,Args) :- true | Args=abnormal.
+
+terminate(If,S,F,T,Att,AbF,A,A1,S0) :- wait(S0) |
+        device_driver:terminate(If,S,F,T,Att,AbF,A,A1).
+
+
+fep_patch(CAb,DS,F,T,If,_,A,A1,AtF,Att,_,Args,FA,G) :- true |
+        F={fep#next_attention,AtF1,S,F1},
+        now_reset(CAb,DS,F1,T,If,_,A,A1,AtF,Att,_,Args,S,FA,G).
+
+now_reset(CAb,DS,F,T,If,_,A,A1,AtF,Att,_,Args,S,FA,G) :- wait(S) |
+        F={fep#reset,AbF1,AtF1,S1,F1},
+        wait_01(CAb,DS,F1,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S1,FA,G).

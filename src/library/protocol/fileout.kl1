@@ -1,0 +1,448 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module protFileout.
+:- public fileout/5.
+:- with_macro pimos.
+
+fileout(Outfile,Top,Module,Flag,Code):- true |
+    merge(Code,Code2),
+    openFile(Outfile,File),
+    putModuleName(Module, File-Ftail),
+    putPublic(Top,Ftail-Ftail2),
+    putMacro(Ftail2-Ftail3),
+    putTop(Ftail3-Ftail4,Top),
+    outputCode(Code2,Ftail4,Flag).
+
+openFile(FileName,File):- integer(FileName) |
+    true.
+openFile(FileName,File):- atom(FileName) |
+    atom_table:get_atom_name(FileName,normal(FileNS)),
+    builtin#append_string(FileNS,".kl1",Fname),
+    shoen:raise(pimos_tag#task,general_request,GRD),
+    GRD = [file(FRS)],
+    FRD = [open(Fname,write(FS))],
+    checkDevice(FRS,FRD),
+    checkDevice(FS,FD),
+    buffer:interaction_filter(File0,FD),
+    File0 = [print_depth(10), print_length(100),
+            print_string_length(100), 
+            print_atom_length(100)|File].
+
+checkDevice(normal(Dev,_Ab,_Att),FRD):- true |
+    Dev = FRD.
+otherwise.
+checkDevice(_,_FRD):- true |
+    shoen:raise(pimos_tag#shell,get_std_out,Win),
+    Win = [putt('output_file_creation_failure'),flush(S)],
+    suicide(S).
+
+suicide(S):- wait(S) |
+%    shoen:raise(pimos_tag#pimos,general_request,[suicide(_)]),
+    shoen:raise(pimos_tag#pimos,general_request,[abort([],_)]).
+
+putModuleName(Module, File-Ftail):- atom(Module) |
+    File = [putt((':-')), tab(1),putt(('module')),tab(1),
+                putt(Module), putt('.'), nl| Ftail].
+
+putModuleName(M,File-Ftail):- integer(M) |
+    File = Ftail.
+
+putPublic([Public| Top],File-Ftail):- atom(Public) |
+    File = [putt((':-')), tab(1),putt(('public')),tab(1), 
+    putt(Public), putt(('/')),putt(2)|Ftail1],
+    putPublic2(Top,Ftail1-Ftail).
+putPublic([{Public,_}|Top],File-Ftail):- atom(Public) |
+    File = [putt((':-')), tab(1),putt(('public')),tab(1), 
+    putt(Public), putt(('/')),putt(2)|Ftail1],
+    putPublic2(Top,Ftail1-Ftail).    
+putPublic([],File-Ftail):- true | File = Ftail.
+
+putPublic2([Public| Top],File-Ftail):- atom(Public) |
+    File = [putt((',')), putt(Public), putt(('/')),putt(3) | Ftail1],
+    putPublic2(Top,Ftail1-Ftail).
+putPublic2([],File-Ftail):- true |
+    File = [putt(('.')), nl|Ftail].
+
+putMacro(File-Ftail):- true |
+    File = [putt((':- with_macro pimos.')), nl, nl |Ftail].
+
+putTop(File-Ftail,[Top|Top2]):- atom(Top) |
+    File = [putt({Top,'User','OS'}), putt((':-')), putt('true'), 
+            putt(('|')), nl, tab(8), putt({Top,'User','OS','_',[]}), 
+            putt(('.')), nl| Ftail2],
+    putTop(Ftail2-Ftail,Top2).
+putTop(File-Ftail,[{Top,Err}|Top2]):- atom(Top) |
+    File = [putt({Top,'User','OS'}), putt((':-')), putt('true'),
+            putt(('|')), nl, tab(8), putt({Top,'User','OS','_',[Err]}),
+            putt(('.')), nl | Ftail2],
+    putTop(Ftail2-Ftail,Top2).
+putTop(File-Ftail,[]):- true |
+    File = Ftail.
+
+%%%%% output KL1 Programs
+
+outputCode([],File,Flag):- true |
+    File = [putl(string#"%%%%% system defined protocols %%%%%%%%%%"),
+        putl(string#"'+ground'(X, Y) :- list(X) | '$$groundl'(X, Y)."),
+%        putl(string#"'+ground'(X, Y) :- vector(X,Size) | "),
+        putl(string#"'+ground'(X, Y) :- vector(X,Size),Size \= 0 | "),
+        putl(string#"        '$$groundv'(X, 0, Size, X2),"),
+        putl(string#"        '$$groundv2'(X2, Y)."),
+        putl(string#"otherwise."),
+        putl(string#"'+ground'(X, Y) :- wait(X) | Y = X."),
+        putl(string#"'-ground'(X, Y) :- list(Y) | '$$groundl'(Y, X)."),
+%        putl(string#"'-ground'(X, Y) :- vector(Y,Size) | "),
+        putl(string#"'-ground'(X, Y) :- vector(Y,Size), Size \= 0 | "),
+        putl(string#"        '$$groundv'(Y, 0, Size, Y2),"),
+        putl(string#"        '$$groundv2'(Y2, X)."),
+        putl(string#"otherwise."),
+        putl(string#"'-ground'(X, Y) :- wait(Y) | Y = X."),
+        putl(string#"'$$groundl'([X1|X2], Y) :- true | '+ground'(X1,X11),"),
+        putl(string#"        '$$groundl2'(X11, X2, Y)."),
+        putl(string#"'$$groundl'([], Y) :- true | Y = []."),
+        putl(string#"'$$groundl2'(X11, X2, Y) :- wait(X11) |"),
+        putl(string#"        '$$groundl31'(X2, [X11|Tail], Tail, Y)."),
+        putl(string#"'$$groundl31'([X1|X2], Top, Tail, Y) :- true |"),
+        putl(string#"        '+ground'(X1,X11),"),
+        putl(string#"        '$$groundl32'(X11, X2, Top, Tail, Y)."),
+        putl(string#"'$$groundl31'([], Top, Tail, Y) :- true |"),
+        putl(string#"        Tail = [],"),
+        putl(string#"        Top = Y."),
+        putl(string#"'$$groundl32'(X11, X2, Top, Tail, Y) :- wait(X11), X2 \= [] |"),
+        putl(string#"        Tail = [X11|Tail2],"),
+        putl(string#"        '$$groundl31'(X2, Top, Tail2, Y)."),
+        putl(string#"'$$groundl32'(X11, [], Top, Tail, Y) :- wait(X11) |"),
+        putl(string#"        Tail = [X11],"),
+        putl(string#"        Y = Top."),
+        putl(string#"'$$groundv2'(X2, Y) :- wait(X2) | X2 = Y."),
+        putl(string#"'$$groundv'(X, Pos, Size, X2) :- Pos \= Size |"),
+        putl(string#"        vector_element(X, Pos, Elm, NX),"),
+        putl(string#"        '+ground'(Elm,Elm2),"),
+        putl(string#"        Npos := Pos + 1,"),
+        putl(string#"        '$$groundv3'(Elm2, NX, Npos, Size, X2)."),
+        putl(string#"'$$groundv3'(Elm, X, Pos, Size, X2) :- wait(Elm), Pos \= Size |"),
+        putl(string#"        vector_element(X, Pos, Nelm, NX),"),
+        putl(string#"        '+ground'(Nelm, Nelm2),"),
+        putl(string#"        Npos := Pos + 1,"),
+        putl(string#"        '$$groundv3'(Nelm2, NX, Npos, Size, X2)."),
+        putl(string#"'$$groundv3'(Elm, X, Size, Size, X2) :- wait(Elm) |"),
+        putl(string#"        X = X2. ")|Ftail2],
+        outputCode2(Ftail2,Flag).
+
+outputCode([genErr(_Head,_Guard,_Body)| Code],File,no):- true |
+    outputCode(Code,File,no).
+outputCode([genErr(Head,_Guard,Body)| Code],File,error):- true |
+    File = [putt('otherwise'), putt(('.')), nl | Ftail1],
+    outputHead(Head,Ftail1,Ftail2),
+    Ftail2 = [putt('true'), putt(('|')), nl, tab(8) |Ftail3],
+    outputErr(Body,Ftail3-Ftail),
+    outputCode(Code,Ftail,error).
+outputCode([genlast(Head,_Guard,Body)| Code],File,Flag):- true |
+    File = [putt('otherwise'), putt(('.')), nl| Ftail1],
+    outputHead(Head,Ftail1,Ftail2),
+    Ftail2 = [putt('true'), putt(('|')), nl, tab(8) | Ftail3],
+    outputBody(Body,Ftail3,Ftail), 
+    outputCode(Code,Ftail,Flag).
+outputCode([genfail(Head,Guard,Body)| Code],File,error):- true |
+    outputHead(Head,File,Ftail1),
+    outputGuard(Guard,Ftail1,Ftail2),
+    outputBody(Body,Ftail2,Ftail3),    
+    outputCode(Code,Ftail3,error).
+outputCode([genfail(Head,Guard,Body)| Code],File,no):- true |
+    outputCode(Code,File,no).
+outputCode([gencode(Head,Guard,Body)| Code],File,Flag):- true |
+    outputHead(Head,File,Ftail1),
+    outputGuard(Guard,Ftail1,Ftail2),
+    outputBody(Body,Ftail2,Ftail3),    
+    outputCode(Code,Ftail3,Flag).
+
+outputCode2(File,no):- true | File = [].
+outputCode2(File,error):- true |
+    File = [putl(string#"%%%%% to raise error %%%%%%%%%%"),
+        putl(string#"raise_error(Info,Msg):- true |"),
+        putl(string#"        atom_table:cache_table(Atom),"),
+        putl(string#"        formatInfo(Info,[],Fstring,Atom),"),
+%        putl(string#"        variable:wrap(Msg,Result,100,100),"),
+%        putl(string#"        (Result = {_,WMsg} ->"),
+        putl(string#"        shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_message_to_PIMOS,Fstring),Msg)."),
+        putl(string#"formatInfo([Infoatom | Info], StringList,Fstring,Atom):- "),
+        putl(string#"        atom(Infoatom) |"),
+        putl(string#"        Atom = [get_atom_name(Infoatom,normal(InfoString)) | Atail],"),
+        putl(string#"        NSlist = [InfoString | StringList],"),
+        putl(string#"        formatInfo(Info, NSlist, Fstring, Atail)."),
+        putl(string#"formatInfo([], Slist, Fstring, Atom):- true |"),
+        putl(string#"        Atom = [],"),
+        putl(string#"        new_string(New,1,16),"),
+        putl(string#"        set_string_element(New,0,key#lf,NL),"),
+        putl(string#"        format(1,Slist,StringList,NL),"),
+%        putl(string#"        builtin#append_string(StringList, Fstring)."),    % 07-Nov-91 K.Wada
+        putl(string#"        builtin#append_string([""""|StringList], Fstring)."),
+        putl(string#"format(1,[Info|Tail],StringList,NL):- true |"),
+%        putl(string#"        StringList = [""Device : "",Info,NL |Stail2],"),  % 07-Nov-91 K.Wada
+        putl(string#"        StringList = [""Device : "",Info |Stail2],"),
+        putl(string#"        format(2,Tail,Stail2,NL)."),
+        putl(string#"format(2,[Info|Tail],StringList,NL):- true |"),
+%        putl(string#"        StringList = [""Message : "",Info,NL | Stail2],"),% 07-Nov-91 K.Wada
+        putl(string#"        StringList = [NL,""Message : "",Info | Stail2],"),
+        putl(string#"        format(3,Tail,Stail2,NL)."),
+        putl(string#"format(3,[Info|Tail],StringList,NL):- true |"),
+%        putl(string#"        StringList = [Info,NL | Stail2],"),               % 07-Nov-91 K.Wada
+        putl(string#"        StringList = [NL,Info | Stail2],"),
+        putl(string#"        format(3,Tail,Stail2,NL)."),
+        putl(string#"format(_,[],StringList,_):- true |"),
+        putl(string#"        StringList = [].")].
+
+%%%%% output head
+
+outputHead(Head,File,Ftail):- vector(Head,Size) |
+    Ftail1 = [putt((':-'))|Ftail],
+    makeHead(Head,1,Size,File,Ftail1).
+
+makeHead(Head,1,Size,File,Ftail):- vector_element(Head,1,Functor) |
+    File = [puttq(Functor), putt('(') | Ftail1],
+    makeHead(Head,2,Size,Ftail1,Ftail).
+makeHead(_Head,Size,Size,File,Ftail):- true |
+    File = [putt(')') | Ftail].
+makeHead(Head,2,Size,File,Ftail):-
+    vector_element(Head,2,Arg), vector(Arg,_) |
+    putPat(Arg,File,Ftail1),
+    makeHead2(Head,3,Size,Ftail1,Ftail).
+otherwise.
+makeHead(Head,2,Size,File,Ftail):- 
+    vector_element(Head,2,Arg) |
+    File = [putt(Arg)|Ftail1],
+    makeHead2(Head,3,Size,Ftail1,Ftail).
+
+makeHead2(_Head,Size,Size,File,Ftail):- true |
+    File = [putt(')') | Ftail].
+makeHead2(Head,Pos,Size,File,Ftail):- Pos =:= Size - 1 |
+    vector_element(Head,Pos,Err,New),
+    putErrInfo(Err,File,Ftail1),
+    makeHead2(New,Size,Size,Ftail1,Ftail).
+makeHead2(Head,Pos,Size,File,Ftail):-
+    Pos =\= Size - 1,
+    vector_element(Head,Pos,Arg), vector(Arg,_) |
+    Npos := Pos + 1,
+    File = [putt((','))|Ftail1],
+    putPat(Arg,Ftail1,Ftail2),    
+    makeHead2(Head,Npos,Size,Ftail2,Ftail).
+otherwise.
+makeHead2(Head,Pos,Size,File,Ftail):- 
+    vector_element(Head,Pos,Arg) |
+    File = [putt((',')),putt(Arg)|Ftail1],
+    Npos := Pos + 1,
+    makeHead2(Head,Npos,Size,Ftail1,Ftail).
+
+putPat(e(Arg),File,Ftail):- 
+    vector_element(Arg,0,Pat), vector(Arg,Size) |
+    File = [puttq(Pat) |Ftail1],
+    putPatE(Arg,1,Size,Ftail1,Ftail).
+putPat(v(Arg),File,Ftail):- 
+    vector_element(Arg,0,Pat), vector(Arg,Size) |
+    File = [putt('{'),putt(Pat)|Ftail1],
+    putPatV(Arg,1,Size,Ftail1,Ftail).
+
+putPatV(Arg,Pos,Size,File,Ftail):- 
+    Pos =\= Size , vector_element(Arg,Pos,Pat) |
+    File = [putt((',')), putt(Pat)|Ftail1],
+    Npos := Pos + 1,
+    putPatV(Arg,Npos,Size,Ftail1,Ftail).
+putPatV(_Arg,Size,Size,File,Ftail):-
+    true |
+    File = [putt('}')|Ftail].
+
+putPatE(Arg,Pos,Size,File,Ftail):- 
+    Pos =\= 1, Pos =\= Size, vector_element(Arg,Pos,Pat) |
+    File = [putt((',')),putt(Pat)|Ftail1],
+    Npos := Pos + 1,
+    putPatE(Arg,Npos,Size,Ftail1,Ftail).
+putPatE(Arg,1,Size,File,Ftail):- 
+   Size =\= 1, vector_element(Arg,1,Pat) |
+    File = [putt('('),putt(Pat)|Ftail1],
+    putPatE(Arg,2,Size,Ftail1,Ftail).
+putPatE(_Arg,1,1,File,Ftail):- true |
+    File = Ftail.
+putPatE(_Arg,Size,Size,File,Ftail):- 
+    Size =\= 1 |
+    File = [putt(')')|Ftail].
+    
+%%%% to put as follows [abc | Error]
+
+putErrInfo([Info | Etail],File,Ftail):- 
+    atom(Info), Info \= 'Error' |
+    File = [putt((',')),putt('['),putt(Info)|Ftail1],
+    putErrInfo2(Etail,Ftail1,Ftail).
+putErrInfo([{A,B} | Etail],File,Ftail):- true |
+    File = [putt((',')),putt('['),putt(''''),putt(A),
+            putt('/'),putt(B),putt('''')|Ftail1],
+    putErrInfo2(Etail,Ftail1,Ftail).
+putErrInfo([{A} | Etail],File,Ftail):- true |
+    File = [putt((',')),putt('['),putt(''''),putt(A),
+            putt('''')|Ftail1],
+    putErrInfo2(Etail,Ftail1,Ftail).
+otherwise.
+putErrInfo(Error,File,Ftail):- true |
+    File = [putt((',')), putt(Error)| Ftail].
+
+putErrInfo2([],File,Ftail):- true |
+    File = [putt(']')|Ftail].
+putErrInfo2(['Error'|Etail],File,Ftail):- true |
+    File = [putt(('|')),putt('Error')|Ftail1],
+    putErrInfo2(Etail,Ftail1,Ftail).
+otherwise.
+putErrInfo2([Info | Etail],File,Ftail):- atom(Info) |
+    File = [putt((',')),putt(Info)|Ftail1],
+    putErrInfo2(Etail,Ftail1,Ftail).
+putErrInfo2([{A,B} | Etail],File,Ftail):- true |
+    File = [putt((',')),putt(''''),putt(A),putt('/'),
+            putt(B),putt('''')|Ftail1],
+    putErrInfo2(Etail,Ftail1,Ftail).
+putErrInfo2([{A} | Etail],File,Ftail):- true |
+    File = [putt((',')),putt(''''),putt(A),
+            putt('''')|Ftail1],
+    putErrInfo2(Etail,Ftail1,Ftail).
+
+%%%%% output guard
+
+outputGuard(guard(true),File,Ftail):- true |
+    File = [putt('true'), putt(('|')), nl, tab(8)| Ftail].
+otherwise.
+outputGuard(guard(Guard),File,Ftail):- true |
+    Ftail1 = [putt(('|')), nl, tab(8)| Ftail],
+    outputG(Guard,File,Ftail1).
+
+outputG([],File,Ftail):- true |
+    File = Ftail.
+outputG([goal(Pred,Arg)| Guard],File,Ftail):- true |
+    checkgoal(Pred,Arg,New),
+    File = [putt(New) | Ftail1],
+    outputG2(Guard,Ftail1,Ftail).
+outputG([unify(Goal)| Guard],File,Ftail):- true |
+    File = [putt(Goal)| Ftail1],
+    outputG2(Guard,Ftail1,Ftail).
+otherwise.
+outputG([Goal| Guard],File,Ftail):- true |
+    makeGuard(Goal,File,Ftail1),
+    outputG2(Guard,Ftail1,Ftail).
+
+outputG2([],File,Ftail):- true |
+    File = Ftail.
+outputG2([goal(Pred,Arg)| Guard],File,Ftail):- true |
+    checkgoal(Pred,Arg,New),
+    File = [putt((',')), putt(New) | Ftail1],
+    outputG2(Guard,Ftail1,Ftail).
+outputG2([unify(Goal)| Guard],File,Ftail):- true |
+    File = [putt((',')),putt(Goal)| Ftail1],
+    outputG2(Guard,Ftail1,Ftail).
+otherwise.
+outputG2([Goal| Guard],File,Ftail):- true |
+    File = [putt((','))|Ftail1],
+    makeGuard(Goal,Ftail1,Ftail2),
+    outputG(Guard,Ftail2,Ftail).
+
+checkgoal(string,Arg,New):- true |
+    New = {string,Arg,'_','_'}.
+checkgoal((module),Arg,New):- true |
+    New = {(module),Arg,'_'}.
+checkgoal((code),Arg,New):- true |
+    New = {(code),Arg,'_','_','_'}.
+otherwise.
+checkgoal(Pred,Arg,New):- true |
+    New = {Pred,Arg}.
+
+
+makeGuard(Goal,File,Ftail):- vector(Goal,Size) |
+    makeHead(Goal,1,Size,File,Ftail).
+
+%%%%% error
+
+outputErr(error(Msg,Info),File-Ftail):- true |
+    File = [putt({=,'Flag',fail}),putt((',')),nl,tab(8),
+            putt({raise_error,Info,Msg}), putt(('.')), nl| Ftail].
+outputErr(error(Msg,Info,OS),File-Ftail):- true |
+    File = [putt({=,'Flag',fail}),putt((',')),nl,tab(8),
+            putt({=,OS,[]}),putt((',')),nl,tab(8),
+            putt({raise_error,Info,Msg}), putt(('.')), nl| Ftail].
+%    File = [putt('shoen:raise(pimos_tag#error,illegal_message('),putt(Info),
+%            putt('),'), putt(Msg), putt(').'), nl | Ftail].
+
+%%%%% body
+
+outputBody(body(true),File,Ftail):- true |
+    File = [putt(true), putt(('.')), nl| Ftail].
+otherwise.
+outputBody(body(Body),File,Ftail):- true |
+    outputB(Body,File,Ftail).
+
+outputB([unify(A,B)|Body],File,Ftail):- atom(A), atom(B) |
+    File = [putt({=,A,B})|Ftail1],
+    outputB2(Body,Ftail1,Ftail).
+outputB([unify(A,B)|Body],File,Ftail):- 
+    atom(A),  vector(B,_) |
+    File = [putt(A), putt('=')|Ftail1],
+    putPat(B,Ftail1,Ftail2),
+    outputB2(Body,Ftail2,Ftail).
+outputB([unify(A,B)|Body],File,Ftail):- 
+    atom(B), vector(A,_) |
+    putPat(A,File,Ftail1),
+    Ftail1 = [putt('='), putt(B)|Ftail2],
+    outputB2(Body,Ftail2,Ftail).
+outputB([unify(A,B)|Body],File,Ftail):- 
+    vector(A,_),vector(B,_) |
+    putPat(A,File,Atail),
+    Atail = [putt('=') |Bfile],
+    putPat(B,Bfile,Ftail1),
+    outputB2(Body,Ftail1,Ftail).
+outputB([listunify(A,B)|Body],File,Ftail):- true |
+    File = [putt({=,A,B})|Ftail1],
+    outputB2(Body,Ftail1,Ftail).
+outputB([cal(Calc)| Body],File,Ftail):- true |
+    File = [putt(Calc)| Ftail1],
+    outputB2(Body,Ftail1,Ftail).
+otherwise.
+outputB([Goal|Body],File,Ftail):- true |
+    makeBody(Goal,File,Ftail1),
+    outputB2(Body,Ftail1,Ftail).    
+
+%%%%% 
+outputB2([],File,Ftail):- true |
+    File = [putt(('.')), nl | Ftail].
+outputB2([unify(A,B)|Body],File,Ftail):- atom(A),atom(B) |
+    File = [putt((',')), nl, tab(8), putt({=,A,B})|Ftail1],
+    outputB2(Body,Ftail1,Ftail).
+outputB2([unify(A,B)|Body],File,Ftail):- 
+    atom(A), vector(B,_) |
+    File = [putt((',')), nl, tab(8), putt(A), putt('=')|Ftail1],
+    putPat(B,Ftail1,Ftail2),
+    outputB2(Body,Ftail2,Ftail).
+outputB2([unify(A,B)|Body],File,Ftail):- 
+    atom(B), vector(A,_)|
+    File = [putt((',')), nl, tab(8)|Ftail1],
+    putPat(A,Ftail1,Ftail2),
+    Ftail2 = [putt('='), putt(B)|Ftail3],
+    outputB2(Body,Ftail3,Ftail).
+outputB2([unify(A,B)|Body],File,Ftail):- 
+    vector(A,_),vector(B,_) |
+    File = [putt((',')), nl, tab(8)|Afile],
+    putPat(A,Afile,Atail),
+    Atail = [putt('=') |Bfile],
+    putPat(B,Bfile,Ftail1),
+    outputB2(Body,Ftail1,Ftail).
+outputB2([listunify(A,B)|Body],File,Ftail):- true |
+    File = [putt((',')), nl, tab(8), putt({=,A,B})|Ftail1],
+    outputB2(Body,Ftail1,Ftail).
+outputB2([cal(Calc)| Body],File,Ftail):- true |
+    File = [putt((',')), nl, tab(8), putt(Calc)| Ftail1],
+    outputB2(Body,Ftail1,Ftail).
+otherwise.
+outputB2([Goal|Body],File,Ftail):- true |
+    File = [putt(((','))), nl, tab(8)|Ftail1],
+    makeBody(Goal,Ftail1,Ftail2),
+    outputB2(Body,Ftail2,Ftail).    
+
+makeBody(Goal,File,Ftail):- vector(Goal,Size) |
+    makeHead(Goal,1,Size,File,Ftail).

@@ -1,0 +1,474 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module monitor_io_manager.
+:- with_macro pimos.
+:- public manager/5.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% manager(Ab,In,Out,Owner,PSM)
+%%      In      :: Input stream from the monitors
+%%      Out     :: Output stream to the listener
+%%      Owner   :: Name of the owner of the window
+%%      PSM     :: Print string mode
+
+manager(Ab,In,Out,Owner,PSM) :- true |
+        pool:keyed_bag(P),
+        manager_1(Ab,In,Out,Owner,PSM,P).
+
+manager_1(Ab,In,Out,_,_,P) :- wait(Ab) |
+        Out=[],
+        P=[get_all(A)],
+        close_window_streams(A),
+        terminate(In).
+alternatively.
+manager_1(Ab,[io_request(TID,Res)|In],Out,Owner,PSM,P) :- true |
+        P=[get_if_any_and_put(TID,X,Y)|{P0,P1}],
+        supply_io_stream(Ab,TID,Res,X,Y,Out,Out1,Owner,PSM,P0),
+        manager_1(Ab,In,Out1,Owner,PSM,P1).
+manager_1(_,[],Out,_,_,P) :- true |
+        Out=[],
+        P=[get_all(A)],
+        close_window_streams(A).
+
+close_window_streams([{_,{Cnt,Q,Q1}}|A]) :- Cnt>0 |
+        Q1=[],
+        return_dummy_result(Q),
+        close_window_streams(A).
+close_window_streams([{_,{0,_,_}}|A]) :- true |
+        close_window_streams(A).
+close_window_streams([]) :- true | true.
+
+return_dummy_result([Res|Q]) :- true |
+        Res=normal(_,_,_,_),
+        return_dummy_result(Q).
+return_dummy_result([]) :- true | true.
+
+terminate([io_request(TID,Res)|In]) :- true |
+        Res=normal(_,_,_,_),
+        terminate(In).
+terminate([]) :- true | true.
+
+supply_io_stream(Ab,_,Res,X,Y,Out,Out1,Owner,PSM,P) :- wait(Ab) |       % patched 08-Jul-92
+        Res=normal(_,_,_,_),
+        Y={0,[],[]},
+        Out=Out1,
+        P=[get_all(A)],
+        close_window_streams(A).
+alternatively.
+supply_io_stream(_,_,Res,{{Cnt,Q,Q1}},Y,Out,Out1,_,_,P) :- true |
+        Y={~(Cnt+1),Q,Q2},Q1=[Res|Q2],
+        Out=Out1,
+        P=[].
+supply_io_stream(Ab,TID,Res,{},Y,Out,Out1,Owner,PSM,P) :- true |
+        Out=[monitor(TID,Res0)|Out1],
+        wait_io_stream(Ab,TID,Res,Res0,Y,Owner,PSM,P).
+
+wait_io_stream(Ab,TID,Res,normal(WS,At,At1),Y,Owner,PSM,P) :- true |
+        Y={0,Q,Q},
+        buffer:character_pool(B),
+        B=[add_op(95,fy,'>'),add_op(95,xfy,'>')|B1],
+        Res=normal(Flag,UWS,IR,B1),
+        manager_io_0(UWS,At,At0,WS,WS1,IR,general,PSM,Owner,End,Flag),
+        manager_waiting_io_end(Ab,TID,Owner,PSM,P,At0,At1,WS1,End).
+wait_io_stream(Ab,_,Res,_,Y,_,_,P) :- wait(Ab) |
+        Res=normal(_,_,_,_),
+        Y={0,[],[]},
+        P=[get_all(A)],
+        close_window_streams(A).
+
+manager_waiting_io_end(Ab,_,Owner,_,P,At,At1,WS,_) :- wait(Ab) |
+        P=[get_all(A)],WS=[],
+        return_att_var(Owner,At,At1),       % '91.4.4 (change listener interface)
+        close_window_streams(A).
+manager_waiting_io_end(Ab,TID,Owner,PSM,P,At,At1,WS,end) :- true |
+        P=[do([get_if_any(TID,X)|P0])|P1],
+        if_continue(Ab,TID,Owner,PSM,P0,P1,At,At1,WS,X).
+
+if_continue(Ab,TID,Owner,PSM,P,P1,At,At1,WS,{{Cnt,Q,Q1}}) :- Cnt>0,Q=[Res|Q0] |
+        P=[put(TID,{~(Cnt-1),Q0,Q1})],
+        buffer:character_pool(B),
+        B=[add_op(95,fy,'>'),add_op(95,xfy,'>')|B1],
+        Res=normal(Flag,UWS,IR,B1),
+        manager_io_0(UWS,At,At0,WS,WS1,IR,general,PSM,Owner,End,Flag),
+        manager_waiting_io_end(Ab,TID,Owner,PSM,P1,At0,At1,WS1,End).
+if_continue(_,_,Owner,_,P,P1,At,At1,WS,{{0,_,_}}) :- true |
+        P=[],P1=[],WS=[],
+        return_att_var(Owner,At,At1).
+
+manager_io_0(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End,io) :- true |
+        manager_io(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+manager_io_0(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End,out) :- true |
+        manager_out(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% manager_io(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End)
+%%      PM      :: print_mode, = general/tag_and_value
+%%      PSM     :: print_string_mode, = character/code
+%%      End     :: End flag for io
+
+manager_io(In,attention,At1,WS,WS2,IR,PM,PSM,Owner,End) :- true |
+        get_next_attention(Owner,WS,WS0,At),
+        inspector_interrupter:query1(WS0,WS1,Com),
+        if_continue(In,At,At1,WS1,WS2,IR,PM,PSM,Owner,End,Com).
+alternatively.
+manager_io([Msg|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        manager_1([Msg|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+manager_io([],At,At1,WS,WS1,IR,_,_,_,End) :- true | At=At1,WS=WS1,IR=[],End=end.
+
+manager_out([beep(S)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[beep(S)|WS0],
+        manager_out(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End).
+manager_out([monitor_prompt(Mode,ID,Pat,Str,PD,PL,WT)],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        get_mode_mark(Mode,SAMMark,QMMark),
+        variable:unwrap(Pat,{_,UPat}),
+        get_pl(Pat,PL,PL1),
+        WS=[wrap(UPat,WPat),
+%            putf(string#"~s~s:~t ~s ~W == ~W~n",[SAMMark,QMMark,ID,Str,WPat,WT]),
+            putf(string#"~s~s:~t ~s ~W == ",[SAMMark,QMMark,ID,Str,WPat]),
+            putwtq(WT,PD,PL1),nl,
+            flush(Ac)|WS0],
+        wait_prompt_only(Ac,At,At1,WS0,WS1,IR,PM,PSM,Owner,End).
+manager_out([terminated(ID,Str)],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[putf(string#"~s~t ~s~s~n",[string#">monitor:",ID,Str,string#" terminated"]),
+            flush(Ac)|WS0],
+        wait_prompt_only(Ac,At,At1,WS0,WS1,IR,PM,PSM,Owner,End).
+manager_out([started(ID,Str)],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[putf(string#"~s~t ~s~s~n",[string#">monitor:",ID,Str,string#" started"]),
+            flush(Ac)|WS0],
+        wait_prompt_only(Ac,At,At1,WS0,WS1,IR,PM,PSM,Owner,End).
+otherwise.
+manager_out([Msg|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[Msg|WS0],
+        manager_out(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End).
+
+wait_prompt_only(normal,At,At1,WS,WS1,IR,_,_,_,End) :- true |
+        At=At1,WS=WS1,IR=[],End=end.
+
+manager_1([without_interrupt(Stream)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        manager_without_itr(Stream,At,At1,WS,WS1,IR,PM,PSM,Owner,End,In).
+manager_1([forced_putf(FStr,L)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[putf(FStr,L)|WS0],
+        manager_io(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End).
+
+manager_1([prompt_and_getl(Abort,X,X1,Line)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[print_string_length(PSL,5),print_atom_length(PAL,20),
+            wrap(X,X1,WT,3,4),putwt(WT,3,4),putf(string#"~s",[string#"> "]),
+            print_string_length(PSL),print_atom_length(PAL),getl(Line1)|WS0],
+        manager_wait_input(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Abort,Line,Line1).
+
+manager_1([monitor_prompt_and_getl(Abort,Mode,ID,Pat,Str,PD,PL,WT,Line)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        get_mode_mark(Mode,SAMMark,QMMark),
+        variable:unwrap(Pat,{_,UPat}),
+        get_pl(Pat,PL,PL1),
+        WS=[wrap(UPat,WPat),
+%            putf(string#"~s~s:~t ~s ~W == ~W ? ",[SAMMark,QMMark,ID,Str,WPat,WT]),
+            putf(string#"~s~s:~t ~s ~W == ",[SAMMark,QMMark,ID,Str,WPat]),
+            putwtq(WT,PD,PL1),putb(string#" ? "),
+            getl(Line1)|WS0],
+        manager_wait_input(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Abort,Line,Line1).
+
+manager_1([cmd_env_getl(Abort,Param,Str,Line)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[{Param,N,N},
+            putf(string#"~s~t => ",[Str,N]),getl(Line1)|WS0],
+        manager_wait_input(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Abort,Line,Line1).
+
+manager_1([monitored_terms_getl(Abort,Line)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[getl(Line1)|WS0],
+        manager_wait_input(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Abort,Line,Line1).
+
+manager_1([terminated(ID,Str)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[putf(string#"~s~t ~s~s~n",[string#">monitor:",ID,Str,string#" terminated"]),
+            flush(Ac)|WS0],
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+manager_1([started(ID,Str)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[putf(string#"~s~t ~s~s~n",[string#">monitor:",ID,Str,string#" started"]),
+            flush(Ac)|WS0],
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+
+manager_1([write(P,X,X1)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        write(PM,P,X,X1,WS,WS0,Ac),
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+manager_1([write_tv(P,X,X1)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        write(tag_and_value,P,X,X1,WS,WS0,Ac),
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+manager_1([write_wt(P,WT)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        write_wt(PM,P,WT,WS,WS0,Ac),
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+manager_1([write(X,X1)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        write(PM,X,X1,WS,WS0,Ac),
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+
+manager_1([print_mode(M,M1)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        M=PM,
+        print_mode(M1,PM,PM1),
+        manager_io(In,At,At1,WS,WS1,IR,PM1,PSM,Owner,End).
+manager_1([print_mode(M)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        print_mode(M,PM,PM1),
+        manager_io(In,At,At1,WS,WS1,IR,PM1,PSM,Owner,End).
+manager_1([print_string_mode(M,M1)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        M=PSM,
+        print_string_mode(M1,PSM,PSM1),
+        manager_io(In,At,At1,WS,WS1,IR,PM,PSM1,Owner,End).
+manager_1([print_string_mode(M)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        print_string_mode(M,PSM,PSM1),
+        manager_io(In,At,At1,WS,WS1,IR,PM,PSM1,Owner,End).
+manager_1([set_title(T)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        set_title(Owner,T,WS,WS0,Ac),
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+manager_1([bigger|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        bigger(Owner,WS,WS0,Ac),
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+manager_1([a_little_bigger|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        a_little_bigger(Owner,WS,WS0,Ac),
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+
+manager_1([getenv_all(Envs)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[print_depth(PD,PD),print_length(PL,PL),
+            print_string_length(PSL,PSL),
+            print_atom_length(PAL,PAL)|WS0],
+        Envs={PD,PL,PSL,PAL,PM,PSM},
+        manager_io(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End).
+
+%output_error(Reason,Ac)->
+manager_1([error(Reason)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        output_error(Reason,Ac,WS,WS0),
+        manager_2(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Ac).
+
+manager_1([do(Stream)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        prepend(Stream,In,In1),
+        manager_io(In1,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+manager_1([get_value(_,Var)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        Var={},
+        manager_io(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+
+otherwise.
+manager_1([Msg|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[Msg|WS0],
+        manager_io(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End).
+manager_1([],At,At1,WS,WS1,IR,_,_,_,End) :- true |
+        At=At1,WS=WS1,IR=[],End=end.
+
+manager_wait_input(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End,kill,L,_) :- true |
+        L=string#"",
+        manager_io(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+manager_wait_input(In,attention,At1,WS,WS1,IR,PM,PSM,Owner,End,Abort,L,L1) :- true |
+        get_next_attention(Owner,WS,WS0,At),
+        manager_wait_input(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Abort,L,L1).
+alternatively.
+manager_wait_input(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End,_,L,L1) :- wait(L1) |
+        L=L1,
+        manager_io(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+
+manager_2(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End,normal) :- true |
+        manager_io(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+
+set_title(inspector,T,WS,WS1,Ac) :- true |
+        builtin#append_string([string#"INSPECTOR: ",T],Title),
+        WS=[set_title(Title,_),flush(Ac)|WS1].
+otherwise.
+set_title(Owner,_,WS,WS1,Ac) :- true |
+        WS=[putf(string#">Unavailable to ~t window~n",[Owner]),flush(Ac)|WS1].
+
+bigger(inspector,WS,WS1,Ac) :- true |
+        WS=[bigger(Ac)|WS1].
+otherwise.
+bigger(Owner,WS,WS1,Ac) :- true |
+        WS=[putf(string#">Unavailable to ~t window~n",[Owner]),flush(Ac)|WS1].
+
+a_little_bigger(inspector,WS,WS1,Ac) :- true |
+        WS=[a_little_bigger(Ac)|WS1].
+otherwise.
+a_little_bigger(Owner,WS,WS1,Ac) :- true |
+        WS=[putf(string#">Unavailable to ~t window~n",[Owner]),flush(Ac)|WS1].
+
+prepend([A|X],Y,Z) :- true |
+        Z=[A|Z1],
+        prepend(X,Y,Z1).
+prepend([],Y,Z) :- true | Z=Y.
+
+
+get_next_attention(listener,WS,WS1,At) :- true |
+        WS=[next_attention(At)|WS1].
+get_next_attention(inspector,WS,WS1,At) :- true |
+        WS=[next_attention(normal(At))|WS1].
+
+if_continue(In,attention,At1,WS,WS1,IR,PM,PSM,Owner,End,Com) :- true |
+        get_next_attention(Owner,WS,WS0,At),
+        if_continue(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,Com).
+alternatively.
+if_continue(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End,continue) :- true |
+        manager_io(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+if_continue(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End,top) :- true |
+        IR=[abort|IR1],
+        abort_output(In,At,At1,WS,WS1,IR1,PM,PSM,Owner,End).
+
+abort_output([forced_putf(FStr,L)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        WS=[putf(FStr,L)|WS0],
+        abort_output(In,At,At1,WS0,WS1,IR,PM,PSM,Owner,End).
+
+abort_output([write(_,X,X1)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        X=X1,
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([write_tv(_,X,X1)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        X=X1,
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([write_wt(_,_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([write(X,X1)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        X=X1,
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+
+abort_output([putc(_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([putl(_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([putb(_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([putwt(_,_,_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([putwt(_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([putwtq(_,_,_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([putwtq(_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([putt(_,_,_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([putt(_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([puttq(_,_,_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([puttq(_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([nl|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([tab(_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([putf(_,_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([print_error(_)|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        abort_output(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+otherwise.
+abort_output([Msg|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End) :- true |
+        manager_io([Msg|In],At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+abort_output([],At,At1,WS,WS1,IR,_,_,_,End) :- true |
+        At=At1,WS=WS1,IR=[],End=end.
+
+
+manager_without_itr([print_mode(M,M1)|St],At,At1,WS,WS1,IR,PM,PSM,Owner,End,In) :- true |
+        M=PM,
+        print_mode(M1,PM,PM1),
+        manager_without_itr(St,At,At1,WS,WS1,IR,PM1,PSM,Owner,End,In).
+manager_without_itr([print_mode(M)|St],At,At1,WS,WS1,IR,PM,PSM,Owner,End,In) :- true |
+        print_mode(M,PM,PM1),
+        manager_without_itr(St,At,At1,WS,WS1,IR,PM1,PSM,Owner,End,In).
+manager_without_itr([print_string_mode(M,M1)|St],At,At1,WS,WS1,IR,PM,PSM,Owner,End,In) :- true |
+        M=PSM,
+        print_string_mode(M1,PSM,PSM1),
+        manager_without_itr(St,At,At1,WS,WS1,IR,PM,PSM1,Owner,End,In).
+manager_without_itr([print_string_mode(M)|St],At,At1,WS,WS1,IR,PM,PSM,Owner,End,In) :- true |
+        print_string_mode(M,PSM,PSM1),
+        manager_without_itr(St,At,At1,WS,WS1,IR,PM,PSM1,Owner,End,In).
+% must not contain inspector-specific messages in 'without_interrupt' streams
+% except the above messages
+otherwise.
+manager_without_itr([Msg|St],At,At1,WS,WS1,IR,PM,PSM,Owner,End,In) :- true |
+        WS=[Msg|WS0],
+        manager_without_itr(St,At,At1,WS0,WS1,IR,PM,PSM,Owner,End,In).
+manager_without_itr([],At,At1,WS,WS1,IR,PM,PSM,Owner,End,In) :- true |
+        manager_io(In,At,At1,WS,WS1,IR,PM,PSM,Owner,End).
+
+
+write(general,P,X,X1,WS,WS1,Ac) :- true |
+        WS=[wrap(X,X1,WT),
+            putf(string#"~t~b:~b~w~n",[P,WT]),flush(Ac)|WS1].
+write(tag_and_value,P,X,X1,WS,WS1,Ac) :- tag_and_value(X,T,V) |
+        X=X1,
+        inspector_tag_table:get_tag_name(T,Str),
+        WS=[putf(string#"~t~b:~b(~s)~b~t~n",[P,Str,V]),flush(Ac)|WS1].
+
+write_wt(general,P,X,WS,WS1,Ac) :- true |
+        WS=[putf(string#"~t~b:~b~w~n",[P,X]),flush(Ac)|WS1].
+write_wt(tag_and_value,P,WT,WS,WS1,Ac) :- true |
+        variable:unwrap(WT,{_,X}),
+        do_write_wt(X,P,WS,WS1,Ac).
+
+do_write_wt(X,P,WS,WS1,Ac) :- tag_and_value(X,T,V) |
+        inspector_tag_table:get_tag_name(T,Str),
+        WS=[putf(string#"~t~b:~b(~s)~b~t~n",[P,Str,V]),flush(Ac)|WS1].
+
+write(general,X,X1,WS,WS1,Ac) :- true |
+        WS=[wrap(X,X1,WT),putwt(WT),nl,flush(Ac)|WS1].
+write(tag_and_value,X,X1,WS,WS1,Ac) :- tag_and_value(X,T,V) |
+        X=X1,
+        inspector_tag_table:get_tag_name(T,Str),
+        WS=[putf(string#"(~s)~b~t~n",[Str,V]),flush(Ac)|WS1].
+
+print_mode(general,_,PM1) :- true | PM1=general.
+print_mode(tag_and_value,_,PM1) :- true | PM1=tag_and_value.
+otherwise.
+print_mode(_,PM,PM1) :- true | PM=PM1.
+
+print_string_mode(character,_,PSM1) :- true | PSM1=character.
+print_string_mode(code,_,PSM1) :- true | PSM1=code.
+otherwise.
+print_string_mode(_,PSM,PSM1) :- true | PSM=PSM1.
+
+
+output_error(unwrapped_illegal_param(M,N),Ac,WS,WS1) :- true |
+        WS=[wrap(M,WM),wrap(N,WN),
+            putf(string#"~s~w , ~w~n",[string#">Illegal parameter: ",WM,WN]),
+            flush(Ac)|WS1].
+output_error(unwrapped_illegal_param(M),Ac,WS,WS1) :- true |
+        WS=[wrap(M,WM),
+            putf(string#"~s~w~n",[string#">Illegal parameter: ",WM]),
+            flush(Ac)|WS1].
+
+output_error(wrapped_illegal_param(WM),Ac,WS,WS1) :- true |
+        WS=[putf(string#"~s~W~n",[string#">Illegal parameter: ",WM]),
+            flush(Ac)|WS1].
+
+output_error(illegal_param_str(Str),Ac,WS,WS1) :- true |
+        WS=[putf(string#"~s~s~n",[string#">Illegal parameter: ",Str]),
+            flush(Ac)|WS1].
+
+output_error(illegal_param(M),Ac,WS,WS1) :- true |
+        WS=[putf(string#"~s~t~n",[string#">Illegal parameter: ",M]),flush(Ac)|WS1].
+
+output_error(unknown,Ac,WS,WS1) :- true |
+        WS=[putf(string#"~s~n",[string#">Unknown command"]),flush(Ac)|WS1].
+output_error(illegal_param,Ac,WS,WS1) :- true |
+        WS=[putf(string#"~s~n",[string#">Illegal parameter"]),flush(Ac)|WS1].
+output_error(abnormal(Info),Ac,WS,WS1) :- true |
+        WS=[print_error(Info),flush(Ac)|WS1].
+
+get_mode_mark({SAM,QM},SAMMark,QMMark) :- true |
+        get_sam_mode_mark(SAM,SAMMark),
+        get_qm_mode_mark(QM,QMMark).
+
+get_sam_mode_mark(on,Mark) :- true | Mark=string#"a".
+get_sam_mode_mark(off,Mark) :- true | Mark=string#" ".
+
+get_qm_mode_mark(on,Mark) :- true | Mark=string#"q".
+get_qm_mode_mark(off,Mark) :- true | Mark=string#" ".
+
+return_att_var(listener,At,At1) :- true | At1=normal(At).
+otherwise.
+return_att_var(_,At,At1) :- true | At=At1.
+
+get_pl(variable(_),PL,PL1) :- true | PL=PL1.
+otherwise.
+get_pl(Pat,PL,PL1) :- true |
+        get_pl1(Pat,PL,PL1,PL).
+
+get_pl1(list([_|Pat]),PL,PL1,I) :- I>0 |
+        get_pl1(Pat,PL,PL1,~(I-1)).
+get_pl1(list(_),PL,PL1,0) :- true | PL=PL1.
+get_pl1(variable(_),PL,PL1,I) :- true | PL1:=PL-I.
+otherwise.
+get_pl1(_,PL,PL1,_) :- true | PL=PL1.

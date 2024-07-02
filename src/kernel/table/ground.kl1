@@ -1,0 +1,91 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module ground_term.
+
+:- with_macro pimos.
+
+:- public filter/2 , efilter/2 .
+
+filter(Term, N_term) :- true |
+    filter(Term, [], Term1, Wait),
+    wait_and_unify(Wait, Term1, N_term).
+
+filter(Term, Data, N_term, Data1) :- vector(Term, L) |
+    new_vector(Term1, L),
+    wait_vector(L, Term, Term1, Data, N_term, Data1).
+filter(Term, Data, N_term, Data1) :- module(Term, L) |
+    wait_module(L, Term, Data, N_term, Data1).
+filter([H|T], Data, N_term, Data1) :- true |
+    N_term = [H1|T1],
+    filter(H, Data, H1, Data2),
+    filter(T, Data2, T1, Data1).
+otherwise.
+filter(Term, Data, N_term, Data1) :-true | % wait(Term) |
+    N_term = Term, Data1 = Data.
+
+wait_and_unify(Wait, Term, Term1) :- wait(Wait) |
+    Term1 = Term.
+
+wait_vector(0, Vec, Vec1, Data, N_vec, Data1) :- true |
+    N_vec = Vec1, Data1 = Data.
+otherwise.
+wait_vector(L, Vec, Vec1, Data, N_vec, Data1) :- 
+        L1 := L-1,
+        vector_element(Vec, L1, D) |
+    filter(D, Data, D1, Data2),
+    set_vector_element(Vec1, L1, _, D1, Vec2),
+    wait_vector(L1, Vec, Vec2, Data2, N_vec, Data1).
+
+wait_module(0, Term, Data, N_term, Data1):-
+    true |
+    Term = N_term, Data = Data1.
+otherwise.
+wait_module(L, Term, Data, N_term, Data1):-
+    L1 := L - 1 |
+    module_element(Term, L1, ME0),
+    filter(ME0,ME),
+    wait_module_element(ME, L1, Term, Data, N_term, Data1).
+
+wait_module_element(ME, L1, Term, Data, N_term, Data1):-
+    wait(ME) |
+    wait_module(L1, Term, Data, N_term, Data1).
+
+efilter(Term, N_term) :- vector(Term, L) |
+    wait_evector(L, Term, N_term).
+efilter(Term, N_term):- module(Term, L) |
+    wait_emodule(L, Term, N_term).
+efilter([H|T], N_term) :- true |
+    N_term = [H1|T1],
+    efilter(H, H1),
+    efilter(T, T1).
+otherwise.
+efilter(Term, N_term) :-true | % wait(Term) |
+    N_term = Term.
+
+wait_evector(0, Vec, N_vec) :- true |
+    N_vec = Vec.
+otherwise.
+wait_evector(L, Vec, N_vec) :- 
+    L1 := L-1|
+    set_vector_element(Vec,L1,D,D1,Vec1),
+    efilter(D, D1),
+    wait_evector(L1, Vec1, N_vec).
+
+wait_emodule(0, Term, N_term):-
+    true |
+    Term = N_term.
+otherwise.
+wait_emodule(L, Term, N_term):-
+    L1 := L - 1 |
+    module_element(Term, L1, ME0),
+    efilter(ME0, ME),
+    wait_emodule_element(ME, L1, Term, N_term).
+
+wait_emodule_element(ME, L1, Term, N_term):-
+    wait(ME) |
+    wait_emodule(L1, Term, N_term).
+

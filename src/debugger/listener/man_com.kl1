@@ -1,0 +1,149 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_command_manager.
+:- public create/2, filter/2.
+:- with_macro pimos.
+
+
+create(COM1,Size) :- true |
+    merge(COM1,COM),
+    pool:keyed_sorted_set(SS),
+    command_manager(COM,[],SS,0,Size).
+
+command_manager([put_command(List,Stat)|COM],S,SS,Max,Size) :-
+    Stat=normal,
+    listener_utility:prepend(List,S,S1),
+    command_manager(COM,S1,SS,Max,Size).
+command_manager([get_command(C)|COM],S,SS,Max,Size) :-
+    get_command(S,S1,C),
+    command_manager(COM,S1,SS,Max,Size).
+command_manager([reset_command(Stat)|COM],_S,SS,Max,Size) :-
+    Stat=normal,
+    command_manager(COM,[],SS,Max,Size).
+
+command_manager([last(Stat)|COM],S,SS,Max,Size) :- 
+    SS=[carbon_copy(Max,D)|SS1],
+    event_carbon_copy(D,Max,Stat),
+    command_manager(COM,S,SS1,Max,Size).
+
+command_manager([get(N,Stat)|COM],S,SS,Max,Size) :- 
+    SS=[carbon_copy(N,D)|SS1],
+    event_carbon_copy(D,N,Stat),
+    command_manager(COM,S,SS1,Max,Size).
+
+command_manager([put(D)|COM],S,SS,Max,0) :- 
+    put_event(D,_,_,Max,NewMax,0),
+    command_manager(COM,S,SS,NewMax,0).
+command_manager([put(D)|COM],S,SS,Max,Size) :- Size=\=0 |
+    put_event(D,SS,SS1,Max,NewMax,Size),
+    command_manager(COM,S,SS1,NewMax,Size).
+command_manager([history(D,Num)|COM],S,SS,Max,Size) :- 
+    SS=[carbon_copy(D)|SS1],
+    Num=Max,
+    command_manager(COM,S,SS1,Max,Size).
+command_manager([get_history_length(Old)|COM],S,SS,Max,Size) :- 
+    Old=Size,
+    command_manager(COM,S,SS,Max,Size).
+command_manager([history_length(New)|COM],S,SS,Max,Size) :- New>=Size |
+    command_manager(COM,S,SS,Max,New).
+command_manager([history_length(New)|COM],S,SS,Max,Size) :- New<Size |
+    remove_event(~(Max-New),SS,SS1),
+    command_manager(COM,S,SS1,Max,New).
+command_manager([event_number(Num)|COM],S,SS,Max,Size) :- 
+    Num=Max,
+    command_manager(COM,S,SS,Max,Size).
+
+command_manager([do(List)|COM],S,SS,Max,Size) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,COM,COM1),
+    command_manager(COM1,S,SS,Max,Size).
+command_manager([],_S,SS,_,_) :- true| SS=[].       % 93.8.3    K.Nakao
+
+
+get_command([A|B],Y,C) :- Y=B,  C=A.
+otherwise.
+get_command([],   Y,C) :- Y=[], C=non_existent.
+
+
+filter([get_command(V)|US],OS) :- true |
+    OS=[get_command(V1)|OS1],
+    listener_utility:ground_unify(V1,V),
+    filter(US,OS1).
+filter([put_command(V,S)|US],OS) :- list(V)|
+    listener_utility:ground_unify(V,V1),
+    put_command(V1,S,OS,OS1),
+    filter(US,OS1).
+filter([reset_command(S)|US],OS) :- true|
+    OS=[reset_command(S1)|OS1],
+    listener_utility:ground_unify(S1,S),
+    filter(US,OS1).
+filter([last(V)|US],OS) :-
+    OS=[last(V1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    filter(US,OS1).
+filter([get(V)|US],OS) :-
+    OS=[get(V1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    filter(US,OS1).
+filter([get(K,V)|US],OS) :-
+    OS=[get(K,V1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    filter(US,OS1).
+filter([history(V,N)|US],OS) :-
+    OS=[history(V1,N1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    listener_utility:wait_unify(N1,N),
+    filter(US,OS1).
+filter([get_history_length(O)|US],OS) :-
+    OS=[get_history_length(O1)|OS1],
+    listener_utility:wait_unify(O1,O),
+    filter(US,OS1).
+filter([history_length(N)|US],OS) :- N>=0 |
+    OS=[history_length(N)|OS1],
+    filter(US,OS1).
+filter([event_number(O)|US],OS) :-
+    OS=[event_number(O1)|OS1],
+    listener_utility:wait_unify(O1,O),
+    filter(US,OS1).
+filter([put(V)|US],OS) :-
+    OS=[put(V)|OS1],
+    filter(US,OS1).
+filter([do(Msg)|US],OS) :- 
+    merge(Msg,Msg1),
+    listener_utility:prepend(Msg1,US,US1),
+    filter(US1,OS).
+
+filter([],OS) :- OS=[].
+
+put_command(V,S,OS,OS1) :- wait(V) | 
+    OS=[put_command(V,S1)|OS1],
+    listener_utility:wait_unify(S1,S).
+
+
+put_event(normal(end_of_take),                         SS,SS1,Max,NewMax,_) :- SS1=SS, NewMax=Max.
+put_event(normal(end_of_file),                         SS,SS1,Max,NewMax,_) :- SS1=SS, NewMax=Max.
+put_event(normal(atom((!))),                           SS,SS1,Max,NewMax,_) :- SS1=SS, NewMax=Max.
+put_event(normal(integer(_)),                          SS,SS1,Max,NewMax,_) :- SS1=SS, NewMax=Max.
+put_event(normal(vector({atom((!)),atom((!))})),       SS,SS1,Max,NewMax,_) :- SS1=SS, NewMax=Max.
+put_event(normal(vector({atom((!)),integer(_)})),      SS,SS1,Max,NewMax,_) :- SS1=SS, NewMax=Max.
+put_event(normal(list(_)),                             SS,SS1,Max,NewMax,_) :- SS1=SS, NewMax=Max.
+otherwise.
+put_event(WT,                 SS,SS1,Max,NewMax,Size) :- 
+    NewMax := Max+1,
+    SS=[get_if_any(~(NewMax-Size),_),
+        put(NewMax,WT,_)|SS1].
+
+
+remove_event(EN,SS,SS1) :- EN=<0 | SS1=SS.
+remove_event(EN,SS,SS2) :- EN>0  |
+    SS=[get_if_any(EN,_)|SS1],
+    remove_event(~(EN-1),SS1,SS2).
+
+
+event_carbon_copy([D],_,Stat) :- Stat=D.
+event_carbon_copy([], N,Stat) :- Stat=non_existent(N).

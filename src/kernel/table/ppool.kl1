@@ -1,0 +1,341 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v20>Module>ppool.kl1.3, 19-Jul-90 16:48:19, Edit by hori
+
+:- module protection.
+:- with_macro pimos.
+:- public pool/3, pool/4, pool/5.
+%%:- public check_protection/5.
+
+pool(PP,OwnerID,Protect) :- true |
+    pool:keyed_set(P),
+    pool_0(PP,P,OwnerID,Protect).
+
+pool(PP,Size,OwnerID,Protect) :- true |
+    pool:keyed_set(P,Size),
+    pool_0(PP,P,OwnerID,Protect).
+
+pool(Hasher,PP,Size,OwnerID,Protect) :- true |
+    pool:keyed_set(Hasher,P,Size),
+    pool_0(PP,P,OwnerID,Protect).
+
+%  UserID = {UserIdentification,GroupIdentification}
+%  OwnerID = {UserIdentification,GroupIdentification}
+%  Protecttion = ??? (not yet defined)
+
+pool_0(object(P),PP,OwnerID,Protect) :- true |
+    object_pool(P,PP,OwnerID,Protect).
+pool_0(process(P),PP,OwnerID,Protect) :- true |
+    process_pool(P,PP,OwnerID,Protect).
+
+%%%% OBJECT POOL
+
+object_pool([get_protection(Status,UserID)|P],PP0,OwnerID,Protect) :- true |
+    check_protection(read,Protect,OwnerID,UserID,St),
+    get_object_pool_protection(St,Status,P,PP0,OwnerID,Protect).
+object_pool([set_owner(NewOwnerID,Status,UserID)|P],PP0,OwnerID,Protect) :- true |
+    check_protection(set_owner,Protect,OwnerID,UserID,St),
+    set_object_pool_owner(St,NewOwnerID,Status,P,PP0,OwnerID,Protect).
+object_pool([set_protection(NewProtect,Status,UserID)|P],PP0,OwnerID,Protect) :- true |
+    check_protection(protect,Protect,OwnerID,UserID,St),
+    set_object_pool_protection(St,NewProtect,Status,P,PP0,OwnerID,Protect).
+otherwise.
+object_pool([Message|P],PP0,OwnerID,Protect) :- true |
+    object_pool(Message,PP0,PP1,OwnerID,Protect),
+    object_pool(P,PP1,OwnerID,Protect).
+object_pool([],PP0,OwnerID,Protect) :- true |
+    PP0 = [].
+
+get_object_pool_protection(normal,Status,P,PP,OwnerID,Protect) :- true |
+    Status = normal({OwnerID,Protect}),
+    object_pool(P,PP,OwnerID,Protect).
+otherwise.
+get_object_pool_protection(_,Status,P,PP,OwnerID,Protect) :- true |
+    Status = protection_violation,
+    object_pool(P,PP,OwnerID,Protect).
+
+set_object_pool_owner(normal,NewOwnerID,Status,P,PP,OwnerID,Protect) :- true |
+    Status = normal,
+    object_pool(P,PP,NewOwnerID,Protect).
+otherwise.
+set_object_pool_owner(_,NewOwnerID,Status,P,PP,OwnerID,Protect) :- true |
+    Status = protection_violation,
+    object_pool(P,PP,OwnerID,Protect).
+
+set_object_pool_protection(normal,NewProtect,Status,P,PP,OwnerID,Protect) :- true |
+    Status = normal,
+    object_pool(P,PP,OwnerID,NewProtect).
+otherwise.
+set_object_pool_protection(_,NewProtect,Status,P,PP,OwnerID,Protect) :- true |
+    Status = protection_violation,
+    object_pool(P,PP,OwnerID,Protect).
+
+object_pool(add(Key,X,Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+    check_protection(write,Protect,OwnerID,UserID,St),
+    object_add(St,Key,X,PP0,PP,Status).
+object_pool(read(Key,Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+    check_protection(read,Protect,OwnerID,UserID,St),
+    object_read(St,Key,PP0,PP,Status).
+object_pool(listing(Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+    check_protection(read,Protect,OwnerID,UserID,St),
+    object_listing(St,PP0,PP,Status).
+object_pool(write(Key,X,Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+%%    check_protection(no,Protect,OwnerID,UserID,St),
+    object_write(normal,Key,X,PP0,PP,Status).
+object_pool(remove(Key,Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+    check_protection(write,Protect,OwnerID,UserID,St),
+    object_remove(St,Key,PP0,PP,Status).
+object_pool(empty(YorN,UserID),PP0,PP,OwnerID,Protect) :- true |
+    PP0 = [empty(YorN)|PP].
+
+object_add(normal,Key,X,PP0,PP,Status) :- true |
+    PP0 = [empty(Key,YorN)|PP1],
+    object_add_0(YorN,Key,X,PP1,PP,Status).
+otherwise.
+object_add(_,Key,X,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+object_add_0(yes,Key,X,PP0,PP,Status) :- true |
+    PP0 = [put(Key,X,_)|PP],
+    Status = normal.
+otherwise.
+object_add_0(no,Key,X,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = abnormal.
+
+object_read(normal,Key,PP0,PP,Status) :- true |
+    PP0 = [get_if_any(Key,X)|PP1],
+    object_read_0(X,Key,PP1,PP,Status).
+otherwise.
+object_read(_,_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+object_read_0({},_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = non_existent.
+object_read_0({X},Key,PP0,PP,Status) :- true |
+    PP0 = [put(Key,X,_)|PP],
+    Status = normal(X).
+
+object_listing(normal,PP0,PP,Status) :- true |
+    PP0 = [get_all(All0)|PP1],
+    Status = normal(All),
+    object_listing_0(All0,All,PP1,PP).
+otherwise.
+object_listing(_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+object_listing_0([],All,PP0,PP) :- true |
+    All = [],
+    PP0 = PP.
+object_listing_0([{Key,X}|Rest],All,PP0,PP) :- true |
+    PP0 = [put(Key,X,_)|PP1],
+    All = [{Key,X}|All0],
+    object_listing_0(Rest,All0,PP1,PP).
+
+object_write(normal,Key,X,PP0,PP,Status) :- true |
+    PP0 = [empty(Key,YorN)|PP1],
+    object_write_0(YorN,Key,X,PP1,PP,Status).
+otherwise.
+object_write(_,_,_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+object_write_0(yes,_,_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = non_existent.
+object_write_0(no,Key,X,PP0,PP,Status) :- true |
+    PP0 = [put(Key,X,_)|PP],
+    Status = normal.
+
+object_remove(normal,Key,PP0,PP,Status) :- true |
+    PP0 = [get_if_any(Key,X)|PP],
+    object_remove_0(X,Status).
+otherwise.
+object_remove(_,_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+object_remove_0({},Status) :- true |
+    Status = non_existent.
+object_remove_0({_},Status) :- true |
+    Status = normal.
+
+%%%% PROCESS POOL
+
+process_pool([get_protection(Status,UserID)|P],PP0,OwnerID,Protect) :- true |
+    check_protection(read,Protect,OwnerID,UserID,St),
+    get_process_pool_protection(St,Status,P,PP0,OwnerID,Protect).
+process_pool([set_owner(NewOwnerID,Status,UserID)|P],PP0,OwnerID,Protect) :- true |
+    check_protection(set_owner,Protect,OwnerID,UserID,St),
+    set_process_pool_protection(St,NewOwnerID,Status,P,PP0,OwnerID,Protect).
+process_pool([set_protection(NewProtect,Status,UserID)|P],PP0,OwnerID,Protect) :- true |
+    check_protection(set_protection,Protect,OwnerID,UserID,St),
+    set_process_pool_owner(St,NewProtect,Status,P,PP0,OwnerID,Protect).
+otherwise.
+process_pool([Message|P],PP0,OwnerID,Protect) :- true |
+    process_pool(Message,PP0,PP1,OwnerID,Protect),
+    process_pool(P,PP1,OwnerID,Protect).
+process_pool([],PP0,OwnerID,Protect) :- true |
+    PP0 = [get_all(All)],
+    close_all(All).
+
+get_process_pool_protection(normal,Status,P,PP,OwnerID,Protect) :- true |
+    Status = normal({OwnerID,Protect}),
+    process_pool(P,PP,OwnerID,Protect).
+otherwise.
+get_process_pool_protection(_,Status,P,PP,OwnerID,Protect) :- true |
+    Status = protection_violation,
+    process_pool(P,PP,OwnerID,Protect).
+
+set_process_pool_owner(normal,NewOwnerID,Status,P,PP,OwnerID,Protect) :- true |
+    Status = normal,
+    process_pool(P,PP,NewOwnerID,Protect).
+otherwise.
+set_process_pool_owner(_,NewOwnerID,Status,P,PP,OwnerID,Protect) :- true |
+    Status = protection_violation,
+    process_pool(P,PP,OwnerID,Protect).
+
+set_process_pool_protection(normal,NewProtect,Status,P,PP,OwnerID,Protect) :- true |
+    Status = normal,
+    process_pool(P,PP,OwnerID,NewProtect).
+otherwise.
+set_process_pool_protection(_,NewProtect,Status,P,PP,OwnerID,Protect) :- true |
+    Status = protection_violation,
+    process_pool(P,PP,OwnerID,Protect).
+
+process_pool(add(Key,X,Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+    check_protection(write,Protect,OwnerID,UserID,St),
+    process_add(St,Key,X,PP0,PP,Status).
+process_pool(access(Key,Messages,Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+    check_protection(access,Protect,OwnerID,UserID,St),
+    process_access(St,Key,Messages,PP0,PP,Status).
+process_pool(write(Key,X,Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+%%    check_protection(no,Protect,OwnerID,UserID,St),
+    process_write(normal,Key,X,PP0,PP,Status).
+process_pool(remove(Key,Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+    check_protection(write,Protect,OwnerID,UserID,St),
+    process_remove(St,Key,PP0,PP,Status).
+process_pool(listing(Status,UserID),PP0,PP,OwnerID,Protect) :- true |
+    check_protection(read,Protect,OwnerID,UserID,St),
+    process_listing(St,PP0,PP,Status).
+process_pool(empty(YorN,UserID),PP0,PP,OwnerID,Protect) :- true |
+    PP0 = [empty(YorN)|PP].
+
+process_add(normal,Key,X,PP0,PP,Status) :- true |
+    PP0 = [empty(Key,YorN)|PP1],
+    process_add_0(YorN,Key,X,PP1,PP,Status).
+otherwise.
+process_add(_,Key,X,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+process_add_0(yes,Key,X,PP0,PP,Status) :- true |
+    PP0 = [put(Key,X,_)|PP],
+    Status = normal.
+process_add_0(no,Key,X,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = abnormal.
+
+process_access(normal,Key,Messages,PP0,PP,Status) :- true |
+    PP0 = [empty(Key,YorN)|PP1],
+    process_access_0(YorN,Key,Messages,PP1,PP,Status).
+otherwise.
+process_access(_,_,_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+process_access_0(yes,_,_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = non_existent.
+process_access_0(no,Key,Messages,PP0,PP,Status) :- true |
+    PP0 = [get_and_put(Key,Proc0,Proc)|PP],
+    process_access_1(Messages,Proc0,Proc),
+    Status = normal.
+
+process_access_1([Message|In],Proc0,Proc) :- true |
+    Proc0 = [Message|Proc1],
+    process_access_1(In,Proc1,Proc).
+process_access_1([],Proc0,Proc) :- true |
+    Proc0 = Proc.
+
+process_write(normal,Key,X,PP0,PP,Status) :- true |
+    PP0 = [empty(Key,YorN)|PP1],
+    process_write_0(YorN,Key,X,PP1,PP,Status).
+otherwise.
+process_write(_,_,_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+process_write_0(yes,_,_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = non_existent.
+process_write_0(no,Key,X,PP0,PP,Status) :- true |
+    PP0 = [put(Key,X,[])|PP],
+    Status = normal.
+
+process_remove(normal,Key,PP0,PP,Status) :- true |
+    PP0 = [get_if_any(Key,X)|PP],
+    process_remove_0(X,Status).
+otherwise.
+process_remove(_,_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+process_remove_0({},Status) :- true |
+    Status = non_existent.
+process_remove_0({X},Status) :- true |
+    X = [],
+    Status = normal.
+
+process_listing(normal,PP0,PP,Status) :- true |
+    PP0 = [get_all(All0)|PP1],
+    Status = normal(All),
+    process_listing_0(All0,All,PP1,PP).
+otherwise.
+process_listing(_,PP0,PP,Status) :- true |
+    PP0 = PP,
+    Status = protection_violation.
+
+process_listing_0([],All,PP0,PP) :- true |
+    All = [],
+    PP0 = PP.
+process_listing_0([{Key,X}|Rest],All,PP0,PP) :- true |
+    PP0 = [put(Key,X,_)|PP1],
+    All = [Key|All0],
+    process_listing_0(Rest,All0,PP1,PP).
+
+close_all([]) :- true | true.
+close_all([{_,P}|Rest]) :- true |
+    P = [],
+    close_all(Rest).
+
+%% CHECK_PROTECTION
+
+check_protection(Com,Prot,OID,UID,Status):-
+    true|
+    check_protection:check(Com,Prot,OID,UID,Status).
+
+%check_protection(read,Protection,OwnerID,UserID,Status) :- true |
+%    Status = normal.
+%check_protection(write,Protection,OwnerID,UserID,Status) :- true |
+%    Status = normal.
+%check_protection(access,Protection,OwnerID,UserID,Status) :- true |
+%    Status = normal.
+%check_protection(add,Protection,OwnerID,UserID,Status) :- true |
+%    Status = normal.
+%check_protection(remove,Protection,OwnerID,UserID,Status) :- true |
+%    Status = normal.
+%check_protection(set_owner_id,Protection,OwnerID,UserID,Status) :- true |
+%    Status = normal.
+%check_protection(protect,Protection,OwnerID,UserID,Status) :- true |
+%    Status = normal.
+%check_protection(no,Protection,OwnerID,UserID,Status) :- true |
+%    Status = normal.

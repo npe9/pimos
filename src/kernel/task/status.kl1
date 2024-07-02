@@ -1,0 +1,204 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module task_status.
+:- with_macro pimos.
+:- public handler/9, ahandler/8, normalize/2 ,filter/2.
+
+handler(Verb,Type,[-1|Addr],Result,Stream,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[status_own(Addr,Type,Verb,Result)|Next],
+                            Next,OutsN),
+    task_handler:ohandler(Stream,OutsN,Tools,Info,Env).
+handler(Verb,Type,[0|Addr],Result,Stream,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[status_top(Addr,Type,Verb,Result)|Next],
+                            Next,OutsN),
+    task_handler:ohandler(Stream,OutsN,Tools,Info,Env).
+handler(Verb,Type,[N|Addr],Result,Stream,Outs,Tools,Info,Env):-
+    N < -1|
+    set_vector_element(Outs,2,[status_up([N|Addr],Type,Verb,Result)|Next],
+                            Next,OutsN),
+    task_handler:ohandler(Stream,OutsN,Tools,Info,Env).
+handler(brief,Type,[],Result,Stream,Outs,Tools,Info,Env):-
+    true|
+    Result = [],
+    task_handler:ohandler(Stream,Outs,Tools,Info,Env).
+handler(detail(Wait),Type,[],Result,Stream,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[statistics|ONext],ONext,OutsN),
+    set_vector_element(Info,0,Cond,CondN,Info1),
+    set_vector_element(Info1,1,Lim,LimN,Info2),
+    set_vector_element(Info2,2,STS,STSN,InfoN),
+    set_vector_element(STS,1,[statistics(status(Values))|STB],STB,STSN),
+    timeout(Wait,Values,Consume),
+    Result = {Cond1,Lim1,Consume,[]},
+    copy:copy(Cond,Cond1,CondN),
+    copy:copy(Lim,Lim1,LimN),
+    task_handler:ohandler(Stream,OutsN,Tools,InfoN,Env).
+otherwise.
+handler(Verb,Type,Addr,Result,Stream,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,3,[status(Addr,Type,Verb,Result)|Next],Next,OutsN),
+    task_handler:ohandler(Stream,OutsN,Tools,Info,Env).
+
+children((*),Type,Wait,Result,CIn,CInN,MIn,MInN):-
+    true|
+    MIn = MInN,
+    CIn = [status_all(Type,detail(Wait),Result)|CInN].
+children([],Type,Wait,Result,CIn,CInN,MIn,MInN):-
+    true|
+    MIn = MInN,
+    Result = [],
+    CIn = CInN.
+children([*|Addr],Type,Wait,Result,CIn,CInN,MIn,MInN):-
+    true|
+    MIn = MInN,
+    CIn = [status([*|Addr],Type,detail(Wait),Result)|CInN].
+children([0|Addr],Type,Wait,Result,CIn,CInN,MIn,MInN):-
+    true|
+    CIn = CInN,
+    MIn = [status_top(Addr,Type,detail(Wait),Result)|MInN].
+children([-1|Addr],Type,Wait,Result,CIn,CInN,MIn,MInN):-
+    true|
+    children(Addr,Type,Wait,Result,CIn,CInN,MIn,MInN).
+children([E|Addr],Type,Wait,Result,CIn,CInN,MIn,MInN):-
+    E > 0|
+    MIn = MInN,
+    CIn = [status(Addr,Type,detail(Wait),Result)|CInN].
+children([E|Addr],Type,Wait,Result,CIn,CInN,MIn,MInN):-
+    E < -1|
+    CIn = CInN,
+    MIn = [status_up(Addr,Type,detail(Wait),Result)|MInN].
+
+
+timeout(Wait,Values,Consume):-
+    wait(Wait)|
+    Consume = unknown.
+timeout(Wait,Values,Consume):-
+    wait(Values)|
+    Consume = Values.
+
+% ahandler(Verb,Type,Result,Stream,Outs,Tools,Info,Env).
+ahandler(brief,Type,Result,Stream,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,3,[status_all(Type,brief,Result)|Next],Next,OutsN),
+    task_handler:ohandler(Stream,OutsN,Tools,Info,Env).
+ahandler(detail(Wait),Type,Result,Stream,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[statistics|ONext],ONext,Outs1),
+    set_vector_element(Outs1,2,MIn,MInN,Outs2),
+    set_vector_element(Outs2,3,CIn,CInN,OutsN),
+    set_vector_element(Info,0,Cond,CondN,Info1),
+    set_vector_element(Info1,1,Lim,LimN,Info2),
+    set_vector_element(Info2,2,STS,STSN,InfoN),
+    set_vector_element(STS,1,[statistics(status(Values))|STB],STB,STSN),
+    timeout(Wait,Values,Consume),
+    Result = {Cond1,Lim1,Consume,Children},
+    children(*,Type,Wait,Children,CIn,CInN,MIn,MInN),
+    copy:copy(Cond,Cond1,CondN),
+    copy:copy(Lim,Lim1,LimN),
+    task_handler:ohandler(Stream,OutsN,Tools,InfoN,Env).
+
+% normalize(Addr,NewAddr)
+
+normalize(Addr,NewAddr):-
+    true|
+    norm(Addr,[],NewAddr).
+
+norm((*),R,NewAddr):-
+    true|
+    reverse(R,*,NewAddr).
+norm([],R,NewAddr):-
+    true|
+    reverse(R,NewAddr). 
+norm([*|Next],R,NewA):-
+    true|
+    norm(Next,[*|R],NewA).
+norm([N|Next],R,NewA):-
+    N > 0|
+    norm(Next,[N|R],NewA).
+norm([0|Next],R,NewA):-
+    true|
+    norm(Next,[],NewA).
+norm([-1|Next],R,NewA):-
+    true|
+    norm(Next,[-1|R],NewA).
+norm([N|Next],R,NewA):-
+    N < -1|
+    up_norm(N,R,Next,NewA).
+
+up_norm(-1,R,Next,NewA):-
+    true|
+    norm(Next,R,NewA).
+up_norm(N,[*|CDR],Next,NewA):-
+    N < -1,
+    N1 := N + 1|
+    up_norm(N1,CDR,Next,NewA).
+
+up_norm(N,[M|CDR],Next,NewA):-
+    M > -1,
+    N < -1,
+    N1 := N + 1|
+    up_norm(N1,CDR,Next,NewA).
+up_norm(N,[M|CDR],Next,NewA):-
+    M < -1,
+    N < -1,
+    N1 := N + 1,
+    MM := M + N + 1|
+    norm(Next,[MM|CDR],NewA).
+up_norm(N,[],Next,NewA):-
+    N < -1|
+    norm(Next,[N],NewA).
+
+reverse(Old,New):-
+    true|
+    rev(Old,[],New).
+reverse(Old,CDR,New):-
+    true|
+    rev(Old,CDR,New).
+rev([],Med,New):-
+    true|
+    New = Med.
+rev([N|CDR],Med,New):-
+    true|
+    rev(CDR,[N|Med],New).
+
+filter(In,Out):-
+    true|
+    filter(In,Top,Top,Out).
+
+filter([],Top,Bot,Out):-
+    true|
+    Bot = [],
+    Out = Top.
+filter([{ID,[]}|Rest],Top,Bot,Out):-
+    true|
+    filter(Rest,Top,Bot,Out).
+filter([{ID,Child}|Rest],Top,Bot,Out):-
+    Child \= []|
+    filter(Child,ChildOut),
+    cfilter(ChildOut,ID,Rest,Top,Bot,Out).
+otherwise.
+filter([{ID,Type,Name,Child}|Rest],Top,Bot,Out):-
+    true|
+    Bot = [{ID,Type,Name,ChildOut}|BotN],
+    filter(Child,ChildOut),
+    filter(Rest,Top,BotN,Out).
+filter([{ID,Name,Cond,Init,Consume,Child}|Rest],Top,Bot,Out):-
+    true|
+    Bot = [{ID,Name,Cond,Init,Consume,ChildOut}|BotN],
+    filter(Child,ChildOut),
+    filter(Rest,Top,BotN,Out).
+
+cfilter([],ID,Rest,Top,Bot,Out):-
+    true|
+    filter(Rest,Top,Bot,Out).
+otherwise.
+cfilter(Child,ID,Rest,Top,Bot,Out):-
+    true|
+    Bot = [{ID,Child}|BotN],
+    filter(Rest,Top,BotN,Out).

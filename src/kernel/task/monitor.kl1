@@ -1,0 +1,606 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi523::>sys>user>pimos>RELEASE>src>kernel>task>monitor.kl1.6, 21-Feb-92 17:22:19, Edit by yashiro
+:- module resource_monitor.
+:- with_macro pimos.
+:- public monitor/7.
+
+monitor(ID,Type,Name,[terminate|MI],MO,HI,HO):-
+        true|
+        MO = [terminate|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,[add_monitor(A,B,C)|MI],MO,HI,HO):-
+        true|
+        MO = [add_monitor(A,B,C)|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+alternatively.
+
+monitor(ID,Type,Name,MI,MO,HI,[]):-
+        true|
+        HI = [],
+        MI = MO.
+%%%%%%%%  others
+monitor(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        atom(Msg),
+        Msg \= terminate|
+        MO = [Msg|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,2),
+        vector_element(Msg,0,Func),
+        Func \= abort_all,
+        Func \= get_uid|
+        MO = [Msg|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,3),
+        vector_element(Msg,0,Func),
+        Func \= abort,
+        Func \= abort_own|
+        MO = [Msg|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,4),
+        vector_element(Msg,0,Func),
+        Func \= add_monitor,
+        Func \= status_all|
+        MO = [Msg|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,5),
+        vector_element(Msg,0,Func),
+        Func \= status|
+        MO = [Msg|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,N),
+        N =\= 2,
+        N =\= 3,
+        N =\= 4,
+        N =\= 5|
+        MO = [Msg|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+
+%%%%%%%%
+
+monitor([ID|IDN],Type,Name,[status_all(Type,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,CResult}|NextResult],
+        HI = [status_all(Type,brief,CResult)|HIN],
+        MO = [status_all(Type,brief,NextResult)|MON],
+        monitor([ID|IDN],Type,Name,AN,MON,HIN,HO).
+monitor([ID|IDN],Type,Name,[status_all(*,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,CResult}|NextResult],
+        HI = [status_all(*,brief,CResult)|HIN],
+        MO = [status_all(*,brief,NextResult)|MON],
+        monitor([ID|IDN],Type,Name,AN,MON,HIN,HO).
+monitor(ID,Type0,Name,[status_all(Type,brief,Result)|AN],MO,HI,HO):-
+        Type0 \= Type,
+        Type \= *|
+        ID = [ID1|IDN],
+        Result = [{ID1,CResult}|NextResult],
+        HI = [status_all(Type,brief,CResult)|HIN],
+        MO = [status_all(Type,brief,NextResult)|MON],
+        monitor([ID1|IDN],Type0,Name,AN,MON,HIN,HO).
+monitor([ID|IDN],Type,Name,[status_all(Type,detail(Wait),Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Name,TaskStatus,Limit,Consume,Children}|NextResult],
+        HI = [status_all(Type,detail(Wait),{TaskStatus,Limit,Consume,Children})|HIN],
+        MO = [status_all(Type,detail(Wait),NextResult)|MON],
+        monitor([ID|IDN],Type,Name,AN,MON,HIN,HO).
+monitor(ID,Type0,Name,[status_all(Type,detail(Wait),Result)|AN],MO,HI,HO):-
+        Type0 \= Type|
+        ID = [ID1|IDN],
+        Result = [{ID1,CResult}|NextResult],
+        HI = [status_all(Type,detail(Wait),CResult)|HIN],
+        MO = [status_all(Type,detail(Wait),NextResult)|MON],
+        monitor([ID1|IDN],Type0,Name,AN,MON,HIN,HO).
+
+monitor([ID0|IDN],Type,Name,[status([ID|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+        ID0 \= ID,
+        ID \= (*)|
+        MO = [status([ID|Addr],Type,Verb,Result)|MON],
+        monitor([ID0|IDN],Type,Name,AN,MON,HI,HO).
+monitor([ID|IDN],Type,Name,[status([ID|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+        Addr \= []|
+        Result = [{ID,CResult}],
+        HI = [status(Addr,Type,Verb,CResult)|HIN],
+        monitor([ID|IDN],Type,Name,AN,MO,HIN,HO).
+monitor([ID|IDN],Type,Name,[status([ID],Type,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,[]}],
+        monitor([ID|IDN],Type,Name,AN,MO,HI,HO).
+monitor([ID|IDN],Type,Name,[status([ID],*,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,[]}],
+        monitor([ID|IDN],Type,Name,AN,MO,HI,HO).
+monitor([ID|IDN],Type,Name,[status([ID],Type,detail(Wait),Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Name,TaskStatus,Limit,Consume,Children}],
+        HI = [status([],Type,detail(Wait),{TaskStatus,Limit,Consume,Children})|HIN],
+        monitor([ID|IDN],Type,Name,AN,MO,HIN,HO).
+
+monitor([ID|IDN],Type,Name,[status([(*)|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+        Addr \= []|
+        Result = [{ID,CResult}|NextResult],
+        copy:copy(Addr,Addr1,Addr2),
+        MO = [status([(*)|Addr1],Type,Verb,NextResult)|MON],
+        HI = [status(Addr2,Type,Verb,CResult)|HIN],
+        monitor([ID|IDN],Type,Name,AN,MON,HIN,HO).
+monitor([ID|IDN],Type,Name,[status([(*)],Type,detail(Wait),Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Name,TaskStatus,Limit,Consume,Children}|NextResult],
+        MO = [status([(*)],Type,detail(Wait),NextResult)|MON],
+        HI = [status([],Type,detail(Wait),{TaskStatus,Limit,Consume,Children})|HIN],
+        monitor([ID|IDN],Type,Name,AN,MON,HIN,HO).
+monitor([ID|IDN],Type,Name,[status([(*)],Type,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,[]}|NextResult],
+        MO = [status([(*)],Type,brief,NextResult)|MON],
+        monitor([ID|IDN],Type,Name,AN,MON,HI,HO).
+monitor([ID|IDN],Type,Name,[status([(*)],*,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,[]}|NextResult],
+        MO = [status([(*)],*,brief,NextResult)|MON],
+        monitor([ID|IDN],Type,Name,AN,MON,HI,HO).
+
+%monitor([ID|IDN],Type,Name,[status([ID0|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+%        ID \= ID0,
+%        ID0 \= (*)|
+%        MO = [status([ID0|Addr],Type,Verb,Result)|MON],
+%        monitor([ID|IDN],Type,Name,AN,MON,HI,HO).
+
+monitor([ID|IDN],Type0,Name,[status([ID|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+        Type \= Type0,
+        Addr \= []|
+        Result = [{ID,CResult}],
+        HI = [status(Addr,Type,Verb,CResult)|HIN],
+        monitor([ID|IDN],Type0,Name,AN,MO,HIN,HO).
+monitor([ID|IDN],Type0,Name,[status([ID],Type,Verb,Result)|AN],MO,HI,HO):-
+        Type \= Type0,
+        Type \= (*)|
+        Result = [],
+        monitor([ID|IDN],Type0,Name,AN,MO,HI,HO).
+monitor(ID,Type,Name,[status_up(Addr,SType,Verb,Result)|AN],MO,HI,HO):-
+        true|
+        MO = [status_up(Addr,SType,Verb,Result)|MON],
+        monitor(ID,Type,Name,AN,MON,HI,HO).
+monitor(ID,Type,Name,[status_top(Addr,SType,Verb,Result)|AN],MO,HI,HO):-
+        true|
+        MO = [status_top(Addr,SType,Verb,Result)|MON],
+        monitor(ID,Type,Name,AN,MON,HI,HO).
+
+%%%%% abort
+monitor([ID0|IDN],Type,Name,[abort([ID|Addr],Uid)|AN],MO,HI,HO):-
+        ID0 \= ID,
+        ID \= (*)|
+        MO = [abort([ID|Addr],Uid)|MON],
+        monitor([ID0|IDN],Type,Name,AN,MON,HI,HO).
+monitor([ID|IDN],Type,Name,[abort([ID|Addr],Uid)|AN],MO,HI,HO):-
+        true|
+        HI = [abort(Addr,Uid)|HIN],
+        monitor([ID|IDN],Type,Name,AN,MO,HIN,HO).
+monitor([ID|IDN],Type,Name,[abort([*|Addr],Uid)|AN],MO,HI,HO):-
+        true|
+        HI = [abort(Addr,Uid)|HIN],
+        monitor([ID|IDN],Type,Name,AN,MO,HIN,HO).
+
+monitor(ID,Type,Name,[abort_up(Addr,Uid)|AN],MO,HI,HO):-
+        true|
+        MO = [abort_up(Addr,Uid)|MON],
+        monitor(ID,Type,Name,AN,MON,HI,HO).
+monitor(ID,Type,Name,[abort_top(Addr,Uid)|AN],MO,HI,HO):-
+        true|
+        MO = [abort_top(Addr,Uid)|MON],
+        monitor(ID,Type,Name,AN,MON,HI,HO).
+monitor([ID|IDN],Type,Name,[abort_all(Uid)|AN],MO,HI,HO):-
+        IDN \= []|
+        HI = [abort_all(Uid)|HIN],
+        MO = [abort_all(Uid)|MON],
+        monitor([ID|IDN],Type,Name,AN,MON,HIN,HO).
+monitor([ID],Type,Name,[abort_all(Uid)|AN],MO,HI,HO):-
+        true|
+        HI = [abort(*,Uid)|HIN],
+        MO = [abort_all(Uid)|MON],
+        monitor([ID],Type,Name,AN,MON,HIN,HO).
+
+monitor([ID|IDN],Type,Name,MI,MO,HI,[abort_own(Addr,Uid)|HO]):-
+        true|
+        monitor([ID|IDN],Type,Name,[abort([ID|Addr],Uid)|MI],MO,HI,HO).
+monitor(ID,Type,Name,MI,MO,HI,[abort_top(Addr,Uid)|HO]):-
+        true|
+        MO = [abort_top(Addr,Uid)|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,MI,MO,HI,[abort_up([N|Addr],Uid)|HO]):-
+        N < -1,
+        N1 := N + 1|
+        MO = [abort_up([N1|Addr],Uid)|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor([ID|IDN],Type,Name,MI,MO,HI,[abort_up([-1|Addr],Uid)|HO]):-
+        true|
+        monitor([ID|IDN],Type,Name,[abort([ID|Addr],Uid)|MI],MO,HI,HO).
+%%%%% etc
+
+%monitor(ID,Type,Name,[show_console|AN],MO,HI,HO):-
+%        true |
+%        MO = [show_console|MON],
+%        monitor(ID,Type,Name,AN,MON,HI,HO).
+%monitor(ID,Type,Name,[shut_down|AN],MO,HI,HO):-
+%        true |
+%        MO = [shut_down|MON],
+%        monitor(ID,Type,Name,AN,MON,HI,HO).
+
+monitor(ID,Type,Name,MI,MO,HI,[terminate|HO]):-
+        true|
+        HI = [terminate|HIN],
+        monitor2(ID,Type,Name,MI,MO,HIN,HO).
+monitor(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        atom(A),
+        A \= terminate|
+        MO = [A|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        vector(A,2),
+        vector_element(A,0,Func),
+        Func \= id,
+        Func \= get_uid,
+        Func \= simple_id,
+        Func \= absolute_id|
+        MO = [A|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        vector(A,3),
+        vector_element(A,0,Func),
+        Func \= change_comment,
+        Func \= abort_up,
+        Func \= abort_top,
+        Func \= abort_own|
+        MO = [A|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        vector(A,5),
+        vector_element(A,0,Func),
+        Func \= status_up,
+        Func \= status_own,
+        Func \= status_top|
+        MO = [A|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+monitor(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        vector(A,NVec),
+        NVec =\= 2,
+        NVec =\= 3,
+        NVec =\= 5|
+        MO = [A|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+
+monitor(ID,Type,Name,MI,MO,HI,[id(ID0)|HO]):- true|
+        ID = [ID0|IDN],
+        monitor([ID0|IDN],Type,Name,MI,MO,HI,HO).
+
+monitor(ID,Type,Name,MI,MO,HI,[absolute_id(ID1)|HO]):- true|
+        task_handler:reverse_id(ID,ID1,ID2),
+        monitor(ID2,Type,Name,MI,MO,HI,HO).
+
+monitor(ID,Type,Name,MI,MO,HI,[change_comment(Com,Result)|HO]):- true|
+        Result = normal,
+        monitor(ID,Type,Com,MI,MO,HI,HO).
+
+monitor(ID,Type,Name,MI,MO,HI,[simple_id(ID1)|HO]):- true|
+        copy:copy(ID,ID1,ID2),
+        monitor(ID2,Type,Name,MI,MO,HI,HO).
+
+monitor(ID,Type,Name,MI,MO,HI,[get_uid(ID1)|HO]):- true|
+        MO = [get_uid(ID1)|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+
+monitor(ID,Type,Name,MI,MO,HI,[status_up(Addr,SType,Verb,Result)|HO]):-
+        true|
+        MO = [status_up(Addr,SType,Verb,Result)|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+
+monitor(ID,Type,Name,MI,MO,HI,[status_top(Addr,SType,Verb,Result)|HO]):-
+        true|
+        MO = [status_top(Addr,SType,Verb,Result)|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+
+monitor([ID|IDN],Type,Name,MI,MO,HI,[status_own([],SType,Verb,Result)|HO]):-
+       true|
+       monitor([ID|IDN],Type,Name,[status([ID],SType,Verb,Result)|MI],MO,HI,HO).
+monitor([ID|IDN],Type,Name,MI,MO,HI,[status_own((*),(*),brief,Result)|HO]):-
+        true|
+        Result = [{ID,Type,Name,CResult}],
+        HI = [status_all((*),brief,CResult)|HIN],
+        monitor([ID|IDN],Type,Name,MI,MO,HIN,HO).
+monitor([ID|IDN],Type,Name,MI,MO,HI,[status_own((*),Type,brief,Result)|HO]):-
+        true|
+        Result = [{ID,Type,Name,CResult}],
+        HI = [status_all(Type,brief,CResult)|HIN],
+        monitor([ID|IDN],Type,Name,MI,MO,HIN,HO).
+
+monitor([ID|IDN],Type,Name,MI,MO,HI,[status_own(*,*,detail(Wait),Result)|HO]):-
+        true|
+        Result = [{ID,Name,TaskStatus,Limit,Consume,Children}],
+        HI = [status_all((*),detail(Wait),{TaskStatus,Limit,Consume,Children})|HIN],
+        monitor([ID|IDN],Type,Name,MI,MO,HIN,HO).
+monitor([ID|IDN],task,Name,MI,MO,HI,[status_own((*),task,detail(Wait),Result)|HO]):-
+        true|
+        Result = [{ID,Name,TaskStatus,Limit,Consume,Children}],
+        HI = [status_all(task,detail(Wait),{TaskStatus,Limit,Consume,Children})|HIN],
+        monitor([ID|IDN],task,Name,MI,MO,HIN,HO).
+monitor(IDs,Type,Name,MI,MO,HI,[status_own((*),Type,detail(Wait),Result)|HO]):-
+        Type \= task|
+        Result = [],
+        monitor(IDs,Type,Name,MI,MO,HI,HO).
+monitor([ID|IDN],Type,Name,MI,MO,HI,[status_own((*),SType,Verb,Result)|HO]):-
+        Type \= SType|
+        Result = [{ID,CResult}],
+        HI = [status_all(SType,Verb,CResult)|HIN],
+        monitor([ID|IDN],Type,Name,MI,MO,HIN,HO).
+monitor([ID|IDN],Type,Name,MI,MO,HI,[status_own(Addr,SType,Verb,Result)|HO]):-
+       list(Addr)|
+       monitor([ID|IDN],Type,Name,[status([ID|Addr],SType,Verb,Result)|MI],MO,HI,HO).
+
+monitor(ID,Type,Name,[scsi(Info)|MI],MO,HI,HO):-
+        true|
+        MO = [scsi(Info)|MON],
+        monitor(ID,Type,Name,MI,MON,HI,HO).
+
+%%%%%%%%%
+
+monitor2(ID,Type,Name,MI,MO,HI,[]):- true|
+        MO = MI,
+        HI = [].
+monitor2(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        atom(Msg),
+        Msg \= terminate|
+        MO = [Msg|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,2),
+        vector_element(Msg,0,Func),
+        Func \= abort_all,
+        Func \= scsi,
+        Func \= get_uid|
+        MO = [Msg|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,3),
+        vector_element(Msg,0,Func),
+        Func \= abort_up,
+        Func \= abort_top,
+        Func \= abort,
+        Func \= abort_own|
+        MO = [Msg|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,4),
+        vector_element(Msg,0,Func),
+        Func \= status_all|
+        MO = [Msg|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,5),
+        vector_element(Msg,0,Func),
+        Func \= status|
+        MO = [Msg|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,[Msg|MI],MO,HI,HO):-
+        vector(Msg,N),
+        N =\= 2,
+        N =\= 3,
+        N =\= 4,
+        N =\= 5|
+        MO = [Msg|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[terminate|HO]):-
+        true|
+        HI = [terminate|HIN],
+        monitor2(ID,Type,Name,MI,MO,HIN,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        atom(A),
+        A \= terminate|
+        MO = [A|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        vector(A,2),
+        vector_element(A,0,Func),
+        Func \= id,
+        Func \= get_uid,
+        Func \= simple_id,
+        Func \= absolute_id|
+        MO = [A|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        vector(A,3),
+        vector_element(A,0,Func),
+        Func \= change_comment,
+        Func \= abort_top,
+        Func \= abort_up,
+        Func \= abort_own|
+        MO = [A|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        vector(A,5),
+        vector_element(A,0,Func),
+        Func \= status_own,
+        Func \= status_top,
+        Func \= status_up|
+        MO = [A|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[A|HO]):-
+        vector(A,NVec),
+        NVec =\= 2,
+        NVec =\= 3,
+        NVec =\= 5|
+        MO = [A|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+
+monitor2(ID,Type,Name,MI,MO,HI,[id(ID0)|HO]):-
+        true|
+        ID = [ID0|IDN],
+        monitor2([ID0|IDN],Type,Name,MI,MO,HI,HO).
+
+monitor2(ID,Type,Name,MI,MO,HI,[absolute_id(ID1)|HO]):-
+        true|
+        task_handler:reverse_id(ID,ID1,IDN),
+        monitor2(IDN,Type,Name,MI,MO,HI,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[simple_id(ID1)|HO]):-
+        true|
+        copy:copy(ID,ID1,IDN),
+        monitor2(IDN,Type,Name,MI,MO,HI,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[change_comment(Com,Result)|HO]):-
+        true|
+        Result = normal,
+        monitor2(ID,Type,Com,MI,MO,HI,HO).
+
+monitor2(ID,Type,Name,MI,MO,HI,[get_uid(ID0)|HO]):-
+        true|
+        MO = [get_uid(ID0)|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2([ID|IDN],Type,Name,[status_all(Type,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,[]}|NextResult],
+        MO = [status_all(Type,brief,NextResult)|MON],
+        monitor2([ID|IDN],Type,Name,AN,MON,HI,HO).
+monitor2([ID|IDN],Type,Name,[status_all(*,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,[]}|NextResult],
+        MO = [status_all(*,brief,NextResult)|MON],
+        monitor2([ID|IDN],Type,Name,AN,MON,HI,HO).
+monitor2(ID,Type0,Name,[status_all(Type,brief,Result)|AN],MO,HI,HO):-
+        Type0 \= Type,
+        Type \= *|
+        ID = [ID1|IDN],
+        MO = [status_all(Type,brief,Result)|MON],
+        monitor2([ID1|IDN],Type0,Name,AN,MON,HI,HO).
+monitor2([ID|IDN],Type,Name,[status_all(Type,detail(Wait),Result)|AN],MO,HI,HO):-
+        true|
+        MO = [status_all(Type,detail(Wait),Result)|MON],
+        monitor2([ID|IDN],Type,Name,AN,MON,HI,HO).
+monitor2(ID,Type0,Name,[status_all(Type,detail(Wait),Result)|AN],MO,HI,HO):-
+        Type0 \= Type|
+        ID = [ID1|IDN],
+        MO = [status_all(Type,detail(Wait),Result)|MON],
+        monitor2([ID1|IDN],Type0,Name,AN,MON,HI,HO).
+
+monitor2([ID0|IDN],Type,Name,[status([ID|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+        ID0 \= ID,
+        ID \= (*)|
+        MO = [status([ID|Addr],Type,Verb,Result)|MON],
+        monitor2([ID0|IDN],Type,Name,AN,MON,HI,HO).
+monitor2([ID|IDN],Type,Name,[status([ID|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+        Addr \= []|
+        Result = [],
+        monitor2([ID|IDN],Type,Name,AN,MO,HI,HO).
+monitor2([ID|IDN],Type,Name,[status([ID],Type,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,[]}],
+        monitor2([ID|IDN],Type,Name,AN,MO,HI,HO).
+monitor2([ID|IDN],Type,Name,[status([ID],*,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,[]}],
+        monitor2([ID|IDN],Type,Name,AN,MO,HI,HO).
+monitor2([ID|IDN],Type,Name,[status([ID],Type,detail(Wait),Result)|AN],MO,HI,HO):-
+        true|
+        Result = [],
+        monitor2([ID|IDN],Type,Name,AN,MO,HI,HO).
+
+monitor2([ID|IDN],Type,Name,[status([(*)|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+        Addr \= []|
+        MO = [status([(*)|Addr],Type,Verb,Result)|MON],
+        monitor2([ID|IDN],Type,Name,AN,MON,HI,HO).
+monitor2([ID|IDN],Type,Name,[status([(*)],Type,detail(Wait),Result)|AN],MO,HI,HO):-
+        true|
+        MO = [status([(*)],Type,detail(Wait),Result)|MON],
+        monitor2([ID|IDN],Type,Name,AN,MON,HI,HO).
+monitor2([ID|IDN],Type,Name,[status([(*)],Type,brief,Result)|AN],MO,HI,HO):-
+        true|
+        Result = [{ID,Type,Name,[]}|NextResult],
+        MO = [status([(*)],Type,brief,NextResult)|MON],
+        monitor2([ID|IDN],Type,Name,AN,MON,HI,HO).
+
+%monitor2([ID|IDN],Type,Name,[status([ID0|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+%        ID \= ID0,
+%        ID0 \= (*)|
+%        MO = [status([ID0|Addr],Type,Verb,Result)|MON],
+%        monitor2([ID|IDN],Type,Name,AN,MON,HI,HO).
+
+monitor2([ID|IDN],Type0,Name,[status([ID|Addr],Type,Verb,Result)|AN],MO,HI,HO):-
+        Type \= Type0,
+        Type \= *,
+        Addr \= []|
+        Result = [],
+        monitor2([ID|IDN],Type0,Name,AN,MO,HI,HO).
+monitor2([ID|IDN],Type0,Name,[status([ID],Type,Verb,Result)|AN],MO,HI,HO):-
+        Type \= Type0,
+        Type \= *|
+        Result = [],
+        monitor2([ID|IDN],Type0,Name,AN,MO,HI,HO).
+
+monitor2(ID,Type,Name,MI,MO,HI,[status_up(Addr,SType,Verb,Result)|HO]):-
+        true|
+        MO = [status_up(Addr,SType,Verb,Result)|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+
+monitor2(ID,Type,Name,MI,MO,HI,[status_top(Addr,SType,Verb,Result)|HO]):-
+        true|
+        MO = [status_top(Addr,SType,Verb,Result)|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+
+monitor2([ID|IDN],Type,Name,MI,MO,HI,[status_own([],SType,Verb,Result)|HO]):-
+      true|
+      monitor2([ID|IDN],Type,Name,[status([ID],SType,Verb,Result)|MI],MO,HI,HO).
+monitor2([ID|IDN],Type,Name,MI,MO,HI,[status_own((*),SType,Verb,Result)|HO]):-
+      true|
+      monitor2([ID|IDN],Type,Name,[status([ID],SType,Verb,Result)|MI],MO,HI,HO).
+monitor2([ID|IDN],Type,Name,MI,MO,HI,[status_own(Addr,SType,Verb,Result)|HO]):-
+      list(Addr)|
+      monitor2([ID|IDN],Type,Name,[status([ID|Addr],SType,Verb,Result)|MI],MO,HI,HO).
+
+%%%%% abort
+monitor2([ID0|IDN],Type,Name,[abort([ID|Addr],Uid)|AN],MO,HI,HO):-
+        ID0 \= ID,
+        ID \= (*)|
+        MO = [abort([ID|Addr],Uid)|MON],
+        monitor2([ID0|IDN],Type,Name,AN,MON,HI,HO).
+monitor2([ID|IDN],Type,Name,[abort([ID|Addr],Uid)|AN],MO,HI,HO):-
+        true|
+        monitor2([ID|IDN],Type,Name,AN,MO,HI,HO).
+monitor2([ID|IDN],Type,Name,[abort([*|Addr],Uid)|AN],MO,HI,HO):-
+        true|
+        monitor2([ID|IDN],Type,Name,AN,MO,HI,HO).
+
+monitor2([ID|IDN],Type,Name,[abort_all(Uid)|AN],MO,HI,HO):-
+        true|
+        MO = [abort_all(Uid)|MON],
+        monitor2([ID|IDN],Type,Name,AN,MON,HI,HO).
+
+monitor2(ID,Type,Name,[abort_up(Addr,Uid)|AN],MO,HI,HO):-
+        true|
+        MO = [abort_up(Addr,Uid)|MON],
+        monitor2(ID,Type,Name,AN,MON,HI,HO).
+monitor2(ID,Type,Name,[abort_top(Addr,Uid)|AN],MO,HI,HO):-
+        true|
+        MO = [abort_top(Addr,Uid)|MON],
+        monitor2(ID,Type,Name,AN,MON,HI,HO).
+
+monitor2([ID|IDN],Type,Name,MI,MO,HI,[abort_own(Addr,Uid)|HO]):-
+        true|
+        monitor2([ID|IDN],Type,Name,[abort([ID|Addr],Uid)|MI],MO,HI,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[abort_top(Addr,Uid)|HO]):-
+        true|
+        MO = [abort_top(Addr,Uid)|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2(ID,Type,Name,MI,MO,HI,[abort_up([N|Addr],Uid)|HO]):-
+        N < -1,
+        N1 := N + 1|
+        MO = [abort_up([N1|Addr],Uid)|MON],
+        monitor2(ID,Type,Name,MI,MON,HI,HO).
+monitor2([ID|IDN],Type,Name,MI,MO,HI,[abort_up([-1|Addr],Uid)|HO]):-
+        true|
+        monitor2([ID|IDN],Type,Name,[abort([ID|Addr],Uid)|MI],MO,HI,HO).

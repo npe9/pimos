@@ -1,0 +1,137 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%%        isblt.kl1
+%%
+%%  determine the body goal
+%%  wheather builtin or not
+%%
+
+:- module kl1cmp_isbltin.
+:- public predicate_table/3.
+:- with_macro pimos.
+size_of_Table(Size) :- true | Size = 100.
+
+:- local_implicit err:oldnew.
+predicate_table(Str) --> true |
+ {{size_of_Table(Size),
+   kl1cmp_reader:herrey(Size, [], Tbl)}},
+   table_manager(Size, Str, Tbl, []).
+%%
+%%   put_pred message
+%%
+%%    put the declared goals to data base
+%%  If a goal multiple defined, 'Ans' returns as 'ng'.
+%%
+:- local_implicit err:oldnew.
+table_manager(Size, [put_pred(F0/A, Info, Ans)|Str], Tbl0, Public0) --> 
+      wait(Tbl0) |
+ {{hash(F0, Val0, F),
+   Val := Val0 mod Size,
+   set_vector_element(Tbl0, Val, Old, New, Tbl),
+   isUnique(New, [], F/A, Info, Old, Ans)}},
+   table_manager(Size, Str, Tbl, Public0).
+table_manager(Size, [put_public_pred(PredName, Info)|Str], Tbl0, Public0) -->
+      wait(Tbl0) |
+  {{Public=[PredName-Info|Public0]}},
+    table_manager(Size, Str, Tbl0, Public).
+%%
+%%  get_pred message
+%%  
+%%tells the using body goal is user-defined or not.
+%%    If a goal is user defined, 'Ans' returns 'user', or 'undef' if not
+%%defined.
+%%
+table_manager(Size, [get_pred(PredName, Ans)|Str], Tbl0, Public) --> true |
+   check_public_declarations(Public, Size, Tbl0, Tbl1),
+   check_used_predicate(Size, [get_pred(PredName, Ans)|Str], Tbl1).
+table_manager(Size, [], Tbl0, Public) --> true |
+   check_public_declarations(Public, Size, Tbl0, Tbl1),
+   check_nonused_predicate(0, Size, Tbl1).
+
+
+:- local_implicit cont:oldnew.
+isUnique(PredName, _, [PredName-INFO-0|Rest], Ans) --> true |
+ {{Ans=ng}},
+  &cont<<=[PredName-INFO-0],
+  out_to_stream(Rest).
+otherwise.
+isUnique(PredName, Info, [AnotherPred-INFO-0|Rest], Ans) --> true |
+  &cont<<=[AnotherPred-INFO-0],
+  isUnique(PredName, Info, Rest, Ans).
+isUnique(PredName, Info, [], Ans) --> true |
+ {{Ans=ok}},
+  &cont<<=[PredName-Info-0].
+
+
+check_used_predicate(Size, [get_pred(F0/A, Ans)|Str], Tbl0) -->
+      wait(Tbl0) |
+ {{hash(F0, Val0, F),
+   Val := Val0 mod Size,
+   set_vector_element(Tbl0, Val, Cont0, Cont, Tbl),
+   search_predicate(Cont, [], F/A, Ans, Cont0)}},
+   check_used_predicate(Size, Str, Tbl).
+check_used_predicate(Size, [], Tbl0) --> true |
+   check_nonused_predicate(0, Size, Tbl0).
+
+:- local_implicit cont:oldnew.
+search_predicate(PredName, Ans, [PredName-Info-_|Rest]) --> true |
+ {{Ans=user}},
+   &cont<<=[PredName-Info-1],
+   out_to_stream(Rest).
+otherwise.
+search_predicate(PredName, Ans, [AnotherPred|Rest]) --> true |
+   &cont <<= [AnotherPred],
+   search_predicate(PredName, Ans, Rest).
+search_predicate(_, Ans, []) --> true |
+ {{Ans=undef}}.
+
+out_to_stream([One|Rest]) --> true |
+   &cont<<=[One],
+   out_to_stream(Rest).
+out_to_stream([]) --> true | true.
+
+
+:- local_implicit err:oldnew.
+check_public_declarations([], _, Tbl0, Tbl) --> true |
+%%   &err <<= [error(string#"public declaration not found")],
+   &err <<= [error(string#"public declaration not found", [])], % HORI Patch 6/23 Which Public ?
+   Tbl0=Tbl.
+otherwise.
+check_public_declarations(Publics, Size, Tbl0, Tbl) --> true |
+   check_public_declarations_(Publics, Size, Tbl0, Tbl).
+
+check_public_declarations_([F0/A-Info|Rest], Size, Tbl0, Tbl) --> wait(Tbl0) |
+ {{hash(F0, Val0, F),
+   Val := Val0 mod Size,
+   set_vector_element(Tbl0, Val, Cont0, Cont, Tbl1),
+   search_predicate(Cont, [], F/A, Ans, Cont0)}},
+   send_error_message(Ans, F/A, Info),
+   check_public_declarations_(Rest, Size, Tbl1, Tbl).
+check_public_declarations_([], _, Tbl0, Tbl) --> true | Tbl0=Tbl.
+
+send_error_message(user, _, _) --> true | true.
+send_error_message(undef, Pred/Ari, Info) --> true |
+   &err <<= [error(string#"undefined public predicate : ~T",
+                [vector({atom((/)),atom(Pred), integer(Ari)})], Info)].
+
+check_nonused_predicate(A, Size, Tbl0) --> A<Size |
+ {{set_vector_element(Tbl0, A, Cont, [], Tbl1),
+   A1 := A+1}},
+   check_nonused_predicate(Cont),
+   check_nonused_predicate(A1, Size, Tbl1).
+check_nonused_predicate(Size, Size, _) --> true.
+
+check_nonused_predicate([Pred/Ari-Info-0|Cdr]) --> true |
+   &err <<= [warning(string#"unused predicate found : ~T",
+        [vector({atom((/)), atom(Pred), integer(Ari)})], Info)],
+   check_nonused_predicate(Cdr).
+check_nonused_predicate([_-_-1|Cdr]) --> true |
+   check_nonused_predicate(Cdr).
+check_nonused_predicate([]) --> true | true.
+
+

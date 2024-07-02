@@ -1,0 +1,201 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_rsc_manager.
+:- public create/6, filter/3.
+:- with_macro pimos.
+
+create(Mode,TrID,Macro,ATM1,Pac,RSC1) :- true |
+    merge(RSC1,RSC),
+    listener_profile_data_pool:create(DAT),
+    listener_alias_manager:create(ALI),
+    listener_code_manager:create({COD1,COD2,COD3},Pac),
+    listener_macro_manager:create(Macro,COD1,MCR),
+    listener_spy_manager:create(SPY,Pac,COD2),
+    listener_timer_manager:create(TIM,Time),
+    listener_var_manager:create(VAR),
+    listener_env_manager:create(Mode,TrID,Time,ENV),  % 0 is default module.
+    listener_command_manager:create(COM,50),
+    listener_atom_manager:create({ATM1,ATM}),
+    listener_error_manager:create(ERR,5),
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD3,TIM,_,COM,ATM,DAT,ERR).
+
+
+manager([environment(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    ENV={OS,ENV1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV1,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+manager([variable(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    VAR={OS,VAR1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR1,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+manager([spy(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    SPY={OS,SPY1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR,SPY1,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+manager([code(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    COD={OS,COD1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD1,TIM,Kill,COM,ATM,DAT,ERR).
+manager([command(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    COM={OS,COM1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM1,ATM,DAT,ERR).
+manager([atom(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    ATM={OS,ATM1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM1,DAT,ERR).
+manager([timer(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    TIM={OS,TIM1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM1,Kill,COM,ATM,DAT,ERR).
+manager([macro(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    MCR={OS,MCR1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR,SPY,ALI,MCR1,COD,TIM,Kill,COM,ATM,DAT,ERR).
+manager([alias(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    ALI={OS,ALI1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR,SPY,ALI1,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+manager([profile_data_pool(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    DAT={OS,DAT1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT1,ERR).
+manager([error(TF,US)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    ERR={OS,ERR1},
+    listener_utility:valve(TF,US,OS),
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR1).
+
+manager([profile_data_pool(Req)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    DAT=[Req|DAT1],
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT1,ERR).
+manager([error(Req)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    ERR=[Req|ERR1],
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR1).
+manager([macro(Req)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    MCR=[Req|MCR1],
+    manager(RSC,ENV,VAR,SPY,ALI,MCR1,COD,TIM,Kill,COM,ATM,DAT,ERR).
+manager([variable(Req)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    VAR=[Req|VAR1],
+    manager(RSC,ENV,VAR1,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+manager([spy(Req)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    SPY=[Req|SPY1],
+    manager(RSC,ENV,VAR,SPY1,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+manager([code(Req)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    COD=[Req|COD1],
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD1,TIM,Kill,COM,ATM,DAT,ERR).
+manager([command(Req)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    COM=[Req|COM1],
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM1,ATM,DAT,ERR).
+manager([atom(Req)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    ATM=[Req|ATM1],
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM1,DAT,ERR).
+manager([timer(Req)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    TIM=[Req|TIM1],
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM1,Kill,COM,ATM,DAT,ERR).
+
+manager([abort_line(Abort)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    Abort=Kill,
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+
+manager([macro_expander(Db,Num,WTrm,MTrm,DEV)|RSC],
+                        ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    ENV=[getenv(listener:mode,Mode),
+         get(module,DM),
+         get(remembrance,Rem),
+         get(display_variables,Prt),
+         get(query,Query)|ENV1],
+    mode_table(Mode,Rank),
+    listener_command_analyzer:command_analyzer(WTrm,MTrm,DEV,
+        MCR,MCR1,Var,[],COD,COD1,ALI,ALI1,DM,Db,Rank),
+    listener_var_manager:distributor(Var,VAR,VAR1,Num,Rem,Prt,Query),
+    manager(RSC,ENV1,VAR1,SPY,ALI1,MCR1,COD1,TIM,Kill,COM,ATM,DAT,ERR).
+
+manager([macro_expander_for_new_goal(WTrm,MTrm,DEV,INT,INT1)|RSC],
+                        ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    ENV=[getenv(listener:mode,Mode),get(module,DM)|ENV1],
+    mode_table(Mode,Rank),
+    listener_var_manager:create_for_newgoal(V,INT,INT1),
+    listener_command_analyzer:command_analyzer(WTrm,MTrm,DEV,
+        MCR,MCR1,V,[],COD,COD1,ALI,ALI1,DM,trace,Rank),
+    manager(RSC,ENV1,VAR,SPY,ALI1,MCR1,COD1,TIM,Kill,COM,ATM,DAT,ERR).
+
+manager([do(List)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,RSC,RSC1),
+    manager(RSC1,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+
+manager([flush(Done)|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :- true|
+    Done=normal,
+    manager(RSC,ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+
+manager([],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :- true|
+    Kill=kill, 
+    ENV=[], VAR=[], SPY=[], ALI=[], MCR=[], COD=[], TIM=[], COM=[], ATM=[], DAT=[], ERR=[].
+
+otherwise.
+manager([Req|RSC],ENV,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR) :-
+    ENV=[Req|ENV1],
+    manager(RSC,ENV1,VAR,SPY,ALI,MCR,COD,TIM,Kill,COM,ATM,DAT,ERR).
+
+
+mode_table(normal(pimos),Rk) :- true | Rk=2.
+mode_table(normal(firm), Rk) :- true | Rk=3.
+otherwise.
+mode_table(_,            Rk) :- true | Rk=1.
+
+
+
+filter(TF,[environment(A)|USER],OS) :- true |
+    OS=[environment(TF,B)|OS1],
+    listener_env_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[variable(A)|USER],OS) :- true |
+    OS=[variable(TF,B)|OS1],
+    listener_var_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[spy(A)|USER],OS) :- true |
+    OS=[spy(TF,B)|OS1],
+    listener_spy_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[alias(A)|USER],OS) :- true |
+    OS=[alias(TF,B)|OS1],
+    listener_alias_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[macro(A)|USER],OS) :- true |
+    OS=[macro(TF,B)|OS1],
+    listener_macro_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[code(A)|USER],OS) :- true |
+    OS=[code(TF,B)|OS1],
+    listener_code_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[timer(A)|USER],OS) :- true |
+    OS=[timer(TF,B)|OS1],
+    listener_timer_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[command(A)|USER],OS) :- true |
+    OS=[command(TF,B)|OS1],
+    listener_command_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[atom(A)|USER],OS) :- true |
+    OS=[atom(TF,B)|OS1],
+    listener_atom_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[profile_data_pool(A)|USER],OS) :- true |
+    OS=[profile_data_pool(TF,B)|OS1],
+    listener_profile_data_pool:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[error(A)|USER],OS) :- true |
+    OS=[error(TF,B)|OS1],
+    listener_error_manager:filter(A,B),
+    filter(TF,USER,OS1).
+filter(TF,[flush(Done)|USER],OS) :- true |
+    OS=[flush(Done1)|OS1],
+    listener_utility:wait_unify(Done1,Done),
+    filter(TF,USER,OS1).
+filter(_,[],OS) :- true | OS=[].

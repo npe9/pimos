@@ -1,0 +1,562 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module login_server_utility.
+:- with_macro pimos.
+
+:- public change_password/6,
+          add_user/6, remove_user/5,
+          add_group/6, remove_group/5.
+
+change_password(Uid,Old,New,St,Tools,ToolsN):-
+   true|
+   login_server:get_info(InfoIn,InfoInN,Tools,Tools1),
+   login_server:get_user(U,UN,Tools1,Tools2),
+   login_server:get_file(FileR,FileRN,Tools2,ToolsN),
+   U = [change_password(Uid,Old,New,Res)|U2],
+   wait_change_user_info(Res,St,U2,UN,InfoIn,InfoInN,FileR,FileRN).
+
+%%%%%%%%%%%%%%%%5
+add_user(UName,Uid,UInfo,St,Tools,ToolsN):-
+   true|
+   copy:copy(UName,UName1,UName2),
+   login_server:get_user(U,UN,Tools,Tools2),
+   U = [get_uid(UName1,Res)|U2],
+   wait_add_user(Res,St,UName2,Uid,UInfo,U2,UN,Tools2,ToolsN).
+
+wait_add_user(normal(_),St,UName,Uid,UInfo,U,UN,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   U = UN,
+   Tools = ToolsN.
+otherwise.
+wait_add_user(_,St,UName,Uid,UInfo,U,UN,Tools,ToolsN):-
+   true|
+   U = [get_info(Uid,Res)|U2],
+   wait_add_user2(Res,St,UName,Uid,U2,UN,UInfo,Tools2,ToolsN).
+
+wait_add_user2(normal(_),St,UName,Uid,U,UN,UInfo,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   U = UN,
+   Tools = ToolsN.
+otherwise.
+wait_add_user2(_,St,UName,Uid,U,UN,UInfo,Tools,ToolsN):-
+   true|
+   check_uinfo(UName,Uid,UInfo,G,G2,Res),
+   login_server:get_info(I,IN,Tools,Tools1),
+   login_server:get_group(G,GN,Tools1,Tools2),
+   login_server:get_file(FR,FRN,Tools2,ToolsN),
+   wait_add_user3(Res,St,I,IN,U,UN,G2,GN,FR,FRN).
+
+wait_add_user3(normal(UInfo,GInfo),St,I,IN,U,UN,G,GN,FR,FRN):-
+   true|
+   U = [get_all_info(Res)|U2],
+   wait_add_user4(Res,St,UInfo,GInfo,I,IN,U2,UN,G,GN,FR,FRN).
+otherwise.
+wait_add_user3(_,St,I,IN,U,UN,G,GN,FR,FRN):-
+   true|
+   St = abnormal,
+   I = IN,
+   U = UN,
+   G = GN,
+   FR = FRN.
+
+wait_add_user4(normal(UL),St,UInfo,GInfo,I,IN,U,UN,G,GN,FR,FRN):-
+   true|
+   U = [set_up([UInfo|UL],Res)|U2],
+   wait_add_user5(Res,St,GInfo,I,IN,U2,UN,G,GN,FR,FRN).
+otherwise.
+wait_add_user4(_,St,_,_,I,IN,U,UN,G,GN,FR,FRN):-
+   true|
+   St = abnormal,
+   I = IN,
+   U = UN,
+   G = GN,
+   FR = FRN.
+
+wait_add_user5(normal,St,GInfo,I,IN,U,UN,G,GN,FR,FRN):-
+   true|
+   G = [set_up(GInfo,Res)|G2],
+   wait_add_user6(Res,St,I,IN,U,UN,G2,GN,FR,FRN).
+otherwise.
+wait_add_user5(_,St,_,I,UN,U,UN,G,GN,FR,FRN):-
+   true|
+   St = abnormal,
+   I = IN,
+   U = UN,
+   G = GN,
+   FR = FRN.
+
+wait_add_user6(normal,St,I,IN,U,UN,G,GN,FR,FRN):-
+   true|
+   St = normal,
+   I = [get_user_file(UFile,GFile)|IN],
+   sync_user_file(UFile,Res1,U,UN,FR,FR2),
+   sync_group_file(GFile,Res2,G,GN,FR2,FRN),
+   wait_status2(Res1,Res2,St).
+otherwise.
+wait_add_user6(_,St,I,IN,U,UN,G,GN,FR,FRN):-
+   true|
+   St = abnormal,
+   I = IN,
+   U = UN,
+   G = GN,
+   FR = FRN.
+
+wait_status2(normal,normal,St):-
+   true|
+   St = normal.
+otherwise.
+wait_status2(_,_,St):-
+   true|
+   St = abnormal.
+
+check_uinfo(UName,Uid,{Pass,Prio,Dir,Node,Ep,Com,GL},G,GN,Res):-
+   string(Pass,_,_),
+   Prio =< 4096,
+   Prio >= 0,
+   list(GL)|
+   check_dir(Dir,RDir),
+   check_node(Node,RNode),
+   check_ep(Ep,REp),
+   check_com(Com,RCom),
+   check_gl(GL,RGL,Uid,G,GN),
+   wait_check_uinfo(RDir,RNode,REp,RCom,RGL,UName,Uid,Pass,Prio,Res).
+
+wait_check_uinfo(normal(Dir),normal(Node),normal(Ep),normal(Com),normal(GL),
+                                UName,Uid,Pass,Prio,Res):-
+   true|
+   Res = normal({UName,Pass,Uid,Prio,Dir,Node,Ep,Com},GL).
+otherwise.
+wait_check_uinfo(_,_,_,_,_,_,_,_,_,Res):-
+   true|
+   Res = abnormal.
+
+check_dir(Dir,RDir):- string(Dir,_,_)| RDir = normal(Dir).
+check_dir(*,RDir):- true| RDir = normal(*).
+otherwise.
+check_dir(Dir,RDir):- true| RDir = abnormal.
+
+check_node(Node,RNode):- true|
+   current_node(_,Nodes),
+   check_node(Node,Nodes,RNode).
+
+check_node(Node,Nodes,RNode):-
+   Node >= 0,
+   Node < Nodes|
+   RNode = normal(Node).
+otherwise.
+check_node(_,_,RNode):-
+   true|
+   RNode = abnormal.
+
+check_ep(P::Mod:Pred,REp):- atom(P),atom(Mod)|
+   REp = normal(P::Mod:Pred).
+check_ep(Mod:Pred,REp):- atom(Mod)|
+   REp = normal(Mod:Pred).
+otherwise.
+check_ep(_,REp):- true|
+   REp = abnormal.
+
+check_com([],RCom):- true| RCom = normal([]).
+check_com(Com,RCom):- list(Com)| RCom = normal(Com).
+otherwise.
+check_com(_,RCom):- true| RCom = abnormal.
+
+check_gl(GL,RGL,Uid,G,GN):- true|
+   check_gl(GL,Top,Top,RGL,Uid,G,GN).
+
+check_gl([],Top,Btm,RGL,Uid,G,GN):-
+   true|
+   Btm = [],
+   check_gl3(Top,RGL,Uid,G,GN).
+check_gl([GName|GL],Top,Btm,RGL,Uid,G,GN):-
+   string(GName,_,_)|
+   copy:copy(GName,GName1,GName2),
+   G = [get_gid(GName1,Res)|G2],
+   check_gl2(Res,GName2,GL,Top,Btm,RGL,Uid,G2,GN).
+
+check_gl2(normal(Gid),GName,GL,Top,Btm,RGL,Uid,G,GN):-
+   true|
+   Btm = [Gid|BtmN],
+   check_gl(GL,Top,BtmN,RGL,Uid,G,GN).
+otherwise.
+check_gl2(_,_,_,_,_,RGL,_,G,GN):-
+   true|
+   RGL = abnormal,
+   G = GN.
+
+check_gl3(GL,RGL,Uid,G,GN):-
+   true|
+   G = [get_all_info(INFO)|GN],
+   check_gl3(GL,INFO,Uid,RGL).
+
+check_gl3([Gid|GL],INFO,Uid,RGL):-
+   true|
+   check_gl4(Gid,INFO,INFON,Uid),
+   check_gl3(GL,INFON,Uid,RGL).
+check_gl3([],INFO,_,RGL):-
+   true|
+   RGL = normal(INFO).
+
+check_gl4(Gid,[ONE|INFO],INFON,Uid):-
+   vector_element(ONE,1,Gid)|
+   set_vector_element(ONE,2,UIDS,[Uid|UIDS],TWO),
+   INFON = [TWO|INFO].
+otherwise.
+check_gl4(Gid,[ONE|INFO],INFON,Uid):-
+   true|
+   INFON = [ONE|INFONN],
+   check_gl4(Gid,INFO,INFONN,Uid).
+check_gl4(_,[],INFON,_):-
+   true|
+   INFON = [].
+
+%%%%%%%%%%%%%%%%%%%
+wait_change_user_info(normal,St,U,UN,InfoIn,InfoInN,FileR,FileRN):-
+   true|
+   InfoIn = [get_user_file(Name,_)|InfoInN],
+   sync_user_file(Name,St,U,UN,FileR,FileRN).
+otherwise.
+wait_change_user_info(_,St,U,UN,InfoIn,InfoInN,FileR,FileRN):-
+   true|
+   St = abnormal,
+   U = UN, InfoIn = InfoInN, FileR = FileRN.
+
+%%%%%%%%%%%%%%%%5
+remove_user(UName,Uid,St,Tools,ToolsN):-
+   true|
+   copy:copy(UName,UName1,UName2),
+   login_server:get_user(U,UN,Tools,Tools2),
+   U = [get_uid(UName1,Res)|U2],
+   wait_remove_user(Res,St,UName2,Uid,U2,UN,Tools2,ToolsN).
+
+wait_remove_user(normal(_),St,UName,Uid,U,UN,Tools,ToolsN):-
+   true|
+   U = [get_info(Uid,Res)|U2],
+   wait_remove_user2(Res,St,UName,Uid,U2,UN,Tools,ToolsN).
+otherwise.
+wait_remove_user(_,St,UName,Uid,U,UN,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   U = UN,
+   Tools = ToolsN.
+
+wait_remove_user2(normal(UInfo),St,UName,Uid,U,UN,Tools,ToolsN):-
+   vector_element(UInfo,0,UName)|
+   U = [get_all_info(UINFOS)|U2],
+   wait_remove_user3(UINFOS,Uid,St,U,UN,Tools,ToolsN). 
+otherwise.
+wait_remove_user2(_,St,_,_,U,UN,Tools,ToolsN):-
+   true|  
+   St = abnormal,
+   U = UN,
+   Tools = ToolsN.
+
+wait_remove_user3(normal(UINFOS),Uid,St,U,UN,Tools,ToolsN):-
+   true|
+   remove_user3(UINFOS,Uid,UINFOSN),
+   U = [set_up(UINFOSN,Res)|U2],
+   wait_remove_user4(Res,St,U2,UN,Tools,ToolsN).
+otherwise.
+wait_remove_user3(_,_,St,U,UN,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   U = UN, Tools = ToolsN.
+
+wait_remove_user4(normal,St,U,UN,Tools,ToolsN):-
+   true|
+   login_server:get_info(InfoIn,InfoInN,Tools,Tools2),
+   login_server:get_file(FileR,FileRN,Tools2,ToolsN),
+   InfoIn = [get_user_file(Name,_)|InfoInN],
+   sync_user_file(Name,St,U,UN,FileR,FileRN).
+otherwise.
+wait_remove_user4(_,St,U,UN,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   U = UN, Tools = ToolsN.
+
+remove_user3([],_,UINFOSN):-
+   true|
+   UINFOSN = [].
+otherwise.
+remove_user3([E|UINFOS],Uid,UINFOSN):-
+   vector_element(E,1,Uid)|
+   UINFOS = UINFOSN.
+otherwise.
+remove_user3([E|UINFOS],Uid,UINFOSN):-
+   true|
+   UINFOSN = [E|UINFOSNN],
+   remove_user3(UINFOS,Uid,UINFOSNN).
+
+%%%%%%%%%%%%%%%%5
+add_group(GName,Gid,GInfo,St,Tools,ToolsN):-
+   true|
+   copy:copy(GName,GName1,GName2),
+   login_server:get_group(G,GN,Tools,Tools2),
+   G = [get_gid(GName1,Res)|G2],
+   wait_add_group(Res,St,GName2,Gid,GInfo,G2,GN,Tools2,ToolsN).
+
+wait_add_group(normal(_),St,GName,Gid,GInfo,G,GN,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   G = GN,
+   Tools = ToolsN.
+otherwise.
+wait_add_group(_,St,GName,Gid,GInfo,G,GN,Tools,ToolsN):-
+   true|
+   G = [get_info(Gid,Res)|G2],
+   wait_add_group2(Res,St,GName,Gid,G2,GN,GInfo,Tools2,ToolsN).
+
+wait_add_group2(normal(_),St,GName,Gid,G,GN,GInfo,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   G = GN,
+   Tools = ToolsN.
+otherwise.
+wait_add_group2(_,St,GName,Gid,G,GN,GInfo,Tools,ToolsN):-
+   true|
+   check_ginfo(GName,Gid,GInfo,U,UN,Res),
+   login_server:get_info(I,IN,Tools,Tools1),
+   login_server:get_user(U,UN,Tools1,Tools2),
+   login_server:get_file(FR,FRN,Tools2,ToolsN),
+   wait_add_group3(Res,St,I,IN,G,GN,FR,FRN).
+
+wait_add_group3(normal(GInfo),St,I,IN,G,GN,FR,FRN):-
+   true|
+   G = [get_all_info(Res)|G2],
+   wait_add_group4(Res,St,GInfo,I,IN,G,GN,FR,FRN).
+otherwise.
+wait_add_group3(_,St,I,IN,G,GN,FR,FRN):-
+   true|
+   St = abnormal,
+   I = IN,
+   G = GN,
+   FR = FRN.
+
+wait_add_group4(normal(GL),St,GInfo,I,IN,G,GN,FR,FRN):-
+   true|
+   G = [set_up([GInfo|GL],Res)|G2],
+   wait_add_group6(Res,St,I,IN,G2,GN,FR,FRN).
+otherwise.
+wait_add_group4(_,St,_,I,IN,G,GN,FR,FRN):-
+   true|
+   St = abnormal,
+   I = IN,
+   G = GN,
+   FR = FRN.
+
+wait_add_group6(normal,St,I,IN,G,GN,FR,FRN):-
+   true|
+   St = normal,
+   I = [get_user_file(_,GFile)|IN],
+   sync_group_file(GFile,St,G,GN,FR2,FRN).
+otherwise.
+wait_add_group6(_,St,I,IN,G,GN,FR,FRN):-
+   true|
+   St = abnormal,
+   I = IN,
+   G = GN,
+   FR = FRN.
+
+check_ginfo(GName,Gid,{UL,Com},G,GN,Res):-
+   list(UL)|
+   check_com(Com,RCom),
+   check_ul(UL,RUL,G,GN),
+   wait_check_ginfo(RUL,RCom,GName,Gid,Res).
+
+wait_check_ginfo(normal(UL),normal(Com),GName,Gid,Res):-
+   true|
+   Res = normal({GName,Gid,UL,Com}).
+otherwise.
+wait_check_ginfo(_,_,_,_,Res):-
+   true|
+   Res = abnormal.
+
+check_ul(UL,RUL,G,GN):- true|
+   check_ul(UL,Top,Top,RUL,G,GN).
+
+check_ul([],Top,Btm,RUL,G,GN):-
+   true|
+   Btm = [],
+   check_ul3(Top,RUL,G,GN).
+check_ul([Uid|UL],Top,Btm,RUL,G,GN):-
+   integer(Uid)|
+   G = [get_gids(Uid,Res)|G2],
+   check_ul2(Res,Uid,UL,Top,Btm,RUL,G2,GN).
+
+check_ul2(normal(_),Uid,UL,Top,Btm,RUL,G,GN):-
+   true|
+   Btm = [Uid|Btm2],
+   check_ul(UL,Top,Btm2,RUL,G,GN).
+otherwise.
+check_ul2(_,_,_,_,_,RUL,G,GN):-
+   true|
+   RUL = abnormal,
+   G = GN.
+
+check_ul3(Top,RUL,G,GN):-
+   true|
+   RUL = normal(Top),
+   G = GN.
+
+%%%%%%%%%%%%%%%%%%%
+remove_group(GName,Gid,St,Tools,ToolsN):-
+   true|
+   copy:copy(GName,GName1,GName2),
+   login_server:get_group(G,GN,Tools,Tools2),
+   G = [get_gid(GName1,Res)|G2],
+   wait_remove_group(Res,St,GName2,Gid,G2,GN,Tools2,ToolsN).
+
+wait_remove_group(normal(_),St,GName,Gid,G,GN,Tools,ToolsN):-
+   true|
+   G = [get_info(Gid,Res)|G2],
+   wait_remove_group2(Res,St,GName,Gid,G2,GN,Tools,ToolsN).
+otherwise.
+wait_remove_group(_,St,GName,Gid,G,GN,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   G = GN,
+   Tools = ToolsN.
+
+wait_remove_group2(normal(GInfo),St,GName,Gid,G,GN,Tools,ToolsN):-
+   vector_element(GInfo,0,UName)|
+   G = [get_all_info(GINFOS)|G2],
+   wait_remove_group3(GINFOS,Gid,St,G,GN,Tools,ToolsN). 
+otherwise.
+wait_remove_group2(_,St,_,_,G,GN,Tools,ToolsN):-
+   true|  
+   St = abnormal,
+   G = GN,
+   Tools = ToolsN.
+
+wait_remove_group3(normal(GINFOS),Gid,St,G,GN,Tools,ToolsN):-
+   true|
+   remove_group3(GINFOS,Gid,GINFOSN),
+   G = [set_up(GINFOSN,Res)|G2],
+   wait_remove_group4(Res,St,G2,GN,Tools,ToolsN).
+otherwise.
+wait_remove_group3(_,_,St,G,GN,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   G = GN, Tools = ToolsN.
+
+wait_remove_group4(normal,St,G,GN,Tools,ToolsN):-
+   true|
+   login_server:get_info(InfoIn,InfoInN,Tools,Tools2),
+   login_server:get_file(FileR,FileRN,Tools2,ToolsN),
+   InfoIn = [get_user_file(_,Name)|InfoInN],
+   sync_group_file(Name,St,G,GN,FileR,FileRN).
+otherwise.
+wait_remove_group4(_,St,G,GN,Tools,ToolsN):-
+   true|
+   St = abnormal,
+   G = GN, Tools = ToolsN.
+
+remove_group3([],_,GINFOSN):-
+   true|
+   GINFOSN = [].
+remove_group3([E|GINFOS],Gid,GINFOSN):-
+   vector_element(E,1,Gid)|
+   GINFOS = GINFOSN.
+otherwise.
+remove_group3([E|GINFOS],Gid,GINFOSN):-
+   true|
+   GINFOSN = [E|GINFOSNN],
+   remove_group3(GINFOS,Gid,GINFOSNN).
+
+%%%%%%%%%%%%%%%%%%%%%%%
+sync_user_file(Name,St,U,UN,FileR,FileRN):-
+   true|
+   FileR = [open(Name,write(Res))|FileRN],
+   wait_sync_user_info3(Res,St,U,UN).
+
+wait_sync_user_info3(normal(F,_,_),St,U,UN):-
+   true|
+   U = [get_all_info(Res)|UN],
+   wait_sync_user_info4(Res,F,St).
+otherwise.
+wait_sync_user_info3(_,St,U,UN):-
+   true|
+   St = abnormal,
+   U = UN.
+
+wait_sync_user_info4(normal(Info),F,St):-
+   true|
+   buffer:output_filter(FileIn0,F),
+   FileIn0 = [print_string_length(2000),
+              print_atom_length(100)|FileIn],
+   sort_info(Info,Info1),
+   write_out_info(Info1,FileIn,St).
+otherwise.
+wait_sync_user_info4(_,F,St):-
+   true|
+   F = [],
+   St = abnormal.
+
+sync_group_file(Name,St,U,UN,FileR,FileRN):-
+   true|
+   FileR = [open(Name,write(Res))|FileRN],
+   wait_sync_group_info3(Res,St,U,UN).
+
+wait_sync_group_info3(normal(F,_,_),St,U,UN):-
+   true|
+   U = [get_all_info(Res)|UN],
+   wait_sync_group_info4(Res,F,St).
+otherwise.
+wait_sync_group_info3(_,St,U,UN):-
+   true|
+   St = abnormal,
+   U = UN.
+
+wait_sync_group_info4(normal(Info),F,St):-
+   true|
+   buffer:output_filter(FileIn0,F),
+   FileIn0 = [print_string_length(2000),
+              print_atom_length(100)|FileIn],
+   sort_info(Info,Info1),
+   write_out_info(Info1,FileIn,St).
+otherwise.
+wait_sync_group_info4(_,F,St):-
+   true|
+   F = [],
+   St = abnormal.
+
+sort_info(Info,Info1) :-
+    true |
+    make_index(Info,Tmp),
+    sorter:key_sort(Tmp,Tmp1),
+    remove_index(Tmp1,Info1).
+
+make_index([],Info1) :-
+    true|
+    Info1=[].
+make_index([A|Tail],Info1) :-
+    true|
+    set_vector_element(A,2,UID,UID,A1),
+    Info1=[{UID,A1}|Tail1],
+    make_index(Tail,Tail1).
+
+remove_index([],Info1) :-
+    true|
+    Info1=[].
+remove_index([{_,A}|Tail],Info1) :-
+    true|
+    Info1=[A|Tail1],
+    remove_index(Tail,Tail1).
+
+write_out_info([],File,St):-
+    true|
+    St = normal,
+    File = [].
+otherwise.
+write_out_info([Term|Next],File,St):-
+    File = [putt(Term),
+            putl(string#".")|FNext],
+    write_out_info(Next,FNext,St).
+

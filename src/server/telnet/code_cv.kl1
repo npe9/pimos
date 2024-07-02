@@ -1,0 +1,477 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module code_convert.
+:- with_macro pimos.
+:- public euc_to_jis/2.
+:- public euc_to_jis/3.
+:- public jis_to_euc/2.
+
+
+%%
+%% euc_to_jis
+%%
+%  In   :  8bit string euc
+%  Out  : 16bit string jis-kanji
+%  Amari: non convert char
+
+euc_to_jis(In,Out):- string(In,Byte,8) |
+    new_string(Tmp,Byte,16),
+    euc_to_jis(In,0,Byte,Tmp,0,Out,16#"7F7F",_,ascii#"").
+
+euc_to_jis(In,Out,Amari):- string(In,Byte,8) |
+    new_string(Tmp,Byte,16),
+    euc_to_jis(In,0,Byte,Tmp,0,Out,16#"7F7F",Amari,ascii#"").
+
+
+euc_to_jis(In,Pos,Len,Tmp,TLen,Out,And,Amari,Amari2):- Pos >= Len |
+    Amari=Amari2,
+    builtin#substring(Tmp,0,TLen,Out,_).
+euc_to_jis(In,Pos,Len,Tmp,TLen,Out,And,Amari,Amari2):- Pos < Len |
+    string_element(In,Pos,X,In2),
+    euc_to_jis_2(X,In2,Pos,Len,Tmp,TLen,Out,And,Amari,Amari2).
+
+
+euc_to_jis_2(X,In,Pos,Len,Tmp,TLen,Out,And,Amari,Amari2)
+:- X > 16#"7F",X < 16#"F0",Len2:=Len-1,Pos>=Len2 | % kanji & etc...
+    builtin#substring(In,Pos,1,Amari3,In2),
+    builtin#append_string(Amari2,Amari3,Amari4),
+    euc_to_jis(In2,~(Pos+1),Len,Tmp,TLen,Out,And,Amari,Amari4).
+euc_to_jis_2(X,In,Pos,Len,Tmp,TLen,Out,And,Amari,Amari2)
+:- X > 16#"7F",X < 16#"F0",Len2:=Len-1,Pos<Len2 | % kanji & etc...
+    builtin#substring(In,Pos,2,New,In2),
+    change_element_size(New,16,New2),
+    string_element(New2,0,Val,_),
+    set_string_element(Tmp,TLen,~(Val/\And),Tmp2),
+    euc_to_jis(In2,~(Pos+2),Len,Tmp2,~(TLen+1),Out,And,Amari,Amari2).
+otherwise.
+euc_to_jis_2(X,In,Pos,Len,Tmp,TLen,Out,And,Amari,Amari2):- true | % ascii
+    table_ascii_to_jis(X,Jis),
+    set_string_element(Tmp,TLen,Jis,Tmp2),
+    euc_to_jis(In,~(Pos+1),Len,Tmp2,~(TLen+1),Out,And,Amari,Amari2).
+
+
+
+%%
+%% jis_to_euc
+%%
+%  In   : 16bit string jis-kanji
+%  Out  :  8bit string euc
+
+jis_to_euc(In,Out):- string(In,Len,16) |
+    new_string(Tmp,~(Len*3),8),
+    jis_to_euc(In,0,Len,Tmp,0,Out,16#"80").
+
+
+jis_to_euc(In,Pos,Len,Tmp,TLen,Out,Or):- Pos >= Len |
+    builtin#substring(Tmp,0,TLen,Out,_).
+jis_to_euc(In,Pos,Len,Tmp,TLen,Out,Or):- Pos < Len |
+    string_element(In,Pos,X,In2),
+    jis_to_euc_2(X,In2,Pos,Len,Tmp,TLen,Out,Or).
+
+
+jis_to_euc_2(X,In,Pos,Len,Tmp,TLen,Out,Or)
+:- X =< 16#"00FF" | % control_char
+    set_string_element(Tmp,TLen,X,Tmp2),
+    jis_to_euc(In,~(Pos+1),Len,Tmp2,~(TLen+1),Out,Or).
+jis_to_euc_2(X,In,Pos,Len,Tmp,TLen,Out,Or)
+:- X >= 16#"2120",X =< 16#"217F" |
+    table_jis_to_ascii_1(~(X-16#"2120"),Ascii),
+    jis_to_euc_3(Ascii,In,Pos,Len,Tmp,TLen,Out,Or).
+jis_to_euc_2(X,In,Pos,Len,Tmp,TLen,Out,Or)
+:- X >= 16#"2320",X =< 16#"237F" |
+    table_jis_to_ascii_2(~(X-16#"2320"),Ascii),
+    jis_to_euc_3(Ascii,In,Pos,Len,Tmp,TLen,Out,Or).
+otherwise.
+jis_to_euc_2(_,In,Pos,Len,Tmp,TLen,Out,Or)
+:- true |
+    jis_to_euc_4(In,Pos,Len,Tmp,TLen,Out,Or).
+
+
+jis_to_euc_3(16#"00",In,Pos,Len,Tmp,TLen,Out,Or):- true |
+    jis_to_euc_4(In,Pos,Len,Tmp,TLen,Out,Or).
+otherwise.
+jis_to_euc_3(Ascii,In,Pos,Len,Tmp,TLen,Out,Or):- true |
+    set_string_element(Tmp,TLen,Ascii,Tmp2),
+    jis_to_euc(In,~(Pos+1),Len,Tmp2,~(TLen+1),Out,Or).
+
+
+jis_to_euc_4(In,Pos,Len,Tmp,TLen,Out,Or):- true |
+    builtin#substring(In,Pos,1,New,In2),
+    change_element_size(New,8,New2),
+    string_element(New2,0,Val1,New3),
+    string_element(New3,1,Val2,_),
+    set_string_element(Tmp,TLen,~(Val1\/Or),Tmp2),
+    set_string_element(Tmp2,~(TLen+1),~(Val2\/Or),Tmp3),
+    jis_to_euc(In2,~(Pos+1),Len,Tmp3,~(TLen+2),Out,Or).
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% tables
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+table_ascii_to_jis(0,Jis):- true | Jis=16#"0000". % NUL
+table_ascii_to_jis(1,Jis):- true | Jis=16#"0001". % SOH
+table_ascii_to_jis(2,Jis):- true | Jis=16#"0002". % STX
+table_ascii_to_jis(3,Jis):- true | Jis=16#"0003". % ETX
+table_ascii_to_jis(4,Jis):- true | Jis=16#"0004". % EOT
+table_ascii_to_jis(5,Jis):- true | Jis=16#"0005". % ENQ
+table_ascii_to_jis(6,Jis):- true | Jis=16#"0006". % ACK
+table_ascii_to_jis(7,Jis):- true | Jis=16#"0007". % BEL
+table_ascii_to_jis(8,Jis):- true | Jis=16#"0008". % BS
+table_ascii_to_jis(9,Jis):- true | Jis=16#"0009". % HT
+table_ascii_to_jis(10,Jis):- true | Jis=16#"000A". % LF
+table_ascii_to_jis(11,Jis):- true | Jis=16#"000B". % VT
+table_ascii_to_jis(12,Jis):- true | Jis=16#"000C". % FF
+table_ascii_to_jis(13,Jis):- true | Jis=16#"000D". % CR
+table_ascii_to_jis(14,Jis):- true | Jis=16#"000E". % SO
+table_ascii_to_jis(15,Jis):- true | Jis=16#"000F". % SI
+
+table_ascii_to_jis(16,Jis):- true | Jis=16#"0010". % DLE
+table_ascii_to_jis(17,Jis):- true | Jis=16#"0011". % DC1
+table_ascii_to_jis(18,Jis):- true | Jis=16#"0012". % DC2
+table_ascii_to_jis(19,Jis):- true | Jis=16#"0013". % DC3
+table_ascii_to_jis(20,Jis):- true | Jis=16#"0014". % DC4
+table_ascii_to_jis(21,Jis):- true | Jis=16#"0015". % NAK
+table_ascii_to_jis(22,Jis):- true | Jis=16#"0016". % SYN
+table_ascii_to_jis(23,Jis):- true | Jis=16#"0017". % ETB
+table_ascii_to_jis(24,Jis):- true | Jis=16#"0018". % CAN
+table_ascii_to_jis(25,Jis):- true | Jis=16#"0019". % EM
+table_ascii_to_jis(26,Jis):- true | Jis=16#"001A". % SUB
+table_ascii_to_jis(27,Jis):- true | Jis=16#"001B". % ESC
+table_ascii_to_jis(28,Jis):- true | Jis=16#"001C". % FS
+table_ascii_to_jis(29,Jis):- true | Jis=16#"001D". % GS
+table_ascii_to_jis(30,Jis):- true | Jis=16#"001E". % RS
+table_ascii_to_jis(31,Jis):- true | Jis=16#"001F". % US
+
+table_ascii_to_jis(32,Jis):- true | Jis=16#"2121". % SP
+table_ascii_to_jis(33,Jis):- true | Jis=16#"212A". % !
+table_ascii_to_jis(34,Jis):- true | Jis=16#"2149". % "
+table_ascii_to_jis(35,Jis):- true | Jis=16#"2174". % #
+table_ascii_to_jis(36,Jis):- true | Jis=16#"2170". % $
+table_ascii_to_jis(37,Jis):- true | Jis=16#"2173". % %
+table_ascii_to_jis(38,Jis):- true | Jis=16#"2175". % &
+table_ascii_to_jis(39,Jis):- true | Jis=16#"2147". % '
+table_ascii_to_jis(40,Jis):- true | Jis=16#"214A". % (
+table_ascii_to_jis(41,Jis):- true | Jis=16#"214B". % )
+table_ascii_to_jis(42,Jis):- true | Jis=16#"2176". % *
+table_ascii_to_jis(43,Jis):- true | Jis=16#"215C". % +
+table_ascii_to_jis(44,Jis):- true | Jis=16#"2124". % ,
+table_ascii_to_jis(45,Jis):- true | Jis=16#"215D". % -
+table_ascii_to_jis(46,Jis):- true | Jis=16#"2125". % .
+table_ascii_to_jis(47,Jis):- true | Jis=16#"213F". % /
+
+table_ascii_to_jis(48,Jis):- true | Jis=16#"2330". % 0
+table_ascii_to_jis(49,Jis):- true | Jis=16#"2331". % 1
+table_ascii_to_jis(50,Jis):- true | Jis=16#"2332". % 2
+table_ascii_to_jis(51,Jis):- true | Jis=16#"2333". % 3
+table_ascii_to_jis(52,Jis):- true | Jis=16#"2334". % 4
+table_ascii_to_jis(53,Jis):- true | Jis=16#"2335". % 5
+table_ascii_to_jis(54,Jis):- true | Jis=16#"2336". % 6
+table_ascii_to_jis(55,Jis):- true | Jis=16#"2337". % 7
+table_ascii_to_jis(56,Jis):- true | Jis=16#"2338". % 8
+table_ascii_to_jis(57,Jis):- true | Jis=16#"2339". % 9
+table_ascii_to_jis(58,Jis):- true | Jis=16#"2127". % :
+table_ascii_to_jis(59,Jis):- true | Jis=16#"2128". % ;
+table_ascii_to_jis(60,Jis):- true | Jis=16#"2163". % <
+table_ascii_to_jis(61,Jis):- true | Jis=16#"2161". % =
+table_ascii_to_jis(62,Jis):- true | Jis=16#"2164". % >
+table_ascii_to_jis(63,Jis):- true | Jis=16#"2129". % ?
+
+table_ascii_to_jis(64,Jis):- true | Jis=16#"2177". % @
+table_ascii_to_jis(65,Jis):- true | Jis=16#"2341". % A
+table_ascii_to_jis(66,Jis):- true | Jis=16#"2342". % B
+table_ascii_to_jis(67,Jis):- true | Jis=16#"2343". % C
+table_ascii_to_jis(68,Jis):- true | Jis=16#"2344". % D
+table_ascii_to_jis(69,Jis):- true | Jis=16#"2345". % E
+table_ascii_to_jis(70,Jis):- true | Jis=16#"2346". % F
+table_ascii_to_jis(71,Jis):- true | Jis=16#"2347". % G
+table_ascii_to_jis(72,Jis):- true | Jis=16#"2348". % H
+table_ascii_to_jis(73,Jis):- true | Jis=16#"2349". % I
+table_ascii_to_jis(74,Jis):- true | Jis=16#"234A". % J
+table_ascii_to_jis(75,Jis):- true | Jis=16#"234B". % K
+table_ascii_to_jis(76,Jis):- true | Jis=16#"234C". % L
+table_ascii_to_jis(77,Jis):- true | Jis=16#"234D". % M
+table_ascii_to_jis(78,Jis):- true | Jis=16#"234E". % N
+table_ascii_to_jis(79,Jis):- true | Jis=16#"234F". % O
+
+table_ascii_to_jis(80,Jis):- true | Jis=16#"2350". % P
+table_ascii_to_jis(81,Jis):- true | Jis=16#"2351". % Q
+table_ascii_to_jis(82,Jis):- true | Jis=16#"2352". % R
+table_ascii_to_jis(83,Jis):- true | Jis=16#"2353". % S
+table_ascii_to_jis(84,Jis):- true | Jis=16#"2354". % T
+table_ascii_to_jis(85,Jis):- true | Jis=16#"2355". % U
+table_ascii_to_jis(86,Jis):- true | Jis=16#"2356". % V
+table_ascii_to_jis(87,Jis):- true | Jis=16#"2357". % W
+table_ascii_to_jis(88,Jis):- true | Jis=16#"2358". % X
+table_ascii_to_jis(89,Jis):- true | Jis=16#"2359". % Y
+table_ascii_to_jis(90,Jis):- true | Jis=16#"235A". % Z
+table_ascii_to_jis(91,Jis):- true | Jis=16#"214E". % [
+table_ascii_to_jis(92,Jis):- true | Jis=16#"2140". % \
+table_ascii_to_jis(93,Jis):- true | Jis=16#"214F". % ]
+table_ascii_to_jis(94,Jis):- true | Jis=16#"2130". % ^
+table_ascii_to_jis(95,Jis):- true | Jis=16#"2132". % _
+
+table_ascii_to_jis(96,Jis):- true | Jis=16#"2146". % `
+table_ascii_to_jis(97,Jis):- true | Jis=16#"2361". % a
+table_ascii_to_jis(98,Jis):- true | Jis=16#"2362". % b
+table_ascii_to_jis(99,Jis):- true | Jis=16#"2363". % c
+table_ascii_to_jis(100,Jis):- true | Jis=16#"2364". % d
+table_ascii_to_jis(101,Jis):- true | Jis=16#"2365". % e
+table_ascii_to_jis(102,Jis):- true | Jis=16#"2366". % f
+table_ascii_to_jis(103,Jis):- true | Jis=16#"2367". % g
+table_ascii_to_jis(104,Jis):- true | Jis=16#"2368". % h
+table_ascii_to_jis(105,Jis):- true | Jis=16#"2369". % i
+table_ascii_to_jis(106,Jis):- true | Jis=16#"236A". % j
+table_ascii_to_jis(107,Jis):- true | Jis=16#"236B". % k
+table_ascii_to_jis(108,Jis):- true | Jis=16#"236C". % l
+table_ascii_to_jis(109,Jis):- true | Jis=16#"236D". % m
+table_ascii_to_jis(110,Jis):- true | Jis=16#"236E". % n
+table_ascii_to_jis(111,Jis):- true | Jis=16#"236F". % o
+
+table_ascii_to_jis(112,Jis):- true | Jis=16#"2370". % p
+table_ascii_to_jis(113,Jis):- true | Jis=16#"2371". % q
+table_ascii_to_jis(114,Jis):- true | Jis=16#"2372". % r
+table_ascii_to_jis(115,Jis):- true | Jis=16#"2373". % s
+table_ascii_to_jis(116,Jis):- true | Jis=16#"2374". % t
+table_ascii_to_jis(117,Jis):- true | Jis=16#"2375". % u
+table_ascii_to_jis(118,Jis):- true | Jis=16#"2376". % v
+table_ascii_to_jis(119,Jis):- true | Jis=16#"2377". % w
+table_ascii_to_jis(120,Jis):- true | Jis=16#"2378". % x
+table_ascii_to_jis(121,Jis):- true | Jis=16#"2379". % y
+table_ascii_to_jis(122,Jis):- true | Jis=16#"237A". % z
+table_ascii_to_jis(123,Jis):- true | Jis=16#"2150". % {
+table_ascii_to_jis(124,Jis):- true | Jis=16#"2143". % |
+table_ascii_to_jis(125,Jis):- true | Jis=16#"2151". % }
+table_ascii_to_jis(126,Jis):- true | Jis=16#"2141". % ~
+table_ascii_to_jis(127,Jis):- true | Jis=16#"007F". % DEL
+
+table_ascii_to_jis(240,Jis):- true | Jis=16#"00F0". % telnet SE
+table_ascii_to_jis(241,Jis):- true | Jis=16#"00F1". % telnet NOP
+table_ascii_to_jis(242,Jis):- true | Jis=16#"00F2". % telnet DM
+table_ascii_to_jis(243,Jis):- true | Jis=16#"00F3". % telnet BK
+table_ascii_to_jis(244,Jis):- true | Jis=16#"00F4". % telnet IP
+table_ascii_to_jis(245,Jis):- true | Jis=16#"00F5". % telnet AO
+table_ascii_to_jis(246,Jis):- true | Jis=16#"00F6". % telnet AYT
+table_ascii_to_jis(247,Jis):- true | Jis=16#"00F7". % telnet EC
+table_ascii_to_jis(248,Jis):- true | Jis=16#"00F8". % telnet EL
+table_ascii_to_jis(249,Jis):- true | Jis=16#"00F9". % telnet GA
+table_ascii_to_jis(250,Jis):- true | Jis=16#"00FA". % telnet SB
+table_ascii_to_jis(251,Jis):- true | Jis=16#"00FB". % telnet WILL
+table_ascii_to_jis(252,Jis):- true | Jis=16#"00FC". % telnet WONT
+table_ascii_to_jis(253,Jis):- true | Jis=16#"00FD". % telnet DO
+table_ascii_to_jis(254,Jis):- true | Jis=16#"00FE". % telnet DONT
+table_ascii_to_jis(255,Jis):- true | Jis=16#"00FF". % telnet IAC
+
+
+
+table_jis_to_ascii_1(0,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(1,Ascii):- true | Ascii=16#"20". % SP
+table_jis_to_ascii_1(2,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(3,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(4,Ascii):- true | Ascii=16#"2C". % ,
+table_jis_to_ascii_1(5,Ascii):- true | Ascii=16#"2E". % .
+table_jis_to_ascii_1(6,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(7,Ascii):- true | Ascii=16#"3A". % :
+table_jis_to_ascii_1(8,Ascii):- true | Ascii=16#"3B". % ;
+table_jis_to_ascii_1(9,Ascii):- true | Ascii=16#"3F". % ?
+table_jis_to_ascii_1(10,Ascii):- true | Ascii=16#"21". % !
+table_jis_to_ascii_1(11,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(12,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(13,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(14,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(15,Ascii):- true | Ascii=16#"00". % undef
+
+table_jis_to_ascii_1(16,Ascii):- true | Ascii=16#"5E". % ^
+table_jis_to_ascii_1(17,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(18,Ascii):- true | Ascii=16#"5F". % _
+table_jis_to_ascii_1(19,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(20,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(21,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(22,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(23,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(24,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(25,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(26,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(27,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(28,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(29,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(30,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(31,Ascii):- true | Ascii=16#"2F". % /
+
+table_jis_to_ascii_1(32,Ascii):- true | Ascii=16#"5C". % \
+table_jis_to_ascii_1(33,Ascii):- true | Ascii=16#"7E". % ~
+table_jis_to_ascii_1(34,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(35,Ascii):- true | Ascii=16#"7C". % |
+table_jis_to_ascii_1(36,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(37,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(38,Ascii):- true | Ascii=16#"60". % `
+table_jis_to_ascii_1(39,Ascii):- true | Ascii=16#"27". % '
+table_jis_to_ascii_1(40,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(41,Ascii):- true | Ascii=16#"22". % "
+table_jis_to_ascii_1(42,Ascii):- true | Ascii=16#"28". % (
+table_jis_to_ascii_1(43,Ascii):- true | Ascii=16#"29". % )
+table_jis_to_ascii_1(44,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(45,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(46,Ascii):- true | Ascii=16#"5B". % [
+table_jis_to_ascii_1(47,Ascii):- true | Ascii=16#"5D". % ]
+
+table_jis_to_ascii_1(48,Ascii):- true | Ascii=16#"7B". % {
+table_jis_to_ascii_1(49,Ascii):- true | Ascii=16#"7D". % }
+table_jis_to_ascii_1(50,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(51,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(52,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(53,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(54,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(55,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(56,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(57,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(58,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(59,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(60,Ascii):- true | Ascii=16#"2B". % +
+table_jis_to_ascii_1(61,Ascii):- true | Ascii=16#"2D". % -
+table_jis_to_ascii_1(62,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(63,Ascii):- true | Ascii=16#"00". % undef
+
+table_jis_to_ascii_1(64,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(65,Ascii):- true | Ascii=16#"3D". % =
+table_jis_to_ascii_1(66,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(67,Ascii):- true | Ascii=16#"3C". % <
+table_jis_to_ascii_1(68,Ascii):- true | Ascii=16#"3E". % >
+table_jis_to_ascii_1(69,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(70,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(71,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(72,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(73,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(74,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(75,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(76,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(77,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(78,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(79,Ascii):- true | Ascii=16#"00". % undef
+
+table_jis_to_ascii_1(80,Ascii):- true | Ascii=16#"24". % $
+table_jis_to_ascii_1(81,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(82,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(83,Ascii):- true | Ascii=16#"25". % %
+table_jis_to_ascii_1(84,Ascii):- true | Ascii=16#"23". % #
+table_jis_to_ascii_1(85,Ascii):- true | Ascii=16#"26". % &
+table_jis_to_ascii_1(86,Ascii):- true | Ascii=16#"2A". % *
+table_jis_to_ascii_1(87,Ascii):- true | Ascii=16#"40". % @
+table_jis_to_ascii_1(88,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(89,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(90,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(91,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(92,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(93,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(94,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_1(95,Ascii):- true | Ascii=16#"00". % undef
+
+
+
+table_jis_to_ascii_2(0,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(1,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(2,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(3,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(4,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(5,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(6,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(7,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(8,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(9,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(10,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(11,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(12,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(13,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(14,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(15,Ascii):- true | Ascii=16#"00". % undef
+
+table_jis_to_ascii_2(16,Ascii):- true | Ascii=16#"30". % 0
+table_jis_to_ascii_2(17,Ascii):- true | Ascii=16#"31". % 1
+table_jis_to_ascii_2(18,Ascii):- true | Ascii=16#"32". % 2
+table_jis_to_ascii_2(19,Ascii):- true | Ascii=16#"33". % 3
+table_jis_to_ascii_2(20,Ascii):- true | Ascii=16#"34". % 4
+table_jis_to_ascii_2(21,Ascii):- true | Ascii=16#"35". % 5
+table_jis_to_ascii_2(22,Ascii):- true | Ascii=16#"36". % 6
+table_jis_to_ascii_2(23,Ascii):- true | Ascii=16#"37". % 7
+table_jis_to_ascii_2(24,Ascii):- true | Ascii=16#"38". % 8
+table_jis_to_ascii_2(25,Ascii):- true | Ascii=16#"39". % 9
+table_jis_to_ascii_2(26,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(27,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(28,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(29,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(30,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(31,Ascii):- true | Ascii=16#"00". % undef
+
+table_jis_to_ascii_2(32,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(33,Ascii):- true | Ascii=16#"41". % A
+table_jis_to_ascii_2(34,Ascii):- true | Ascii=16#"42". % B
+table_jis_to_ascii_2(35,Ascii):- true | Ascii=16#"43". % C
+table_jis_to_ascii_2(36,Ascii):- true | Ascii=16#"44". % D
+table_jis_to_ascii_2(37,Ascii):- true | Ascii=16#"45". % E
+table_jis_to_ascii_2(38,Ascii):- true | Ascii=16#"46". % F
+table_jis_to_ascii_2(39,Ascii):- true | Ascii=16#"47". % G
+table_jis_to_ascii_2(40,Ascii):- true | Ascii=16#"48". % H
+table_jis_to_ascii_2(41,Ascii):- true | Ascii=16#"49". % I
+table_jis_to_ascii_2(42,Ascii):- true | Ascii=16#"4A". % J
+table_jis_to_ascii_2(43,Ascii):- true | Ascii=16#"4B". % K
+table_jis_to_ascii_2(44,Ascii):- true | Ascii=16#"4C". % L
+table_jis_to_ascii_2(45,Ascii):- true | Ascii=16#"4D". % M
+table_jis_to_ascii_2(46,Ascii):- true | Ascii=16#"4E". % N
+table_jis_to_ascii_2(47,Ascii):- true | Ascii=16#"4F". % O
+
+table_jis_to_ascii_2(48,Ascii):- true | Ascii=16#"50". % P
+table_jis_to_ascii_2(49,Ascii):- true | Ascii=16#"51". % Q
+table_jis_to_ascii_2(50,Ascii):- true | Ascii=16#"52". % R
+table_jis_to_ascii_2(51,Ascii):- true | Ascii=16#"53". % S
+table_jis_to_ascii_2(52,Ascii):- true | Ascii=16#"54". % T
+table_jis_to_ascii_2(53,Ascii):- true | Ascii=16#"55". % U
+table_jis_to_ascii_2(54,Ascii):- true | Ascii=16#"56". % V
+table_jis_to_ascii_2(55,Ascii):- true | Ascii=16#"57". % W
+table_jis_to_ascii_2(56,Ascii):- true | Ascii=16#"58". % X
+table_jis_to_ascii_2(57,Ascii):- true | Ascii=16#"59". % Y
+table_jis_to_ascii_2(58,Ascii):- true | Ascii=16#"5A". % Z
+table_jis_to_ascii_2(59,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(60,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(61,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(62,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(63,Ascii):- true | Ascii=16#"00". % undef
+
+table_jis_to_ascii_2(64,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(65,Ascii):- true | Ascii=16#"61". % a
+table_jis_to_ascii_2(66,Ascii):- true | Ascii=16#"62". % b
+table_jis_to_ascii_2(67,Ascii):- true | Ascii=16#"63". % c
+table_jis_to_ascii_2(68,Ascii):- true | Ascii=16#"64". % d
+table_jis_to_ascii_2(69,Ascii):- true | Ascii=16#"65". % e
+table_jis_to_ascii_2(70,Ascii):- true | Ascii=16#"66". % f
+table_jis_to_ascii_2(71,Ascii):- true | Ascii=16#"67". % g
+table_jis_to_ascii_2(72,Ascii):- true | Ascii=16#"68". % h
+table_jis_to_ascii_2(73,Ascii):- true | Ascii=16#"69". % i
+table_jis_to_ascii_2(74,Ascii):- true | Ascii=16#"6A". % j
+table_jis_to_ascii_2(75,Ascii):- true | Ascii=16#"6B". % k
+table_jis_to_ascii_2(76,Ascii):- true | Ascii=16#"6C". % l
+table_jis_to_ascii_2(77,Ascii):- true | Ascii=16#"6D". % m
+table_jis_to_ascii_2(78,Ascii):- true | Ascii=16#"6E". % n
+table_jis_to_ascii_2(79,Ascii):- true | Ascii=16#"6F". % o
+
+table_jis_to_ascii_2(80,Ascii):- true | Ascii=16#"70". % p
+table_jis_to_ascii_2(81,Ascii):- true | Ascii=16#"71". % q
+table_jis_to_ascii_2(82,Ascii):- true | Ascii=16#"72". % r
+table_jis_to_ascii_2(83,Ascii):- true | Ascii=16#"73". % s
+table_jis_to_ascii_2(84,Ascii):- true | Ascii=16#"74". % t
+table_jis_to_ascii_2(85,Ascii):- true | Ascii=16#"75". % u
+table_jis_to_ascii_2(86,Ascii):- true | Ascii=16#"76". % v
+table_jis_to_ascii_2(87,Ascii):- true | Ascii=16#"77". % w
+table_jis_to_ascii_2(88,Ascii):- true | Ascii=16#"78". % x
+table_jis_to_ascii_2(89,Ascii):- true | Ascii=16#"79". % y
+table_jis_to_ascii_2(90,Ascii):- true | Ascii=16#"7A". % z
+table_jis_to_ascii_2(91,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(92,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(93,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(94,Ascii):- true | Ascii=16#"00". % undef
+table_jis_to_ascii_2(95,Ascii):- true | Ascii=16#"00". % undef

@@ -1,0 +1,384 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module login_telnet.
+:- with_macro pimos.
+:- public go/5, login/5, exec_simple_task/5, dummy/1.
+
+go(F,U,A,PA,T):-
+   true|
+   shoen:raise(pimos_tag#task,general_request,GR),
+   GR = [request_anyway(telnet_server,Can,St)],
+   wait_go0(St,Can,F,U,A,PA,T).
+
+wait_go0(normal(Str),Can,F,U,A,PA,T):-
+   true|
+   wait_go01(Str,Can,F,U,A,PA,T).
+otherwise.
+wait_go0(_,Can,F,U,A,PA,T):-
+   true|
+   Can = abort,
+   U = [], A = [], PA = [], T = [].
+
+wait_go01(normal(Str),_,F,U,A,PA,T):-
+   true|
+   Str = [],
+   go0(F,U,A,PA,T).
+otherwise.
+wait_go01(_,Can,F,U,A,PA,T):-
+   true|
+   Can = abort,
+   U = [], A = [], PA = [], T = [].
+
+go0(F,U,A,PA,T):-
+   true|
+   U = {U1,U2},
+   A = {A1,A2},
+   PA = {PA1,PA2},
+   T = {T1,T2},
+   predicate_to_code(module#login_telnet,login,5,Code),
+   shoen:raise(pimos_tag#task,general_request,
+               [execute(Code,{F,U1,A1,PA1,T1},
+                        [name("telnetd"),
+                         stdio([
+         in_out_inter(telnet_server([],TRes))],Res)],CR)]),
+   wait_go(Res,TRes,CR,F,U2,A2,PA2,T2).
+
+wait_go(normal(_,_),TRes,CR,F,U,A,PA,T):-
+   true|
+   wait_go2(CR,TRes,F,U,A,PA,T).
+otherwise.
+wait_go(_,TRes,CR,F,U,A,PA,T):-
+   display_console(ascii#"stdio error in telnet")|
+   U = [], A = [], PA = [], T = [],
+   wait_cr(CR).
+
+wait_cr(normal(C,R)):-
+   true|
+   C = [].
+otherwise.
+wait_cr(_):-
+   true|
+   true.
+
+wait_go2(normal(C,R),TRes,F,U,A,PA,T):-
+   true|
+   wait_go3(TRes,F,U,A,PA,T),
+   task_monitor(R,C).
+otherwise.
+wait_go2(_,TRes,F,U,A,PA,T):-
+   display_console(ascii#"cannot create telnet-login!")|
+   U = [], A = [], PA = [], T = [].
+   
+wait_go3(abnormal,F,U,A,PA,T):-
+   display_console(ascii#"cannot get telnet!")|
+   U = [], A = [], PA = [], T = [].
+wait_go3(aborted,F,U,A,PA,T):-
+   display_console(ascii#"cannot get telnet!")|
+   U = [], A = [], PA = [], T = [].
+otherwise.
+wait_go3(TRes,F,U,A,PA,T):-
+   true|
+   go0(F,U,A,PA,T).
+
+login(F,U,A,PA,T):-
+   true|
+   shoen:raise(pimos_tag#task,get_std(inter),IO),
+   shoen:raise(pimos_tag#task,general_request,GR),
+   GR = [file(FR)],
+   login1(FR,IO,F,U,A,PA,T).
+
+login1(normal(FR,_,_),IO,F,U,A,PA,T):-
+   true|
+   login11(IO,F,U,A,PA,T,FR).
+otherwise.
+login1(_,IO,F,U,A,PA,T):-
+   display_console(ascii#"Something wrong in File system!")|
+   IO = [],
+   U = [], A = [], PA = [], T = [].
+
+login11(IO,F,U,A,PA,T,FR):-
+   true|
+   IO = [putl("*** Welcome to PIMOS ***"),putb("login: "),getl(UN)|ION],
+   wait_login(UN,ION,F,U,A,PA,T,FR).
+
+wait_login(UN,IO,F,U,A,PA,T,FR):-
+   string(UN,_,_)|
+   IO = [putb("password:"),getl(Pass)|ION],
+   wait_login2(Pass,ION,UN,F,U,A,PA,T,FR).
+otherwise.
+wait_login(UN,IO,F,U,A,PA,T,FR):-
+   true|
+   IO = [],
+   U = [], A = [], PA = [], T = [], FR = [].
+
+wait_login2(Pass,IO,UN,F,U,A,PA,T,FR):-
+   string(Pass,_,_)|
+   U = [authenticate(UN,Pass,Result)|U2],
+   wait_login3(Result,IO,UN,F,U2,A,PA,T,FR).
+otherwise.
+wait_login2(Pass,IO,UN,F,U,A,PA,T,FR):-
+   true|
+   IO = [],
+   U = [], A = [], PA = [], T = [], FR = [].
+
+wait_login3(normal,IO,UN,F,U,A,PA,T,FR):-
+   true|
+   FR = [open("pimos:pimos.telnet",read(Res))],
+   wait_login4(Res,IO,UN,F,U,A,PA,T).
+otherwise.
+wait_login3(_,IO,UN,F,U,A,PA,T,FR):-
+   true|
+   IO = [putl("login incorrect")],
+   U = [], A = [], PA = [], T = [], FR = [].
+
+wait_login4(normal(FOut,_,_),IO,UN,F,U,A,PA,T):-
+   true|
+   buffer:input_filter([getwt(WT)|FIn],FOut),
+   io_node_check(WT,FIn,UN,Yes),
+   wait_login5(Yes,IO,UN,F,U,A,PA,T).
+otherwise.
+wait_login4(_,IO,UN,F,U,A,PA,T):-
+   true|
+   wait_login5(no,IO,UN,F,U,A,PA,T).
+
+io_node_check(normal(empty),FIn,UN,Yes):-
+   true|
+   FIn = [getwt(WT)|FIn2],
+   io_node_check(WT,FIn2,UN,Yes).
+io_node_check(normal(end_of_file),FIn,UN,Yes):-
+   true|
+   FIn = [],
+   Yes = no.
+otherwise.
+io_node_check(normal(WT),FIn,UN,Yes):-
+   true|
+   variable:unwrap(WT,{_,Term},[count(N)]),
+   io_node_check2(N,Term,FIn,UN,Yes).
+otherwise.
+io_node_check(_,FIn,UN,Yes):-
+   display_console(ascii#"Syntax error in pimos.telnet")|
+   FIn = [],
+   Yes = no.
+
+io_node_check2(0,user(UN,IONODE,RUN),FIn,UN,Yes):-
+   string(IONODE,_,_),
+   string(RUN,_,_)|
+   Yes = yes(IONODE,RUN),
+   FIn = [].
+otherwise.
+io_node_check2(_,_,FIn,UN,Yes):-
+   true|
+   FIn = [getwt(WT)|FIn2],
+   io_node_check(WT,FIn2,UN,Yes).
+
+wait_login5(yes(IONODE,RUN),IO,UN,F,U,A,PA,T):-
+   true|
+   IO = [putf("I/O-node[~s]: ",[IONODE]),getl(IONode)|ION],
+   wait_login6(IONode,IONODE,RUN,ION,UN,F,U,A,PA,T).
+otherwise.
+wait_login5(_,IO,UN,F,U,A,PA,T):-
+   true|
+   IO = [putb("I/O-node:"),getl(IONode)|ION],
+   wait_login61(IONode,ION,UN,F,U,A,PA,T).
+   
+wait_login6(IONode,IONODE,RUN,IO,UN,F,U,A,PA,T):-
+   string(IONode,0,_)|
+   IO = [putf("username[~s]: ",[RUN]),getl(Run)|ION],
+   wait_login7(Run,RUN,IONODE,ION,UN,F,U,A,PA,T).
+otherwise.
+wait_login6(IONode,_,RUN,IO,UN,F,U,A,PA,T):-
+   true|
+   IO = [putf("username[~s]: ",[RUN]),getl(Run)|ION],
+   wait_login7(Run,RUN,IONode,ION,UN,F,U,A,PA,T).
+
+wait_login7(Run,RUN,IONode,IO,UN,F,U,A,PA,T):-
+   string(Run,0,_)|
+   IO = [putb("password:"),getl(RPass)|ION],
+   wait_login8(RPass,IONode,RUN,ION,UN,F,U,A,PA,T).
+otherwise.
+wait_login7(Run,_,IONode,IO,UN,F,U,A,PA,T):-
+   true|
+   IO = [putb("password:"),getl(RPass)|ION],
+   wait_login8(RPass,IONode,Run,ION,UN,F,U,A,PA,T).
+
+wait_login61(IONode,IO,UN,F,U,A,PA,T):-
+   wait(IONode)|
+   IO = [putb("username:"),getl(Run)|ION],
+   wait_login71(Run,IONode,ION,UN,F,U,A,PA,T).
+wait_login71(Run,IONode,IO,UN,F,U,A,PA,T):-
+   wait(Run)|
+   IO = [putb("password:"),getl(RPass)|ION],
+   wait_login8(RPass,IONode,Run,ION,UN,F,U,A,PA,T).
+
+wait_login8(RPass,IONode,Run,IO,UN,F,U,A,PA,T):-
+   wait(RPass)|
+   PA = [who({0,F,IONode,UN,Run,RPass,"telnet"},Info)|PAN],
+   tlogin2(Info,{0,F,IONode,UN,Run,RPass,"telnet"},IO,U,A,PAN,T).
+
+tlogin2(simple_start({Rep,TT,NInfo0,S,Proc,St}),NInfo,
+                                            IO,U,A,PA,T):-
+   true|
+   reply2io(Rep,IO,[]),
+   U = [], A = [], PA = [], T = [],
+   exec_simple_task(TT,NInfo0,S,Proc,St)@node(S).
+tlogin2(error(Msg),NInfo,IO,U,A,PA,T):-
+   true|
+   IO = [putb(Msg),nl,flush(_)],
+   U = [], A = [], PA = [], T = [].
+tlogin2(normal(Info),NInfo,IO,U,A,PA,T):-
+   true|
+   set_vector_element(NInfo,1,F,F,N2),
+   set_vector_element(N2,2,IONode,IONode,N3),
+   set_vector_element(N3,4,RU,RU,N4),
+   set_vector_element(N4,5,RP,RP,N5),
+   get_fep_node(F,IONode,FEPNode),
+   shoen:raise(pimos_tag#task,general_request(FEPNode,RU,RP),NGR),
+   win2io(Win,IO),
+   shoen:raise(pimos_tag#task,general_request,GR),
+   login_request:wait_who(Info,Win,ABORT,NGR,GR,U,A,PA,T).
+
+
+exec_simple_task(Info,NInfo,S,Nodes,St):-
+   true|
+%  NInfo = {0,F,IONode,UN,Run,RPass,"telnet"}
+   set_vector_element(NInfo,1,F,0,N2),
+   set_vector_element(N2,2,IONode,0,N3),
+   set_vector_element(N3,3,UN,0,N4),
+   set_vector_element(N4,4,RU,0,N5),
+   set_vector_element(N5,5,RP,0,_),
+   set_vector_element(Info,0,Code,0,I1),
+   set_vector_element(I1,1,Args,0,I2),
+   set_vector_element(I2,2,Prio,0,I3),
+   set_vector_element(I3,3,RI1,0,I4),
+   set_vector_element(I4,4,RI2,0,I5),
+   set_vector_element(I5,5,UID,0,_),
+   get_fep_node(F,IONode,FepNode,F2),
+   shoen:raise(pimos_tag#task,general_request(F2,FepNode,RU,RP),GR),
+   predicate_to_code(module#login_shell,go,0,SCode),
+   set_vector_element(Args,0,_,SCode,Args1),
+   set_vector_element(Args1,1,_,{},Args2),
+   GR = [execute(Code,Args2,[name(UN),prio(0,Prio),
+                             node(S,Nodes),tag(-1),
+                             resource(RI1,RI2),
+                             uid(UID)],St)].
+
+get_fep_node(F,Node,FEPNode,F2):-
+    string(Node,_,_)|
+    F = F2,
+    FEPNode = Node.
+otherwise.
+get_fep_node(F,_,FEPNode,F2):-
+    true|
+    F = F2,
+    FEPNode = F.
+
+get_fep_node(_,Node,FEPNode):-
+    string(Node,_,_)|
+    FEPNode = Node.
+otherwise.
+get_fep_node(F,_,FEPNode):-
+    true|
+    F = FEPNode.
+
+reply2io([],IO,ION):-
+    true|
+    IO = ION.
+reply2io([io(_,Str,St)|Next],IO,ION):-
+    string(Str,N,_),
+    N > 1|
+    St = normal(""),
+    builtin#string_tail(Str,1,STR),
+    IO = [putl(STR)|IO2],
+    reply2io(Next,IO2,ION).
+otherwise.
+reply2io([io(_,_,St)|Next],IO,ION):-
+    true|
+    St = normal(""),
+    reply2io(Next,IO,ION).
+
+win2io([],IO):-
+    true|
+    IO = [].
+win2io([putb(Str,St)|Next],IO):-
+    true|
+    IO = [putb(Str)|ION],
+    St = normal,
+    win2io(Next,ION).
+win2io([getb(N,St)|Next],IO):-
+    true|
+    IO = [getl(Str)|ION],
+    win2getb(Str,St,Next,ION).
+win2io([prompt(Str,St)|Next],IO):-
+    true|
+    IO = [prompt(Str)|ION],
+    St = normal,
+    win2io(Next,ION).
+win2io([flush(St)|Next],IO):-
+    true|
+    IO = [flush(St)|ION],
+    win2io(Next,ION).
+win2io([change_mode|Next],IO):-
+    true|
+    Next = IO.
+otherwise.
+win2io([Mes|Next],IO):-
+    vector(Mes,N),
+    N1 := N - 1|
+    set_vector_element(Mes,N1,normal,_,_),
+    win2io(Next,IO).
+
+win2getb(Str,St,Next,IO):-
+    string(Str,N,_),
+    N1 := N + 1|
+    new_string(NStr,N1,16),
+    builtin#copy_string_elements(NStr,0,N,Str,0,StrN0,_),
+    set_string_element(StrN0,N,key#lf,StrN),
+    St = normal(StrN),
+    win2io(Next,IO).
+
+task_monitor([terminated|R],C):- true|
+        C = [].
+task_monitor([started|R],C):- true|
+        task_monitor(R,C).
+task_monitor([aborted|R],C):-
+        true|
+        C = [].
+task_monitor([resource_low|R],C):-
+        true|
+        C = [add_resource(100000,-1),allow_resource_report|CN],
+        task_monitor(R,CN).
+
+task_monitor([resource_added|R],C):- true|
+        task_monitor(R,C).
+
+task_monitor([return_resource(_,_)|R],C):- true|
+        task_monitor(R,C).
+
+task_monitor([resource_report_allowed|R],C):- true|
+        task_monitor(R,C).
+
+task_monitor([statistics_started|R],C):- true|
+        task_monitor(R,C).
+
+task_monitor([statistics(ResH,ResL)|R],C):-
+        display_console(ascii#"Statistics in Task:"),
+        display_console(ResH),
+        display_console(ResL)|
+        task_monitor(R,C).
+
+task_monitor([exception(Code,Info,NewCode,NewArgv)|R],C):-
+        true|
+        predicate_to_code(module#login_telnet,dummy,1,NewCode),
+        NewArgv = {R},
+        C = [abort(_)].
+
+task_monitor([],C):-
+        true|
+        C = [abort(_)].
+
+dummy([_|R]):- true| dummy(R).
+dummy([]):- true| true.

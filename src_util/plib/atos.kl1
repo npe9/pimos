@@ -1,0 +1,107 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>LIBRARY>atos.kl1.16, 24-Jan-91 15:58:29, Edit by yashiro
+:- with_macro pimos.
+:- module '$plib$atos'.
+:- public atohs/2, atohs/3, atohs/4,
+          atos/2, atos/3, atos/4.
+
+atohs(Int,HexString) :-
+    true |
+        atohs(Int,HexString,16).
+
+atohs(Int,HexString,Size,ElementSize) :-
+    integer(Int),
+    integer(Size) |
+        getHexLength(Int,HexLen),
+        (Size < HexLen -> '$plib$error':error(plib_atohs,string#"range overflow", [Int,Size]);
+        otherwise;
+        true -> true ),
+        new_string(NewHexString,Size,ElementSize),
+        atohs0(Int,Size,NewHexString,HexString).
+
+atohs(Int,HexString,ElementSize) :-
+    Int =\= 0 |
+        getHexLength(Int,HexLen),
+        new_string(NewHexString,HexLen,ElementSize),
+        atohs0(Int,HexLen,NewHexString,HexString).
+atohs(0,HexString,ElementSize) :-
+    true |
+        new_string(HexString0,1,ElementSize),
+        set_string_element(HexString0,0,#"0",HexString).
+
+atohs0(_,0,HexString,HexString0) :-
+    true |
+        HexString=HexString0.
+atohs0(Int,Len,HexString,HexString0) :-
+    Len > 0,
+    Len1 := Len - 1,
+    Int1 := Int >> 4,
+    Hex := Int /\ 16#"000000F" |
+        (Hex > 10 -> Hex1 := Hex + #"A" - 10;
+        otherwise;
+        true -> Hex1 := Hex + #"0"),
+        set_string_element(HexString,Len1,Hex1,HexString1),
+        atohs0(Int1,Len1,HexString1,HexString0).
+
+getHexLength(Int,HexLen) :-
+    true |
+        getHexLength0(0,Int,HexLen).
+
+getHexLength0(Cnt,0,HexLen) :-
+    true |
+        Cnt = HexLen.
+otherwise.
+getHexLength0(Cnt,Int,HexLen) :-
+    Cnt1 := Cnt + 1,
+    Int1 := Int >> 4 |
+        getHexLength0(Cnt1,Int1,HexLen).
+
+atos(Int,String) :-
+    true |
+        atos(Int,String,16).
+
+atos(Int,DecString,Size,ElementSize) :-
+    integer(Int),
+    integer(Size) |
+        getDecimalLength(Int,DecLen),
+        (Size < DecLen -> '$plib$error':error(plib_atos,string#"range overflow", [Int,Size]);
+        otherwise;
+        true -> true ),
+        new_string(NewDecString,Size,ElementSize),
+        atos0(Int,Size,NewDecString,DecString).
+
+atos(Int,DecString,ElementSize) :-
+    Int =\= 0 |
+        getDecimalLength(Int,DecLen),
+        new_string(NewDecString,DecLen,ElementSize),
+        atos0(Int,DecLen,NewDecString,DecString).
+atos(0,DecString,ElementSize) :-
+    true |
+        new_string(DecString0,1,ElementSize),
+        set_string_element(DecString0,0,#"0",DecString).
+
+atos0(_,0,DecString,DecString0) :-
+    true |
+        DecString=DecString0.
+atos0(Int,Len,DecString,DecString0) :-
+    Len > 0,
+    Len1 := Len - 1,
+    Int1 := Int / 10,
+    Dec  := Int - (Int1 * 10) |
+        Dec1 := Dec + #"0",
+        set_string_element(DecString,Len1,Dec1,DecString1),
+        atos0(Int1,Len1,DecString1,DecString0).
+
+getDecimalLength(Int,DecLen) :-
+    true |
+        getDecimalLength0(0,Int,DecLen).
+
+getDecimalLength0(Cnt,0,DecLen) :-
+    true |
+        Cnt = DecLen.
+otherwise.
+getDecimalLength0(Cnt,Int,DecLen) :-
+    Cnt1 := Cnt + 1,
+    Int1 := Int / 10 |
+        getDecimalLength0(Cnt1,Int1,DecLen).

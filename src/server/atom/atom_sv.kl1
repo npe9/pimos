@@ -1,0 +1,269 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v295>Atom>atom_sv.kl1.4, 18-Sep-91 12:16:34, Edit by hori
+
+:- module atom_server.
+:- with_macro pimos.
+:- public go/3, go/2, filter/3.
+
+go(OK1,OK,AB) :- wait(OK1) | go(OK,AB).
+
+go(OK,AB) :- true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [register(atom_request,{0,0,7},Res)],
+    wait_0(Res,OK,AB).
+
+wait_0(normal(St,Ab,_),OK,AB) :- true |
+    OK = ok,
+    shoen:raise(pimos_tag#task,atom,Result),
+    wait_1(Result,St,Ab,AB).
+
+wait_1(normal(Atom0),St,Ab,AB) :- true |
+    merge(Atom1,Atom0),
+    cache(Atom2,Atom1),
+    predicate_to_code(module#atom_server,filter,3,Code),
+    St = [get_request(Code,"atom_request",Res)|Next],
+    wait_2(Res,Next,Code,Ab,Atom2,AB).
+
+wait_2(general_request(SCont,Ab,Att,SInfo,FInfo,In),Next,Code,RAb,Atom,AB) :- true |
+    Next = [get_request(Code,"atom_request",Res)|Next1],
+    FInfo = [],
+    Atom = {Atom1,Atom2},
+    wait_2(Res,Next1,Code,RAb,Atom1,AB),
+    set_vector_element(SInfo,3,ANode,0,_),
+    internal_handler:get_relative_node(ANode,Node),
+    In = normal(In1,_,[]),
+    merge(SContIn,SCont),
+    wait_3(In1,Atom2,Att,SContIn,Ab,AB)@node(Node).
+wait_2(_,Next,Code,RAb,Atom,AB) :- wait(AB) |
+    RAb = abort,
+    Next = [],
+    Atom = [].
+wait_2(abnormal,Next,Code,RAb,Atom,AB) :- true |
+    Next = [],
+    Atom = [].
+wait_2(aborted,Next,Code,RAb,Atom,AB) :- true |
+    Next = [],
+    Atom = [].
+
+wait_3(In,Atom,CAb,SCont,Ab,AB) :- true |
+    MsgID = 1,
+    request_handler(In,Atom,CAb,SCont,Ab,AB,MsgID).
+
+request_handler([create(ANode,Result)|In],Atom0,CAb,Cont,Ab,AB,MsgID) :- true |
+    Atom0 = [cache(ANode,Result2)|Atom1],
+    wait_cache_handler(Result2,Result,Cont,ContN,CAb,AB),
+    request_handler(In,Atom1,CAb,ContN,Ab,AB,MsgID).
+request_handler([reset(Status)|In],Atom0,CAb,Cont,Ab,AB,MsgID0) :- true |
+    Status = normal(Abort,[],MsgID0),
+    MsgID1 := MsgID0 + 1,
+    request_handler(In,Atom0,CAb,Cont,Ab,AB,MsgID1).
+request_handler([next_attention(Status)|In],Atom0,CAb,Cont,Ab,AB,MsgID0) :- true |
+    Status = normal([]),
+    request_handler(In,Atom0,CAb,Cont,Ab,AB,MsgID0).
+request_handler([resend(MsgID,Status)|In],Atom0,CAb,Cont,Ab,AB,MsgID0) :- true |
+    Status = normal,
+    request_handler(In,Atom0,CAb,Cont,Ab,AB,MsgID0).
+request_handler([cancel(MsgID,Status)|In],Atom0,CAb,Cont,Ab,AB,MsgID0) :- true |
+    Status = normal,
+    request_handler(In,Atom0,CAb,Cont,Ab,AB,MsgID0).
+request_handler([],Atom,CAb,Cont,Ab,AB,MsgID) :- true |
+    Atom = [],
+    Cont = [].
+request_handler(_,Atom,CAb,Cont,Ab,AB,MsgID) :- wait(CAb) |
+    Ab = abort,
+    Atom = [],
+    Cont = [].
+request_handler(_,Atom,CAb,Cont,Ab,AB,MsgID) :- wait(AB) |
+    Ab = abort,
+    Atom = [],
+    Cont = [].
+
+wait_cache_handler(normal(Cache),Result,Cont,ContN,CAb,AB) :- true |
+    Cont = [add_resource(atom,"atom",Res)|ContN],
+    wait_cache_handler2(Res,Cache,Result,CAb,AB).
+
+wait_cache_handler2(normal(SCont,Ab),Cache,Result,CAb,AB) :- true |
+    Result = normal(AtomIn,Abort,[]),
+    MsgID = 1,
+    cache_handler(AtomIn,Cache,CAb,SCont,Ab,AB,MsgID).
+wait_cache_handler2(abnormal,Cache,Result,CAb,AB) :- true |
+    Cache = [],
+    Result = abnormal.
+wait_cache_handler2(aborted,Cache,Result,CAb,AB) :- true |
+    Cache = [],
+    Result = aborted.
+wait_cache_handler2(_,Cache,Result,CAb,AB) :- wait(CAb) |
+    Cache = [],
+    Result = aborted.
+wait_cache_handler2(_,Cache,Result,CAb,AB) :- wait(AB) |
+    Cache = [],
+    Result = aborted.
+
+cache_handler([reset(Status)|In],Atom0,CAb,Cont,Ab,AB,MsgID0) :- true |
+    Status = normal(Abort,[],MsgID0),
+    MsgID1 := MsgID0 + 1,
+    cache_handler(In,Atom0,CAb,Cont,Ab,AB,MsgID1).
+cache_handler([next_attention(Status)|In],Atom0,CAb,Cont,Ab,AB,MsgID0) :- true |
+    Status = normal([]),
+    cache_handler(In,Atom0,CAb,Cont,Ab,AB,MsgID0).
+cache_handler([resend(MsgID,Status)|In],Atom0,CAb,Cont,Ab,AB,MsgID0) :- true |
+    Status = normal,
+    cache_handler(In,Atom0,CAb,Cont,Ab,AB,MsgID0).
+cache_handler([cancel(MsgID,Status)|In],Atom0,CAb,Cont,Ab,AB,MsgID0) :- true |
+    Status = normal,
+    cache_handler(In,Atom0,CAb,Cont,Ab,AB,MsgID0).
+cache_handler([Message|In],Atom0,CAb,Cont,Ab,AB,MsgID) :- Message = get_atom_name(_,_) |
+    Atom0 = [Message|Atom1],
+    cache_handler(In,Atom1,CAb,Cont,Ab,AB,MsgID).
+cache_handler([Message|In],Atom0,CAb,Cont,Ab,AB,MsgID) :- Message = get_atom(_,_) |
+    Atom0 = [Message|Atom1],
+    cache_handler(In,Atom1,CAb,Cont,Ab,AB,MsgID).
+cache_handler([Message|In],Atom0,CAb,Cont,Ab,AB,MsgID) :- Message = intern(_,_) |
+    Atom0 = [Message|Atom1],
+    cache_handler(In,Atom1,CAb,Cont,Ab,AB,MsgID).
+cache_handler([Message|In],Atom0,CAb,Cont,Ab,AB,MsgID) :- Message = get_all_atoms(_) |
+    Atom0 = [Message|Atom1],
+    cache_handler(In,Atom1,CAb,Cont,Ab,AB,MsgID).
+cache_handler([],Atom,CAb,Cont,Ab,AB,MsgID) :- true |
+    Atom = [],
+    Cont = [].
+cache_handler(_,Atom,CAb,Cont,Ab,AB,MsgID) :- wait(CAb) |
+    Ab = abort,
+    Atom = [],
+    Cont = [].
+cache_handler(_,Atom,CAb,Cont,Ab,AB,MsgID) :- wait(AB) |
+    Ab = abort,
+    Atom = [],
+    Cont = [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+%%  PROTECTION_FILTER  %%
+%%%%%%%%%%%%%%%%%%%%%%%%%
+
+filter(_,User,OS) :- true |
+    atomreq_filter:atomreq_filter(User,Mid),
+    add_node_0(Mid,OS).
+
+add_node_0(User,normal(OS,Ab,At)) :- true |
+    User = normal(User0,Ab,At),
+    add_node(User0,OS).
+
+add_node([create(Result)|In],Out0) :- true |
+    mdlib#current_cluster(ANode,_),
+    Out0 = [create(ANode,Result)|Out1],
+    add_node(In,Out1).
+add_node([],Out0) :- true |
+    Out0 = [].
+otherwise.
+add_node([Message|In],Out0) :- true |
+    Out0 = [Message|Out1],
+    add_node(In,Out1).
+
+%%%%%%%%%%%%%
+%%  CACHE  %%
+%%%%%%%%%%%%%
+
+cache(In,Out) :- true |
+    merge(In,In1),
+    current_node(CCl,N),
+    new_vector(CacheVec0,N),
+    create_cache(0,N,CacheVec0,CacheVec1,Out),
+    cache_proc(In1,CacheVec1).
+
+create_cache(I,N,CacheVec0,CacheVec,AtomDev0) :- I < N |
+    AtomDev0 = {AtomDev1,AtomDev2},
+    internal_handler:get_relative_node(I,II),
+    cache_table(Cache,AtomDev1)@node(II),
+    J := I + 1,
+    set_vector_element(CacheVec0,I,_,Cache,CacheVec1),
+    create_cache(J,N,CacheVec1,CacheVec,AtomDev2).
+create_cache(I,N,CacheVec0,CacheVec,AtomDev0) :- I >= N |
+    CacheVec = CacheVec0,
+    AtomDev0 = [].
+
+cache_proc([cache(ANode,Status)|In],CacheVec0) :- true |
+    internal_handler:get_relative_node(ANode,Node),
+    set_vector_element(CacheVec0,Node,{Cache0,Cache1},Cache1,CacheVec1),
+    Status = normal(Cache0),
+    cache_proc(In,CacheVec1).
+cache_proc([],CacheVec) :- vector(CacheVec,N) |
+    close_all(0,N,CacheVec).
+
+close_all(I,N,CacheVec0) :- I < N |
+    vector_element(CacheVec0,I,[],CacheVec1),
+    J := I + 1,
+    close_all(J,N,CacheVec1).
+close_all(I,N,CacheVec0) :- I >= N | true.
+
+cache_table(Cache,AtomDevice) :- true |
+    merge(Cache,AtomCache),
+    pool:keyed_set(AS,2000),
+    pool:keyed_set(SA,2000),
+    cache_atom_table(AtomCache,AtomDevice,AS,SA).
+
+cache_atom_table([get_atom(Name,Status)|In],DEV,AS,SA) :- true |
+    SA = [empty(Name,YorN)|SA1],
+    get_cache_atom(YorN,Name,Status,In,DEV,AS,SA1).
+cache_atom_table([get_atom_name(Atom,Status)|In],DEV,AS,SA) :- true |
+    AS = [empty(Atom,YorN)|AS1],
+    get_cache_atom_name(YorN,Atom,Status,In,DEV,AS1,SA).
+cache_atom_table([intern(Name,Status)|In],DEV,AS,SA) :- true |
+    SA = [empty(Name,YorN)|SA1],
+    intern(YorN,Name,Status,In,DEV,AS,SA1).
+cache_atom_table([get_all_atoms(Status)|In],DEV,AS,SA) :- true |
+    DEV = [get_all_atoms(Status)|DEV1],
+    cache_atom_table(In,DEV1,AS,SA).
+cache_atom_table([],DEV,AS,SA) :- true |
+    AS = [],
+    SA = [],
+    DEV = [].
+
+get_cache_atom(no,Name,Status,In,DEV,AS,SA) :- true |
+    SA = [get_and_put(Name,Atom,Atom)|SA1],
+    Status = normal(Atom),
+    cache_atom_table(In,DEV,AS,SA1).
+get_cache_atom(yes,Name,Status,In,DEV,AS,SA) :- true |
+    DEV = [get_atom(Name,Status)|DEV1],
+    wait_get_atom(Status,Name,In,DEV1,AS,SA).
+
+wait_get_atom(normal(Atom),Name,In,DEV,AS,SA) :- true |
+    AS = [put(Atom,Name,_)|AS1],
+    SA = [put(Name,Atom,_)|SA1],
+    cache_atom_table(In,DEV,AS1,SA1).
+otherwise.
+wait_get_atom(_,_,In,DEV,AS,SA) :- true |
+    cache_atom_table(In,DEV,AS,SA).
+
+get_cache_atom_name(no,Atom,Status,In,DEV,AS,SA) :- true |
+    AS = [get_and_put(Atom,Name,Name)|AS1],
+    Status = normal(Name),
+    cache_atom_table(In,DEV,AS1,SA).
+get_cache_atom_name(yes,Atom,Status,In,DEV,AS,SA) :- true |
+    DEV = [get_atom_name(Atom,Status)|DEV1],
+    wait_get_atom_name(Status,Atom,In,DEV1,AS,SA).
+
+wait_get_atom_name(normal(Name),Atom,In,DEV,AS,SA) :- true |
+    AS = [put(Atom,Name,_)|AS1],
+    SA = [put(Name,Atom,_)|SA1],
+    cache_atom_table(In,DEV,AS1,SA1).
+otherwise.
+wait_get_atom_name(_,_,In,DEV,AS,SA) :- true |
+    cache_atom_table(In,DEV,AS,SA).
+
+intern(no,Name,Status,In,DEV,AS,SA) :- true |
+    SA = [get_and_put(Name,Atom,Atom)|SA1],
+    Status = normal(Atom),
+    cache_atom_table(In,DEV,AS,SA1).
+intern(yes,Name,Status,In,DEV,AS,SA) :- true |
+    DEV = [intern(Name,Status)|DEV1],
+    wait_intern(Status,Name,In,DEV1,AS,SA).
+
+wait_intern(normal(Atom),Name,In,DEV,AS,SA) :- true |
+    SA = [put(Name,Atom,_)|SA1],
+    AS = [put(Atom,Name,_)|AS1],
+    cache_atom_table(In,DEV,AS1,SA1).

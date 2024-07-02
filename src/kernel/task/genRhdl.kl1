@@ -1,0 +1,720 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module general_request_handler.
+:- with_macro pimos.
+:- public handler/8, local_handler/7, close_tools/1, get_request_info/5 .
+
+handler(In,Out,MIn,MOut,Tools,Us,Env,Shut):-
+    true|
+    merge(GIn,GIN),
+    ihandler(Shut,In,MIn,GIN,OIn),
+    ohandler(OIn,GIn,Out,MOut,Tools,Us,Env).
+
+ihandler(Shut,_,Mon,Gen,Out):-
+    wait(Shut)|
+    Out = [control_close|OutN],
+    ihandler(_,_,Mon,Gen,OutN).
+alternatively.
+ihandler(_,_,[terminate|Mon],Gen,Out):-
+    true|
+    Out = [monitor(terminate)|OutN],
+    ihandler(_,_,Mon,Gen,OutN).
+ihandler(_,_,[],Gen,Out):-
+    true|
+    Out = [monitor_close|OutN],
+    ihandler(_,_,_,Gen,OutN).
+ihandler(_,_,_,[],Out):-
+    true|
+    Out = [].
+alternatively.
+ihandler(Shut,In,Mon,[add_monitor(Type,Name,Status)|Gen],Out):-
+    true|
+    Out = [internal(add_monitor(Type,Name,Status))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,In,[abort(_,_)|Mon],Gen,Out):-
+    true|
+    ihandler(Shut,In,Mon,Gen,Out).
+ihandler(Shut,In,[abort_all(_)|Mon],Gen,Out):-
+    true|
+    ihandler(Shut,In,Mon,Gen,Out).
+ihandler(Shut,In,[status_all(Type,Verb,Result)|Mon],Gen,Out):-
+    true|
+    Result = [],
+    ihandler(Shut,In,Mon,Gen,Out).
+ihandler(Shut,In,[status(Addr,Type,Verb,Result)|Mon],Gen,Out):-
+    true|
+    Result = [],
+    ihandler(Shut,In,Mon,Gen,Out).
+alternatively.
+ihandler(Shut,[],Mon,Gen,Out):-
+    true|
+    Out = [control_close|OutN],
+    ihandler(_,_,Mon,Gen,OutN).
+ihandler(Shut,[close(St)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(close(St))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[suicide(St)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(suicide(St))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[abort(ID,St)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(abort(ID,St))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[id(Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(id(Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[absolute_id(Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(absolute_id(Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[change_processor(Node)|In],Mon,Gen,Out):-
+    true|
+    current_node(Rel,_),
+%%%%
+    mdlib#current_cluster(Abs,_),
+%%%%
+    Rel1 := Node - (Abs - Rel),
+    Out = [control(change_node(Rel1))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN)@node(Rel1).
+ihandler(Shut,[setenv(Key,Value,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(setenv(Key,Value,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[unsetenv(Key,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(unsetenv(Key,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[getenv(Key,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(getenv(Key,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[getenv(Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(getenv(Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[get_puid(Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(get_puid(Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[set_gid(Gid,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(set_gid(Gid,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[get_gid(Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(get_gid(Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  new command
+
+ihandler(Shut,[set_remote_info(Fep,IONode,RU,RP,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(set_remote_info(Fep,IONode,RU,RP,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[set_remote_info(IONode,RU,RP,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(set_remote_info(IONode,RU,RP,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[set_remote_info(IONode,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(set_remote_info(IONode,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ihandler(Shut,[register(Name,Prot,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(register(Name,Prot,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[request(Name,UAbort,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(request(Name,UAbort,Shut,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[request_anyway(Name,UAbort,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(request_anyway(Name,UAbort,Shut,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[execute(Name,Param,Status)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(execute(Name,Param,Status))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[execute_super(Code,Param,Status)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(execute_super(Code,Param,Status))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[execute(Param,Status)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(execute(Param,Status))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+ihandler(Shut,[status(Ids,Type,Verb,Result)|In],Mon,Gen,Out):-
+    true|
+    Out = [control(status(Ids,Type,Verb,Result))|OutN],
+    ihandler(Shut,In,Mon,Gen,OutN).
+
+
+%% ohandler(In,Out,Mon,Tools,Us,Env).
+
+ohandler([control_close|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Mon = [terminate|MonN],
+    ohandler(In,GIn,Out,MonN,Tools,Us,Env).
+ohandler([monitor(terminate)|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Mon = [],
+    ohandler(In,GIn,Out,_,Tools,Us,Env).
+ohandler([monitor_close|In],GIn,Out,_,Tools,Us,Env):-
+    true|
+    GIn = [],
+    ohandler(In,_,Out,_,Tools,Us,Env).
+ohandler([],_,Out,_,Tools,_,Env):-
+    true|
+    Out = [],
+    close_tools(Tools),
+    Env = [].
+ohandler([control(close(St))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    St = normal,
+    ohandler(In,GIn,Out,Mon,Tools,Us,Env).
+ohandler([control(suicide(St))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Out = [abort([],St)|OutN],
+    ohandler(In,GIn,OutN,Mon,Tools,Us,Env).
+ohandler([control(abort(ID,St))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Out = [abort(ID,St)|OutN],
+    ohandler(In,GIn,OutN,Mon,Tools,Us,Env).
+ohandler([control(id(Result))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Mon = [id(Rid)|MonN],
+    wait_id(Rid,Result),
+    ohandler(In,GIn,Out,MonN,Tools,Us,Env).
+ohandler([control(absolute_id(Result))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Mon = [absolute_id(Aid)|MonN],
+    wait_id(Aid,Result),
+    ohandler(In,GIn,Out,MonN,Tools,Us,Env).
+ohandler([internal(add_monitor(Type,Name,St))|In],
+         GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Mon = [add_monitor(Type,Name,St)|MonN],
+    ohandler(In,GIn,Out,MonN,Tools,Us,Env).
+%%%%
+ohandler([control(change_node(Node))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    ohandler(In,GIn,Out,Mon,Tools,Us,Env)@node(Node).
+ohandler([control(set_remote_info(Fep,IONode,RU,RP,Status))|In],
+                                          GIn,Out,Mon,Tools,Us,Env):-
+    integer(Fep),
+    integer(IONode),
+    string(RU,_,_),
+    string(RP,_,_)|
+    Status = normal,
+    set_vector_element(Us, 2,_,Fep,Us15),
+    set_vector_element(Us15, 3,_,IONode,Us1),
+    set_vector_element(Us1,4,_,RU,Us2),
+    set_vector_element(Us2,5,_,RP,UsN),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+ohandler([control(set_remote_info(Fep,IONode,RU,RP,Status))|In],
+                                          GIn,Out,Mon,Tools,Us,Env):-
+    integer(Fep),
+    string(IONode,_,_),
+    string(RU,_,_),
+    string(RP,_,_)|
+    Status = normal,
+    set_vector_element(Us, 2,_,Fep,Us15),
+    set_vector_element(Us15, 3,_,IONode,Us1),
+    set_vector_element(Us1,4,_,RU,Us2),
+    set_vector_element(Us2,5,_,RP,UsN),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+ohandler([control(set_remote_info(IONode,RU,RP,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    integer(IONode),
+    string(RU,_,_),
+    string(RP,_,_)|
+    Status = normal,
+    set_vector_element(Us, 3,_,IONode,Us1),
+    set_vector_element(Us1,4,_,RU,Us2),
+    set_vector_element(Us2,5,_,RP,UsN),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+ohandler([control(set_remote_info(IONode,RU,RP,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    string(IONode,_,_),
+    string(RU,_,_),
+    string(RP,_,_)|
+    Status = normal,
+    set_vector_element(Us, 3,_,IONode,Us1),
+    set_vector_element(Us1,4,_,RU,Us2),
+    set_vector_element(Us2,5,_,RP,UsN),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+ohandler([control(set_remote_info(IONode,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    integer(IONode)|
+    Status = normal,
+    set_vector_element(Us,3,_,IONode,UsN),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+ohandler([control(set_remote_info(IONode,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    string(IONode,_,_)|
+    Status = normal,
+    set_vector_element(Us,3,_,IONode,UsN),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+%%%%
+ohandler([control(setenv(Key,Value,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Env = [put(Key,Value,OStatus)|EnvN],
+    wait_env_status(OStatus,Status),
+    ohandler(In,GIn,Out,Mon,Tools,Us,EnvN).
+ohandler([control(unsetenv(Key,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Env = [get_if_any(Key,Value)|EnvN],
+    wait_env_status(Value,Status),
+    ohandler(In,GIn,Out,Mon,Tools,Us,EnvN).
+ohandler([control(getenv(Key,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Env = [get_and_put_if_any(Key,Value,EIn,_)|EnvN],
+    get_environ(Value,EIn,Status),
+    ohandler(In,GIn,Out,Mon,Tools,Us,EnvN).
+ohandler([control(getenv(Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Env = [copy(TEnv)|EnvN],
+    TEnv = [get_all(All)],
+    Status = normal(All),
+    ohandler(In,GIn,Out,Mon,Tools,Us,EnvN).
+ohandler([control(get_puid(Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    set_vector_element(Us,0,Uid,Uid,UsN),
+    confirm_user(Status,Uid,Mon,MonN),
+    ohandler(In,GIn,Out,MonN,Tools,UsN,Env).
+ohandler([control(set_gid(Gid,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    set_vector_element(Us,1,Gids,GidsN,UsN),
+    check_gid(Gid,Gids,GidsN,Status0),
+    gid_ohandler(Status0,Status,In,GIn,Out,Mon,Tools,UsN,Env).
+ohandler([control(get_gid(Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    set_vector_element(Us,1,Gids,GidsN,UsN),
+    check_gids(Gids,GidsN,Status),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ohandler([control(register(Name,Prot,Result))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    set_vector_element(Us,0,UID,UID,UsN),
+    uid_check(UID,Out,Name,Prot,Result,OutN),
+    ohandler(In,GIn,OutN,Mon,Tools,UsN,Env).
+ohandler([control(request(Name,UAbort,Shut,Status))|In],
+                                   GOut,Out,Mon,Tools,Us,Env):-
+    true|
+    mdlib#current_cluster(Node,_),
+    Env = [get_and_put_if_any(task:directory,X,X1,_),
+           get_and_put_if_any((Name):io_node,Y,Y1,_)|EnvN],
+    get_request_info(Us,Us1,UsN,X,X1,Node,Y,Y1),
+    set_vector_element(Tools,0,
+                       [request(Name,general,Us1,UAbort,Shut,Result)|Rsc],
+                               Rsc,ToolN),
+    merge({Mon1,Mon2},Mon),
+    request_check(Shut,Result,Mon2,Name,Status),
+    ohandler(In,GOut,Out,Mon1,ToolN,UsN,EnvN).
+ohandler([control(request_anyway(Name,UAbort,Shut,Status))|In],
+                                    GOut,Out,Mon,Tools,Us,Env):-
+    true|
+    mdlib#current_cluster(Node,_),
+    Env = [get_and_put_if_any(task:directory,X,X1,_),
+           get_and_put_if_any((Name):io_node,Y,Y1,_)|EnvN],
+    get_request_info(Us,Us1,UsN,X,X1,Node,Y,Y1),
+    set_vector_element(Tools,0,[request_anyway(Name,general,
+                                                 Us1,UAbort,Shut,Result)|Rsc],
+                               Rsc,ToolN),
+    request_check(Shut,Result,Mon2,Name,Status),
+    merge({Mon1,Mon2},Mon),
+    ohandler(In,GOut,Out,Mon1,ToolN,UsN,EnvN).
+ohandler([control(execute(Param,Status))|In],
+          GOut,Out,Mon,Tools,Us,Env):-
+    true|
+    mdlib#current_cluster(ANode,_),
+    copy:copy(Us,Us1,Us2),
+    Out = [execute(Param,Us2,ANode,Status0)|OutN],
+    wait_ohandler(Status0,Status),
+    ohandler(In,GOut,OutN,Mon,Tools,Us1,Env).
+ohandler([control(execute_super(Code,Param,Status))|In],
+          GOut,Out,Mon,Tools,Us,Env):-
+    vector(Code,3)|
+    mdlib#current_cluster(ANode,_),
+    copy:copy(Us,Us1,Us2),
+    Out = [execute_super(Code,Param,Us2,ANode,Status0)|OutN],
+    wait_super_ohandler(Status0,Status),
+    ohandler(In,GOut,OutN,Mon,Tools,Us1,Env).
+ohandler([control(execute(Name,Param,Status))|In],
+          GOut,Out,Mon,Tools,Us,Env):-
+    true|
+    mdlib#current_cluster(ANode,_),
+    copy:copy(Us,Us1,Us2),
+    Out = [execute(Name,Param,Us2,ANode,Status0)|OutN],
+    wait_ohandler(Status0,Status),
+    ohandler(In,GOut,OutN,Mon,Tools,Us1,Env).
+ohandler([control(execute_super(Code,Param,Status))|In],
+          GOut,Out,Mon,Tools,Us,Env):-
+    vector(Code,4)|
+    mdlib#current_cluster(ANode,_),
+    copy:copy(Us,Us1,Us2),
+    Out = [execute_super(Code,Param,Us2,ANode,Status0)|OutN],
+    wait_super_ohandler(Status0,Status),
+    ohandler(In,GOut,OutN,Mon,Tools,Us1,Env).
+ohandler([control(status(Ids,Type,Verb,Result))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Out = [status(Ids,Type,Verb,Result)|OutN],
+    ohandler(In,GIn,OutN,Mon,Tools,Us,Env).
+otherwise.
+ohandler([control(set_remote_info(Fep,IONode,RU,RP,Status))|In],
+                                          GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Status = abnormal,
+    set_vector_element(Us, 2,_,0,Us15),
+    set_vector_element(Us15, 3,_,"",Us1),
+    set_vector_element(Us1,4,_,"",Us2),
+    set_vector_element(Us2,5,_,"",UsN),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+ohandler([control(set_remote_info(IONode,RU,RP,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Status = abnormal,
+    set_vector_element(Us, 3,_,"",Us1),
+    set_vector_element(Us1,4,_,"",Us2),
+    set_vector_element(Us2,5,_,"",UsN),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+ohandler([control(set_remote_info(IONode,Status))|In],GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Status = abnormal,
+    set_vector_element(Us,3,_,"",UsN),
+    ohandler(In,GIn,Out,Mon,Tools,UsN,Env).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+confirm_user(Status,0,Mon,MonN):-
+    true|
+    Mon = [get_puid(PUID)|MonN],
+    Status = normal(PUID).
+otherwise.
+confirm_user(Status,_,Mon,MonN):-
+    true|
+    Mon = MonN,
+    Status = abnormal.
+
+get_environ(V,_,Status):-
+    vector(V,0)|
+    Status = abnormal.
+otherwise.
+get_environ(V,PIn,Status):-
+    vector_element(V,0,In)|
+    In = PIn,
+    Status = normal(In).
+
+wait_env_status(Value,Status):-
+    wait(Value)|
+    Status = normal.
+wait_id(Id,Status):-
+    wait(Id)|
+    Status = normal(Id).
+
+request_check(Shut,Result,GIn,_,Status):-
+    wait(Shut)|
+    GIn = [],
+    wait_result(Result,Status).
+alternatively.
+request_check(Shut,abnormal,GIn,Name,Status):-
+    true|
+    Status = abnormal,
+    GIn = [].
+request_check(Shut,aborted,GIn,Name,Status):-
+    true|
+    Status = aborted,
+    GIn = [].
+request_check(Shut,normal(Code,Comm,In,Stream,Abort,FInfo,SShut),
+                   GIn,Name,Status):-
+    true|
+    Status = normal(Code,Stream,FInfo),
+    GIn = [add_monitor(Name,Comm,St)],
+    local_handler(St,Shut,Abort,In,normal,SShut).
+
+%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  other handler
+%
+local_handler(normal(HI,HO),Shut,Abort,In,St,SShut):-
+    true|
+    local_handler(Shut,Abort,In,HI,HO,St,SShut).
+otherwise.
+local_handler(_,Shut,Abort,In,St,SShut):-
+    true|
+    Abort = abort,
+    In = [].
+
+local_handler(Shut,_,In,HI,HO,normal,SShut):-
+    wait(Shut)|
+    HO = [terminate|HON],
+    abort_local_handler(In,SShut),
+    local_handler(_,_,In,HI,HON,terminating,SShut).
+local_handler(Shut,_,In,HI,HO,terminating,SShut):-
+    wait(Shut)|
+    local_handler(_,_,_,HI,HO,terminating,SShut).
+alternatively.
+local_handler(_,_,_,[],_,_,_):-
+    true|
+    true.
+local_handler(_,_,In,[terminate|HI],HO,Stat,SShut):-
+    true|
+    HO = [],
+    local_handler(_,_,In,HI,_,Stat,SShut).
+local_handler(Shut,Abort,In,[status(_,_,_,Result)|HI],HO,Stat,SShut):-
+    true|
+    Result = [],
+    local_handler(Shut,Abort,In,HI,HO,Stat,SShut).
+local_handler(Shut,Abort,In,[status_all(_,_,Result)|HI],HO,Stat,SShut):-
+    true|
+    Result = [],
+    local_handler(Shut,Abort,In,HI,HO,Stat,SShut).
+local_handler(Shut,Abort,In,[Msg|HI],HO,Stat,SShut):-
+    atom(Msg),
+    Msg \= terminate|
+    local_handler(Shut,Abort,In,HI,HO,Stat,SShut).
+local_handler(Shut,Abort,In,[Msg|HI],HO,Stat,SShut):-
+    vector(Msg,4),
+    vector_element(Msg,0,Func),
+    Func \= status_all|
+    local_handler(Shut,Abort,In,HI,HO,Stat,SShut).
+local_handler(Shut,Abort,In,[Msg|HI],HO,Stat,SShut):-
+    vector(Msg,5),
+    vector_element(Msg,0,Func),
+    Func \= status|
+    local_handler(Shut,Abort,In,HI,HO,Stat,SShut).
+local_handler(Shut,Abort,In,[Msg|HI],HO,Stat,SShut):-
+    vector(Msg,N),
+    N \= 4,
+    N \= 5|
+    local_handler(Shut,Abort,In,HI,HO,Stat,SShut).
+alternatively.
+local_handler(Shut,Abort,In,HI,HO,normal,SShut):-
+    wait(Abort)|
+    HO = [terminate|HON],
+    abort_local_handler(In,SShut),
+    local_handler(_,_,In,HI,HON,terminating,SShut).
+local_handler(Shut,Abort,_,HI,HO,terminating,SShut):-
+    wait(Abort)|
+    local_handler(_,_,_,HI,HO,terminating,SShut).
+alternatively.
+local_handler(Shut,Abort,[],HI,HO,normal,SShut):-
+    true|
+    HO = [terminate|HON],
+    local_handler(_,_,_,HI,HON,terminating,SShut).
+local_handler(_,_,[],HI,HO,terminating,SShut):-
+    true|
+    local_handler(_,_,_,HI,HO,terminating,SShut).
+local_handler(Shut,Abort,[add_resource(Type,Name,Result)|In],HI,HO,normal,SShut):-
+    true|
+    HO = [add_monitor(Type,Name,St)|HON],
+    wait_local_handler(St,Shut,Result,SShut),
+    local_handler(Shut,Abort,In,HI,HON,normal,SShut).
+local_handler(Shut,Abort,[absolute_id(Result)|In],HI,HO,normal,SShut):-
+    true|
+    HO = [absolute_id(ID)|HON],
+    Result = normal(ID),
+    local_handler(Shut,Abort,In,HI,HON,normal,SShut).
+local_handler(Shut,Abort,[change_comment(Comm,Result)|In],HI,HO,normal,SShut):-
+    true|
+    HO = [change_comment(Comm,Result)|HON],
+    local_handler(Shut,Abort,In,HI,HON,normal,SShut).
+local_handler(Shut,Abort,[add_resource(Type,Name,Result)|In],
+                                             HI,HO,terminating,SShut):-
+    true|
+    Result = aborted,
+    local_handler(Shut,Abort,In,HI,HO,terminating,SShut).
+local_handler(Shut,Abort,[absolute_id(Result)|In],
+                                             HI,HO,terminating,SShut):-
+
+    true|
+    Result = aborted,
+    local_handler(Shut,Abort,In,HI,HO,terminating,SShut).
+local_handler(Shut,Abort,[change_comment(Com,Result)|In],
+                                             HI,HO,terminating,SShut):-
+    true|
+    Result = aborted,
+    local_handler(Shut,Abort,In,HI,HO,terminating,SShut).
+
+wait_ohandler(abnormal,Status):-
+    true|
+    Status = abnormal.
+otherwise.
+wait_ohandler(normal(normal(HI,HO),NewStatus,ETC),Status):-
+    true|
+    NewStatus = normal(HCont,HRep,SCont,SRep,HI,HO),
+    Status = normal(HCont,HRep,SCont,SRep,ETC).
+otherwise.
+wait_ohandler(normal(_,NewStatus,ETC),Status):-
+    true|
+    NewStatus = abnormal,
+    Status = abnormal.
+
+wait_super_ohandler(abnormal,Status):-
+    true|
+    Status = abnormal.
+otherwise.
+wait_super_ohandler(normal(normal(HI,HO),NewStatus,Code,ETC),Status):-
+    true|
+    NewStatus = normal(Cont,Rep,SCont,SRep,HI,HO),
+    Status = normal(Cont,Rep,SCont,SRep,Code,ETC).
+otherwise.
+wait_super_ohandler(normal(_,NewStatus,_,_),Status):-
+    true|
+    NewStatus = abnormal,
+    Status = abnormal.
+
+close_tools(V):- vector(V,N)|
+    close_tools(N,V).
+close_tools(0,_):- true| true.
+close_tools(N,V):-
+    N1 := N - 1|
+    set_vector_element(V,N1,[],0,VN),
+    close_tools(N1,VN).
+
+wait_result(normal(Code,Cont,FInfo),Status):-
+    true|
+    Status= normal(Code,Cont,FInfo).
+otherwise.
+wait_result(Status0,Status):-
+    true|
+    Status0 = Status.
+
+get_request_info(Us,NewUs,UsN,V,_,Node,Y,Y1):-
+    vector(V,0)|
+    get_request_info(Us,NewUs,UsN,"",Node,Y,Y1).
+otherwise.
+get_request_info(Us,NewUs,UsN,V,NV,Node,Y,Y1):-
+    vector_element(V,0,Dir)|
+    copy:copy(Dir,Dir1,NV),
+    get_request_info(Us,NewUs,UsN,Dir1,Node,Y,Y1).
+
+get_request_info(Us,NewUs,UsN,Dir,Node,Y,_):- 
+    vector(Y,0)|
+    get_request_info(Us,NewUs,UsN,Dir,Node).
+get_request_info(Us,NewUs,UsN,Dir,Node,Y,Y1):- 
+    vector_element(Y,0,E),
+    string(E,_,_)|
+    copy:copy(E,E1,E2),
+    Y1 = E2,
+    set_vector_element(Us,3,OldE,E1,NUs),
+    set_vector_element(UsNN,3,_,OldE,UsN),
+    get_request_info(NUs,NewUs,UsNN,Dir,Node).
+get_request_info(Us,NewUs,UsN,Dir,Node,Y,Y1):- 
+    vector_element(Y,0,E),
+    E >= 0|
+    Y1 = E,
+    set_vector_element(Us,3,OldE,E,NUs),
+    set_vector_element(UsNN,3,_,OldE,UsN),
+    get_request_info(NUs,NewUs,UsNN,Dir,Node).
+otherwise.
+get_request_info(Us,NewUs,UsN,Dir,Node,Y,Y1):- 
+    vector_element(Y,0,E)|
+    Y1 = E,
+    get_request_info(Us,NewUs,UsN,Dir,Node).
+
+get_request_info(Us,NewUs,UsN,Dir,Node):- 
+    true|
+    new_vector(Tmp,4),
+    set_vector_element(Us,0,Uid,Uid,Us1),
+    set_vector_element(Us1,1,Gids,GidS,Us2),
+    copy:copy(Gids,Gid1,GidS),
+    set_vector_element(Us2,2,Fep,Fep,Us25),
+    set_vector_element(Us25,3,IONode,IONode,Us3),
+    set_vector_element(Us3,4,RU,RU,Us4),
+    set_vector_element(Us4,5,RP,RP,UsN),
+    set_vector_element(Tmp,0,_,Uid,Tmp2),
+    set_vector_element(Tmp2,1,_,Gid1,Tmp3),
+    new_vector(R0,5),
+    set_vector_element(R0,0,_,Fep,R15),
+    set_vector_element(R15,1,_,IONode,R1),
+    set_vector_element(R1,2,_,RU,R2),
+    set_vector_element(R2,3,_,RP,R3),
+    set_vector_element(R3,4,_,Dir,Remote),
+    set_vector_element(Tmp3,2,_,Remote,Tmp4),
+    set_vector_element(Tmp4,3,_,Node,NewUs).
+
+wait_local_handler(normal(HI,HO),Shut,Result,SShut):-
+    true|
+    Result = normal(Cont,CAbort),
+    local_handler(Shut,CAbort,Cont,HI,HO,normal,SShut).
+otherwise.
+wait_local_handler(_,Shut,Result,SShut):-
+    true|
+    Result = abnormal.
+
+abort_local_handler(In,SShut):-
+    wait(SShut)|
+    true.
+alternatively.
+abort_local_handler([],SShut):-
+    true|
+    true.
+abort_local_handler([add_resource(_,_,Result)|In],SShut):-
+    true|
+    Result = aborted,
+    abort_local_handler(In,SShut).
+abort_local_handler([absolute_id(Result)|In],SShut):-
+    true|
+    Result = aborted,
+    abort_local_handler(In,SShut).
+abort_local_handler([change_comment(_,Result)|In],SShut):-
+    true|
+    Result = aborted,
+    abort_local_handler(In,SShut).
+
+uid_check(0,Out,Name,Prot,Result,OutN):-
+    true|
+    Out = [register(Name,Prot,Result)|OutN].
+otherwise.
+uid_check(_,Out,_,_,Result,OutN):-
+    true|
+    Result = abnormal,
+    Out = OutN.
+
+check_gid(Gid,Old,New,Status):-
+    true|
+    check_gid(Gid,Old,OldNew,OldNew,New,Status).
+check_gid(Gid,[],GidsN,OldNew,New,Status):-
+    true|
+    GidsN = [],
+    New = OldNew,
+    Status = abnormal.
+check_gid(Gid,[Gid|Gids],GidsN,OldNew,New,Status):-
+    true|
+    New0 = [Gid|OldNew],
+    Gids = GidsN,
+    copy:copy(New0,New1,New),
+    Status = normal(New1).
+otherwise.
+check_gid(GID,[Gid|Gids],GidsN,OldNew,New,Status):-
+    true|
+    GidsN = [Gid|GidsNN],
+    check_gid(GID,Gids,GidsNN,OldNew,New,Status).
+
+check_gids([],GidsN,Status):-
+    true|
+    GidsN = [],
+    Status = abnormal.
+check_gids([GID|Gids],GidsN,Status):-
+    true|
+    GidsN = [GID|Gids],
+    Status = normal(GID).
+
+gid_ohandler(normal(Gids),Status,In,GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Status = normal,
+    Out = [set_gids(Gids,St)|OutN],
+    wait_gid_ohandler(St,In,GIn,OutN,Mon,Tools,Us,Env).
+otherwise.
+gid_ohandler(_,Status,In,GIn,Out,Mon,Tools,Us,Env):-
+    true|
+    Status = abnormal,
+    ohandler(In,GIn,Out,Mon,Tools,Us,Env).
+
+wait_gid_ohandler(St,In,GIn,Out,Mon,Tools,Us,Env):-
+    wait(St)|
+    ohandler(In,GIn,Out,Mon,Tools,Us,Env).

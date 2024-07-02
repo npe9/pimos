@@ -1,0 +1,243 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class scale has
+
+:create(Class,Obj):-
+   :new(Class,Obj);
+
+instance
+  attribute    c,
+               x_name,
+               y_name,
+               y_max_size,
+               unit_width,
+               unit_height,
+               title,
+               name_vis:=yes,
+               unit_x_max,
+               drawing_graph;
+
+:draw_scale(Obj,G_Win,Win,Font_7,X,Y,W,H):-
+     set_x_max(Obj,X,Y,H,WX,XSM),
+    (WX >= W,!,
+     MaxSize = X+W;
+     MaxSize = X+WX),
+     set_width(Obj,MaxSize,W1,W2),
+    (Obj!unit_width > 10,!,
+     E = 5; E = 10),
+     List = [ {draw_line,{Obj!x,Y+H,Obj!x,Y,1,solid,set}},
+              {draw_line,{Obj!x,Y+H,W1,Y+H,1,solid,set}}|RList1],
+     draw_x_unit_scale(Win,Obj,Font_7,X,Y+H,MaxSize,0,RList1,RList2,E),
+    (Obj!drawing = draw_all,!,
+     Int = Obj!xb;
+     Int = 1),
+     draw_y_unit_scale(Win,Obj,Font_7,X,Y+H,Y+H-Obj!y_max_size,1,RList2,RList3,Int),
+     RList3 = [{draw_string,{W1+15,Y+H-4,Obj!x_name,Font_7,set}},
+               {draw_string,{X-8,Y-10,Obj!y_name,Font_7,set}}|RList4],
+     draw_x_max(Obj,Font_7,X,Y,H,WX,XSM,RList4,RList5),
+     draw_title(Obj,Font_7,X,Y,Obj!x_size,H,RList5,RList6),
+     draw_y_max(Obj,Font_7,H,X,Y,RList6),
+    :execute_graphics_command(Win,List);
+
+ local
+%%%%%%%%%%%%%%%%%   Draw_X_Max   %%%%%%%%% 
+  set_x_max(Obj,X,Y,H,WX,XSM):-
+     Obj!drawing = draw_all,!,
+     Obj!p_size = PSize1,
+     Obj!n_size = NSize,
+     XSM=(PSize1/NSize-1)*Obj!x_unit,
+     heap_vector(Obj!element_pool2,PoolSize),
+     Obj!unit_width = UnitWidth,
+     WX=UnitWidth*(PoolSize/NSize-1);
+
+
+ set_x_max(Obj,X,Y,H,WX,XSM):-
+     Obj!drawing = draw_std,!,
+     Obj!p_size=PoolSize,
+     Obj!x_size/Obj!unit_width=XVisNum,
+    (Obj!drawing_graph = bar,!,
+     XVisNum1 = XVisNum - 1;
+     XVisNum1 = XVisNum),
+     Obj!n_size=NSize,   
+    (PoolSize/NSize-1 >= XVisNum,!,          
+     XSM1=XVisNum1;
+     XSM1=PoolSize/NSize-1),
+     XSM = XSM1*Obj!x_unit,
+     Obj!x_scale_max:= XSM,
+     Obj!x_scale_max_now:=Obj!x_scale_max,
+     Obj!unit_width = UnitWidth,
+     WX=UnitWidth*XSM1;
+
+ draw_x_max(Obj,Font_7,X,Y,H,WX,XSM,List,RList):-
+     Obj!drawing = draw_all,!,
+     :get_number_string(#symbolizer,XSM,XSM_String),
+     string(XSM_String,XSML,XSMT),
+     set_width(Obj,X,X1,X2),
+     List = [{draw_line,
+             {X1+WX,Y+H,X1+WX,Y+H+3,1,solid,set}},
+             {draw_string,{X2+WX-XSML*7/2,Y+H+2,XSM_String,Font_7,set}}|RList];
+
+ draw_x_max(Obj,Font_7,X,Y,H,WX,XSM,List,RList):-
+     Obj!drawing = draw_std,!,
+     :get_number_string(#symbolizer,XSM,XSM_String),
+     string(XSM_String,XSML,XSMT),
+     set_width(Obj,X,X1,X2),
+     Obj!p_size=PoolSize,
+     Obj!x_size/Obj!unit_width=XVisNum,
+    (Obj!drawing_graph = bar,!,
+     XVisNum1 = XVisNum - 1;
+     XVisNum1 = XVisNum),
+     Obj!n_size=NSize,   
+     (PoolSize/NSize-1 > XVisNum,!,                                 
+     List = [{draw_line,                                    
+             {X1+WX,Y+H,X1+WX,Y+H+2,1,solid,set}},
+             {draw_string,                                  
+             {X2+WX+XSML*7/2,Y+H+2,"...",Font_7,set}},       
+             {draw_string,
+             {X2+WX-XSML*7/2,Y+H+2,XSM_String,Font_7,set}}|RList]; 
+     List = [{draw_line,
+             {X1+WX,Y+H,X1+WX,Y+H+2,1,solid,set}},
+             {draw_string,
+             {X2+WX-XSML*7/2,Y+H+2,XSM_String,Font_7,set}}|RList]);
+ draw_x_max(Obj,Font_7,X,Y,H,WX,XSM,List,RList):-!;
+
+
+%%%%%%%%%%%%%%%%  Draw x unit scale   %%%%%%%%%%%%%%    
+   draw_x_unit_scale(Win,Obj,Font_7,X,Y,MaxSize,C,R,R,E):-
+     X+Obj!unit_width  > MaxSize,!;   
+   draw_x_unit_scale(Win,Obj,Font_7,X,Y,MaxSize,C,List,RList,E):-
+     C mod E == 0,!,
+     UnitWidth = Obj!unit_width,
+    (Obj!drawing_graph = bar,!,
+     X1 = X + UnitWidth,
+     X2 = X + UnitWidth/2;
+     X1 = X, X2 = X),   
+     List = [{draw_line,                                %%%%%%%%%  line
+             {X1,Y+1,X1,Y+3,1,solid,set}}|R1],
+    (Obj!drawing=draw_all,!,
+      D=C*Obj!x_unit*Obj!xb;
+      D=C*Obj!x_unit),
+      :get_number_string(#symbolizer,D,XS_String),
+      string(XS_String,L,T),  
+      R1 = [{draw_string,                               %%%%%%%%%  memori
+            {X2-L*7/2,Y+2,XS_String,Font_7,set}}|R],
+     draw_x_unit_scale(Win,Obj,Font_7,X+UnitWidth,Y,MaxSize,C+1,R,RList,E);
+   draw_x_unit_scale(Win,Obj,Font_7,X,Y,MaxSize,C,List,RList,E):-
+        UnitWidth = Obj!unit_width,
+        UnitWidth > 10,!,
+       (Obj!drawing_graph = bar,!,
+        X1 = X + UnitWidth;
+        X1 = X),   
+      List = [{draw_line,
+                {X1,Y+1,X1,Y+3,1,solid,set}}|R],
+     draw_x_unit_scale(Win,Obj,Font_7,X+UnitWidth,Y,MaxSize,C+1,R,RList,E);
+
+  draw_x_unit_scale(Win,Obj,Font_7,X,Y,MaxSize,C,List,RList,E):-
+        UnitWidth = Obj!unit_width,
+     draw_x_unit_scale(Win,Obj,Font_7,X+UnitWidth,Y,MaxSize,C+1,List,RList,E);
+
+%%%%%%%%%%%%   LET'S DRAW Y SCALE      %%%%%%%%%%%%%%%%%%%%%% 
+
+  draw_y_unit_scale(Win,Obj,Font_7,X,Y,MinSize,C,R,R,_):-
+      Y - Obj!unit_height =< MinSize,!;
+  draw_y_unit_scale(Win,Obj,Font_7,X,Y,MinSize,C,List,RList,Int):-
+      UnitHeight = Obj!unit_height,
+     (UnitHeight >= 15,!,
+      Int2 = 2; Int2 = 5),
+      Int1 = Int*Int2,
+      C mod Int1 ==0,!,
+      List = [{draw_line,
+              {X-1,Y-UnitHeight,X-5,Y-UnitHeight,1,solid,set}}|R1],
+      YScaleValue=C*Obj!y_unit,
+      :get_number_string(#symbolizer,YScaleValue,YSV_String),
+      string(YSV_String,L,T),
+     (L>=6,!,
+      substring(YSV_String,0,1,Y1),
+      substring(YSV_String,1,2,Y2),
+      StringL=L-1,
+      :get_number_string(#symbolizer,StringL,LS2),
+      R1 = [{draw_string,
+            {X-48,Y-UnitHeight-5,Y1,Font_7,set}},
+            {draw_string,
+            {X-41,Y-UnitHeight-5,".",Font_7,set}},
+            {draw_string,
+            {X-34,Y-UnitHeight-5,Y2,Font_7,set}},
+            {draw_string,
+            {X-20,Y-UnitHeight-5,"E",Font_7,set}},
+            {draw_string,
+            {X-13,Y-UnitHeight-5,LS2,Font_7,set}}|R];
+      R1 = [{draw_string,
+            {X-8-L*7,Y-UnitHeight-5,YSV_String,Font_7,set}}|R]),
+        draw_y_unit_scale(Win,Obj,Font_7,X,Y-UnitHeight,MinSize,C+1,R,RList,Int);
+     draw_y_unit_scale(Win,Obj,Font_7,X,Y,MinSize,C,List,RList,Int):-
+       C mod Int = 0,
+       UnitHeight = Obj!unit_height,
+       List = [{draw_line,
+               {X-1,Y-UnitHeight,X-5,Y-UnitHeight,1,solid,set}}|R],
+        draw_y_unit_scale(Win,Obj,Font_7,X,Y-UnitHeight,MinSize,C+1,R,RList,Int);
+     draw_y_unit_scale(Win,Obj,Font_7,X,Y,MinSize,C,List,RList,Int):-
+       UnitHeight = Obj!unit_height,
+      draw_y_unit_scale(Win,Obj,Font_7,X,Y-UnitHeight,MinSize,C+1,List,RList,Int);
+    
+%%%%%%%%%%%%%%%     LET'S DRAW TITLE    %%%%%%%%%%%
+
+  draw_title(Obj,Font_7,X,Y,W,H,List,RList):-
+     ( Obj!limit==nil,!,
+       TitleLength = W/10;
+       TitleLength = Obj!limit/10),
+     ( string(Obj!title,L,B),!,
+       (TitleLength >= L,!,
+        TitleLength1 = L;
+        TitleLength1 = TitleLength),
+       substring(Obj!title,0,TitleLength1,Title),  
+       X1 = X+W/2-TitleLength1*7/2,
+     ( X1 =< 10,!,
+       X2 = 11;
+       X2 =X1),
+       List = [{draw_string,{X2,Y+H+3,Title,Font_7,set}}|RList] ;
+       List = RList);
+
+ %%%%%%%%%%   LET'S DRAW Y MAX  %%%%%%%%%%
+
+  draw_y_max(Obj,Font_7,H,X,Y,RList):-
+     X>48,!,
+    (Obj!drawing = draw_all,!,
+     YMax = Obj!y_max_all;
+     YMax = Obj!y_max),
+     integer_to_floating_point(YMax,YMaxF),
+     integer_to_floating_point(Obj!unit_height,UnitHeightF),
+     integer_to_floating_point(Obj!y_unit,YUnitF),
+     H1F = UnitHeightF * YMaxF / YUnitF,
+     floating_point_to_integer(H1F,H1),
+     :get_number_string(#symbolizer,YMax,YMax_String),
+     string(YMax_String,L,T),
+     (L>=6,!,
+      substring(YMax_String,0,1,Y1),
+      substring(YMax_String,1,2,Y2),
+      StringL = L-1,
+      :get_number_string(#symbolizer,StringL,LS2),
+      RList = [{draw_line,
+               {X-1,Y+H-H1,X-5,Y+H-H1,2,solid,set}},
+               {draw_string,
+               {X-48,Y+H-H1-5,Y1,Font_7,set}},
+               {draw_string,
+               {X-41,Y+H-H1-5,".",Font_7,set}},
+               {draw_string,
+               {X-34,Y+H-H1-5,Y2,Font_7,set}},
+               {draw_string,
+               {X-20,Y+H-H1-5,"E",Font_7,set}},
+               {draw_string,
+               {X-13,Y+H-H1-5,LS2,Font_7,set}}];
+      RList = [{draw_line,
+               {X-1,Y+H-H1,X-5,Y+H-H1,2,solid,set}},
+               {draw_string,
+               {X-8-L*7,Y+H-H1-5,YMax_String,Font_7,set}}]);
+
+     set_width(Obj,X,X1,X2):-
+          Obj!unit_width = UnitWidth,
+         (Obj!drawing_graph = bar,!,
+          X1 = X + UnitWidth,
+          X2 = X + UnitWidth/2;
+          X1 = X, X2 = X);
+
+end.

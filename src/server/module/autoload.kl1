@@ -1,0 +1,502 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Module>autoload.kl1.39, 28-Jul-92 14:26:15, Edit by hori
+
+:- module autoload.
+:- with_macro pimos.
+:- include("pimos.h").
+:- if_equal(autoloading, yes).
+:- public module/3, auto_load/3, dummy/1.
+:- else.
+:- public module/3.
+:- end_if.
+
+:- if_equal(autoloading, no).
+module(In,Out,Abort) :- true | In=Out.
+:- else.
+module(In,Out,Abort) :- true |
+    merge(Out0,Out),
+    shoen:raise(pimos_tag#task,general_request,[file(Status)]),
+    init_0(Status,In,Out0,Abort).
+
+init_0(normal(FR0,_,_),In,Out,Abort) :- true |
+    FR0 = [open(string#"pimos:autoload.tbl",read(Status))],
+    init_1(Status,In,Out,Abort).
+otherwise.
+init_0(Status,In,Out,Abort) :- true |
+    init_fail(string#"Unable to get FileRequest Device [Demand Loading]"),
+    In = Out.
+
+init_1(normal(FS,_,_),In,Out,Abort) :- true |
+    buffer:input_filter(File0,FS),
+    File0 = [getwt(WT)],
+    init_2(WT,In,Out,Abort).
+otherwise.
+init_1(_,In,Out,Abort) :- true |
+    In = Out.
+
+init_2(normal(empty),In,Out,Abort) :- true |
+    In = Out.
+otherwise.
+init_2(normal(WT),In,Out,Abort) :- true |
+    check_ground(WT,Term,normal,Status),
+    init_3(Status,Term,In,Out,Abort).
+otherwise.
+init_2(_,In,Out,Abort) :- true |
+    init_fail(string#"Error on read ""pimos:autoload.tbl"""),
+    In = Out.
+
+init_3(normal,AutoLoadList,In,Out,Abort) :- true |
+    pool:keyed_set(FMP,1000),
+    set_up(AutoLoadList,FMP,In,Out,Abort).
+otherwise.
+init_3(_,_,In,Out,Abort) :- true |
+    init_fail(string#"Error on read ""pimos:autoload.tbl"""),
+    In = Out.
+
+set_up([{FileName,ModuleList}|Rest],FMP0,In,Out,Abort) :-
+    string(FileName,Len,16), Len > 0, list(ModuleList) |
+    set_up_0(ModuleList,FileName,FMP0,FMP1),
+    set_up(Rest,FMP1,In,Out,Abort).
+set_up([],FMP0,In,Out,Abort) :- true |
+    message([string#"Demand Loading Enabled"]),
+    pool:keyed_set(LFP0,100),
+    autoload(In,Out,FMP0,LFP0,Abort).
+otherwise.
+set_up(_,FMP0,In,Out,Abort) :- true |
+    FMP0 = [],
+    init_fail(string#"Illegal format in ""pimos:autoload.tbl"""),
+    In = Out.
+
+set_up_0([ModuleName|Rest],FileName,FMP0,FMP) :- atom(ModuleName) |
+    FMP0 = [get_if_any_and_put(ModuleName,Old,New)|FMP1],
+    set_up_1(Old,New,FileName),
+    set_up_0(Rest,FileName,FMP1,FMP).
+set_up_0([],FileName,FMP0,FMP) :- true | FMP0 = FMP.
+otherwise.
+set_up_0(_,_,FMP0,FMP) :- true |
+    init_fail(string#"Illegal module name in ""pimos:autoload.tbl"""),
+    FMP0 = FMP.
+
+set_up_1({},New,FileName) :- true | New = [FileName].
+set_up_1({FileNames},New,FileName) :- true | New = [FileName|FileNames].
+
+autoload([Message|In],Out0,FMP0,LFP0,Abort) :-
+    Message = {get_module(Package,ModName,Status),UserInfo} |
+    Out0 = [{get_module(Package,ModName,Status0),UserInfo}|Out1],
+    autoload_0(Status0,Package,ModName,FMP0,LFP0,Out1,In,Message,Abort).
+autoload([Message|In],Out0,FMP0,LFP0,Abort) :-
+    Message = {get_module_in_the_package(pimos,ModName,Status),UserInfo} |
+    Out0 = [{get_module_in_the_package(pimos,ModName,Status0),UserInfo}|Out1],
+    autoload_0(Status0,pimos,ModName,FMP0,LFP0,Out1,In,Message,Abort).
+autoload([Message|In],Out0,FMP0,LFP0,Abort) :-
+    Message = {get_code(Package,ModName,Pred,Arity,Status),UserInfo} |
+    Out0 = [{get_code(Package,ModName,Pred,Arity,Status0),UserInfo}|Out1],
+    autoload_0(Status0,Package,ModName,FMP0,LFP0,Out1,In,Message,Abort).
+autoload([Message|In],Out0,FMP0,LFP0,Abort) :-
+    Message = {update_module(Package,ModName,Module,Status),UserInfo} |
+    Out0 = [{update_module(Package,ModName,Module,Status0),UserInfo}|Out1],
+    autoload_0(Status0,Package,ModName,FMP0,LFP0,Out1,In,Message,Abort).
+autoload([Message|In],Out0,FMP0,LFP0,Abort) :-
+    Message = {remove_module(Package,ModName,Status),UserInfo} |
+    Out0 = [{remove_module(Package,ModName,Status0),UserInfo}|Out1],
+    autoload_0(Status0,Package,ModName,FMP0,LFP0,Out1,In,Message,Abort).
+autoload([auto_loaded(FileName)|In],Out0,FMP0,LFP0,Abort) :- true |
+    LFP0 = [get_and_put(FileName,Hook,loaded)|LFP1],
+    resume(Hook,Out0,Out1),
+    autoload(In,Out1,FMP0,LFP1,Abort).
+autoload([autoload_failed(FileName)|In],Out0,FMP0,LFP0,Abort) :-
+    LFP0 = [get_and_put(FileName,Hook,failed)|LFP1],
+    abort(Hook),
+    autoload(In,Out0,FMP0,LFP1,Abort).
+autoload([cannot_open(FileName)|In],Out0,FMP0,LFP0,Abort) :-
+    LFP0 = [get_and_put(FileName,Hook,cannot_open)|LFP1],
+    abort(Hook),
+    autoload(In,Out0,FMP0,LFP1,Abort).
+autoload([],Out0,FMP0,LFP0,Abort) :- true |
+    FMP0 = [],
+    LFP0 = [],
+    Out0 = [].
+otherwise.
+autoload([Message|In],Out0,FMP0,LFP0,Abort) :- true |
+    Out0 = [Message|Out1],
+    autoload(In,Out1,FMP0,LFP0,Abort).
+
+resume([Message|Rest],Out0,Out) :- true |
+    Out0 = [Message|Out1],
+    resume(Rest,Out1,Out).
+resume([],Out0,Out) :- true | Out = Out0.
+
+abort([{get_module(Package,ModName,Status),UserInfo}|Rest]) :- true |
+    Status = abnormal,
+    abort(Rest).
+abort([{get_module_in_the_package(Package,ModName,Status),UserInfo}|Rest]) :- true |
+    Status = abnormal,
+    abort(Rest).
+abort([{get_code(Package,ModName,Pred,Arity,Status),UserInfo}|Rest]) :- true |
+    Status = abnormal,
+    abort(Rest).
+abort([{update_module(Package,ModName,Module,Status),UserInfo}|Rest]) :- true |
+    Status = abnormal,
+    abort(Rest).
+abort([{remove_module(Package,ModName,Status),UserInfo}|Rest]) :- true |
+    Status = abnormal,
+    abort(Rest).
+abort([]) :- true | true.
+
+set_status({get_module(Package,ModName,Status),UserInfo},St) :- true |
+    Status = St.
+set_status({get_module_in_the_package(Package,ModName,Status),UserInfo},St) :- true |
+    Status = St.
+set_status({get_code(Package,ModName,Pred,Arity,Status),UserInfo},St) :- true |
+    Status = St.
+set_status({update_module(Package,ModName,Module,Status),UserInfo},St) :- true |
+    Status = St.
+set_status({remove_module(Package,ModName,Status),UserInfo},St) :- true |
+    Status = St.
+
+autoload_0(Status,Package,ModName,FMP0,LFP0,Dev0,In,Message,Abort) :-
+    Status = non_existent |
+    check_super(Package,ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort).
+autoload_0(Status,Package,ModName,FMP0,LFP0,Dev0,In,Message,Abort) :-
+    Status = non_existent(_) |
+    check_super(Package,ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort).
+otherwise.
+autoload_0(Status,Package,ModName,FMP0,LFP0,Dev0,In,Message,Abort) :- true |
+    set_status(Message,Status),
+    autoload(In,Dev0,FMP0,LFP0,Abort).
+
+check_super(pimos,ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort) :- true |
+    FMP0 = [empty(ModName,YorN)|FMP1],
+    check_super_0(YorN,ModName,FMP1,LFP0,Dev0,In,Message,Status,Abort).
+check_super(Package,ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort) :-
+    Package \= pimos |
+    Dev0 = [{get_super_package(Package,Result),
+            {pimos_user#super_pimos,pimos_group#super_pimos}}|Dev1],
+    check_super_1(Result,ModName,FMP0,LFP0,Dev1,In,Message,Status,Abort).
+
+check_super_0(yes,ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort) :- true |
+    set_status(Message,Status),
+    autoload(In,Dev0,FMP0,LFP0,Abort).
+check_super_0(no,ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort) :- true |
+    FMP0 = [get_and_put(ModName,FileNames,FileNames)|FMP1],
+    check_autoloading(FileNames,ModName,FMP1,LFP0,Dev0,In,Message,Status,Abort).
+
+check_super_1(normal(Package),ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort) :- true |
+    check_super(Package,ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort).
+otherwise.
+check_super_1(_,ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort) :- true |
+    set_status(Message,Status),
+    autoload(In,Dev0,FMP0,LFP0,Abort).
+
+check_autoloading([FileName|Rest],ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort) :-
+    list(Rest) |
+    LFP0 = [empty(FileName,YorN)|LFP1],
+    check_autoloading_0(YorN,FileName,Rest,ModName,FMP0,LFP1,Dev0,In,Message,Status,Abort).
+check_autoloading([FileName],ModName,FMP0,LFP0,Dev0,In,Message,Status,Abort) :- true |
+    LFP0 = [empty(FileName,YorN)|LFP1],
+    check_autoloading_1(YorN,FileName,ModName,FMP0,LFP1,Dev0,In,Message,Status,Abort).
+
+check_autoloading_0(yes,FileName,Rest,ModName,FMP0,LFP0,Dev0,In0,Message,Status,Abort) :-
+    true |
+    check_autoloading(Rest,ModName,FMP0,LFP0,Dev0,In0,Message,Status,Abort).
+check_autoloading_0(no,FileName,Rest,ModName,FMP0,LFP0,Dev0,In0,Message,Status,Abort) :-
+    true |
+    LFP0 = [get_and_put(FileName,Hook,NewHook)|LFP1],
+    check_prev_autoload(Hook,NewHook,Message,Status),
+    autoload(In0,Dev0,FMP0,LFP1,Abort).
+
+check_autoloading_1(yes,FileName,ModName,FMP0,LFP0,Dev0,In0,Message,Status,Abort) :- true |
+    LFP0 = [put(FileName,[Message],_)|LFP1],
+    Dev0 = {Dev1,Dev2},
+    shoen:raise(pimos_tag#task,general_request,[file(St)]),
+    load(St,FileName,Dev1,In0,In1,Abort),
+    autoload(In1,Dev2,FMP0,LFP1,Abort).
+check_autoloading_1(no,FileName,ModName,FMP0,LFP0,Dev0,In0,Message,Status,Abort) :- true |
+    LFP0 = [get_and_put(FileName,Hook,NewHook)|LFP1],
+    check_prev_autoload(Hook,NewHook,Message,Status),
+    autoload(In0,Dev0,FMP0,LFP1,Abort).
+
+check_prev_autoload(cannot_open,NewHook,Message,Status) :- true |
+    NewHook = cannot_open,
+    set_status(Message,abnormal).
+check_prev_autoload(failed,NewHook,Message,Status) :- true |
+    NewHook = failed,
+    set_status(Message,abnormal).
+check_prev_autoload(loaded,NewHook,Message,Status) :- true |
+    NewHook = loaded,
+    set_status(Message,Status).
+otherwise.
+check_prev_autoload(Hook,NewHook,Message,Status) :- true |
+    NewHook = [Message|Hook].
+
+load(normal(FR0,_,_),FileName,Dev,In0,In,Abort) :- true |
+    FR0 = [open(FileName,read(Status))],
+    load_0(Status,FileName,Dev,In0,In,Abort).
+otherwise.
+load(_,FileName,Dev,In0,In,Abort) :- true |
+    Dev = [],
+    In = [cannot_open(FileName)|In0].
+
+load_0(normal(FS,FAB,_),FileName,Dev0,In0,In,Abort) :- true |
+    FAB = Abort,
+    message([string#"Loading : ",FileName]),
+    set_user_id(Dev1,Dev0),
+    auto_load(FS,Dev1,Status,Abort),
+    watch_done(Status,FileName,In0,In).
+otherwise.
+load_0(_,FileName,Dev,In0,In,Abort) :- true |
+    message([string#"Unable to open file : ",FileName]),
+    Dev = [],
+    In = [cannot_open(FileName)|In0].
+
+set_user_id([Message|In],Out0) :- true |
+    Out0 = [{Message,{pimos_user#super_pimos,pimos_group#super_pimos}}|Out1],
+    set_user_id(In,Out1).
+set_user_id([],Out) :- true | Out = [].
+
+watch_done(normal,FileName,In0,In) :- true |
+    message([string#"Loaded : ",FileName]),
+    In = [auto_loaded(FileName)|In0].
+watch_done(abnormal,FileName,In0,In) :- true |
+    message([string#"Load Failed : ",FileName]),
+    In = [autoload_failed(FileName)|In0].
+watch_done(aborted,FileName,In0,In) :- true |
+    message([string#"Load Aborted : ",FileName]),
+    In = [autoload_failed(FileName)|In0].
+watch_done(Status,FileName,[Message|In0],In) :- wait(Message) |
+    In = [Message|In1],
+    watch_done(Status,FileName,In0,In1).
+
+check_ground(atom(Atom),Term,Status0,Status) :- true |
+    Term = Atom, Status = Status0.
+check_ground(integer(Int),Term,Status0,Status) :- true |
+    Term = Int, Status = Status0.
+check_ground(floating_point(Real),Term,Status0,Status) :- true |
+    Term = Real, Status = Status0.
+check_ground(string(Str),Term,Status0,Status) :- true |
+    Term = Str, Status = Status0.
+check_ground(list([Car0|Cdr0]),Term,Status0,Status) :- true |
+    check_ground(Car0,Car,Status0,Status1),
+    check_ground(Cdr0,Cdr,Status1,Status),
+    Term = [Car|Cdr].
+check_ground(vector(Vec0),Vec,Status0,Status) :- vector(Vec0,Len) |
+    check_gvec(0,Len,Vec0,Vec,Status0,Status).
+otherwise.
+check_ground(_,Term,_,Status) :- true |
+    Term = [], Status = abnormal.
+
+check_gvec(I,Len,Vec0,Vec,Status0,Status) :- I < Len |
+    set_vector_element(Vec0,I,Elm0,Elm,Vec1),
+    check_ground(Elm0,Elm,Status0,Status1),
+    J := I + 1,
+    check_gvec(J,Len,Vec1,Vec,Status1,Status).
+check_gvec(I,Len,Vec0,Vec,Status0,Status) :- I >= Len |
+    Vec = Vec0, Status = Status0.
+
+init_fail(Message) :- true | message([Message]).
+
+message(Messages) :- true |
+    shoen:raise(pimos_tag#task,bios,[console(normal(CON))]),
+    messages(Messages,CON).
+
+messages([Message|Rest],CON0) :- string(Message,_,_) |
+    CON0 = [putb(Message,Status)|CON1],
+    messages(Rest,CON1).
+messages([nl|Rest],CON0) :- true |
+    CON0 = [putl("",Status)|CON1],
+    messages(Rest,CON1).
+messages([],CON0) :- true | CON0 = [putl("",Status)].
+
+auto_load(FS0,Dev0,Status0,Abort) :- true |
+    FS0 = [pathname(normal(FileName))|FS1],
+    builtin#append_string(string#"Demand Load :",FileName,TaskName),
+    predicate_to_code(module#autoload,auto_load,3,Code),
+    monitor(TaskStatus,AB,Abort),
+    shoen:raise(pimos_tag#task,general_request,GR),
+    valve(Dev0,Dev1,AB),
+    valve(FS1,FS2,AB),
+    GR = [execute(Code,{FS2,Dev1,Status1},
+          [name(TaskName), prio(0,4000), resource(0,16#"FFFFFFFF")],
+          TaskStatus)],
+    set_status(AB,Status1,Status0).
+
+valve(Out,In,Abort) :- wait(Abort) |
+    Out = [].
+alternatively.
+valve(Out,[Message|In],Abort) :- true |
+    Out = [Message|OutNew],
+    valve(OutNew,In,Abort).
+valve(Out,[],Abort) :- true |
+    Out = [].
+
+auto_load(FS0,ModDev0,Status) :- true |
+    ground_message(FS0,FS1),
+    ground_message(ModDev0,ModDev1),
+    merge(ModDev2,ModDev1),
+    load:auto_load(FS1,ModDev2,Status).
+
+set_status(Abort,Status0,Status) :- wait(Abort) | Status = aborted.
+alternatively.
+set_status(Abort,Status0,Status) :- wait(Status0) | Status = Status0.
+
+monitor(normal(Ctr,Rpt),AB,Abort) :- true | 
+    monitor(Rpt,Ctr,AB,Abort).
+otherwise.
+monitor(_,AB,Abort) :- true |
+    AB = abort,
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(kernel,
+            "Unable to create Demand Loading Task"),[macro#predicate]).
+
+monitor(Rpt,Ctr,AB,Abort) :- wait(Abort) | 
+    Ctr = [abort(_)|Ctr1], 
+    AB = abort,
+    monitor(Rpt,Ctr1,_,_).
+alternatively.
+monitor(Rpt,Ctr,AB,Abort) :- wait(Rpt) | mon(Rpt,Ctr,AB,Abort).
+
+mon([terminated|_],               Ctr,AB,Abort) :- true | Ctr = [].
+mon([resource_low|Rpt],           Ctr,AB,Abort) :- true |
+    Ctr = [add_resource(0,16#"FFFFFFFF")|Ctr1], 
+    monitor(Rpt,Ctr1,AB,Abort).
+mon([resource_added|Rpt],         Ctr,AB,Abort) :- true|
+    Ctr = [allow_resource_report|Ctr1],
+    monitor(Rpt,Ctr1,AB,Abort).
+mon([resource_report_allowed|Rpt],Ctr,AB,Abort) :- true | monitor(Rpt,Ctr,AB,Abort).
+mon([return_resource(_,_)|Rpt],   Ctr,AB,Abort) :- true | monitor(Rpt,Ctr,AB,Abort).
+mon([aborted|Rpt],                Ctr,AB,Abort) :- true |
+%%    shoen:raise(pimos_tag#task,bios,[console(normal([putl("Demand Loading Aborted",_)]))]),
+    monitor(Rpt,Ctr,AB,Abort).
+mon([exception(_,_,NewCode,NewArg)|Rpt],Ctr,AB,Abort) :- true |
+    AB = abort,
+    shoen:raise(pimos_tag#task,bios,[console(normal([putl("Exception in Demand Loading",_)]))]),
+    predicate_to_code(module#autoload,dummy,1,NewCode),
+    NewArg = {dummy},
+    Ctr = [abort(_)|Ctr1], 
+    monitor(Rpt,Ctr1,_,_).
+otherwise.
+mon([_|Rpt],Ctr,AB,Abort) :- true | monitor(Rpt,Ctr,AB,Abort).
+
+%% Dummy Goal
+
+dummy(_) :- true | true.
+
+%% Filter
+
+ground_message(Out,[Message|In]) :- true |
+    ground_message(Message,Out,In).
+ground_message(Out,[]) :- true |
+    Out = [].
+
+%ground_message(Message,Out,In) :-
+%    Message = reset(Status) |
+%    Out = [Messageg|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = next_attention(Status) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = resend(MsgID,Status), wait(MsgID) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = cancel(MsgID,Status), wait(MsgID) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = get_package_info(Package,Status),
+%    atom(Package) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+ground_message(Message,Out,In) :-
+    Message = get_super_package(Package,Status),
+    atom(Package) |
+    Out = [Message|Out0],
+    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = define_package(Package,Super,Protect,Status),
+%    atom(Package), atom(Super), wait(Protect) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = protect_package(Package,Protect,Status),
+%    atom(Package), wait(Protect) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = set_package_owner(Package,Owner,Status),
+%    atom(Package), wait(Owner) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = remove_package(Package,Status),
+%    atom(Package) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = get_all_packages(Status) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = get_module_info(Package,Name,Status),
+%    atom(Package), atom(Name) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = get_code(Package,Name,Pred,Arity,Status),
+%    atom(Package), atom(Name), atom(Pred), integer(Arity) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = remove_module(Package,Name,Status),
+%    atom(Package), atom(Name) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = get_all_modules(Package,Status),
+%    atom(Package) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = get_all_modules(Status) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+ground_message(Message,Out,In) :-
+    Message = get_module(Package,ModName,Status),
+    atom(Package), atom(ModName) |
+    Out = [Message|Out0],
+    ground_message(Out0,In).
+ground_message(Message,Out,In) :-
+    Message = get_module_in_the_package(Package,ModName,Status),
+    atom(Package), atom(ModName) |
+    Out = [Message|Out0],
+    ground_message(Out0,In).
+ground_message(Message,Out,In) :-
+    Message = update_module(Package,ModName,Module,Status),
+    atom(Package), atom(ModName), module(Module,_) |
+    Out = [Message|Out0],
+    ground_message(Out0,In).
+ground_message(Message,Out,In) :-
+    Message = pathname(Status) |
+    Out = [Message|Out0],
+    ground_message(Out0,In).
+%ground_message(Message,Out,In) :-
+%    Message = attributes(Status) |
+%    Out = [Message|Out0],
+%    ground_message(Out0,In).
+ground_message(Message,Out,In) :-
+    Message = getb(Size,Status), wait(Size) |
+    Out = [Message|Out0],
+    ground_message(Out0,In).
+ground_message(Message,Out,In) :-
+    Message = end_of_file(Status) |
+    Out = [Message|Out0],
+    ground_message(Out0,In).
+:- end_if.

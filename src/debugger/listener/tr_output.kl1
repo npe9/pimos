@@ -1,0 +1,387 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_trace_output.
+:- public make_index/10, trace_mode/2, display_reduction/9.
+:- with_macro pimos.
+
+% Apply (TRACE)
+make_index({{W,Lvl,apply,{Code,ArgV},Pri,Min,Max}},Pe,ID,CN,SubGoals,RSC,RSC1,TID,TID1,GL) :-
+    listener_trace_driver:calculate_priority(Pri,Min,Max,Priority),
+    GL=[{reduction,{trace,W,Lvl,Pe,Priority,ID,CN,Code,ArgV}}|GL2],
+    make_subgoal_index(SubGoals,1,(-1),TID,TID1,W,Lvl,RSC,RSC1,GL1),
+    sorter:key_sort(GL1,GL2).
+% Apply (SPY REDUCTION) Mde=spyr | (TASK TRACE) Mde=task_trace
+make_index({Mde,W,Lvl,apply,{Code,ArgV},Pri,Min,Max},Pe,ID,CN,SubGoals,RSC,RSC1,TID,TID1,GL) :- 
+    listener_trace_driver:calculate_priority(Pri,Min,Max,Priority),
+    GL=[{reduction,{Mde,W,Lvl,Pe,Priority,ID,CN,Code,ArgV}}|GL2],
+    make_subgoal_index(SubGoals,1,(-1),TID,TID1,W,Lvl,RSC,RSC1,GL1),
+    sorter:key_sort(GL1,GL2).
+otherwise.
+% TRACE
+make_index({{W,Lvl,Code,ArgV,Pri,Min,Max}},Pe,ID,CN,SubGoals,RSC,RSC1,TID,TID1,GL) :-
+    listener_trace_driver:calculate_priority(Pri,Min,Max,Priority),
+    GL=[{reduction,{trace,W,Lvl,Pe,Priority,ID,CN,Code,ArgV}}|GL2],
+    make_subgoal_index(SubGoals,1,(-1),TID,TID1,W,Lvl,RSC,RSC1,GL1),
+    sorter:key_sort(GL1,GL2).
+% SPY REDUCTION Mde=spyr | TASK TRACE Mde=task_trace
+make_index({Mde,W,Lvl,Code,ArgV,Pri,Min,Max},Pe,ID,CN,SubGoals,RSC,RSC1,TID,TID1,GL) :-
+    listener_trace_driver:calculate_priority(Pri,Min,Max,Priority),
+    GL=[{reduction,{Mde,W,Lvl,Pe,Priority,ID,CN,Code,ArgV}}|GL2],
+    make_subgoal_index(SubGoals,1,(-1),TID,TID1,W,Lvl,RSC,RSC1,GL1),
+    sorter:key_sort(GL1,GL2).
+% SHOEN:RAISE/3
+make_index({GR,W,Lvl,M,P,A,Pri,Min,Max,GrType},Pe,ID,_,_,RSC,RSC1,TID,TID1,GL) :-
+    RSC=[spy(tracing(pimos::shoen,raise,3,YorN))|RSC1],
+    trace_mode(YorN,TP),
+    predicate_to_code(module#shoen,raise,3,Code),
+    listener_trace_driver:calculate_priority(Pri,Min,Max,Pri1),
+    GL=[{reduction,{spyf,W,Lvl,Pe,Pri1,ID,M,P,A}},
+        {1,{TP,TID,W,Lvl,external,Code,{pimos_tag#task,GrType,GR}}}],
+    TID1 := TID+1.
+% SPY FORK
+make_index({W,Lvl,M,P,A,Pri},Pe,ID,_,SubGoals,RSC,RSC1,TID,TID1,GL) :-
+    GL=[{reduction,{spyf,W,Lvl,Pe,Pri,ID,M,P,A}}|GL2],
+    make_subgoal_index(SubGoals,1,(-1),TID,TID1,W,Lvl,RSC,RSC1,GL1),
+    sorter:key_sort(GL1,GL2).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Subgoal Format 
+% {priority, Code,ArgV,{Pri,Min,Max}} -> {TM,ID,W,Lvl,priority, Code,ArgV,{Pri,Min,Max}}
+% {node,     Code,ArgV, Node}         -> {TM,ID,W,Lvl,node,     Code,ArgV, Node}
+% {cluster,  Code,ArgV, Cls}          -> {TM,ID,W,Lvl,cluster,  Code,ArgV, Cls}
+% {resident_to_cluster,
+%            Code,ArgV, Cls}          -> {TM,ID,W,Lvl,resident_to_cluster,  Code,ArgV,Cls}
+% {emigrant_to_cluster,
+%            Code,ArgV}               -> {TM,ID,W,Lvl,emigrant_to_cluster,  Code,ArgV}
+% {processor,Code,ArgV, Pe}           -> {TM,ID,W,Lvl,processor,Code,ArgV, Pe}
+% {resident_to_processor,
+%            Code,ArgV, Pe}           -> {TM,ID,W,Lvl,resident_to_processor,Code,ArgV,Pe}
+% {emigrant_to_processor,
+%            Code,ArgV}               -> {TM,ID,W,Lvl,emigrant_to_processor,Code,ArgV}
+% {external, Code,ArgV}               -> {TM,ID,W,Lvl,external, Code,ArgV}
+% {internal, Code,ArgV}               -> {TM,ID,W,Lvl,internal, Code,ArgV}
+% {Builtin,       ArgV}               -> {TM,ID,W,Lvl,apply,         ArgV} |
+%                                     -> {Builtin,                   ArgV}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+make_subgoal_index([{Type,Code,ArgV,Pgm}|L],N,B,TID,TID2,W,Lvl,RSC,RSC2,GL) :-
+    code_to_predicate(Code,Mdl,P,A,_),
+    module:get_module_name(Mdl,M),
+    RSC=[spy(tracing(M,P,A,YorN))|RSC1],
+    trace_mode(YorN,TP),
+    GL=[{N,{TP,TID,W,Lvl,Type,Code,ArgV,Pgm}}|GL1],
+    TID1 := TID+1, N1 := N+1,
+    make_subgoal_index(L,N1,B,TID1,TID2,W,Lvl,RSC1,RSC2,GL1).
+make_subgoal_index([{Type,Code,ArgV}|L],N,B,TID,TID2,W,Lvl,RSC,RSC2,GL) :- % external/internal
+    code_to_predicate(Code,Mdl,P,A,_),
+    module:get_module_name(Mdl,M),
+    RSC=[spy(tracing(M,P,A,YorN))|RSC1],
+    trace_mode(YorN,TP),
+    GL=[{N,{TP,TID,W,Lvl,Type,Code,ArgV}}|GL1],
+    TID1 := TID+1, N1 := N+1,
+    make_subgoal_index(L,N1,B,TID1,TID2,W,Lvl,RSC1,RSC2,GL1).
+make_subgoal_index([],_,_,TID,TID1,_,_,RSC,RSC1,GL) :- TID1=TID, RSC1=RSC, GL=[].
+make_subgoal_index([{apply,ArgV}|L],N,B,TID,TID2,W,Lvl,RSC,RSC1,GL) :- %apply
+    GL=[{N,{trace,TID,W,Lvl,apply,ArgV}}|GL1],
+    TID1 := TID+1, N1 := N+1,
+    make_subgoal_index(L,N1,B,TID1,TID2,W,Lvl,RSC,RSC1,GL1).
+otherwise.
+make_subgoal_index([Builtin|L],N,B,TID,TID1,W,Lvl,RSC,RSC1,GL) :- 
+    GL=[{B,Builtin}|GL1],
+    B1 := B-1,
+    make_subgoal_index(L,N,B1,TID,TID1,W,Lvl,RSC,RSC1,GL1).
+
+trace_mode(yes,TP) :- TP=trace.
+trace_mode(no, TP) :- TP=notrace.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Parent Goal format in the index-pool.
+% {spyf,      W,Lvl,Pe,Pri,ID,             Matom,Patom,Arity}
+% {spyr,      W,Lvl,Pe,Pri,ID,ClauseNumber,Code,ArgV}
+% {trace,     W,Lvl,Pe,Pri,ID,ClauseNumber,Code,ArgV}
+% {task_trace,W,Lvl,Pe,Pri,ID,ClauseNumber,Code,ArgV}
+%
+% SubGoal format in the index-pool.
+% {TraceMode,ID,W,Lvl,priority,             Code,ArgV,{Prio,Min,Max}}
+% {TraceMode,ID,W,Lvl,node,                 Code,ArgV, Node}
+% {TraceMode,ID,W,Lvl,cluster,              Code,ArgV, Cls}
+% {TraceMode,ID,W,Lvl,resident_to_cluster,  Code,ArgV, Cls}
+% {TraceMode,ID,W,Lvl,emigrant_to_cluster,  Code,ArgV}
+% {TraceMode,ID,W,Lvl,processor,            Code,ArgV, Proc}
+% {TraceMode,ID,W,Lvl,resident_to_processor,Code,ArgV, Proc}
+% {TraceMode,ID,W,Lvl,emigrant_to_processor,Code,ArgV}
+% {TraceMode,ID,W,Lvl,external,             Code,ArgV}
+% {TraceMode,ID,W,Lvl,internal,             Code,ArgV}
+% {TraceMode,ID,W,Lvl,apply,                     ArgV}
+%                  {Builtin,                     ArgV}
+%
+% W (Window number) integer(W)
+% Lvl := [] | [ID1,ID2,...]
+% Pe>0, 0=<Pri=<4096, ID>0
+% ClauseNumber := 0 (nodebug-mode) | >=1
+% TraceMode := trace | notrace | keeping(Var)
+% unbound(Prio) | integer(Prio)
+% unbound(Proc) | integer(Proc)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+display_reduction([{_,Inf}|SubGoals],D,L,IN,IN3,GM,GM1,RSC,RSC3) :-
+    RSC=[get(scope,Scope)|RSC1],
+    scope(Scope,IN,IN1),
+    display_parent(Inf,D,L,IN1,IN2,GM,GM1,RSC1,RSC2,W),
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC2,RSC3,W).
+
+% spy fork | spy reduction + ( shoen:execute, shoen:profile )
+display_parent({spyf,W,Lvl,Pe,Pri,ID,M,Pred,Arity},D,L,IN,IN3,GM,GM1,RSC,RSC1,W1) :-
+    RSC=[spy(spying(M,Pred,Arity,Spy)),get(display_ancestor,DA)|RSC1],
+    GM=[get_ancestor(ID,{_,_,_,Ma,Ancestor})|GM1],
+    spy_mark(Spy,Mark),
+    reduction(Ma,M,(Pred/Arity),Reduc),
+    display_ancestor(DA,ID,Ma,Ancestor,D,L,IN,IN1),
+    disp_shoen_level(Lvl,IN1,IN2),
+    IN2=[putf("@~t@~t    ~s",[Pe,Pri,Mark]),putGoal(Reduc)|IN3],
+    W1=W.
+% spy reduction
+display_parent({spyr,W,Lvl,Pe,Pri,ID,CN,Code,ArgV},D,L,IN,IN5,GM,GM1,RSC,RSC1,W1) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy)),get(display_ancestor,DA)|RSC1],
+    GM=[get_ancestor(ID,{_,_,_,Ma,Ancestor})|GM1],
+    spy_mark(Spy,Mark),
+    reduction(Ma,M,Goal,Reduc),
+    display_ancestor(DA,ID,Ma,Ancestor,D,L,IN,IN1),
+    disp_shoen_level(Lvl,IN1,IN2),
+    IN2=[putf("@~t@~t    ",[Pe,Pri])|IN3],
+    clause_number(CN,IN3,IN4),
+    IN4=[putb(Mark), writeGoal(Reduc,_,D,L)|IN5],
+    W1=W.
+% trace
+display_parent({trace,W,Lvl,Pe,Pri,ID,CN,Code,ArgV},D,L,IN,IN5,GM,GM1,RSC,RSC1,W1) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    spy_mark(Spy,Mark),
+    disp_shoen_level(Lvl,IN,IN1),
+    IN1=[putf("@~t@~t ",[Pe,Pri])|IN2],
+    parent_number(ID,IN2,IN3),
+    clause_number(CN,IN3,IN4),
+    IN4=[putb(Mark), writeGoal((M:Goal),_,D,L)|IN5],
+    GM1=GM, W1=W.
+% task trace
+display_parent({task_trace,W,Lvl,Pe,Pri,_,CN,Code,ArgV},D,L,IN,IN4,GM,GM1,RSC,RSC1,W1) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    spy_mark(Spy,Mark),
+    disp_shoen_level(Lvl,IN,IN1),
+    IN1=[putf("@~t@~t    ",[Pe,Pri])|IN2],
+    clause_number(CN,IN2,IN3),
+    IN3=[putb(Mark), writeGoal((M:Goal),_,D,L)|IN4],
+    GM1=GM, W1=W.
+
+reduction(M,M,           Goal,Red) :- Red=Goal.
+otherwise.
+reduction(_,M,           Goal,Red) :- Red=(M:Goal).
+
+display_ancestor(full,ID,Ma,Ancestor,D,L,IN,IN1) :- true|
+    IN=[putf("<~t> ",[ID]),writeGoal((Ma:Ancestor),_,D,L), putf(" -->~n",[])|IN1].    
+display_ancestor(abbr,ID,Ma,Ancestor,_,_,IN,IN1) :- atom(Ancestor) |
+    IN=[putf("<~t> ",[ID]),putGoal((Ma:Ancestor/0)), putf(" -->~n",[])|IN1].    
+display_ancestor(abbr,ID,Ma,Ancestor,_,_,IN,IN1) :- 
+  vector(Ancestor,Size),
+  vector_element(Ancestor,0,P),
+  A := Size-1 |
+    IN=[putf("<~t> ",[ID]),putGoal((Ma:P/A)), putf(" -->~n",[])|IN1].    
+display_ancestor(num, ID,_,_,_,_,IN,IN1) :- true|
+    IN=[putf("<~t> -->~n",[ID])|IN1].
+display_ancestor(no,  _, _,_,_,_,IN,IN1) :- true| IN1=IN.
+
+display_subgoals([{N,{TM,TID,W,_,priority,Code,ArgV,{Pri,_,_}}}| SubGoals],
+                    D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[putb("@pri("), write(Pri,_), putb(") => "), 
+         writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+
+display_subgoals([{N,{TM,TID,W,_,node,Code,ArgV,Node}}| SubGoals],
+                    D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[putb("@node("), write(Node,_),
+         putb(") <= "), writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+
+display_subgoals([{N,{TM,TID,W,_,cluster,Code,ArgV,Cls}}| SubGoals],
+                    D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[putb("@cluster("), write(Cls,_),
+         putb(") <= "), writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+display_subgoals([{N,{TM,TID,W,_,resident_to_cluster,Code,ArgV,Cls}}| SubGoals],
+                    D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[putb("@resident_to_cluster("), write(Cls,_),
+         putb(") <= "), writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+display_subgoals([{N,{TM,TID,W,_,emigrant_to_cluster,Code,ArgV}}| SubGoals],
+                    D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[putb("@emigrant_to_cluster <= "), writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+
+display_subgoals([{N,{TM,TID,W,_,processor,Code,ArgV,Pe}}| SubGoals],
+                    D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[putb("@processor("), write(Pe,_),
+         putb(") <= "), writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+display_subgoals([{N,{TM,TID,W,_,resident_to_processor,Code,ArgV,Pe}}| SubGoals],
+                    D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[putb("@resident_to_processor("), write(Pe,_),
+         putb(") <= "), writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+display_subgoals([{N,{TM,TID,W,_,emigrant_to_processor,Code,ArgV}}| SubGoals],
+                    D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[putb("@emigrant_to_processor <= "), writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+
+display_subgoals([{N,{TM,TID,W,_,external,Code,ArgV}}| SubGoals],
+                  D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[writeGoal(M:Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+
+display_subgoals([{N,{TM,TID,W,_,internal,Code,ArgV}}| SubGoals],
+                  D,L,IN,IN3,RSC,RSC2,PW) :-
+    code_to_predicate(Code,Mdl,Pred,Arity,_),
+    module:get_module_name(Mdl,M),
+    listener_utility:make_up_goal(Pred,ArgV,Goal),
+    RSC=[spy(spying(M,Pred,Arity,Spy))|RSC1],
+    display_mark(TID,Spy,TM,PW,W,N,IN,IN1),
+    IN1=[writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC1,RSC2,PW).
+
+% apply 6/16
+display_subgoals([{N,{TM,TID,W,_,apply,ArgV}}| SubGoals],
+                  D,L,IN,IN3,RSC,RSC1,PW) :- true |
+    listener_utility:make_up_goal(apply,ArgV,Goal),
+    display_mark(TID,no,TM,PW,W,N,IN,IN1),
+    IN1=[writeGoal(Goal,_,D,L)|IN2],
+    display_subgoals(SubGoals,D,L,IN2,IN3,RSC,RSC1,PW).
+
+% create_shoen, create_profiling_shoen
+display_subgoals([{_,{create_shoen,_}}| SubGoals],D,L,IN,IN2,RSC,RSC1,PW) :-
+    IN=[putf("~n                  ",[]), putGoal((create_shoen/7))|IN1],
+    display_subgoals(SubGoals,D,L,IN1,IN2,RSC,RSC1,PW).
+display_subgoals([{_,{create_profiling_shoen,_}}| SubGoals],D,L,IN,IN2,RSC,RSC1,PW) :-
+    IN=[putf("~n                  ",[]), putGoal((create_profiling_shoen/7))|IN1],
+    display_subgoals(SubGoals,D,L,IN1,IN2,RSC,RSC1,PW).
+
+display_subgoals([],_,_,IN,IN1,RSC,RSC1,_) :- IN1=IN, RSC1=RSC.
+
+otherwise.
+display_subgoals([{_,{Name,ArgV}}|SubGoals],D,L,IN,IN2,RSC,RSC1,PW) :- true |
+    listener_utility:make_up_goal(Name,ArgV,Builtin),
+    IN=[putf("~n                  ",[]), 
+        writeGoal(Builtin,_,D,L)|IN1],
+    display_subgoals(SubGoals,D,L,IN1,IN2,RSC,RSC1,PW).
+
+
+disp_shoen_level([],IN,IN1) :- IN1=IN.
+disp_shoen_level([L|Lv],IN,IN2) :- 
+    IN=[putf("[~t",[L])|IN1],
+    disp_sh_lvl(Lv,IN1,IN2).
+
+disp_sh_lvl([L|Lv],IN,IN2) :-
+    IN=[putf("-~t",[L])|IN1],
+    disp_sh_lvl(Lv,IN1,IN2).
+disp_sh_lvl([],IN,IN1) :- IN=[putb("]")|IN1].
+
+
+display_mark(TID,Spy,TM,PW,W,N,IN,IN5) :-
+    IN=[nl|IN1],
+    tracer_number(PW,W,IN1,IN2),
+    goal_id(TID,IN2,IN3),
+    trace_mark(Spy,TM,Mark),
+    IN3=[putb(Mark)|IN4],
+    subgoal_number(N,IN4,IN5).
+
+tracer_number(W,W,IN,IN1) :-        IN=[putb("   ")|IN1].
+otherwise.
+tracer_number(_,W,IN,IN1) :- W<10 | IN=[putf("~t  ",[W])|IN1].
+otherwise.
+tracer_number(_,W,IN,IN1) :-        IN=[putf("~t ",[W])|IN1].
+
+goal_id(ID,IN,IN1) :- ID<10           | IN=[putf("~t  ",[ID])|IN1].
+goal_id(ID,IN,IN1) :- ID>=10, ID<100  | IN=[putf("~t ",[ID])|IN1].
+otherwise.
+goal_id(ID,IN,IN1) :- IN=[putt(ID)|IN1].
+
+trace_mark(yes,keeping(_), Mark) :- Mark=" + k ".
+trace_mark(no ,keeping(_), Mark) :- Mark="   k ".
+trace_mark(yes,trace,      Mark) :- Mark=" + * ".
+trace_mark(yes,notrace,    Mark) :- Mark=" +   ".
+trace_mark(no ,trace,      Mark) :- Mark="   * ".
+trace_mark(no ,notrace,    Mark) :- Mark="     ".
+
+subgoal_number(N,IN,IN1) :- N<10 | IN=[putf("(~t)  ",[N])|IN1].
+otherwise.
+subgoal_number(N,IN,IN1) :-        IN=[putf("(~t) ",[N])|IN1].
+
+spy_mark(no ,Mark) :- Mark="   ".
+spy_mark(yes,Mark) :- Mark=" + ".
+
+parent_number(ID,IN,IN1) :- ID<10           | IN=[putf("  ~t",[ID])|IN1].
+parent_number(ID,IN,IN1) :- ID>=10, ID<100  | IN=[putf(" ~t",[ID])|IN1].
+otherwise.
+parent_number(ID,IN,IN1) :- IN=[putt(ID)|IN1].
+
+clause_number(N,IN,IN1) :- N=\=0 | IN=[putf("#~t",[N])|IN1].
+clause_number(0,IN,IN1) :- IN1=IN.
+
+scope(clause,IN,IN1) :- IN=[init|IN1].
+scope(tracer,IN,IN1) :- IN1=IN.

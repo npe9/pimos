@@ -1,0 +1,374 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v29>Loader>loader.kl1.3, 25-Jul-91 17:53:27, Edit by hori
+:- module kl1_loader.
+:- public load/8, new_module/3.
+:- with_macro pimos.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   Kl1 Self_loader (by MRI Hori)                                           %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+load( module( ModuleName,
+              SizeOfGcArea,
+              ListOfGcArea,
+              SizeOfHashTable,
+              SizeOfIndexTable,
+              ListOfIndexTable,
+              SizeOfCodeArea,
+              ListOfCode ),Package,Name,MI,MO,ModTbl0,ModTbl,Status) :- true |
+    SizeOfModule := SizeOfGcArea +
+                    SizeOfHashTable +
+                    SizeOfIndexTable +
+                    SizeOfCodeArea + 3,
+    ModuleName = Name,
+    ModuleSize := SizeOfModule - 1,
+    new_vector( ModVec0, SizeOfModule ), % First Element is for CDESC created by new_module
+    deref_and_set( ModVec0, 1, SizeOfGcArea, ModVec2 ),
+    set_gc_area(ModVec2,2,Package,ModuleName,ListOfGcArea,ExMod,ModVec3,MI,M1,St1),
+    TopOfPredTable := SizeOfGcArea + 2,
+    set_pred_table(ModVec3,TopOfPredTable,SizeOfHashTable,ListOfIndexTable,ModVec4,M1,M2,St2),
+    TopOfCodeArea := TopOfPredTable + SizeOfHashTable + SizeOfIndexTable + 1,
+    set_code_area(ListOfCode,ModVec4,TopOfCodeArea,ModVec5,M2,MO,St3),
+    check_status(St1,St2,St3,Package,ModuleName,ModVec5,ModuleSize,Module,
+                            ModTbl0,ModTbl,ExMod,Status).
+otherwise.
+load(_,Package,Name,MI,MO,ModTbl0,ModTbl,Status) :- true |
+    Name = [],
+    MI = MO,
+    ModTbl0 = ModTbl,
+    Status = abnormal.
+
+check_status(normal,normal,normal,Package,ModuleName,ModVec,Size,Module,
+                            ModTbl0,ModTbl,ExMod,Status) :- true |
+    ModTbl0 = [module(Package,ModuleName,Module,ExMod)|ModTbl],
+    new_module(Module,ModVec,Size),     % Not a Builtin !!
+    Status = normal.
+otherwise.
+check_status(_,_,_,_,ModuleName,ModVec,_,Module,ModTbl0,ModTbl,ExMod,Status) :- 
+    true |
+    ModTbl0 = ModTbl,
+    Status = abnormal.
+
+new_module( Module, ModVec, ModuleSize ) :- wait(ModuleSize), vector(ModVec,_) |
+    X := 16#"06000000" \/ ModuleSize,
+%%    new_instruction( CDESC, 16#"25", X ),
+%%    set_vector_element( ModVec, 0, _, CDESC, ModVec0 ),
+    set_vector_element( ModVec, 0, _, X, ModVec0 ),
+    new_module( Module, ModVec0 ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     SET_GC_AREA                               %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+set_gc_area(ModVec0,P,PackageName,ModuleName,ListOfGcArea,ExMod,ModVec,MI,MO,Status) :- true |
+    deref_and_set(ModVec0,P,ModuleName,ModVec1),
+    P1 := P + 1,
+    deref_and_set(ModVec1,P1,PackageName,ModVec2),
+    P2 := P1 + 1,
+    set_gc_area_1(ListOfGcArea,ModVec2,P2,ExMod,ModVec,MI,MO,Status).
+
+set_gc_area_1([Elm|GcArea],ModVec0,P,ExMod,ModVec,MI,MO,Status) :- true |
+    encode_gc_area(Elm,ExMod,GcArea,ModVec0,P,ModVec,MI,MO,Status).
+set_gc_area_1([],ModVec0,_,ExMod,ModVec,MI,MO,Status) :- true |
+    ModVec0 = ModVec,
+    ExMod = [],
+    MI = MO,
+    Status = normal.
+
+encode_gc_area(extCall(ModuleName,pred(Pred/Arity)),ExMod,GcArea,ModVec0,P,ModVec,MI,MO,Status) :-
+    atom(ModuleName) |
+    deref_and_set(ModVec0,P,0,ModVec1), % Cache Area. Initially set zero
+    P1 := P + 1,
+    set_vector_element(ModVec1,P1,_,Module,ModVec2),
+    pred_hash(Pred,Arity,16#"FFFFFFFF",_,HashKey),
+    ExMod = [ext_mod(ModuleName,{Module,Pred,Arity})|ExMod1],
+    P2 := P1 + 1,
+    deref_and_set(ModVec2,P2,HashKey,ModVec3),
+    P3 := P2 + 1,
+    deref_and_set(ModVec3,P3,ModuleName,ModVec4),
+    P4 := P3 + 1,
+    deref_and_set(ModVec4,P4,PackageName,ModVec5),
+    P5 := P4 + 1,
+    set_gc_area_1(GcArea,ModVec5,P5,ExMod1,ModVec,MI,MO,Status).
+encode_gc_area(extCall({(::),PackageName,ModuleName},pred(Pred/Arity)),ExMod,GcArea,
+                                                            ModVec0,P,ModVec,MI,MO,Status) :-
+    atom(ModuleName) |
+    deref_and_set(ModVec0,P,0,ModVec1), % Cache Area. Initially set zero
+    P1 := P + 1,
+    set_vector_element(ModVec1,P1,_,Module,ModVec2),
+    pred_hash(Pred,Arity,16#"FFFFFFFF",_,HashKey),
+    ExMod = [ext_mod({(::),PackageName,ModuleName},{Module,Pred,Arity})|ExMod1],
+    P2 := P1 + 1,
+    deref_and_set(ModVec2,P2,HashKey,ModVec3),
+    P3 := P2 + 1,
+    deref_and_set(ModVec3,P3,ModuleName,ModVec4),
+    P4 := P3 + 1,
+    deref_and_set(ModVec4,P4,PackageName,ModVec5),
+    P5 := P4 + 1,
+    set_gc_area_1(GcArea,ModVec5,P5,ExMod1,ModVec,MI,MO,Status).
+encode_gc_area(struct(Structure),ExMod,GcArea,ModVec0,P,ModVec,MI,MO,Status) :-
+    true |
+    deref_and_set(ModVec0,P,Structure,ModVec1),
+    P1 := P + 1,
+    set_gc_area_1(GcArea,ModVec1,P1,ExMod,ModVec,MI,MO,Status).
+encode_gc_area(module(ModuleName),ExMod,GcArea,ModVec0,P,ModVec,MI,MO,Status) :-
+    atom(ModuleName) |
+    ExMod = [ext_mod(ModuleName,{Module})|ExMod1],
+    set_vector_element(ModVec0,P,_,Module,ModVec1),
+    P1 := P + 1,
+    deref_and_set(ModVec1,P1,PackageName,ModVec2),
+    P2 := P1 + 1,
+    set_gc_area_1(GcArea,ModVec2,P2,ExMod1,ModVec,MI,MO,Status).
+encode_gc_area(module({(::),PackageName,ModuleName}),ExMod,GcArea,ModVec0,P,ModVec,MI,MO,Status) :-
+    atom(ModuleName) |
+    ExMod = [ext_mod({(::),PackageName,ModuleName},{Module})|ExMod1],
+    set_vector_element(ModVec0,P,_,Module,ModVec1),
+    P1 := P + 1,
+    deref_and_set(ModVec1,P1,PackageName,ModVec2),
+    P2 := P1 + 1,
+    set_gc_area_1(GcArea,ModVec2,P2,ExMod1,ModVec,MI,MO,Status).
+otherwise.
+encode_gc_area(Term,ExMod,GcArea,ModVec0,P,ModVec,MI,MO,Status) :- true |
+    deref_and_set(ModVec0,P,Term,ModVec1),
+    P1 := P + 1,
+    set_gc_area_1(GcArea,ModVec1,P1,ExMod,ModVec,MI,MO,Status).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     SET_PRED_TABLE/8                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+set_pred_table(ModVec0,P,SizeOfHashTable,[],ModVec,MI,MO,Status) :- true |
+    ModVec0 = ModVec,
+    MI = MO,
+    Status = abnormal.
+set_pred_table(ModVec0,P,SizeOfHashTable,ListOfIndexTable,ModVec,MI,MO,Status) :-
+    list(ListOfIndexTable) |
+    Mask := SizeOfHashTable - 1,
+    deref_and_set( ModVec0, P, Mask, ModVec1 ),
+    P1 := P + 1,
+    new_vector(HashTable0,SizeOfHashTable),
+    reset_hash_table(0,SizeOfHashTable,HashTable0,HashTable1),
+    make_hash_table(ListOfIndexTable,HashTable1,Mask,HashTable2),
+    Q1 := P1 + SizeOfHashTable,
+    St1 = normal,
+    set_pred_table(HashTable2,0,SizeOfHashTable,ModVec1,P1,Q1,ModVec,MI,MO,St1,Status).
+
+reset_hash_table(I,Size,Vec0,Vec) :- I < Size |
+    deref_and_set(Vec0,I,[],Vec1),
+    I1 := I + 1,
+    reset_hash_table(I1,Size,Vec1,Vec).
+reset_hash_table(Size,Size,Vec0,Vec) :- true |
+    Vec = Vec0.
+
+make_hash_table([pred(Pred/Arity),pointer(Loc)|Rest],Table0,Mask,Table) :-
+    true |
+    pred_hash(Pred,Arity,Mask,Index,HashKey),
+    set_hash_table(HashKey,Loc,Table0,Index,Table1),
+    make_hash_table(Rest,Table1,Mask,Table).
+make_hash_table([],Table0,Mask,Table) :- true |
+    Table = Table0.
+
+set_hash_table(HashKey,Loc,Table0,Index,Table) :-
+    vector_element(Table0,Index,Old) |
+    New = [{HashKey,Loc}|Old],
+    deref_and_set(Table0,Index,New,Table).
+
+set_pred_table(HashTable,I,Size,ModVec1,P1,Q1,ModVec,MI,MO,St1,Status) :-
+    less_than(I,Size) |
+    vector_element(HashTable,I,Col1,HT1),
+    set_index_part(Col1, ModVec1,P1,Q1,ModVec2,P2),
+    vector_element(HT1,I,Col2,HT2),
+    set_entry_part(Col2,0,ModVec2,Q1,ModVec3,Q2,MI,M1,St2),    %% Trim is 0.
+    set_status(St1,St2,St3),
+    I1 := I + 1,
+    set_pred_table(HT2,I1,Size,ModVec3,P2,Q2,ModVec,M1,MO,St3,Status).
+set_pred_table(HashTable,Size,Size,ModVec1,P1,Q1,ModVec,MI,MO,St1,Status) :- true |
+    ModVec = ModVec1,
+    MI = MO,
+    Status = St1.
+
+set_index_part(Collisions,ModVec1,P1,Q1,ModVec,P) :- true |
+    length(Collisions,Length),
+    calc_offset(Length,P1,Q1,Offset),
+    P := P1 + 1,
+    deref_and_set(ModVec1,P1,Offset,ModVec).
+
+calc_offset(0,P1,Q1,Offset) :- true |
+    Offset = 0.
+calc_offset(ColSize,P1,Q1,Offset) :- ColSize > 0 |
+    Offset := ( ColSize << 16 ) \/ ( Q1 - P1 ).
+
+set_entry_part([],Trim,ModVec1,Q1,ModVec,Q,MI,MO,Status) :- true |
+    ModVec = ModVec1,
+    Q = Q1,
+    Status = normal,
+    MI = MO.
+set_entry_part([{HashKey,Loc}|Rest],Trim,ModVec1,Q1,ModVec,Q,MI,MO,Status) :-
+    Q2 := Q1 + 1,
+    Offset := Loc - Q2 - Trim,
+    16#"FFFF8000" =< Offset,
+    Offset =< 16#"7FFF" |
+    deref_and_set(ModVec1,Q1,HashKey,ModVec2),
+    deref_and_set(ModVec2,Q2,Offset,ModVec3),
+    Q3 := Q2 + 1,
+    set_entry_part(Rest,Trim,ModVec3,Q3,ModVec,Q,MI,MO,Status).
+otherwise.
+set_entry_part([{HashKey,Loc}|Rest],Trim,ModVec0,Q1,ModVec,Q,MI,MO,Status) :-
+    true | 
+    vector_element(ModVec0,2,ModName,ModVec),
+    Status = abnormal,
+    Q = Q1,
+    MI = [error(string#"too large module : ~t",[ModName],end)|MO].
+
+set_status(normal,normal,Status):- true |
+    Status = normal.
+otherwise.
+set_status(_,_,Status):- true |
+    Status = abnormal.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     SET_CODE_AREA                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+set_code_area([],ModVec0,P,ModVec,MI,MO,Status) :- true |
+    ModVec0 = ModVec,
+    MI = MO,
+    Status = abnormal.
+set_code_area(Codes,ModVec0,P,ModVec,MI,MO,Status) :- list(Codes) |
+    set_code_area_0(Codes,ModVec0,P,ModVec,MI,MO,normal,Status).
+
+set_code_area_0([Code|Rest],ModVec0,P,ModVec,MI,MO,St1,Status) :- true |
+    set_code_area_1(Code,Rest,ModVec0,P,ModVec,MI,MO,St1,Status).
+set_code_area_0([],ModVec0,_,ModVec,MI,MO,St1,Status) :- true |
+    ModVec = ModVec0,
+    MI = MO,
+    Status = St1.
+
+set_code_area_1({Tag,Value},ListOfCode,ModVec0,P,ModVec,MI,MO,St1,Status) :-
+    integer(Tag) |
+    new_instruction(Inst,Tag,Value),
+    deref_and_set(ModVec0,P,Inst,ModVec1),
+    P1 := P + 1,
+    set_status(St1,normal,St2),
+    set_code_area_0(ListOfCode,ModVec1,P1,ModVec,MI,MO,St2,Status).
+set_code_area_1({atom,{Tag,Op,Atom}},ListOfCode,ModVec0,P,ModVec,MI,MO,St1,Status) :-
+    true |
+    tag_and_value(Atom,_,AtomNum),
+    Value := ( Op << 24 ) \/ ( 16#"FFFFFF" /\ AtomNum ),
+    new_instruction(Inst,Tag,Value),
+    deref_and_set(ModVec0,P,Inst,ModVec1),
+    P1 := P + 1,
+    set_status(St1,normal,St2),
+    set_code_area_0(ListOfCode,ModVec1,P1,ModVec,MI,MO,St2,Status).
+set_code_area_1({table,{Size,Contents}},ListOfCode,ModVec0,P,ModVec,MI,MO,St1,Status) :-
+    true |
+    new_vector(HashTable0,Size),
+    reset_hash_table(0,Size,HashTable0,HashTable1),    %% See Above
+    Mask := Size - 1,
+    make_hash_on_c_table(Contents,HashTable1,Mask,HashTable2),
+    Q := P + Size,
+    set_hash_on_c_table(HashTable2,0,Size,ModVec0,P,Q,ModVec1,MI,M1,St1,St2),
+    length(Contents,Length),
+    P1 := Q + Length * 2,
+    set_code_area_0(ListOfCode,ModVec1,P1,ModVec,M1,MO,St2,Status).
+otherwise.
+set_code_area_1(Elm,ListOfCode,ModVec0,P,ModVec,MI,MO,St1,Status) :- true |
+    deref_and_set(ModVec0,P,Elm,ModVec1),
+    P1 := P + 1,
+    set_status(St1,normal,St2),
+    set_code_area_0(ListOfCode,ModVec1,P1,ModVec,MI,MO,St2,Status).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     HASH_ON_CONSTANT                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+make_hash_on_c_table([(Const=Loc)|Rest],Table0,Mask,Table) :-
+    true |
+    constant_hash(Const,Mask,Index),
+    set_hash_table(Const,Loc,Table0,Index,Table1),    %% See Above
+    make_hash_on_c_table(Rest,Table1,Mask,Table).
+make_hash_on_c_table([],Table0,Mask,Table) :- true |
+    Table = Table0.
+
+set_hash_on_c_table(HashTable,I,Size,ModVec1,P1,Q1,ModVec,MI,MO,St1,Status) :-
+    less_than(I,Size),
+    vector_element(HashTable,I,Collisions) |
+    set_honc_index_part(Collisions,ModVec1,P1,Q1,ModVec2,P2),
+    set_entry_part(Collisions,1,ModVec2,Q1,ModVec3,Q2,MI,M1,St2),
+    I1 := I + 1,
+    set_status(St1,St2,St3),
+    set_hash_on_c_table(HashTable,I1,Size,ModVec3,P2,Q2,ModVec,M1,MO,St3,Status).
+set_hash_on_c_table(HashTable,Size,Size,ModVec1,P1,Q1,ModVec,MI,MO,St1,Status) :- true |
+    ModVec = ModVec1,
+    MI = MO,
+    Status = St1.
+
+set_honc_index_part(Collisions,ModVec1,P1,Q1,ModVec,P) :- true |
+    length(Collisions,Length),
+    calc_honc_offset(Length,P1,Q1,Offset),
+    P := P1 + 1,
+    deref_and_set(ModVec1,P1,Offset,ModVec).
+
+calc_honc_offset(0,P1,Q1,Offset) :- true |
+    new_instruction(Offset,16#"02",16#"0").
+calc_honc_offset(ColSize,P1,Q1,Offset) :- ColSize > 0 |
+    Offset := ( ColSize << 16 ) \/ ( Q1 - P1 ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     MISCELANEOUS                              %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+pred_hash(Pred,Arity,Mask,Index,HashKey) :- true |
+    tag_and_value(Pred,Tag,AtomNum),
+    Key1 := ( ( AtomNum /\ 16#"FFFFFF" ) + Arity ) /\ 16#"FFFFFF",
+    Encoded  := Key1 \/ ( Arity << 24 ),
+    Index := Encoded /\ Mask,
+    new_instruction(HashKey,02,Encoded).
+
+constant_hash(Const,Mask,Index) :- true |
+    tag_and_value(Const,Tag,Value),
+    Index := Value /\ Mask.
+
+length([_|Rest],Length) :- true |
+    Length := L + 1,
+    length(Rest,L).
+length([],Length) :- true |
+    Length = 0.
+
+tag_and_value(Obj,Tag,Value) :- 
+    wait(Obj),
+    tag_and_value(Obj,Tag1,Value1) |
+    Tag = Tag1,
+    Value = Value1.
+
+deref_and_set( Vector, Position, Element, NewVector ) :- wait( Element ) |
+    ground( Element, done, Done ),
+    wait_done( Done, Vector, Position, Element, NewVector ).
+
+wait_done( Done, Vector, Position, Element, NewVector ) :- wait( Done ) |
+    set_vector_element( Vector, Position, OldElement, Element, NewVector ).
+
+ground(Vector,D0,D) :- vector(Vector,Length) |
+    ground_vector(0,Length,Vector,D0,D).
+ground([Car|Cdr],D0,D) :- true |
+    ground(Car,D0,D1),
+    ground(Cdr,D1,D).
+ground(String,D0,D) :- string(String,_,_) |
+    D0 = D.
+otherwise.
+ground(Atomic,D0,D) :- wait(Atomic) |
+    D0 = D.
+
+ground_vector(I,Length,Vector,D0,D) :- I < Length |
+    vector_element(Vector,I,Elm,NewVector),
+    ground(Elm,D0,D1),
+    I1 := I + 1,
+    ground_vector(I1,Length,NewVector,D1,D).
+otherwise.
+ground_vector(I1,Length,Vector,D0,D) :- true | D0 = D.
+

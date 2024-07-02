@@ -1,0 +1,762 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%% 1991.3.3
+
+class runtime_monitor has
+
+attribute s,m;
+
+:create(Class,Obj,PE,Init):-!,
+    :new(Class,Obj),
+    Class!m:=Obj,
+    :create(#font,"font:tiny_7.font",Font),
+    %:create(#font,"font:test_11.font",Font),
+    get_init_data(Init,PE,IL1,IL2),
+    :create(#runtime_window,IL1,Win),
+    %:set_font(Win,"font:test_11.font"),
+    get_color(IL2,Color),
+    set_palette(Win,Color),
+    %(:activate(Win);:kill(Win),fail),%
+    Obj!pe_font:=Font,
+    Obj!window:=Win,
+    :init_draw(Obj,IL2),
+    put_pool(Obj),
+    %:activate(Obj),
+    true;
+
+instance
+
+attribute   pe_font,
+            window,
+            palette:=default,
+            pool,
+            pe:=8,
+            count:=0,
+            scroll:=4,
+            cycle:=10,
+            display:=mono,
+            sx,         %%% sample rectangle
+            sy,         %%% sample rectangle
+            sw:=40,     %%% sample rectangle
+            sh:=25;     %%% sample rectangle
+
+:draw(Obj,String):-
+    draw(String,Obj);
+
+:init_draw(Obj,L):-!,
+    set_slots(L,Obj),
+    init_draw(Obj);
+
+:kill(Obj):-
+    :kill(Obj!window);
+
+:activate(Obj):-
+    :activate(Obj!window);
+
+:deactivate(Obj):-
+    :deactivate(Obj!window);
+
+local
+
+get_init_data(Init,PE,IL1,IL2):-!,
+    %%% window size,position,title,   flag-off
+    %%% graph  samX,samY,samW,samH,pe,scroll,cycle,display
+    IL1=[title(Title),
+         size(W0,H0),
+         permission(out),
+         position(X0,Y0),
+         nature([as_inhibit_reshape]),
+         margin_flag(off),
+         border_flag(off)],
+    IL2=[pe(PE),scroll(SC),cycle(C),display(D),
+         sx(X),sy(Y),sw(W),sh(H),palette(P)],
+    analyze(Init,{X0,Y0,SC,C,D,Title,W,H,P}),
+    system_font_height(LBH),
+    calc(SC,C,W,H,PE,W0,H0,X,Y,LBH);
+
+system_font_height(H):-
+    F= #simpos##with_character!character_font,
+    (F== #font_13,!,H=24;
+     H=F!standard_line_height);
+
+analyze([],Vec):-!,
+    default_check(Vec);
+analyze([Vec|L],OutVec):-
+    set_attr(Vec,OutVec),
+    analyze(L,OutVec);
+
+%%% Vec={X0,Y0,SC,C,D,Title,W,H}
+
+set_attr(size(W,H),Vec):-!,
+    vector_element(Vec,6,W),
+    vector_element(Vec,7,H);
+set_attr(position(X0,Y0),Vec):-!,
+    vector_element(Vec,0,X0),
+    vector_element(Vec,1,Y0);
+set_attr(scroll(SC),Vec):-!,vector_element(Vec,2,SC);
+set_attr(cycle(C),Vec):-!,vector_element(Vec,3,C);
+set_attr(display(D),Vec):-!,vector_element(Vec,4,D);
+set_attr(title(T),Vec):-!,vector_element(Vec,5,T);
+set_attr(palette(P),Vec):-!,vector_element(Vec,8,P);
+
+default_check({X0,Y0,SC,C,D,Title,W,H,P}):-
+    (X0=0,!;true),
+    (Y0=0,!;true),
+    (SC=4,!;true),
+    (C=10,!;true),
+    (D=mono,!;true),
+    (Title="Performance Meter",!;true),
+    (W=40,!;true),
+    (H=30,!;true),
+    (P=default,!;true);
+
+calc(SC,C,W,H,PE,   W0,H0,X,Y,LBH):-!,
+    LabelHeight=LBH,%% font_13
+    MarginTop=20,
+    MarginLeft=48,
+    MarginRight=50,%%
+    MarginDown=25,%%
+    SampleMarginDown=20,%%
+    Interval=30,%%
+    GraphWidth=C*W,
+    (PE<10,!,PE0=10,!;PE0=PE),
+    GraphHeight=PE0*H,
+    W0=MarginLeft+GraphWidth+Interval+W+MarginRight,
+    H0=LabelHeight+MarginTop+GraphHeight+MarginDown,
+    X=MarginLeft+GraphWidth+Interval,
+    Y=MarginTop+GraphHeight+MarginDown
+        -SampleMarginDown-H*10,
+    true;
+
+set_slots([],_):-!;
+set_slots([{scroll,N}|L],Obj):-N=<0,!,
+    Obj!scroll:=1,
+    set_slots(L,Obj);
+set_slots([{Slot,Value}|L],Obj):-
+    atomic(Value),!,  %%% bound(Value),!,
+    Obj!Slot:=Value,
+    set_slots(L,Obj);
+set_slots([_|L],Obj):-
+    Obj!Slot:=Value,
+    set_slots(L,Obj);
+
+init_draw(Obj):-!,
+    draw_flame(Obj),
+    draw_pe(Obj),
+    draw_percent(Obj),
+    draw_sample(Obj);
+
+draw_flame(Obj):-!,
+    Win=Obj!window,
+    :get_size(Win,W,Height),
+    :get_label_height(Win,LBH),
+    H=Height-LBH,
+    :draw_filled_rectangle(Win,0,0,W,H,0,fix,set),
+    :draw_filled_rectangle(Win,0,0,W,H,1,light_paint,reset),
+%%% up
+    :draw_line(Win,0,1,W,1,2,solid,reset),
+%%% left
+    :draw_line(Win,0,0,0,H,2,solid,reset),
+%%% under
+    :draw_line(Win,1,H-2,W,H-2,1,solid,set),
+    :draw_line(Win,0,H-1,W,H-1,1,solid,set),
+%%% right
+    :draw_line(Win,W-2,1,W-2,H,1,solid,set),
+    :draw_line(Win,W-1,0,W-1,H-1,1,solid,set),
+    inner(Obj);
+
+inner(Obj):-
+    X1=48,
+    Y1=20,
+    W1=Obj!sw*Obj!cycle+2,
+    H1=Obj!sh*Obj!pe+2,
+    Win=Obj!window,
+    :get_size(Win,W0,H0),
+    X=10,
+    Y=10,
+    W=W0-20,
+    :get_label_height(Win,LBH),
+    H=H0-20-LBH,
+    :draw_filled_rectangle(Win,X,Y,W,H,0,fix,reset),
+    :draw_rectangle(Win,X1-1,Y1-1,W1,H1,1,solid,set),
+    :draw_line(Win,X-2,Y+1-2,X+W,Y+1-2,2,solid,set),
+    :draw_line(Win,X-2,Y-1,  X-2,  Y+H,2,solid,set);
+
+draw_pe(Obj):-
+    Margin=20,
+    CharH=14,%%
+    draw_num(0,Obj!pe-1,Margin+Obj!sh/2-CharH/2,Obj!sh,Obj);
+
+draw_num(C,C,Pos,H,Obj):-!,
+    Margin=20,%%
+    CharH=14,
+    CharW=7,
+    (C<10,!,L=2;
+     C<100,!,L=1;
+     L=0),
+    Adj0=(Pos-(C mod 10)*Obj!sh+CharH)-Pos,
+    (0 =< Adj0,!,Adj=Adj0;Adj=0),
+    XPos=Margin+L*CharW,
+    YPos=Pos+Adj,
+    :get_number_string(#symbolizer,C,St),
+    string(St,K,_),
+    :draw_string(Obj!window,XPos,YPos,St,Obj!pe_font,set);
+draw_num(C,N,Pos,H,Obj):-
+    Margin=20,%%
+    CharH=14,
+    CharW=7,
+    (Obj!pe>64,C mod 10 == 0,!;
+     Obj!pe=<64,Obj!sh >= CharH-3,!;
+     C mod 10 == 0),!,
+    (C<10,!,L=2;
+     C<100,!,L=1;
+     L=0),
+    XPos=Margin+L*CharW,
+    :get_number_string(#symbolizer,C,St),
+    string(St,K,_),
+    :draw_string(Obj!window,XPos,Pos,St,Obj!pe_font,set),
+    %:draw_line(Obj!window,Margin-1,Pos-1,Margin+CharW*K,Pos-1,1,solid,set),
+    %:draw_line(Obj!window,Margin-1,Pos-1,Margin-1,Pos+CharH,1,solid,set),
+    draw_num(C+1,N,Pos+H,H,Obj);
+draw_num(C,N,Pos,H,Obj):-
+    draw_num(C+1,N,Pos+H,H,Obj);
+
+draw_percent(Obj):-
+    Margin=5,%%
+    CharH=14,%%
+    CharW=7,
+    X=Obj!sx+Obj!sw+Margin,
+    YTop=Obj!sy-CharH/2,
+    YDown=Obj!sy+Obj!sh*10-CharH/2,
+    :draw_string(Obj!window,X,YTop,"100%",Obj!pe_font,set),
+    %:draw_line(Obj!window,X-1,YTop-1,X-1,YTop+CharH,1,solid,set),
+    %:draw_line(Obj!window,X-1,YTop-1,X+CharW*4,YTop-1,1,solid,set),
+    :draw_string(Obj!window,X,YDown,"0%",Obj!pe_font,set),
+    %:draw_line(Obj!window,X-1,YDown-1,X-1,YDown+CharH,1,solid,set),
+    %:draw_line(Obj!window,X-1,YDown-1,X+CharW*2,YDown-1,1,solid,set),
+    true;
+
+draw_sample(Obj):-
+   (Obj!pe=<64,!,D=0;D=3),
+   draw_box(0,10,Obj!sx,Obj!sy,Obj!sw+D,Obj!sh,Obj);
+
+draw_box(N,N,_,_,_,_,_):-!;
+draw_box(C0,N,X,Y,W,H,Obj):-
+    C=9-C0,
+    %C=C0,
+    (Obj!display==color,!,OP=C+2,P=fix, 
+    :draw_filled_rectangle(Obj!window,X,Y,W,H,1,fix,1),
+     (H-2>0,!,
+      :draw_filled_rectangle(Obj!window,
+        X+1,Y+1,W-2,H-2,0,P,OP);
+      :draw_filled_rectangle(Obj!window,
+        X-1,Y-1,W+2,H+2,0,P,OP)
+      );
+
+     Obj!display==mono,!,OP=set,
+     %(C==3,!;C==4,!;new_string(P,256,16)),
+     (C==2,!;C==3,!;new_string(P,256,16)),
+     make_pattern(C+1,P),
+     (Obj!sh>3,!,
+      :draw_filled_rectangle(Obj!window,X,Y,W,H,1,P,OP);
+      Obj!sh==1,!,
+      :draw_filled_rectangle(Obj!window,X-1,Y-1,W+2,H+3,
+                                                0,P,OP);
+      :draw_filled_rectangle(Obj!window,X-1,Y-1,W+2,H+2,
+                                                0,P,OP))
+    ),
+    draw_box(C0+1,N,X,Y+H,W,H,Obj);
+
+%make_pattern(0, S) :-
+%    set_pattern(0, S, 16#"FFFF", 16#"FFFF") ;
+%make_pattern(1, S) :- 
+%    set_pattern(0, S, 16#"7777", 16#"FFFF") ;
+%make_pattern(2, S) :-
+%    set_pattern(0, S, 16#"7777", 16#"BBBB") ;
+%make_pattern(3, S) :-
+%    set_pattern(0, S, 16#"5555", 16#"BBBB") ;
+%make_pattern(4, S) :-
+%    set_pattern(0, S, 16#"5555", 16#"AAAA", 
+%                      16#"5555", 16#"BBBB") ;
+%make_pattern(5, S) :-
+%    set_pattern(0, S, 16#"5555", 16#"AAAA") ;
+%make_pattern(6, S) :-
+%    set_pattern(0, S, 16#"1111", 16#"AAAA", 
+%                      16#"5555", 16#"AAAA") ;
+%make_pattern(7, S) :-
+%    set_pattern(0, S, 16#"1111", 16#"AAAA") ;
+%make_pattern(8, S) :-
+%    set_pattern(0, S, 16#"1111", 16#"2222") ;
+%make_pattern(9, S) :-
+%    set_pattern(0, S, 16#"0000", 16#"2222") ;
+%make_pattern(10, S) :-
+%    set_pattern(0, S, 16#"0000", 16#"0000") ;
+
+make_pattern(0, S) :-!;
+make_pattern(1 ,S):-!,
+    set_pattern(0,S,16#"0000",16#"0000");
+make_pattern(2 ,S):-!,
+    set_pattern(0,S,16#"0101",16#"0000",16#"0000",16#"0000",16#"1010",16#"0000",16#"0000",16#"0000");
+make_pattern(3 ,S):-!,
+    S=rough_dotted;
+make_pattern(4 ,S):-!,
+    S=dotted;
+make_pattern(5 ,S):-!,
+    set_pattern(0,S,16#"0000",16#"AAAA");
+make_pattern(6 ,S):-!,
+    set_pattern(0,S,16#"1111",16#"AAAA",16#"5555",16#"AAAA");
+make_pattern(7 ,S):-!,
+    set_pattern(0,S,16#"5555",16#"AAAA");
+make_pattern(8 ,S):-!,
+    set_pattern(0,S,16#"5555",16#"BBBB");
+make_pattern(9 ,S):-!,
+    set_pattern(0,S,16#"7777",16#"FFFF");
+make_pattern(10,S):-!,
+    set_pattern(0,S,16#"FFFF",16#"FFFF");
+
+set_pattern(256, _, _, _) :- ! ;
+set_pattern(N, S, P1, P2) :-
+    set_string_element(S, N, P1),
+    set_string_element(S, N+1, P1),
+    set_string_element(S, N+2, P1),
+    set_string_element(S, N+3, P1),
+    set_string_element(S, N+4, P2),
+    set_string_element(S, N+5, P2),
+    set_string_element(S, N+6, P2),
+    set_string_element(S, N+7, P2),
+    set_pattern(N+8, S, P1, P2), ! ;
+
+set_pattern(256, _, _, _, _, _, _, _, _, _) :- ! ;
+set_pattern(N, S, P1, P2, P3, P4, P5, P6, P7, P8) :-
+    set_string_element(S, N, P1),
+    set_string_element(S, N+1, P1),
+    set_string_element(S, N+2, P1),
+    set_string_element(S, N+3, P1),
+    set_string_element(S, N+4, P2),
+    set_string_element(S, N+5, P2),
+    set_string_element(S, N+6, P2),
+    set_string_element(S, N+7, P2),
+    set_string_element(S, N+8, P3),
+    set_string_element(S, N+9, P3),
+    set_string_element(S, N+10, P3),
+    set_string_element(S, N+11, P3),
+    set_string_element(S, N+12, P4),
+    set_string_element(S, N+13, P4),
+    set_string_element(S, N+14, P4),
+    set_string_element(S, N+15, P4),
+    set_string_element(S, N+16, P5),
+    set_string_element(S, N+17, P5),
+    set_string_element(S, N+18, P5),
+    set_string_element(S, N+19, P5),
+    set_string_element(S, N+20, P6),
+    set_string_element(S, N+21, P6),
+    set_string_element(S, N+22, P6),
+    set_string_element(S, N+23, P6),
+    set_string_element(S, N+24, P7),
+    set_string_element(S, N+25, P7),
+    set_string_element(S, N+26, P7),
+    set_string_element(S, N+27, P7),
+    set_string_element(S, N+28, P8),
+    set_string_element(S, N+29, P8),
+    set_string_element(S, N+30, P8),
+    set_string_element(S, N+31, P8),
+    set_pattern(N+32, S, P1, P2, P3, P4, P5, P6, P7, P8) ;
+
+set_pattern(256, _, _, _, _, _) :- ! ;
+set_pattern(N, S, P1, P2, P3, P4) :-
+    set_string_element(S, N, P1),
+    set_string_element(S, N+1, P1),
+    set_string_element(S, N+2, P1),
+    set_string_element(S, N+3, P1),
+    set_string_element(S, N+4, P2),
+    set_string_element(S, N+5, P2),
+    set_string_element(S, N+6, P2),
+    set_string_element(S, N+7, P2),
+    set_string_element(S, N+8, P3),
+    set_string_element(S, N+9, P3),
+    set_string_element(S, N+10, P3),
+    set_string_element(S, N+11, P3),
+    set_string_element(S, N+12, P4),
+    set_string_element(S, N+13, P4),
+    set_string_element(S, N+14, P4),
+    set_string_element(S, N+15, P4),
+    set_pattern(N+16, S, P1, P2, P3, P4) ;
+
+get_color(L,P):-
+    get_color(L,P,P0,C0);
+
+get_color([],P,P,color):-!;
+get_color([],mono,P,mono):-!;
+get_color([palette(P0)|L],P,P0,C):-!,
+    get_color(L,P,P0,C);
+get_color([color(C)|L],P,P0,C):-!,
+    get_color(L,P,P0,C);
+get_color([_|L],P,P0,C):-!,
+    get_color(L,P,P0,C);
+
+set_palette(Win,mono):-!;
+set_palette(Win,F):-
+    (F==test,!,test(Win);
+     create_pairs(L,F),
+     ploop(L,Win));
+
+ploop([F|T],Win):-!,
+    F=(N,V),
+    :set_color_pair(Win,N,V),
+    ploop(T,Win);
+ploop([],_):-!;
+
+test(Win):-
+    :set_color_pair(Win,10,{{62400,26300,0},{65535,0,14300}}),
+    :set_color_pair(Win,8,{{60000,63000,0},{57600,44000,0}}),
+    :set_color_pair(Win,6,{{0,62000,30000},{40000,63000,0}}),
+    :set_color_pair(Win,4,{{0,40000,50000},{0,50000,40000}}),
+    :set_color_pair(Win,2,{{0,0,65535},{0,20000,50000}});
+
+draw(S,Obj):-
+    Obj!pe=<64,!,
+    scroll(Obj),
+    Count=Obj!count,
+    make_com(0,Obj!pe,48+Count*Obj!sw,20,
+        Obj!sx,Obj!sy,Obj!sw,Obj!sh,Obj!display,S,L),
+    Obj!count:=Count+1,
+    :execute_graphics_command(Obj!window,L);
+
+draw(S,Obj):-!,
+    scroll(Obj),
+    Count=Obj!count,
+    Obj!count:=Count+1,
+    make_image(Obj!pe,(Obj!sw/16)*16,Obj,S,Im),
+    :get_label_height(Obj!window,LBH),
+    :restore_full_color_image(Obj!window,Im,
+        48+Count*Obj!sw,20+LBH,
+        (Obj!sw/16)*16,Obj!sh*Obj!pe);
+
+make_image(N,W,Obj,S,I):-
+    SH=Obj!sh,
+    Disp=Obj!display,
+    :get_plane_count(#bitmap,Size),%%
+    new_string(I,N*(W/16)*SH*Size,16),%%
+    get_pool(Obj!pool,Pool),
+    set_image(0,N,S,W/16,SH,Disp,Pool,I);
+
+set_image(N,N,S,W,SH,Disp,Pool,I):-!;
+set_image(C,N,S,W,SH,Disp,Pool,I):-
+    Pos=C*5,
+    string_element(S,Pos,  A1 ),
+    string_element(S,Pos+1,A2 ),    
+    string_element(S,Pos+2,NA1),
+    string_element(S,Pos+3,NA2),    
+    string_element(S,Pos+4,GC),
+    A=A1*65536+A2,
+    NA=NA1*65536+NA2,
+%%%%% edited by kamiko   91.10.16 %%%%%
+%    P=(NA*100/(NA+A))/10,    %%%% performance ratio
+    cal_ratio(NA,A,PP),
+%    P=(NA*100/PP)/10,    %%%% performance ratio
+    P=PP/10,
+    (P >=10,!,PA=9;PA=P),
+    vector_element(Pool,PA,Vec),%%%
+    stack_vector(Vec,Len0),
+    (Disp==color,!,Len=Len0;Len=Len0/4),
+    Psize=W*N*SH,
+    Top=C*W*SH,
+    set_image_one_pe(0,Len,Psize,Top,W,SH,Disp,Vec,I),%%
+    set_image(C+1,N,S,W,SH,Disp,Pool,I);
+
+set_image_one_pe(C,C,Psize,Top,W,SH,Disp,Vec,I):-!;
+set_image_one_pe(C,Len,Psize,Top,W,SH,Disp,Vec,I):-
+    (Disp==color,!,vector_element(Vec,C,P);
+     vector_element(Vec,C*4  ,P1),
+     vector_element(Vec,C*4+1,P2),
+     vector_element(Vec,C*4+2,P3),
+     vector_element(Vec,C*4+3,P4),
+     P={P1,P2,P3,P4}),
+    set_image_one_plane(C*Psize+Top,W,SH,P,I),
+    set_image_one_pe(C+1,Len,Psize,Top,W,SH,Disp,Vec,I);
+
+set_image_one_plane(Pos,W,SH,0,_):-!;
+set_image_one_plane(Pos,W,SH,{0,0,0,0},_):-!;
+set_image_one_plane(Pos,W,SH,N,I):-!,
+    set_image_line_top(I,Pos,SH,W,N),
+    copy_image_lines(0,SH,W,Pos,I);
+
+
+set_image_line_top(I,Pos,0,W,N):-!;
+set_image_line_top(I,Pos,C,W,N):-integer(N),!,
+    set_string_element(I,Pos,N),
+    set_image_line_top(I,Pos+W,C-1,W,N);
+set_image_line_top(I,Pos,C,W,N):-stack_vector(N,4),!,
+    vector_element(N,3-(C mod 4),N0),
+    set_string_element(I,Pos,N0),
+    set_image_line_top(I,Pos+W,C-1,W,N);
+
+
+copy_image_lines(N,N,W,_,_):-!;
+copy_image_lines(C,N,W,P,I):-
+    copy_image_one_line(W,P,I),
+    copy_image_lines(C+1,N,W,P+W,I);
+
+copy_image_one_line(1,P,I):-!;
+copy_image_one_line(W,P,I):-
+    move_string_elements(I,P,1,1),
+    copy_image_one_line(W-1,P+1,I);
+
+
+make_com(C,C,_,_,_,_,_,_,_,S,[]):-!;
+make_com(C,N,PX,PY,X,Y,W,H,D,S,L):-
+    Pos=C*5,
+    string_element(S,Pos,  A1 ),
+    string_element(S,Pos+1,A2 ),    
+    string_element(S,Pos+2,NA1),
+    string_element(S,Pos+3,NA2),    
+    string_element(S,Pos+4,GC),
+    A=A1 *65536+A2,
+    NA=NA1*65536+NA2,
+%%%%% edited by kamiko   91.8.27 %%%%%
+%    P=NA*100/(NA+A),    %%%% performance ratio
+    cal_ratio(NA,A,P),
+%%%%%
+    (GC==0,!,
+     L=[Draw|T],
+     performance_draw(P,PX,PY,X,Y,W,H,D,Draw);
+     GC==1,!,
+     L=[Draw|GcMarkL],
+     performance_draw(P,PX,PY,X,Y,W,H,D,Draw),
+     draw_gc(PX,PY,W,H,D,GcMarkL,T)),
+    make_com(C+1,N,PX,PY+H,X,Y,W,H,D,S,T);
+
+cal_ratio(NA,A,P):-
+    (2147483647-NA>A,
+     !,
+     NA + A > 0,        %%% 10.23
+     P=NA*100/(NA+A);
+     P=2147483647),
+     NA + A > 0,!;
+cal_ratio(NA,A,P):-
+    P=0;
+
+performance_draw(P,PX,PY,X,Y,W,H,D,Vec):-
+    Vec={transfer,{X,SY,PX,PY,W,H,copy}},
+    %Vec={draw_line,{PX,PY,PX+W,PY,3,solid,PP}},
+    N=P/10,
+    (N==10,!,N0=9;N=N0),
+    %PP=(9-N0)+2,
+    SY=Y+(9-N0)*H;
+
+draw_gc(X,Y,W,H,D,L,T):-!,
+    (D==color,!,OP=0,OP1=1;OP=reset,OP1=set),
+    PL=[(X+W/8,Y+H-H/8),
+        (X+W/2,Y+H/8),
+        (X+W-W/8,Y+H-H/8),
+        (X+W/8,Y+H-H/8)],
+    L=[
+        {draw_filled_polygon,{PL,0,fix,OP}},
+        {draw_polygon,{PL,1,solid,OP1}}
+      |T];
+
+scroll(Obj):-
+    Obj!count=<Obj!cycle-1,!;
+scroll(Obj):-
+    SC=Obj!scroll,
+    C=Obj!cycle,
+    W=Obj!sw,
+    H=Obj!sh,
+    P=Obj!pe,
+    cal_scroll(SC,C,N),
+    do_scroll(Obj!window,C,N,P,W,H),
+    Obj!count:=C-N;
+
+do_scroll(Win,C,N,P,W0,H0):-
+    SX=48+N*W0,
+    SY=20,
+    DX=48,
+    DY=20,
+    TW=W0*(C-N),
+    TH=H0*P,
+    X=48+(C-N)*W0,
+    Y=20,
+    W=N*W0,
+    H=H0*P,
+    :transfer(Win,SX,SY,DX,DY,TW,TH,copy),
+    :draw_filled_rectangle(Win,X,Y,W,H,1,fix,reset);
+
+cal_scroll(SC,C,N):-!,
+    N0=C/SC,
+    (N0<1,!,N=1;N=N0);
+
+create_pairs(L,default):-
+L=[
+%(0, {{65535,65535,65535},{0,0,0}}),
+(2, {{0,0,32000},{10000,0,55535}}),
+(4, {{0,0,64256},{0,30000,64256}}),
+(6, {{20000,50000,20000},{40000,60000,10000}}),
+(8, {{58880,60000,20000},{65000,30000,10000}}),
+(10,{{65000,20000,0},{65535,0,5000}})
+];
+
+create_pairs(L,icot_default):-
+L=[
+%(0, {{8000,8000,8000},{0,0,0}}),
+(2, {{19000,19000,19000},{19000,19000,19000}}),
+(4, {{0,0,64500},{0,0,64500}}),
+(6, {{0,40000,64500},{0,40000,64500}}),
+(8, {{0,50000,32000},{0,50000,32000}}),
+(10,{{64500,64500,0},{64500,64500,0}})
+%(12,{{64500,64500,64500},{0,0,0}}),
+%(14,{{0,64500,64500},{5000,5000,5000}})
+];
+create_pairs(L,matsuo):-
+L=[
+%(0, {{39680,63488,40192},{0,0,0}}),
+(2, {{0,6400,0},{0,13312,0}}),
+(4, {{0,19968,0},{0,26368,0}}),
+(6, {{0,32768,0},{0,39424,0}}),
+(8, {{0,45824,0},{0,52480,0}}),
+(10,{{0,58880,0},{0,65280,0}})
+%(12,{{0,23552,63488},{0,0,0}}),
+%(14,{{61184,65280,0},{5000,5000,5000}})
+]; 
+create_pairs(L,taki):-
+L=[
+%(0, {{8000,8000,8000},{0,0,0}}),
+(2, {{0,0,0},{0,0,32000}}),
+(4, {{0,0,64256},{0,32000,64256}}),
+(6, {{0,55296,44544},{0,64256,0}}),
+(8, {{44800,64256,0},{64256,64256,0}}),
+(10,{{64256,44800,15360},{64256,24832,25088}})
+%(12,{{64500,64500,64500},{0,0,0}}),
+%(14,{{0,64500,64500},{5000,5000,5000}})
+];
+create_pairs(L,sugino):-
+L=[
+%(0, {{8000,8000,8000},{0,0,0}}),
+(2, {{500,5300,800},{500,5300,800}}),
+(4, {{0,20000,500},{0,20000,500}}),
+(6, {{0,32000,1000},{0,32000,1000}}),
+(8, {{1300,50000,800},{1300,50000,800}}),
+(10,{{0,64256,0},{0,64256,0}})
+%(12,{{64500,64500,64500},{0,0,0}}),
+%(14,{{0,64500,64500},{5000,5000,5000}})
+];
+create_pairs(L,ichiyoshi):-      
+L=
+[
+%(0, {{8000,8000,8000},{0,0,0}}),
+(2, {{1800,300,800},{1800,300,800}}),
+(4, {{30000,0,30000},{30000,0,30000}}),
+(6, {{59000,300,59000},{59000,300,59000}}),
+(8, {{64256,30000,64256},{64256,30000,64256}}),
+(10,{{64256,64256,64256},{64256,64256,64256}})
+%(12,{{64500,64500,64500},{0,0,0}}),
+%(14,{{0,64500,64500},{5000,5000,5000}})
+];
+
+create_pairs(L,chikayama):-
+L=[
+%(0, {{18000,0,0},{0,0,0}}),
+(2, {{4864,0,9984},{0,7936,13824}}),
+(4, {{0,14848,17920},{4864,24832,14848}}),
+(6, {{14848,33792,11776},{24832,41984,8960}}),
+(8, {{34816,48896,5888},{44800,52992,2816}}),
+(10,{{54784,57856,0},{65280,65280,0}})
+%(12,{{64500,64500,64500},{0,0,0}}),
+%(14,{{65280,0,0},{5000,5000,5000}})
+];
+
+get_pool(Hv,Pool):-
+    new_stack_vector(Pool,10),
+    get_pool(0,10,Hv,Pool);
+
+get_pool(N,N,Hv,Pool):-!;
+get_pool(C,N,Hv,Pool):-
+    vector_element(Hv,C,Hv0),
+    heap_vector(Hv0,Size),
+    new_stack_vector(P,Size),
+    pool_to_sv(0,Size,Hv0,P),
+    vector_element(Pool,C,P),
+    get_pool(C+1,N,Hv,Pool);
+
+pool_to_sv(C,C,Hv0,P):-!;
+pool_to_sv(C,Size,Hv0,P):-
+    vector_element(Hv0,C,E),
+    vector_element(P,C,E),
+    pool_to_sv(C+1,Size,Hv0,P);
+
+put_pool(Obj):-
+    new_heap_vector(Hv,10),
+    :get_plane_count(#bitmap,Size0),
+    (Obj!display==color,!,Size=Size0;
+     Size=Size0*4),
+    new_heap_vector(Hv0,Size),
+    new_heap_vector(Hv1,Size),
+    new_heap_vector(Hv2,Size),
+    new_heap_vector(Hv3,Size),
+    new_heap_vector(Hv4,Size),
+    new_heap_vector(Hv5,Size),
+    new_heap_vector(Hv6,Size),
+    new_heap_vector(Hv7,Size),
+    new_heap_vector(Hv8,Size),
+    new_heap_vector(Hv9,Size),
+    set_subvector(Hv,0,10,
+        {Hv9,Hv8,Hv7,Hv6,Hv5,Hv4,Hv3,Hv2,Hv1,Hv0}),
+    SX=Obj!sx,
+    SY=Obj!sy,
+    SH=Obj!sh,
+    set_lookup_flag(Hv0,SX,SY+SH*0,SH,Obj!window),
+    set_lookup_flag(Hv1,SX,SY+SH*1,SH,Obj!window),
+    set_lookup_flag(Hv2,SX,SY+SH*2,SH,Obj!window),
+    set_lookup_flag(Hv3,SX,SY+SH*3,SH,Obj!window),
+    set_lookup_flag(Hv4,SX,SY+SH*4,SH,Obj!window),
+    set_lookup_flag(Hv5,SX,SY+SH*5,SH,Obj!window),
+    set_lookup_flag(Hv6,SX,SY+SH*6,SH,Obj!window),
+    set_lookup_flag(Hv7,SX,SY+SH*7,SH,Obj!window),
+    set_lookup_flag(Hv8,SX,SY+SH*8,SH,Obj!window),
+    set_lookup_flag(Hv9,SX,SY+SH*9,SH,Obj!window),
+    Obj!pool:=Hv;
+
+set_lookup_flag(Hv,SX,SY0,SH,Win):-
+    heap_vector(Hv,Size),
+    :get_label_height(Win,LBH),
+    SY=SY0+LBH,
+    new_string(S,Size,16),
+    :get_plane_count(#bitmap,PSize),
+    Line0=Size/PSize,
+    (Line0==1,!,Line=1;
+     Line0==4,SH>=4,!,Line=4;
+     Line0==4,!,Flag=on,Line=4),
+    :save_full_color_image(Win,S,SX+2,SY+1,16,Line),
+    %:restore_full_color_image(Win,S,SX-30,SY+1,16,Line),
+    (unbound(Flag),!;
+     Flag==on,!,
+     copy_extend_image(4-SH,S,0,PSize)),
+    string_to_vector(S,Hv);
+
+string_to_vector(S,Hv):-
+    string(S,Len,_),
+    heap_vector(Hv,Len),!,
+    st_to_vec(0,Len,S,Hv);
+
+st_to_vec(C,N,_,_):-C==N,!;
+st_to_vec(C,N,S,H):-
+    string_element(S,C,Ele),
+    set_vector_element(H,C,Ele),
+    st_to_vec(C+1,N,S,H);
+
+copy_extend_image(_,S,P,P):-!;
+copy_extend_image(4,S,_,P):-!,
+    :confirm(#messenger,"  Too Small Box for One PE  "),
+    fail;
+copy_extend_image(3,S,N,P):-!,
+    move_string_elements(S,N*4,1,1),
+    move_string_elements(S,N*4,1,2),
+    move_string_elements(S,N*4,1,3),
+    copy_extend_image(3,S,N+1,P);
+copy_extend_image(2,S,N,P):-!,
+    move_string_elements(S,N*4,2,2),
+    copy_extend_image(2,S,N+1,P);
+copy_extend_image(1,S,N,P):-!,
+    move_string_elements(S,N*4,1,3),
+    copy_extend_image(1,S,N+1,P);
+
+end.

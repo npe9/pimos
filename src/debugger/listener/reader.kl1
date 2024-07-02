@@ -1,0 +1,163 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_command_reader.
+:- public get/8, print/9, execute/9.
+:- with_macro pimos.
+
+get(RSC,RSC3,IN,IN2,MTrm,DEV,NewNum,WTrm) :- true|
+    RSC=[get(prompt,{_,Pro}),
+         get(debug,Dbg),
+         command(get_command(Status)),
+         command(event_number(Num))|RSC1],
+    take(Status,Dbg,Pro,~(Num+1),WTrm,IN,IN1,RSC1,RSC2),
+    RSC2=[command(put(WTrm)),
+          command(event_number(NewNum)),
+          macro_expander(Dbg,NewNum,WTrm,MTrm,DEV),
+          variable(get_variables(NewNum,Vars))|RSC3],
+    IN1=[init_varpool(Vars)|IN2].
+
+execute(non_existent(N),RSC,RSC2,IN,IN2,Goal,Dev,Num,WTrm) :- true|
+    RSC=[command(reset_command(_))|RSC1],
+    IN=[putf(" ~t: Event not found.~n",[N])|IN1],
+    get(RSC1,RSC2,IN1,IN2,Goal,Dev,Num,WTrm).
+otherwise.
+execute(Event,RSC,RSC1,IN,IN2,MTrm,DEV,NewNum,WTrm) :- true|
+    RSC=[get(debug,Dbg),
+         command(put(WTrm)),
+         command(event_number(NewNum)),
+         macro_expander(Dbg,NewNum,WTrm,MTrm,DEV),
+         variable(get_variables(NewNum,Vars))|RSC1],
+    exec(Event,WTrm,IN,IN1),
+    IN1=[init_varpool(Vars)|IN2].
+
+exec(abnormal(Error),WTrm,IN,IN1) :- true|
+    WTrm=abnormal(Error), IN1=IN.
+exec(normal(empty),WTrm,IN,IN1) :- true|
+    WTrm=normal(empty), IN1=IN.
+otherwise.
+exec(normal(WT),WTrm,IN,IN1) :- true|
+    IN=[putwtq(WT,3,4), nl, flush(Done)|IN1],
+    listener_utility:wait_unify(Done,WTrm,normal(WT)).
+
+
+print(non_existent(N),RSC,RSC2,IN,IN2,Goal,Dev,Num,WTrm) :- true|
+    RSC=[command(reset_command(_))|RSC1],
+    IN=[putf(" ~t: Event not found.~n",[N])|IN1],
+    get(RSC1,RSC2,IN1,IN2,Goal,Dev,Num,WTrm).
+otherwise.
+print(Event,RSC,RSC3,IN,IN3,MTrm,DEV,NewNum,WTrm) :- true|
+    RSC=[get(prompt,{_,Pro}),
+         get(debug,Dbg),
+         command(event_number(Num))|RSC1],
+    prompt(Pro,ProS,~(Num+1),IN,IN1,RSC1,RSC2),
+    IN1=[prompt(ProS), putwt_with_prefix(Event), getwt(WTrm)|IN2],
+    RSC2=[command(put(WTrm)),
+          command(event_number(NewNum)),
+          macro_expander(Dbg,NewNum,WTrm,MTrm,DEV),
+          variable(get_variables(NewNum,Vars))|RSC3],
+    IN2=[init_varpool(Vars)|IN3].
+
+% There is no take-command.
+take(non_existent,Dbg,Pro,N,WTrm,IN,IN3,RSC,RSC1) :- true|
+    status_mark(on,Dbg,IN,IN1),
+    prompt(Pro,ProS,N,IN1,IN2,RSC,RSC1),
+    IN2=[prompt(ProS), getwt(WTrm)|IN3].
+take(end_of_take(Pathname),_,_,_,WTrm,IN,IN1,RSC,RSC1) :- true|
+    RSC=[getenv(listener:echo,Echo)|RSC1],
+    end_of_take(Echo,Pathname,WTrm,IN,IN1).
+otherwise.
+take(Com,Dbg,Pro,N,WTrm,IN,IN2,RSC,RSC2) :- true|
+    RSC=[getenv(listener:echo,Echo)|RSC1],
+    status_mark(Echo,Dbg,IN,IN1),
+    command(Com,Echo,Pro,N,WTrm,IN1,IN2,RSC1,RSC2).
+
+end_of_take(normal(off),_,WTrm,IN,IN1) :- true|
+    IN=[flush(Done)|IN1],
+    listener_utility:wait_unify(Done,WTrm,normal(end_of_take)).
+otherwise.
+end_of_take(_,   Pathname,WTrm,IN,IN1) :- true|
+    IN=[putf("~n % End of take ( ~s ) %~n",[Pathname]), flush(Done)|IN1],
+    listener_utility:wait_unify(Done,WTrm,normal(end_of_take)).
+
+command(abnormal(Error),normal(off),_,_,WTrm,IN,IN1,RSC,RSC1) :- true|
+    WTrm=abnormal(Error), RSC1=RSC, IN1=IN.
+command(normal(Trm),normal(off),_,_,WTrm,IN,IN1,RSC,RSC1) :- true|
+    IN=[flush(Done)|IN1], RSC1=RSC,
+    listener_utility:wait_unify(Done,WTrm,normal(Trm)).
+otherwise.
+command(abnormal(Error),_,Pro,N,WTrm,IN,IN2,RSC,RSC1) :- true|
+    WTrm=abnormal(Error),
+    prompt(Pro,ProS,N,IN,IN1,RSC,RSC1),
+    IN1=[prompt(ProS), print_text(Error), putf(".~n",[])|IN2].
+command(normal(empty),_,Pro,N,WTrm,IN,IN2,RSC,RSC1) :- true|
+    prompt(Pro,ProS,N,IN,IN1,RSC,RSC1),
+    IN1=[prompt(ProS), putf(".~n",[]), flush(Done)|IN2],
+    listener_utility:wait_unify(Done,WTrm,normal(empty)).
+otherwise.
+command(normal(WT),_,Pro,N,WTrm,IN,IN2,RSC,RSC1) :- true|
+    prompt(Pro,ProS,N,IN,IN1,RSC,RSC1),
+    IN1=[prompt(ProS), putwtq(WT,10000,10000), putf(" .~n",[]), flush(Done)|IN2],
+    listener_utility:wait_unify(Done,WTrm,normal(WT)).
+
+
+prompt(Pro,ProS,N,IN,IN1,RSC,RSC1) :- true|
+    prompt0(Pro,ProL,N,IN,IN1,RSC,RSC1),
+    builtin#append_string(ProL,ProS).
+
+prompt0([S|Pro],ProL,N,IN,IN1,RSC,RSC1) :- string(S,_,_) |
+    ProL=[S|ProL1],
+    prompt0(Pro,ProL1,N,IN,IN1,RSC,RSC1).
+prompt0([nl|Pro],ProL,N,IN,IN1,RSC,RSC1) :- true|
+    set_string_element(" ",0,key#lf,S),
+    ProL=[S|ProL1],
+    prompt0(Pro,ProL1,N,IN,IN1,RSC,RSC1).
+prompt0([event_number|Pro],ProL,N,IN,IN1,RSC,RSC1) :- true|
+    ProL=[S|ProL1],
+    buffer_utility:integer_to_string(N,10,S),
+    prompt0(Pro,ProL1,N,IN,IN1,RSC,RSC1).
+prompt0([current_directory|Pro],ProL,N,IN,IN1,RSC,RSC2) :-true|
+    RSC=[getenv(task:directory,Status)|RSC1],
+    ProL=[S|ProL1],
+    prompt1(Status,S),
+    prompt0(Pro,ProL1,N,IN,IN1,RSC1,RSC2).
+prompt0([default_package|Pro],ProL,N,IN,IN2,RSC,RSC2) :- true|
+    RSC=[code(get_default_package(Status))|RSC1],
+    ProL=[S|ProL1],
+    prompt2(Status,S,IN,IN1),
+    prompt0(Pro,ProL1,N,IN1,IN2,RSC1,RSC2).
+prompt0([default_module|Pro],ProL,N,IN,IN2,RSC,RSC2) :- true|
+    RSC=[get(module,M)|RSC1],
+    IN=[term_to_string(M,S)|IN1],
+    ProL=[S|ProL1],
+    prompt0(Pro,ProL1,N,IN1,IN2,RSC1,RSC2).
+prompt0([macro_module|Pro],ProL,N,IN,IN2,RSC,RSC2) :- true|
+    RSC=[macro(current_macro(Status))|RSC1],
+    ProL=[S|ProL1],
+    prompt2(Status,S,IN,IN1),
+    prompt0(Pro,ProL1,N,IN1,IN2,RSC1,RSC2).
+prompt0([],ProL,_,IN,IN1,RSC,RSC1) :- true| ProL=[], IN1=IN, RSC1=RSC.
+
+prompt1(normal(String),S) :- string(String,_,_) | S=String.
+otherwise.
+prompt1(_,             S) :- true| S= "" .
+
+prompt2(normal(Term),S,IN,IN1) :- true| IN=[term_to_string(Term,S)|IN1].
+otherwise.
+prompt2(_,           S,IN,IN1) :- true| S= "" , IN1=IN.
+
+
+status_mark(normal(off),_,IN,IN1) :- true| IN1=IN.
+otherwise.
+status_mark(_,notrace,IN,IN1) :- true| IN=[nl|IN1].
+status_mark(_,trace,  IN,IN1) :- true| IN=[putf("~n{Trace}~n",[])|IN1].
+status_mark(_,spyr,   IN,IN1) :- true| IN=[putf("~n{SpyReduction}~n",[])|IN1].
+status_mark(_,spyf,   IN,IN1) :- true| IN=[putf("~n{SpyFork}~n",[])|IN1].
+
+
+
+

@@ -1,0 +1,1881 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_macro_driver.
+:- public driver/6, driver/4, atomTable/1.
+:- public distributeMessage/9.
+:- public extractNewVariable/5.
+:- public expandGoals/10.
+:- public makeUpGoals/3.
+:- with_macro pimos.
+
+driver(Err, Err0, Macro, KL1) :- true |
+    atomTable(Atom),
+    add_Position(Macro, Macro1),
+    expandMacro(KL1, [], Err, Err0, Atom, [], 0, Macro1, []).
+
+atomTable(Atom) :- true |
+    atom_table:cache_table(TableOut),
+    merge(TableIn, TableOut),
+    module_table:cache_table(ModOut),
+    merge(ModIn, ModOut),
+    atomTable(TableIn, ModIn, Atom).
+
+atomTable(Atom0, ModIn, [get_atom_table(Atom)|Cdr]) :- true |
+    Atom0={NewAtom, Atom},
+    atomTable(NewAtom, ModIn, Cdr).
+atomTable(Atom, Mod0, [get_module_table(Mod)|Cdr]) :- true |
+    Mod0={NewMod, Mod},
+    atomTable(Atom, NewMod, Cdr).
+atomTable(Atom, Mod, []) :- true | Atom=[], Mod=[].
+
+driver(Err, Err0, Var0, Var, Macro, KL1) :- true |
+    Var0=[defined(All)|Var1],
+    add_Position(Macro, Macro1),
+    expandMacro(KL1, [], Err, Err0, Var1, Var, 0, Macro1, All).
+
+add_Position([Cls-Pos|Cdr], OUT) :- true |
+    OUT=[Cls-Pos|OUTCdr],
+    add_Position(Cdr, OUTCdr).
+otherwise.
+add_Position([Cls|Cdr], OUT) :- true |
+%    OUT=[Cls-{[],[]}|OUTCdr],
+    OUT=[Cls-[]|OUTCdr],
+    add_Position(Cdr, OUTCdr).
+add_Position([], OUT) :- true | OUT=[].
+
+%%remove_Position([Cls-_|Cdr], OUT) :- true |
+%%    OUT=[Cls|OUTCdr],
+%%    remove_Position(Cdr, OUTCdr).
+%%otherwise.
+%%remove_Position([Cls|Cdr], OUT) :- true |
+%%    OUT=[Cls|OUTCdr],
+%%    remove_Position(Cdr, OUTCdr).
+%%remove_Position([], OUT) :- true | OUT=[].
+   
+checkArg(Err0, Err, Macro, List, Pos0, Pos) :- true |
+    checkArg(Macro, List0),
+   (list(List0) -> List0=List, Err0=Err;
+    otherwise;
+    true -> List=[pimos], Err0=[error("invalid macro declaration : :- with_macro ~W", [Macro], Pos0)|Err]),
+    Pos0=Pos.
+
+checkArg(vector({atom(','), atom(Macro0), Rest}), List0) :- true |
+    List0=[Macro0|List], checkArg(Rest, List).
+checkArg(atom(Macro), List0) :- true | List0=[Macro].
+otherwise.
+checkArg(_, List0) :- true | List0=0.
+
+%:- local_implicit kl1:oldnew, err:oldnew, var:oldnew, macro:shared.
+%checkUseModule(Clauses) --> &macro = 0 |
+%    &err <<= [warning("no with_macro declaraion. assumed `pimos'.", [])],
+%    &macro <= [pimos],
+%%%    getModuleAndExpandMacro([pimos], Clauses).
+%    &var <<= [get_module_table(ModTbl)],
+%    getModules(ModTbl, [pimos], Codes),
+%    &macro <= Codes,
+%    expandMacro(Clauses).
+%checkUseModule(Clauses) --> &macro = 1 |
+%  {{output(&kl1, Clauses)}}.
+%checkUseModule(Clauses) --> list(&macro) |
+%%%    getModuleAndExpandMacro(&macro, Clauses).
+%    &var <<= [get_module_table(ModTbl)],
+%    getModules(ModTbl, &macro, Codes),
+%    &macro <= Codes,
+%    expandMacro(Clauses).
+%otherwise.
+%checkUseModule(Clauses) --> true |
+%    &err <<= [error("illegal macro module : ~T", [&macro])],
+%%%  {{output(&kl1, Clauses)}}.
+%    &macro <= 0,
+%    checkUseModule(Clauses).
+
+:- local_implicit kl1:oldnew.
+output([Cls|Cdr]) --> true |
+    &kl1 <<= [Cls],
+    output(Cdr).
+output([]) -->true | true.
+
+%%
+%% expandMacro
+%%
+:- local_implicit kl1:oldnew, err:oldnew, stream:oldnew, cstream:oldnew, macro:shared, modtbl:stream.
+getModules(Macros, Codes) --> true |
+    getModules_(Macros, Codes),
+  {{prologue(&kl1, &err, &stream, &cstream, &modtbl, Codes)}}.
+
+getModules_([Macro|Rest], Codes0)--> true |
+    &modtbl <<= [get_module(Macro, Stat)],
+    checkModule(Macro, Stat, Codes0, Codes),
+    getModules(Rest, Codes).
+getModules_([], Codes) --> true | Codes=[].
+
+checkModule(_, normal(Macro), Codes0, Codes) --> true |
+  {{predicate_to_code(Macro, expand_macro, 6, Code0)}},
+%%    predicate_to_code(Macro, 7$my_super_macro_module, 1, SuperCode0)}},
+    checkMacroCode(Code0, Codes0, Codes).
+otherwise.
+checkModule(Macro, Stat, Codes0, Codes) --> true |
+    &err <<= [error("~t module : ~T", [Stat, Macro])],
+    Codes0=Codes.
+
+checkMacroCode(Code0, Codes0, Codes) --> code(Code0, _, _, _) |
+    Codes0=[Code0|Codes].
+otherwise.
+checkMacroCode(Code0, Codes0, Codes) --> true |
+    &err <<= [error("invalid macro code : ~t", [Code0])],
+    Codes0=Codes.
+
+getModules_last([pimos], Codes) --> true |
+    getModules_last_([pimos], Codes),
+  {{prologue(&kl1, &err, &stream, &cstream, &modtbl, Codes)}}.
+
+getModules_last_([pimos], Codes) --> true |
+    &modtbl <<= [get_module(pimos, Stat)],
+    checkModule_last(Stat, Codes).
+
+checkModule_last(normal(Macro), Codes) --> true |
+  {{predicate_to_code(Macro, expand_macro, 6, Code0)}},
+    checkMacroCode_last(Code0, Codes).
+otherwise.
+checkModule_last(Stat, Codes) --> true |
+    &err <<= [error("~t module : `pimos'.",[Stat])],
+    Codes=1.
+
+checkMacroCode_last(Code0, Codes) --> code(Code0, _, _, _) |
+    Codes=[Code0].
+otherwise.
+checkMacroCode_last(Code0, Codes) --> true |
+    &err <<= [error("invalid macro code : ~t", [Code0])],
+    Codes=1.
+
+:- local_implicit kl1:oldnew, err:oldnew, var:oldnew, macro:shared.
+%expandMacro([], _) --> true | true.
+%otherwise.
+expandMacro(MacroClauses, All) --> true |
+  {{pool:keyed_bag(Bag),
+    pool:keyed_set(Tbl),
+% added by murayama 93.7
+    pool:keyed_set(Cls),
+    append_clause(Cls, [get_all(Clauses0)], Cstream),
+%
+%%    pimos::atom_table:cache_table(Atom),
+    &var <<= [get_atom_table(Atom)],
+%%    Bag=[put('$sagi_macro_inf', Tbl)|Bag1],
+    store_env_value(Tbl, Tbl1, All),
+    distributeMessage_(&err, Tbl1, [], &var, Stream, Stream3),
+    distributeMessage(&err, Bag, [], Atom, [], 0, Macro, Stream),
+    expandMacro_(KL1, KL12, &err, &macro, Macro, Stream3, Stream2, Cstream, Cstream1, MacroClauses),
+% added by murayama 93.7
+    binded_clause(Clauses1, Clauses0),
+    add_Position(Clauses1, Clauses),
+    output(KL12, KL11, Clauses),
+%
+    epilogue(KL11, [], &err, Stream2, [], Cstream1, [], Macro),
+    makeUpClause(&kl1, KL1)}}.
+
+% added by murayama 93.7 94.2
+:-local_implicit cls:oldnew.
+append_clause([append_clause(FA-Cls0)|Cdr]) --> true |
+    &cls <<= [get_if_any_and_put(FA, Old, New)],
+  {{append(Old, Cls0, New)}},
+    append_clause(Cdr).
+append_clause([replace_clause(FA-Cls0)|Cdr]) --> true |
+    &cls <<= [put(FA, Cls0, _)],
+    append_clause(Cdr).
+append_clause([get_clauses(Cls0)|Cdr]) --> true |
+    &cls <<= [get_all(Cls0)],
+    append_clause(Cdr).
+append_clause([]) --> true | true.
+
+append([A|X], Y, Z) :- true |
+    Z=[A|Z1], append(X, Y, Z1).
+append([], Y, Z) :- true | Y=Z.
+
+binded_clause(Cls, [{_, Clauses}|Cdr]) :- true |
+    append(Clauses, Cls1, Cls),
+    binded_clause(Cls1, Cdr).
+binded_clause(Cls, []) :- true | Cls=[].
+%
+
+:-local_implicit tbl:oldnew.
+store_env_value([{Key,Value}|Cdr])--> true |
+  {{variable:wrap(Value, {_,WValue}, 100, 100)}},
+    &tbl <<= [put(Key, WValue, _)],
+    store_env_value(Cdr).
+store_env_value([])--> true | true.
+
+:- local_implicit kl1:oldnew, err:oldnew, macro:oldnew, stream:oldnew, cstream:oldnew.
+expandMacro_([vector({atom(':-'),vector({atom(module),Name})})-Pos|Cdr]) --> true |
+% added by murayama 94.2
+    &cstream <<= [get_clauses(Clauses0)],
+  {{binded_clause(Clauses1, Clauses0),
+    add_Position(Clauses1, Clauses),
+    output(&kl1, Clauses)}},
+%
+    module('module', Name, Pos),
+    expandMacro_(Cdr). 
+expandMacro_([vector({atom(':-'),vector({atom(macro_module),Name})})-Pos|Cdr]) --> true |
+% added by murayama 94.2
+    &cstream <<= [get_clauses(Clauses0)],
+  {{binded_clause(Clauses1, Clauses0),
+    add_Position(Clauses1, Clauses),
+    output(&kl1, Clauses)}},
+%
+    module('macro_module', Name, Pos),
+    expandMacro_(Cdr). 
+expandMacro_([vector({atom(':-'),vector({atom(inherit_macro),Name})})-Pos|Cdr]) --> true |
+    &kl1 <<= [vector({atom(':-'),vector({atom(inherit_macro),Name})})-Pos],
+    expandMacro_(Cdr). 
+expandMacro_([vector({atom(':-'),vector(Dec)})-Pos|Cdr]) --> vector_element(Dec, 0, atom(public)) |
+    &kl1 <<= [vector({atom(':-'),vector(Dec)})-Pos],
+    expandMacro_(Cdr).
+expandMacro_([vector({atom(':-'),vector({atom(with_macro), List})})-Pos0|Cdr]) --> true |
+    with_macro(List, Pos0),
+    expandMacro_(Cdr).
+expandMacro_([vector({atom(':-'),atom(with_macro)})-Pos|Cdr]) --> true |
+    with_macro(Pos),
+    expandMacro_(Cdr).
+expandMacro_([vector({atom(':-'),vector({atom(define),Symbol,Value})})-Pos|Cdr]) --> true |
+% 3rd arg is a dummy
+    define(on, yes, [], [], Symbol, Value, Pos, _),
+    expandMacro_(Cdr).
+expandMacro_([vector({atom(':-'),vector({atom(undefine),Symbol})})-Pos|Cdr]) --> true |
+    undefine(on, yes, [], Symbol, Pos),
+    expandMacro_(Cdr).
+otherwise.
+expandMacro_([vector({atom(':-'), vector({atom(switch),Symbol})})-Pos|Cdr]) --> true |
+   switch(on, yes, Symbol, Pos, Cdr, CdrOut),
+   expandMacro_(CdrOut).
+expandMacro_([vector({atom(':-'), vector({atom(if_equal), Symbol,Value})})-Pos|Cdr]) --> true |
+%% first two args are dummy.
+    if_equal(on, yes, Symbol, Value, Pos, Cdr, CdrOut),
+    expandMacro_(CdrOut).
+expandMacro_([vector({atom(':-'), vector({atom(if_not_equal), Symbol,Value})})-Pos|Cdr]) --> true |
+    if_not_equal(on, yes, Symbol, Value, Pos, Cdr, CdrOut),
+    expandMacro_(CdrOut).
+expandMacro_([vector({atom(':-'), vector({atom(if_defined),Symbol})})-Pos|Cdr]) -->  true |
+    if_defined(on, yes, Symbol, Pos, Cdr, CdrOut),
+    expandMacro_(CdrOut).
+expandMacro_([Term-Pos|Cdr]) --> Term=vector({atom(':-'), vector({atom(if_not_defined),Symbol})}) |
+    if_not_defined(on, yes, Symbol, Pos, Cdr, CdrOut),
+    expandMacro_(CdrOut).
+expandMacro_([wrap#(:- else)-Pos|Cdr]) --> true |
+    &err <<= [error("Can't find :- if_... before :- else",[], Pos)],
+    expandMacro_(Cdr).
+expandMacro_([wrap#(:- end_if)-Pos|Cdr]) --> true |
+    &err <<= [error("Can't find :- if_... before :- end_if",[], Pos)],
+    expandMacro_(Cdr).
+expandMacro_([wrap#(:- end_switch)-Pos|Cdr]) --> true |
+    &err <<= [error("Can't find :- switch before :- end_switch",[],Pos)],
+    expandMacro_(Cdr).
+expandMacro_([wrap#(:- default)-Pos|Cdr]) --> true |
+    &err <<= [error("Can't find :- switch before :- default",[],Pos)],
+    expandMacro_(Cdr).
+expandMacro_([Term-Pos|Cdr]) --> Term=vector({atom(':-'), vector({atom(case), _})}) |
+    &err <<= [error("Can't find :- switch before ~W", [Term],Pos)],
+    expandMacro_(Cdr).
+expandMacro_([])--> true | true.
+otherwise.
+expandMacro_(Clauses) --> true |
+  {{expandStart(&kl1, &err, &stream, &cstream, &macro(old), Clauses, CodeOut, CdrOut)}},
+    &macro <= CodeOut,
+    expandMacro_(CdrOut).
+
+check_value(variable(_),Stat0, Stat):- true | Stat:=Stat0+1.
+check_value(vector(Value), Stat0, Stat):- vector(Value,Size) |
+    check_value_vector(Value, Size, 0, Stat0, Stat).
+check_value(list(Value), Stat0, Stat):- Value = [Car|Cdr] |
+    check_value(Car, Stat0, Stat1),
+    check_value(Cdr, Stat1, Stat).
+check_value([Car|Cdr], Stat0, Stat):- true |
+    check_value(Car, Stat0, Stat1),
+    check_value(Cdr, Stat1, Stat).
+otherwise.
+check_value(_, Stat0, Stat):- true |
+    Stat = Stat0.
+check_value_vector(Value, Size, N, Stat0, Stat):- N < Size |
+    set_vector_element(Value, N, Elm, Elm, Value1),
+    check_value(Elm, Stat0, Stat1),
+    NN := N + 1,
+    check_value_vector(Value1, Size, NN, Stat1, Stat).
+check_value_vector(_, Size, N, Stat0, Stat):- N >= Size |
+    Stat = Stat0.
+
+regist_value(Err, Err1, Stream, Stream1, Symbol, Value, 0, Stat, Pos):- true |
+    Stream = ['$sagi_macro_inf'(put(Symbol, Value, Old))|Stream1],
+    overwrite_check(Err, Err1, Old, Symbol, Value, Pos),
+    Stat=replaced.
+otherwise.
+regist_value(Err, Err1, Stream, Stream1, Symbol, Value, _, Stat, Pos):- true |
+    Err = [error("invalid macro declaration : :- define(~T, ~W)",[Symbol, Value], Pos)|Err1],
+    Stream=Stream1,
+    Stat=not_replaced.
+
+overwrite_check(Err, Err1, {}, _, _, _):- true | Err=Err1.
+otherwise.
+overwrite_check(Err, Err1, _, Symbol, Value, Pos):-  true |
+    Err = [warning("'~T' is redefined : :- define(~T, ~W)",[Symbol, Symbol, Value], Pos)|Err1].
+
+check_empty(Err, Err1, Symbol, {}, Pos):- true |
+    Err = [warning("'~T' hasn't been defined yet: :- undefine(~T)",[Symbol,Symbol], Pos)|Err1].
+otherwise.
+check_empty(Err, Err1, _, _, _) :- true | Err=Err1.
+    
+check_replace(replaced, _, New_Value, OUT):- true | OUT=New_Value.
+check_replace(not_replaced, Old_Value, _, OUT):- true | OUT=Old_Value.
+
+check_if_defined(Tbl, Tbl1, no, YorN1, Symbol, Value):- true |
+    Tbl=['$sagi_macro_inf'(get_and_put(Symbol, Value, Value))|Tbl1],
+    YorN1=yes.
+check_if_defined(Tbl, Tbl1, yes, YorN1, Symbol, Value):- true |
+    Tbl=Tbl1, Value=nil, YorN1=no.
+
+check_if_not_defined(Tbl, Tbl1, yes, YorN1, Symbol, Value):- true |
+    Tbl=Tbl1, YorN1=yes, Value=nil.
+check_if_not_defined(Tbl, Tbl1, no, YorN1, Symbol, Value):- true |
+    Tbl=['$sagi_macro_inf'(get_and_put(Symbol, Value, Value))|Tbl1],
+    YorN1=no.
+
+%%%%%%%%%%%%%%%%%%%%
+%  :- switch_start
+%%%%%%%%%%%%%%%%%%%%
+
+switch_start(ONOFF, Sym, YorN, [vector({atom(':-'), vector(Dec0)})-PosCase|Cdr], Cont, PosSw) -->
+    vector(Dec0, N), N>1 |
+  {{set_vector_element(Dec0, 0, Func0, Func, Dec1)}},  
+    isCase(ONOFF, Sym, YorN, Func0, Func, Dec1, PosCase, Cdr, Cont, PosSw).
+switch_start(_, _, _, [wrap#(:-end_switch)-Pos|Cdr], Cont, _) -->
+    &err <<= [warning("enpty switch.", [], Pos)],
+    Cont=Cdr.
+otherwise.
+switch_start(ONOFF, Sym, YorN, [_|Cdr], Cont, PosSw) --> true |
+    errorAndResume(ONOFF, Sym, YorN, Cdr, Cont, PosSw).
+
+%
+% Special process for the first case. Why Special ?
+%
+isCase(on, Sym, no, atom(case), Func, Dec0, _, Cdr, Cont, _) --> vector(Dec0, N) |
+    &stream <<= ['$sagi_macro_inf'(get_and_put(Sym, Value, Value))],
+  {{unify_values(1, N, Dec0, Value, no, YorN),
+    orAnswer(YorN, off, NewSW)}},
+    Func=atom(case),
+    mode_case(on, YorN, NewSW, Sym, Value, Cdr, Cont).
+otherwise.
+isCase(_, Sym, no, atom(case), Func, Dec0, _, Cdr, Cont, _) --> vector(Dec0, _) |
+    &stream <<= ['$sagi_macro_inf'(get_and_put(Sym, Value, Value))], Func=atom(case),
+    mode_case(off, no, off, Sym, Value, Cdr, Cont).
+otherwise.
+isCase(on, Sym, yes, atom(case), Func, _, _, Cdr, Cont, PosSw) --> true |
+    Func=atom(case),
+    &err <<= [error("'~T' hasn't been defined yet : :- switch(~T)",[Sym,Sym],PosSw)],
+    mode_case(off, no, off, Sym, nil, Cdr, Cont).
+otherwise.
+isCase(ONOFF, Sym, YorN, Func0, Func, _, _, Cdr, Cont, PosSw) --> true |
+    Func0=Func,
+    errorAndResume(ONOFF, Sym, YorN, Cdr, Cont, PosSw).
+
+errorAndResume(_, Sym, _, Cdr, Cont, PosSw) --> true |
+    &err <<= [error("'~T' hasn't been defined yet : :- switch(~T)",[Sym,Sym],PosSw)],
+    mode_case(off, no, off, Sym, nil, Cdr, Cont).
+
+%%switch_start(ONOFF, Symbol, no, [Term-_|Cdr], CdrOut, _)--> Term = vector({atom(':-'),vector({atom(case), Case})}) |
+%%   (ONOFF=on -> &stream <<= ['$sagi_macro_inf'(get_and_put(Symbol, Value, Value))],
+%%      {{unify_value(Case, Value, YorN)}},
+%%        mode_case(on, YorN, Symbol, Value, Cdr, CdrOut);
+%%    otherwise;
+%%    true -> mode_case(off, no, Symbol, Value, Cdr, CdrOut)).
+%%switch_start(on, Symbol, yes, [Term-_|Cdr], CdrOut, Pos)--> Term = vector({atom(':-'),vector({atom(case), _})}) |
+%%    &err <<= [error("'~T' hasn't been defined yet : :- switch(~T)",[Symbol,Symbol],Pos)],
+%%    mode_case(off, no, Symbol, nil, Cdr, CdrOut).
+%%otherwise.
+%%switch_start(_, Symbol, _, Term, CdrOut, Pos)--> true |
+%%    &err <<= [error("Can't find :- case() after switch(~T)",[Symbol],Pos)],
+%%    mode_case(off, no, Symbol, nil, Term, CdrOut).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   mode_case
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+mode_case(_, _, _, Symbol, _, [], CdrOut)--> true |
+    &err <<= [error("Can't find :- end_switch. for :- switch(~T). before EOF",[Symbol])],
+    CdrOut=[].
+%mode_case(on, no, Symbol, _, [wrap#(:- end_switch)-Pos|Cdr], CdrOut)--> true |
+%    &err <<= [warning("Any case doesn't match in :- switch(~T)... :- end_switch.",[Symbol],Pos)],
+%    CdrOut=Cdr.
+mode_case(on,yes,SW,Symbol,Value,[vector({atom(':-'),vector({atom(module),Name})})-Pos|Cdr],CdrOut)
+    --> true |
+    module('module', Name, Pos),
+    mode_case(on,yes,SW,Symbol,Value,Cdr,CdrOut). 
+mode_case(on,yes,SW,Symbol,Value,[vector({atom(':-'),vector({atom(macro_module),Name})})-Pos|Cdr],CdrOut)
+    --> true |
+    module('macro_module', Name, Pos),
+    mode_case(on,yes,SW,Symbol,Value,Cdr,CdrOut). 
+mode_case(on,yes,SW,Symbol,Value,[vector({atom(':-'),vector({atom(inherit_macro),Name})})-Pos|Cdr],CdrOut)
+    --> true |
+    &kl1 <<= [vector({atom(':-'),vector({atom(inherit_macro),Name})})-Pos],
+    mode_case(on,yes,SW,Symbol,Value,Cdr,CdrOut). 
+mode_case(on,yes,SW,Symbol,Value,[vector({atom(':-'),vector(Dec)})-Pos|Cdr],CdrOut)
+    --> vector_element(Dec, 0, atom(public)) |
+    &kl1 <<= [vector({atom(':-'),vector(Dec)})-Pos],
+    mode_case(on,yes,SW,Symbol,Value,Cdr,CdrOut).
+otherwise.
+mode_case(_, _, _, _, _, [wrap#(:- end_switch)-_|Cdr], CdrOut)--> true |
+    CdrOut = Cdr.
+mode_case(ONOFF, YorN, SW, Symbol, Value, [vector({atom(':-'),vector({atom(with_macro), List})})-Pos0|Cdr],CdrOut) --> true |    
+   (ONOFF=on, YorN=yes -> with_macro(List, Pos0);
+    otherwise;
+    true -> true),
+    mode_case(ONOFF, YorN, SW, Symbol, Value, Cdr, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value, [wrap#(:- with_macro)-Pos|Cdr], CdrOut) --> true|
+   (ONOFF=on, YorN=yes -> with_macro(Pos);
+    otherwise;
+    true -> true),
+    mode_case(ONOFF, YorN, SW, Symbol, Value, Cdr, CdrOut).
+%%mode_case(ONOFF, YorN0,  Symbol, Value, [vector({atom(':-'), vector({atom(case), Case})})-Pos|Cdr], CdrOut) --> true |
+%%   (ONOFF=on, YorN=no ->
+%%      {{unify_value(Case, Value, YorN1)}},
+%%        mode_case(on, YorN1, Symbol, Value, Cdr, CdrOut);
+%%    otherwise;
+%%    true -> mode_case(off, no, Symbol, Value, Cdr, CdrOut)).
+%%  {{unify_value(Case, Value, YorN1),
+%%    orAnswer(YorN0, YorN1, YorN)}},
+%%    mode_case(on, YorN, Symbol, Value, Cdr, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value, [vector({atom(':-'), atom(default)})-_|Cdr], CdrOut) --> true |
+   (ONOFF=on, SW=off -> mode_case(on, yes, SW, Symbol, Value, Cdr, CdrOut);
+    otherwise;
+    true -> mode_case(off, no, SW, Symbol, Value, Cdr, CdrOut)).
+mode_case(ONOFF, YorN, SW, Symbol, Value, [vector({atom(':-'), vector({atom(define), WSymbol0, New_Value})})-Pos|Cdr], CdrOut)--> true |
+    define(ONOFF, YorN, Symbol, Value, WSymbol0, New_Value, Pos, Value_checked),
+    mode_case(ONOFF, YorN, SW, Symbol, Value_checked, Cdr, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value, [vector({atom(':-'), vector({atom(undefine), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    undefine(ONOFF, YorN, Symbol, WSymbol0, Pos),
+    mode_case(ONOFF, YorN, SW, Symbol, Value, Cdr, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value,
+    [vector({atom(':-'), vector({atom(if_equal), WSymbol0, Value0})})-Pos|Cdr], CdrOut)    --> true |
+   if_equal(ONOFF, YorN, WSymbol0, Value0, Pos, Cdr, CdrOut0),
+   mode_case(ONOFF, YorN, SW, Symbol, Value, CdrOut0, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value,
+        [vector({atom(':-'), vector({atom(if_not_equal), WSymbol0, Value0})})-Pos|Cdr], CdrOut)
+         --> true |
+    if_not_equal(ONOFF, YorN, WSymbol0, Value0, Pos, Cdr, CdrOut0),
+    mode_case(ONOFF, YorN, SW, Symbol, Value, CdrOut0, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value, [Term-Pos|Cdr], CdrOut)
+    -->Term=vector({atom(':-'), vector({atom(switch), WSymbol0})}) |
+    switch(ONOFF, YorN, WSymbol0, Pos, Cdr, CdrOut0),
+    mode_case(ONOFF, YorN, SW, Symbol, Value, CdrOut0, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value, [vector({atom(':-'), vector({atom(if_defined), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    if_defined(ONOFF, YorN, WSymbol0, Pos, Cdr, CdrOut0),
+    mode_case(ONOFF, YorN, SW, Symbol, Value, CdrOut0, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value, [vector({atom(':-'), vector({atom(if_not_defined), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    if_not_defined(ONOFF, YorN, WSymbol0, Pos, Cdr, CdrOut0),
+    mode_case(ONOFF, YorN, SW, Symbol, Value, CdrOut0, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value, [wrap#(:- else)-Pos|Cdr], CdrOut)--> true |
+    &err <<= [error("Can't find :- if_... before :- else",[],Pos)],
+    mode_case(ONOFF, YorN, SW, Symbol, Value, Cdr, CdrOut).
+mode_case(ONOFF, YorN, SW, Symbol, Value, [wrap#(:- end_if)-Pos|Cdr], CdrOut)--> true |
+    &err <<= [error("Can't find :- if_... before :- end_if",[],Pos)],
+    mode_case(ONOFF, YorN, SW, Symbol, Value, Cdr, CdrOut).
+otherwise.
+mode_case(ONOFF, YorN, SW, Symbol, Value, [vector({atom(':-'), vector(Dec0)})-Pos|Cdr], CdrOut) -->
+        vector(Dec0, N), N>1 |
+ {{set_vector_element(Dec0, 0, Func0, Func, Dec)}},
+   case(ONOFF, YorN, SW, Symbol, Value, Func0, Func, Dec, Pos, Cdr, CdrOut).
+%%   (ONOFF=on, YorN=no ->
+%%      {{unify_value(Case, Value, YorN1)}},
+%%        mode_case(on, YorN1, Symbol, Value, Cdr, CdrOut);
+%%    otherwise;
+%%    true -> mode_case(off, no, Symbol, Value, Cdr, CdrOut)).
+otherwise.
+mode_case(ONOFF, YorN, SW, Symbol, Value, [Term|Cdr], CdrOut)--> true |
+   expandOrdinaryClauseInSwitch(ONOFF, YorN, SW, Symbol, Value, Term, Cdr, CdrOut).
+%%   (ONOFF=on, YorN=yes ->
+%%      {{expandStart(&kl1, &err, &stream, &macro(old), [Term|Cdr], CodeOut, CdrOut0)}},
+%%        &macro <= CodeOut,
+%%        mode_case(on, yes, Symbol, Value, CdrOut0, CdrOut);
+%%    otherwise;
+%%    true -> mode_case(ONOFF, YorN, Symbol, Value, Cdr, CdrOut)).
+
+check_if_equal(off, _, Symbol, Value, Cdr, CdrOut, _)--> true |
+    mode_if(off, no, Symbol, Value, Cdr, CdrOut).
+check_if_equal(on, yes, Symbol, Value, Cdr, CdrOut, Pos)--> true |
+    &err <<= [error("'~T' hasn't been defined yet : :- if_equal(~T, ~W)",[Symbol,Symbol, Value],Pos)],
+    mode_if(off, no, Symbol, Value, Cdr, CdrOut).
+check_if_equal(on, no, Symbol, Value, Cdr, CdrOut, _)--> true |
+    &stream <<= ['$sagi_macro_inf'(get_and_put(Symbol, Def_Value, Def_Value))],
+{{    unify_value(Value, Def_Value, YorN)}},
+    mode_if(on, YorN, Symbol, Value, Cdr, CdrOut).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   mode_if
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+mode_if(_, _, _, _, [], CdrOut)--> true |
+    &err <<= [error("Can't find :- end_if. before EOF",[])],
+    CdrOut=[].
+mode_if(_, _, _, _, [wrap#(:- end_if)-_|Cdr], CdrOut)--> true |
+    CdrOut=Cdr.
+mode_if(on,yes,Symbol,Value,[vector({atom(':-'),vector({atom(module),Name})})-Pos|Cdr],CdrOut)
+    --> true |
+    module('module', Name, Pos),
+    mode_if(on,yes,Symbol,Value,Cdr,CdrOut). 
+mode_if(on,yes,Symbol,Value,[vector({atom(':-'),vector({atom(macro_module),Name})})-Pos|Cdr],CdrOut)
+    --> true |
+    module('macro_module', Name, Pos),
+    mode_if(on,yes,Symbol,Value,Cdr,CdrOut). 
+mode_if(on,yes,Symbol,Value,[vector({atom(':-'),vector({atom(inherit_macro),Name})})-Pos|Cdr],CdrOut)
+    --> true |
+    &kl1 <<= [vector({atom(':-'),vector({atom(inherit_macro),Name})})-Pos],
+    mode_if(on,yes,Symbol,Value,Cdr,CdrOut). 
+mode_if(on,yes,Symbol,Value,[vector({atom(':-'),vector(Dec)})-Pos|Cdr],CdrOut)
+    --> vector_element(Dec, 0, atom(public)) |
+    &kl1 <<= [vector({atom(':-'),vector(Dec)})-Pos],
+    mode_if(on,yes,Symbol,Value,Cdr,CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value, [vector({atom(':-'),vector({atom(with_macro), List})})-Pos0|Cdr],CdrOut) --> true |    
+   (ONOFF=on, YorN=yes -> with_macro(List, Pos0);
+    otherwise;
+    true -> true),
+    mode_if(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value, [wrap#(:- with_macro)-Pos|Cdr], CdrOut) --> true|
+   (ONOFF=on, YorN=yes -> with_macro(Pos);
+    otherwise;
+    true -> true),
+    mode_if(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value, [wrap#(:- else)-_|Cdr], CdrOut) --> true |
+   (ONOFF=on, YorN=no -> mode_else(on, yes, Symbol, Value, Cdr, CdrOut);
+    otherwise;
+    true -> mode_else(off, no, Symbol, Value, Cdr, CdrOut)).
+mode_if(ONOFF, YorN, Symbol, Value, [vector({atom(':-'), vector({atom(define), WSymbol0, New_Value})})-Pos|Cdr], CdrOut)--> true |
+    define(ONOFF, YorN, Symbol, Value, WSymbol0, New_Value, Pos, Value_checked),
+    mode_if(ONOFF, YorN, Symbol, Value_checked, Cdr, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value, [vector({atom(':-'), vector({atom(undefine), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    undefine(ONOFF, YorN, Symbol, WSymbol0, Pos),
+    mode_if(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value,
+    [vector({atom(':-'), vector({atom(if_equal), WSymbol0, Value0})})-Pos|Cdr], CdrOut)    --> true |
+    if_equal(ONOFF, YorN, WSymbol0, Value0, Pos, Cdr, CdrOut0),
+    mode_if(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value,
+        [vector({atom(':-'), vector({atom(if_not_equal), WSymbol0, Value0})})-Pos|Cdr], CdrOut)
+             --> true |
+    if_not_equal(ONOFF, YorN, WSymbol0, Value0, Pos, Cdr, CdrOut0),
+    mode_if(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+otherwise.
+mode_if(ONOFF, YorN, Symbol, Value, [Term-Pos|Cdr], CdrOut)
+    -->Term=vector({atom(':-'), vector({atom(switch), WSymbol0})}) |
+    switch(ONOFF, YorN, WSymbol0, Pos, Cdr, CdrOut0),
+    mode_if(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value, [vector({atom(':-'), vector({atom(if_defined), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    if_defined(ONOFF, YorN, WSymbol0, Pos, Cdr, CdrOut0),
+    mode_if(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value, [vector({atom(':-'), vector({atom(if_not_defined), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    if_not_defined(ONOFF, YorN, WSymbol0, Pos, Cdr, CdrOut0),
+    mode_if(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value, [Term-Pos|Cdr], CdrOut)--> Term=vector({atom(':-'), vector({atom(case), _})}) |
+    &err <<= [error("Can't find :- switch(). before ~W",[Term],Pos)],
+    mode_if(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value, [wrap#(:- default)-Pos|Cdr], CdrOut) --> true |
+    &err <<= [error("Can't find :- switch(). before :- default",[],Pos)],
+    mode_if(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_if(ONOFF, YorN, Symbol, Value, [wrap#(:- end_switch)-Pos|Cdr], CdrOut) --> true |
+    &err <<= [error("Can't find :- switch(). before :- end_switch",[],Pos)],
+    mode_if(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+otherwise.
+mode_if(ONOFF, YorN, Symbol, Value, [Term|Cdr], CdrOut)--> true |
+   (ONOFF=on, YorN=yes ->
+      {{expandStart(&kl1, &err, &stream, &cstream, &macro(old), [Term|Cdr], CodeOut,CdrOut0)}},
+        &macro <= CodeOut,
+        mode_if(on, yes, Symbol, Value, CdrOut0, CdrOut);
+    otherwise;
+    true -> mode_if(ONOFF, YorN, Symbol, Value, Cdr, CdrOut)).
+
+check_if_not_equal(off, _, Symbol, Value, Cdr, CdrOut,_)--> true |
+    mode_if(off, no, Symbol, Value, Cdr, CdrOut).
+check_if_not_equal(on, yes, Symbol, Value, Cdr, CdrOut, Pos)--> true |
+    &err <<= [error("'~T' hasn't been defined yet : :- if_not_equal(~T, ~W)", [Symbol,Symbol, Value], Pos)],
+    mode_if(off, no, Symbol, Value, Cdr, CdrOut).
+check_if_not_equal(on, no, Symbol, Value, Cdr, CdrOut, _)--> true |
+    &stream <<= ['$sagi_macro_inf'(get_and_put(Symbol, Def_Value, Def_Value))],
+{{    unify_value(Value, Def_Value, YorN0),
+    if_not_equal_filter(YorN0, YorN)}},
+    mode_if(on, YorN, Symbol, Value, Cdr, CdrOut).
+
+if_not_equal_filter(yes, OUT):- true | OUT=no.
+if_not_equal_filter(no, OUT):- true | OUT=yes.
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%    mode_else
+%%%%%%%%%%%%%%%%%%%%%%%%
+mode_else(_, _, _, _, [], CdrOut)--> true |
+    &err <<= [error("Can't find :- end_if. before EOF",[])],
+    CdrOut=[].
+mode_else(_, _, _, _, [wrap#(:- end_if)-_|Cdr], CdrOut)--> true |
+    CdrOut=Cdr.
+mode_else(on,yes,Symbol,Value,[vector({atom(':-'),vector({atom(module),Name})})-Pos|Cdr],CdrOut)
+    --> true |
+    module('module', Name, Pos),
+    mode_else(on,yes,Symbol,Value,Cdr,CdrOut). 
+mode_else(on,yes,Symbol,Value,[vector({atom(':-'),vector({atom(macro_module),Name})})-Pos|Cdr],CdrOut)
+    --> true |
+    module('macro_module', Name, Pos),
+    mode_else(on,yes,Symbol,Value,Cdr,CdrOut). 
+mode_else(on,yes,Symbol,Value,[vector({atom(':-'),vector({atom(inherit_macro),Name})})-Pos|Cdr],CdrOut)
+    --> true |
+    &kl1 <<= [vector({atom(':-'),vector({atom(inherit_macro),Name})})-Pos],
+    mode_else(on,yes,Symbol,Value,Cdr,CdrOut). 
+mode_else(on,yes,Symbol,Value,[vector({atom(':-'),vector(Dec)})-Pos|Cdr],CdrOut)
+    --> vector_element(Dec, 0, atom(public)) |
+    &kl1 <<= [vector({atom(':-'),vector(Dec)})-Pos],
+    mode_else(on,yes,Symbol,Value,Cdr,CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [vector({atom(':-'),vector({atom(with_macro), List})})-Pos0|Cdr],CdrOut) --> true |    
+   (ONOFF=on, YorN=yes -> with_macro(List, Pos0);
+    otherwise;
+    true -> true),
+    mode_else(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [wrap#(:- with_macro)-Pos|Cdr], CdrOut) --> true|
+   (ONOFF=on, YorN=yes -> with_macro(Pos);
+    otherwise;
+    true -> true),
+    mode_else(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [vector({atom(':-'), vector({atom(define), WSymbol0, New_Value})})-Pos|Cdr], CdrOut)--> true |
+    define(ONOFF, YorN, Symbol, Value, WSymbol0, New_Value, Pos, Value_checked),
+    mode_else(ONOFF, YorN, Symbol, Value_checked, Cdr, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [vector({atom(':-'), vector({atom(undefine), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    undefine(ONOFF, YorN, Symbol, WSymbol0, Pos),
+    mode_else(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value,
+    [vector({atom(':-'), vector({atom(if_equal), WSymbol0, Value0})})-Pos|Cdr], CdrOut)    --> true |
+    if_equal(ONOFF, YorN, WSymbol0, Value0, Pos, Cdr, CdrOut0),
+    mode_else(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [vector({atom(':-'), vector({atom(if_not_equal), WSymbol0, Value0})})-Pos|Cdr], CdrOut)    --> true |
+    if_not_equal(ONOFF, YorN, WSymbol0, Value0, Pos, Cdr, CdrOut0),
+    mode_else(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value,
+        [vector({atom(':-'), vector({atom(switch), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    switch(ONOFF, YorN, WSymbol0, Pos, Cdr, CdrOut0),
+    mode_else(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [vector({atom(':-'), vector({atom(if_defined), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    if_defined(ONOFF, YorN, WSymbol0, Pos, Cdr, CdrOut0),
+    mode_else(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [vector({atom(':-'), vector({atom(if_not_defined), WSymbol0})})-Pos|Cdr], CdrOut) --> true |
+    if_not_defined(ONOFF, YorN, WSymbol0, Pos, Cdr, CdrOut0),
+    mode_else(ONOFF, YorN, Symbol, Value, CdrOut0, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [wrap#(:- else)-Pos|Cdr], CdrOut)--> true |
+    &err <<= [error("Can't find :- if_... before :- else",[],Pos)],
+    mode_else(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [Term-Pos|Cdr], CdrOut)--> Term=vector({atom(':-'), vector({atom(case), _})}) |
+    &err <<= [error("Can't find :- switch(). before ~W",[Term],Pos)],
+    mode_else(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [wrap#(:- default)-Pos|Cdr], CdrOut) --> true |
+    &err <<= [error("Can't find :- switch(). before :-default",[],Pos)],
+    mode_else(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+mode_else(ONOFF, YorN, Symbol, Value, [wrap#(:- end_switch)-Pos|Cdr], CdrOut) --> true |
+    &err <<= [error("Can't find :- switch(). before :- end_switch",[],Pos)],
+    mode_else(ONOFF, YorN, Symbol, Value, Cdr, CdrOut).
+otherwise.
+mode_else(ONOFF, YorN, Symbol, Value, [Term|Cdr], CdrOut)--> true |
+   (ONOFF=on, YorN=yes ->
+      {{expandStart(&kl1, &err, &stream, &cstream, &macro(old), [Term|Cdr], CodeOut, CdrOut0)}},
+        &macro <= CodeOut,
+        mode_else(on, yes, Symbol, Value, CdrOut0, CdrOut);
+    otherwise;
+    true -> mode_else(ONOFF, YorN, Symbol, Value, Cdr, CdrOut)).
+
+:- local_implicit kl1:oldnew, err:oldnew, stream:oldnew, cstream:oldnew.
+expandStart([MacCode|CdrCode], [Cls0-Pos0|Cdr], CodeOut, CdrOut) --> code(MacCode, _, _, _) |
+  {{kl1cmp_reader:count_variables(Cls0, Cls1, 0, Nv),
+    kl1cmp_vargen:variable_generator(Nv, _, Var),
+    extractNewVariable(Var, [], &stream, MacroStream),
+    setPosition(&kl1, Pos0, Pos1, Kl1Cls),
+    setErrPosition(&err, Pos1, _, Err),
+    expandClause(Kl1Cls, [], Err, [], [MacCode|CdrCode], MacroStream, [], &cstream, Cls1)}},
+    CodeOut=[MacCode|CdrCode],
+    CdrOut=Cdr.
+%%otherwise.
+%%% this is for ....; ....; ...
+%%% commented out by D.Sekita
+%%expandStart([MacCode|CdrCode], [Cls0-Pos0|Cdr], CodeOut, CdrOut) --> code(MacCode, _, _, _) |
+%%{{  kl1cmp_reader:count_variables(Cls0, Cls1, 0, Nv),
+%%    kl1cmp_vargen:variable_generator(Nv, _, Var),
+%%    extractNewVariable(Var, [], &stream, MacroStream),
+%%    CodeOut=[MacCode|CdrCode],
+%%    CdrOut=Cdr,
+%%    setPosition(&kl1, Pos0, Pos1, Kl1Cls),
+%%    setErrPosition(&err, Pos1, _, Err),
+%%    expandClause(KL1Cls, [], Err, [], [MacCode|CdrCode], MacroStream, [], Cls1)}}.
+expandStart([], Clauses, CodeOut, CdrOut) --> true |
+    &err <<= [warning("no with_macro declaraion. assumed `pimos'.", [])],
+%%    Macro=[pimos],
+%%    getModuleAndExpandMacro([pimos], Clauses).
+    &stream <<= ['$sagi_var_inf'(get_module_table(ModTbl))],
+  {{getModules_last(&kl1, &err, &stream, &cstream, [pimos], ModTbl, [pimos], Codes)}},
+    CodeOut=Codes,
+    CdrOut=Clauses.
+expandStart(0, Clauses, CodeOut, CdrOut) --> true |
+    &err <<= [warning("no with_macro declaraion. assumed `pimos'.", [])],
+%%    Macro=[pimos],
+%%    getModuleAndExpandMacro([pimos], Clauses).
+    &stream <<= ['$sagi_var_inf'(get_module_table(ModTbl))],
+  {{getModules_last(&kl1, &err, &stream, &cstream, [pimos], ModTbl, [pimos], Codes)}},
+    CodeOut=Codes,
+    CdrOut=Clauses.
+expandStart(1, [Term|Cdr], CodeOut, CdrOut) --> true |
+    &kl1 <<= [Term],
+    CodeOut=1,
+    CdrOut=Cdr.
+otherwise.
+expandStart(Macro, Clauses, CodeOut, CdrOut) --> list(Macro) |
+    &stream <<= ['$sagi_var_inf'(get_module_table(ModTbl))],
+  {{getModules(&kl1, &err, &stream, &cstream, [pimos], ModTbl, Macro, Codes)}},
+    CodeOut=Codes,
+    CdrOut=Clauses.
+otherwise.
+expandStart(Macro, Clauses, CodeOut, CdrOut) --> true |
+    &err <<= [error("illegal macro module : ~T", [Macro])],
+%%  {{output(&kl1, Clauses)}}.
+    CodeOut=0,
+    CdrOut=Clauses.
+
+:- local_implicit kl1:oldnew, err:oldnew, macro:shared, stream:oldnew, cstream:oldnew.
+expandClause(wrap#otherwise) --> true | &kl1 <<= [wrap#otherwise].
+expandClause(wrap#alternatively) --> true | &kl1 <<= [wrap#alternatively].
+%%expandClause(wrap#(:- Dec)) --> true | &kl1 <<= [wrap#(:- Dec)].
+expandClause(wrap#{('!'),Macro0,Macro}) --> true |
+  {{convertTermToList(List0, [], wrap#({('!'),Macro0,Macro})),
+    expandMacros(List, [], &err, &macro, &stream, &cstream, List0),
+    convertListToTerm(List, MacroTerm)}},
+    &kl1 <<= [MacroTerm].
+expandClause(vector({atom('``'), Cls0})) --> true |
+  {{normalizeClause(Cls0, Cls)}},
+    &kl1 <<= [Cls].  
+expandClause(vector({atom('`'), Cls0})) --> true |
+  {{normalizeClause(Cls0, Cls1)}},
+    expandParts(Cls1, Cls),
+    &kl1 <<= [Cls].
+otherwise.
+expandClause(Cls0) --> true |
+  {{registratePred(&stream, Cls0, Cls1),
+    normalizeClause(Cls1, Cls2),
+    callExpandMacro(&macro, &stream, &cstream, clause, clause, When, Where, Cls2, Cls)}},
+    checkWhenAndWhereClause(When, Where, Cls2, Cls).
+
+expandMacros([Term0|Cdr]) --> true |
+    expandClause(Term0),
+    expandMacros(Cdr).
+expandMacros([]) --> true | true.
+
+:- local_implicit list:oldnew.
+convertTermToList(wrap#({('!'),Cls0,Cls1})) --> true |
+    convertTermToList(Cls0),
+    convertTermToList(Cls1).
+otherwise.
+convertTermToList(Cls) --> true | &list <<= [Cls].
+
+convertListToTerm([Cls], Term0) :- true | Term0=Cls.
+otherwise.
+convertListToTerm([Cls|Cdr], Term0) :- true |
+    Term0=wrap#({('!'),Cls,Term1}),
+    convertListToTerm(Cdr, Term1).
+
+:- local_implicit kl1:oldnew, err:oldnew, macro:shared, stream:oldnew, cstream:oldnew.
+%%checkWhenAndWhereClause([], [], _, []) --> true | true.
+%%checkWhenAndWhereClause([], [], _, atom([])) --> true | true.
+%%checkWhenAndWhereClause([], [], Aft, list([After0|Cdr])) --> true |
+%%    expandClause(After0),
+%%    checkWhenAndWhereClause([], [], Aft, Cdr).
+%%checkWhenAndWhereClause([], [], Aft, [After0|Cdr]) --> true |
+%%    expandClause(After0),
+%%    checkWhenAndWhereClause([], [], Aft, Cdr).
+%%otherwise. 
+%%checkWhenAndWhereClause([], [], _, After0) --> true |
+%%    expandParts(After0, After),
+%%    &kl1 <<= [After].
+%%otherwise.
+%%checkWhenAndWhereClause(_, _, Before, _) --> true |
+%%    &err <<= [error("WHEN and WHERE is not allowed for ~T : ~W",
+%%                  [clause, Before])],
+%%    &kl1 <<= [Before].
+
+checkWhenAndWhereClause([], [], _, After) --> list(After) |
+    expandMacros(After).
+checkWhenAndWhereClause([], [], _, []) --> true | true.
+otherwise.
+checkWhenAndWhereClause([], [], _, After0) --> true |
+    expandParts(After0, After),
+    &kl1 <<= [After].
+otherwise.
+checkWhenAndWhereClause(_, _, Before, _) --> true |
+    &err <<= [error("WHEN and WHERE is not allowed for ~T : ~W", [clause, Before])],
+    &kl1 <<= [Before].
+
+normalizeClause(wrap#(:- Dec), After) :- true | After=wrap#(:- Dec).
+normalizeClause(wrap#(otherwise), After) :- true | After=wrap#(otherwise).
+normalizeClause(wrap#(alternatively), After) :- true | After=wrap#(alternatively).
+normalizeClause(wrap#(H:-G|B), After) :- true | After=wrap#(H:-G|B).
+normalizeClause(wrap#(H-->G|B), After) :- true | After=wrap#(H-->G|B).
+otherwise.
+normalizeClause(wrap#(H:-B), After) :- true | After=wrap#(H:-true|B).
+normalizeClause(wrap#(H-->B), After) :- true | After=wrap#(H-->true|B).
+otherwise.
+normalizeClause(H, After) :- true | After=wrap#(H:-true|true).
+
+expandParts(wrap#(:- Dec0), After) --> true |
+  {{expandGoals(&err, &macro, &stream, &cstream, body, Dec0, Dec1),
+    removeTrue(Dec1, Dec)}},
+    After=wrap#(:- Dec).
+expandParts(vector({atom('`'), Clause}), After) --> true |
+    expandParts(Clause, After).
+expandParts(vector({atom('``'), Clause}), After) --> true |
+    After=Clause.
+expandParts(wrap#(H0:-G0|B0), After) --> true |
+  {{expandTopLevelGoal(&err, &macro, &stream, &cstream, head, H0, H, HWhen0, HWhere0),
+    expandWhenAndWhere(&err, &macro, &stream, &cstream, guard, HWhen, [], HWhen0),
+    expandWhenAndWhere(&err, &macro, &stream, &cstream, guard, HWhere, [], HWhere0),
+    expandGoals(&err, &macro, &stream, &cstream, guard, G0, G),
+    expandGoals(&err, &macro, &stream, &cstream, body, B0, B),
+    makeOneClause(&kl1, atom(':-'), H, G, B, HWhere, HWhen, After)}}.
+%%  {{makeOneClause(&kl1, atom(':-'), H, G, B, HWhen, HWhere, After)}}.
+expandParts(wrap#(H0-->G0|B0), After) --> true |
+  {{expandTopLevelGoal(&err, &macro, &stream, &cstream, head, H0, H, HWhen0, HWhere0),
+    expandWhenAndWhere(&err, &macro, &stream, &cstream, guard, HWhen, [], HWhen0),
+    expandWhenAndWhere(&err, &macro, &stream, &cstream, guard, HWhere, [], HWhere0),
+    expandGoals(&err, &macro, &stream, &cstream, guard, G0, G),
+    expandGoals(&err, &macro, &stream, &cstream, body, B0, B),
+    makeOneClause(&kl1, atom('-->'), H, G, B, HWhere, HWhen, After)}}.
+%%    makeOneClause(&kl1, atom('-->'), H, G, B, HWhen, HWhere, After)}}.
+otherwise.
+expandParts(Clause0, After) --> true |
+  {{normalizeClause(Clause0, Clause)}},
+    expandParts(Clause, After).
+
+:- local_implicit err:oldnew, macro:shared, stream:oldnew, cstream:oldnew.
+expandGoals(_, vector({atom('``'), Goals0}), Goals) --> true | Goals0=Goals.
+expandGoals(Part, vector({atom('`'), Goals0}), Goals) --> true |
+    expandGoalsCheck(Part, Goals0, [], [], Goals).
+otherwise.
+expandGoals(Part, Goals0, Goals) --> true |
+  {{callExpandMacro(&macro, &stream, &cstream, goal, Part, When0, Where0, Goals0, Goals1)}},
+    expandGoalsCheck(Part, Goals1, When0, Where0, Goals).
+
+expandGoalsCheck(_, [], _, _, Goals) --> true |
+    Goals=wrap#(true).
+%expandGoalsCheck(Part, [Goal|Cdr], _, _, Goals) --> true |
+%    Goals=wrap#(Goal,CdrGoals),
+%    expandGoalsCheck(Part, Cdr, [], [], CdrGoals).
+%%expandGoalsCheck(Part, atom([]), _, _, Goals)--> true |
+%%    Goals=wrap#(true).
+%%expandGoalsCheck(Part, list([Goal|Cdr]), _, _, Goals) --> true |
+%%    MultiGoals=wrap#(Goal,CdrGoals),
+%%    expandGoalsCheck(Part, Cdr, [], [], CdrGoals),
+%%    expandGoals(Part, MultiGoals, Goals).
+expandGoalsCheck(Part, wrap#(G0,G1), When0, Where0, Goals) --> true |
+    expandGoals(Part, G0, EG0),
+    expandGoals(Part, G1, EG1),
+    expandWhenAndWhere(Part, GList0, [EG0, EG1|GList1], When0),
+    expandWhenAndWhere(Part, GList1, [], Where0),
+  {{makeGoals(GList0, Goals)}}.
+%% temporary
+expandGoalsCheck(Part, vector({vector(Goals0)}), When0, Where0, Goals) --> vector(Goals0, N) |
+    N1:=N-1,
+  {{convertEscapeToNonEscape(0, N1, Goals0, Goals1)}},
+    expandGoals(Part, Goals1, Goals2),
+  {{convertNonEscapeToEscape(Goals2, Goals3)}},
+    expandWhenAndWhere(Part, GList0, [Goals3|GList1], When0),
+    expandWhenAndWhere(Part, GList1, [], Where0),
+  {{makeGoals(GList0, Goals)}}.
+expandGoalsCheck(Part, wrap#({(';'),Goals0,Goals1}), When0, Where0, Goals) --> true |
+    expandGoalsCase(Part, Goals0, NewGoals0),
+    expandGoalsCase(Part, Goals1, NewGoals1),
+    expandWhenAndWhere(Part, GList0, [wrap#({(';'),NewGoals0,NewGoals1})|GList1], When0),
+    expandWhenAndWhere(Part, GList1, [], Where0),
+  {{makeGoals(GList0, Goals)}}.
+expandGoalsCheck(body, wrap#(Cond->Body), When0, Where0, Goals) --> true |
+    expandGoalsCase(body, wrap#(Cond->Body), NewGoals0),
+    expandWhenAndWhere(body, GList0, [NewGoals0|GList1], When0),
+    expandWhenAndWhere(body, GList1, [], Where0),
+  {{makeGoals(GList0, Goals)}}.
+otherwise.
+expandGoalsCheck(Part, Goal0, [], [], Goals) --> true |
+    expandGoal(Part, Goal0, Goal1, When0, Where0),
+    expandWhenAndWhere(Part, When1, [], When0),
+    expandWhenAndWhere(Part, Where1, [], Where0),
+  {{makeGoals(Goal1, When1, Where1, Goals)}}.
+otherwise.
+expandGoalsCheck(Part, Goal0, When0, Where0, Goals) --> true |
+    expandGoal(Part, Goal0, Goal, When1, Where1),
+    expandWhenAndWhere(Part, GList0, GList1, When0),
+    expandWhenAndWhere(Part, GList1, [Goal|GList2], When1),
+    expandWhenAndWhere(Part, GList2, GList3, Where1),
+    expandWhenAndWhere(Part, GList3, [], Where0),
+  {{makeGoals(GList0, Goals)}}.
+
+expandGoalsCase(Part, wrap#({(';'),Body0,Body1}), Goals) --> true |
+    expandGoalsCase(Part, Body0, NewBody0),
+    expandGoalsCase(Part, Body1, NewBody1),
+    Goals=wrap#({(';'),NewBody0,NewBody1}).
+expandGoalsCase(body, wrap#(Cond0->Body0), Goal) --> true |
+    expandGoals(guard, Cond0, Cond1),
+    expandGoals(body, Body0, Body1),
+%%  {{makeUpGoals(Cond1, Cond),
+%%    makeUpGoals(Body1, Body),
+%%    Goal=wrap#(Cond->Body)}}.
+    Goal=wrap#(Cond1->Body1).
+otherwise.
+expandGoalsCase(Part, Goals0, Goal) --> true |
+    expandGoals(Part, Goals0, Goal1),
+%%  {{makeUpGoals(Goal1, Goal)}}.
+    Goal=Goal1.
+
+convertEscapeToNonEscape(A, N, _, NewGoals0) :- A>N |
+    NewGoals0=atom(true).
+convertEscapeToNonEscape(A, N, Goals0, NewGoals0) :- A<N |
+    set_vector_element(Goals0, A, Goal, 0, Goals1),
+    NewGoals0=wrap#(Goal,NewGoals),
+    A1:=A+1,
+    convertEscapeToNonEscape(A1, N, Goals1, NewGoals).
+convertEscapeToNonEscape(N, N, Goals0, NewGoals0) :- true |
+    set_vector_element(Goals0, N, Goal, 0, _),
+    NewGoals0=Goal.
+
+convertNonEscapeToEscape(Goals0, NewGoals) :- true |
+    countGoals(Goals0, Goals1, 0, Ng),
+    new_vector(NewGoals0, Ng),
+    makeNewGoals(0, _, Goals1, NewGoals0, NewGoals1),
+    NewGoals=vector({vector(NewGoals1)}).
+
+countGoals(wrap#(G0,G1), GoalBlock, Ng0, Ng) :- true |
+    countGoals(G0, NG0, Ng0, Ng1),
+    countGoals(G1, NG1, Ng1, Ng),
+    GoalBlock=wrap#(NG0,NG1).
+countGoals(atom(true), GoalBlock, Ng0, Ng) :- true |
+    GoalBlock=atom(true), Ng0=Ng.
+otherwise.
+countGoals(G0, GoalBlock, Ng0, Ng) :- true |
+    Ng:=Ng0+1, G0=GoalBlock.
+
+makeNewGoals(Idx0, Idx, wrap#(G0,G1), NewGoals0, NewGoals) :- true |
+    makeNewGoals(Idx0, Idx1, G0, NewGoals0, NewGoals1),
+    makeNewGoals(Idx1, Idx, G1, NewGoals1, NewGoals).
+makeNewGoals(Idx0, Idx, atom(true), NewGoals0, NewGoals) :- true |
+    Idx0=Idx, NewGoals0=NewGoals.
+otherwise.
+makeNewGoals(Idx0, Idx, G0, NewGoals0, NewGoals) :- true |
+    set_vector_element(NewGoals0, Idx0, _, G0, NewGoals),
+    Idx:=Idx0+1.
+
+%%checkWhenAndWhereGoals(Part, [], [], _, wrap#(G0,G1), Goals) --> true |
+%%    expandGoals(Part, G0, GG0),
+%%    expandGoals(Part, G1, GG1),
+%%    Goals=wrap#(GG0,GG1).
+%%otherwise.
+%%checkWhenAndWhereGoals(Part, [], [], _, Goal0, Goal) --> true |
+%%    expandGoal(Part, Goal0, Goal1, When0, Where0),
+%%    expandWhenAndWhere(Part, When1, [], When0),
+%%    expandWhenAndWhere(Part, Where1, [], Where0),
+%%  {{makeGoals(Goal1, When1, Where1, Goal)}}.
+%%otherwise.
+%%checkWhenAndWhereGoals(_, _, _, Before, _, Goal) --> true |
+%%    &err <<= [error("WHEN and WHERE is not allowed for ~T : ~W",
+%%                    [goal, Before])],
+%%    Before=Goal.
+
+expandWhenAndWhere(Part, When0, When, [Goals0|Cdr]) --> true |
+    expandGoals(Part, Goals0, Goals),
+  {{outputToList(When0, When1, Goals)}},
+%    expandWhenAndWhere_(Part, When0, When1, Goals),
+    expandWhenAndWhere(Part, When1, When, Cdr).
+expandWhenAndWhere(_, When0, When, []) --> true | When0=When.
+
+%%expandWhenAndWhere_(Part, When0, When, wrap#(G0,G1)) --> true |
+%%    expandGoals(Part, wrap#(G0,G1), Goals),
+%%  {{outputToList(When0, When, Goals)}}.
+%%expandWhenAndWhere_(Part, When0, When, vector({vector(Goals0)})) --> true |
+%%    expandGoals(Part, vector({vector(Goals0)}), Goals),
+%%  {{outputToList(When0, When, Goals)}}.
+%%otherwise.
+%%expandWhenAndWhere_(Part, When0, When, Goal0) --> true |
+%%    expandGoal(Part, Goal0, Goal, NewWhen0, NewWhere0),
+%%    expandWhenAndWhere(Part, When0, [Goal|When1], NewWhen0),
+%%    expandWhenAndWhere(Part, When1, When, NewWhere0).
+
+outputToList(When0, When, wrap#(G0,G1)) :- true |
+    outputToList(When0, When1, G0),
+    outputToList(When1, When, G1).
+otherwise.
+outputToList(When0, When, Goal) :- true | When0=[Goal|When].
+
+makeGoals(Goal0, [When|Cdr], Where, Goals0) :- true |
+    Goals0=wrap#(When,Goals1),
+    makeGoals(Goal0, Cdr, Where, Goals1).
+makeGoals(Goal0, [], [], Goals0) :- true | Goals0=Goal0.
+otherwise.
+makeGoals(Goal0, [], Where, Goals0) :- true |
+    Goals0=wrap#(Goal0,Goals1),
+    makeGoals(Where, Goals1).
+
+makeGoals([Where], Goals0) :- true |
+    Goals0=Where.
+otherwise.
+makeGoals([Where|Cdr], Goals0) :- true |
+    Goals0=wrap#(Where,Goals1),
+    makeGoals(Cdr,Goals1).
+
+expandTopLevelGoal(_, vector({atom('``'), Goal0}), Goal, When0, Where0) --> true |
+    Goal0=Goal, When0=[], Where0=[].
+expandTopLevelGoal(_, vector({atom('`'), Goal0}), Goal, When0, Where0) --> true |
+    checkWhenAndWhereHead([], [], Goal0, Goal0, Goal, When0, Where0).
+otherwise.
+expandTopLevelGoal(head, Goal0, Goal, When0, Where0) --> true |
+  {{callExpandMacro(&macro, &stream, &cstream, goal, head, VWhen0, VWhere0, Goal0, Goal1)}},
+    checkWhenAndWhereHead(VWhen0, VWhere0, Goal0, Goal1, Goal, When0, Where0).
+
+checkWhenAndWhereHead([], [], Goal0, atom([]), Goal, When0, Where0) --> true |
+    &err <<= [error("Stripping goal is not allowed for ~T : ~W",
+                    [head, Goal0])],
+    When0=[], Where0=[], Goal0=Goal.
+checkWhenAndWhereHead([], [], Goal0, list(_), Goal, When0, Where0) --> true |
+    &err <<= [error("Multiple expanding is not allowed for ~T : ~W",
+                    [head, Goal0])],
+    When0=[], Where0=[], Goal0=Goal.
+otherwise.
+checkWhenAndWhereHead([], [], _, Goal1, Goal, When0, Where0) --> true |
+    expandGoal(head, Goal1, Goal, When0, Where0).
+otherwise.
+checkWhenAndWhereHead(_, _, Goal0, _, Goal, When0, Where0) --> true |
+    &err <<= [error("WHEN and WHERE is not allowed for ~T : ~W",
+                    [goal, Goal0])],
+    When0=[], Where0=[], Goal0=Goal.
+    
+expandGoal(Part, vector({atom('`'), Goal0}), WGoal, When, Where) --> true |
+    checkFinished(Part, Goal0, WGoal, When, [], Where, []).
+expandGoal(_, vector({atom('``'), Goal0}), WGoal, When, Where) --> true |
+    WGoal=Goal0, When=[], Where=[].
+otherwise.
+expandGoal(Part, vector(Goal0), WGoal, When, Where) --> vector(Goal0, N) |
+    expandArgs(0, N, Part, Goal0, Goal, When, [], Where, []),
+    WGoal=vector(Goal).
+expandGoal(Part, list([Car0|Cdr0]), Goal, When0, Where0) --> true |
+    expandArg(Part, Car0, Car, When0, When1, Where0, Where1),
+    expandArg(Part, Cdr0, Cdr, When1, [], Where1, []),
+    Goal=list([Car|Cdr]). 
+otherwise.
+expandGoal(Part, Goal0, Goal, When0, Where0) --> true |
+%    Goal0=Goal, When0=[], Where0=[]. % call once in vain
+    expandArg(Part, Goal0, Goal, When0, [], Where0, []). 
+
+expandArgs(A, N, Part, Arg0, Arg, When0, When, Where0, Where) --> A<N |
+  {{set_vector_element(Arg0, A, Elm0, Elm, Arg1)}},
+    expandArg(Part, Elm0, Elm, When0, When1, Where0, Where1),
+    A1:=A+1,
+    expandArgs(A1, N, Part, Arg1, Arg, When1, When, Where1, Where).
+expandArgs(N, N, _, Arg0, Arg, When0, When, Where0, Where) --> true |
+    Arg0=Arg, When0=When, Where0=Where.
+    
+expandArg(_, vector({atom('``'), WArg0}), WArg, When0, When, Where0, Where) --> true |
+    WArg0=WArg, When0=When, Where0=Where.
+expandArg(Part, vector({atom('`'), WArg0}), WArg, When0, When, Where0, Where) --> true |
+    checkFinished(Part, WArg0, WArg, When0, When, Where0, Where).
+otherwise.
+expandArg(Part, WArg0, WArg, When0, When, Where0, Where) --> true |
+  {{callExpandMacro(&macro, &stream, &cstream, argument, Part, WhenX, WhereX, WArg0, WArg1)}},
+    expandWhenAndWhere(Part, When0, When1, WhenX),
+    expandWhenAndWhere(Part, Where0, Where1, WhereX),
+%    output(When0, When1, WhenX),
+%    output(Where0, Where1, WhereX)}},
+    checkQuote(Part, WArg1, WArg, When1, When, Where1, Where).
+
+checkQuote(Part, vector({atom('`'), WArg0}), WArg, When0, When, Where0, Where) --> true |
+    checkFinished(Part, WArg0, WArg, When0, When, Where0, Where).
+checkQuote(_, vector({atom('``'), WArg0}), WArg, When0, When, Where0, Where) --> true |
+    WArg0=WArg, When0=When, Where0=Where.
+otherwise.
+checkQuote(Part, WArg0, WArg, When0, When, Where0, Where) --> true |
+    checkFinished(Part, WArg0, WArg, When0, When, Where0, Where).
+
+checkFinished(Part, vector(Args0), WArg, When0, When, Where0, Where) --> vector(Args0, N) |
+    expandArgs(0, N, Part, Args0, Args, When0, When, Where0, Where),
+    WArg=vector(Args).
+checkFinished(Part, list([Car0|Cdr0]), WArg, When0, When, Where0, Where) --> true |
+    expandArg(Part, Car0, Car, When0, When1, Where0, Where1),
+    expandArg(Part, Cdr0, Cdr, When1, When, Where1, Where),
+    WArg=list([Car|Cdr]).
+otherwise.
+checkFinished(_, Arg0, Arg, When0, When, Where0, Where) --> true | 
+    Arg0=Arg, When0=When, Where0=Where.
+
+:- local_implicit kl1:oldnew.
+makeOneClause(Neck, H, G0, B, When0, Where0, After) --> true |
+  {{makeClause(G0, When0, Where0, G)}},
+    After=vector({Neck, H, vector({atom('|'), G, B})}).
+
+makeClause(Goal0, When, [], Goal) :- true |
+    makeClause(When, Goal, Goal0).
+otherwise.
+makeClause(Goal0, When, Where, Goal) :- true |
+    makeClause(When, Goal, vector({atom(','), Goal0, Goal1})),
+    makeClause(Where, Goal1).
+
+makeClause([Goals|Cdr], Goal0, Goal) :- true |
+    Goal0=vector({atom(','), Goals, Goal1}),
+    makeClause(Cdr, Goal1, Goal).
+makeClause([], Goal0, Goal) :- true | Goal0=Goal.
+
+makeClause([Goal], Goal0) :- true | Goal0=Goal.
+otherwise.
+makeClause([Goals|Cdr], Goal0) :- true |
+    Goal0=vector({atom(','), Goals, Goal1}),
+    makeClause(Cdr, Goal1).
+
+:- local_implicit var:oldnew, other:oldnew. 
+extractNewVariable([new_variable(Var)|Cdr]) --> true |
+    &var <<= [new_variable(Var)],
+    extractNewVariable(Cdr).
+otherwise.
+extractNewVariable([Msg|Cdr]) --> true |
+    &other <<= [Msg],
+    extractNewVariable(Cdr).
+extractNewVariable([]) --> true | true.
+
+%%
+%% callExpandMacro
+%%    
+callExpandMacro(Macro, MacroStream0, MacroStream, Cstream0, Cstream,
+        Level, Part, When0, Where0, Cls0, Cls) :- true |
+    callExpandMacro(Macro, Macro, MacroStream0, MacroStream, Cstream0, Cstream,
+        Level, Part, When0, Where0, Cls0, Cls).
+
+callExpandMacro([Macro|Rest], Macro0, MacroStream0, MacroStream, Cstream0, Cstream,
+        Level, Part, When0, Where0, Cls0, Cls) :- true |
+    extractWhenWhere(Macro0, When0, When, Where0, Where,
+        MacroStream0, MacroStream1, Cstream0, Cstream1, Stream0),
+    apply(Macro, {{Level, Part}, Stream0, [], Macro, Cls0, Cls1}),
+    callExpandMacro(Rest, Macro0, MacroStream1, MacroStream, Cstream1, Cstream,
+        Level, Part, When, Where, Cls1, Cls).
+callExpandMacro([], _, MacroStream0, MacroStream, Cstream0, Cstream, _, _, When0, Where0, Cls0, Cls) :- true |
+    MacroStream0=MacroStream, When0=[], Where0=[],
+    Cstream0=Cstream, Cls0=Cls.
+
+:- local_implicit macro:shared, whens:oldnew, wheres:oldnew, stream: oldnew, cstream:oldnew.
+extractWhenWhere([front(When)|Cdr]) --> true |
+    &whens <<= [When],
+    extractWhenWhere(Cdr).
+extractWhenWhere([back(Where)|Cdr]) --> true |
+    &wheres <<= [Where],
+    extractWhenWhere(Cdr).
+% added by murayama 93.7
+extractWhenWhere([with_clauses(Cls)|Cdr]) --> true |
+  {{extractWith(&macro, &stream, &cstream, append, none, [], Cls)}},
+    extractWhenWhere(Cdr).
+extractWhenWhere([with_predicates(Cls)|Cdr]) --> true |
+  {{extractWith(&macro, &stream, &cstream, replace, none, [], Cls)}},
+    extractWhenWhere(Cdr).
+%extractWhenWhere([expand_macro(as_a_goal, in_the_head, Pat0, Pat)|Cdr]) --> true |
+%  {{expandTopLevelGoal(_, _, &macro, &stream, &cstream, head, Pat0, Pat, _, _)}},
+%    extractWhenWhere(Cdr).
+extractWhenWhere([expand_macro(as_a_goal, in_the_guard, Pat0, Pat)|Cdr]) --> true |
+  {{expandGoals(_, _, &macro, &stream, &cstream, guard, Pat0, Pat)}},
+    extractWhenWhere(Cdr).
+extractWhenWhere([expand_macro(as_a_goal, in_the_body, Pat0, Pat)|Cdr]) --> true |
+  {{expandGoals(_, _, &macro, &stream, &cstream, body, Pat0, Pat)}},
+    extractWhenWhere(Cdr).
+%extractWhenWhere([expand_macro(as_an_argument, in_the_head, Pat0, Pat)|Cdr]) --> true |
+%  {{expandArg(_, _, &macro, &stream, &cstream, head, Pat0, Pat, &whens, &wheres)}},
+%    extractWhenWhere(Cdr).
+%extractWhenWhere([expand_macro(as_an_argument, in_the_guard, Pat0, Pat)|Cdr]) --> true |
+%  {{expandArg(_, _, &macro, &stream, &cstream, guard, Pat0, Pat, &whens, &wheres)}},
+%    extractWhenWhere(Cdr).
+%extractWhenWhere([expand_macro(as_an_argument, in_the_body, Pat0, Pat)|Cdr]) --> true |
+%  {{expandArg(_, _, &macro, &stream, &cstream, body, Pat0, Pat, &whens, &wheres)}},
+%    extractWhenWhere(Cdr).
+otherwise.
+extractWhenWhere([expand_macro(as_a_clause, _, Pat0, Pat)|Cdr]) --> true |
+  {{kl1cmp_reader:count_variables(Pat0, Pat1, 0, Nv),
+    kl1cmp_vargen:variable_generator(Nv, _, Var),
+    extractNewVariable(Var, [], &stream, MacroStream),
+    expandClause(Kl1, [], _, _, &macro, MacroStream, [], &cstream, Pat1),
+    convertListToWrapTerm(Kl1, Pat)}},
+    extractWhenWhere(Cdr).
+extractWhenWhere([expand_macro(as_a_goal, in_the_head, Pat0, When, Pat, Where)|Cdr]) --> true |
+  {{expandTopLevelGoal(_, _, &macro, &stream, &cstream, head, Pat0, Pat, When0, Where0),
+    expandWhenAndWhere(_, _, &macro, &stream, &cstream, guard, When, [], When0),
+    expandWhenAndWhere(_, _, &macro, &stream, &cstream, guard, Where, [], Where0)}},
+    extractWhenWhere(Cdr).
+%extractWhenWhere([expand_macro(as_a_goal, in_the_guard, Pat0, When, Pat, Where)|Cdr]) --> true |
+%  {{expandGoals(_, _, &macro, &stream, &cstream, guard, Pat0, Pat)}},
+%    When=[], Where=[],
+%    extractWhenWhere(Cdr).
+%extractWhenWhere([expand_macro(as_a_goal, in_the_body, Pat0, When, Pat, Where)|Cdr]) --> true |
+%  {{expandGoals(_, _, &macro, &stream, &cstream, body, Pat0, Pat)}},
+%    When=[], Where=[],
+%    extractWhenWhere(Cdr).
+extractWhenWhere([expand_macro(as_an_argument, in_the_head, Pat0, When, Pat, Where)|Cdr]) --> true |
+  {{expandArg(_, _, &macro, &stream, &cstream, head, Pat0, Pat, When, [], Where, [])}},
+    extractWhenWhere(Cdr).
+extractWhenWhere([expand_macro(as_an_argument, in_the_guard, Pat0, When, Pat, Where)|Cdr]) --> true |
+  {{expandArg(_, _, &macro, &stream, &cstream, guard, Pat0, Pat, When, [], Where, [])}},
+    extractWhenWhere(Cdr).
+extractWhenWhere([expand_macro(as_an_argument, in_the_body, Pat0, When, Pat, Where)|Cdr]) --> true |
+  {{expandArg(_, _, &macro, &stream, &cstream, body, Pat0, Pat, When, [], Where, [])}},
+    extractWhenWhere(Cdr).
+%otherwise.
+%extractWhenWhere([expand_macro(as_a_clause, _, Pat0, When, Pat, Where)|Cdr]) --> true |
+%  {{kl1cmp_reader:count_variables(Pat0, Pat1, 0, Nv),
+%    kl1cmp_vargen:variable_generator(Nv, _, Var),
+%    extractNewVariable(Var, [], &stream, MacroStream),
+%    expandClause(Kl1, [], _, _, &macro, MacroStream, [], &cstream, Pat1),
+%    convertListToWrapTerm(Kl1, Pat)}},
+%    When=[], Where=[],
+%    extractWhenWhere(Cdr).
+%
+otherwise.
+extractWhenWhere([Msg|Cdr]) --> true |
+    &stream <<= [Msg],
+    extractWhenWhere(Cdr).
+extractWhenWhere([]) --> true | true.
+
+% added by murayama 93.7
+convertListToWrapTerm([Cls], Term0) :- true | Term0=Cls.
+%%otherwise.
+%%convertListToWrapTerm([Cls|Cdr], Term0) :- true |
+%%    Term0=wrap#(Cls,Term1),
+%%    convertListToWrapTerm(Cdr, Term1).
+%
+
+% added by murayama 93.7
+:- local_implicit macro:shared, stream: oldnew, cstream:oldnew.
+extractWith(Flag, Pre, Clauses0, [atom(Atom)|Cdr]) --> true |
+    Clauses=[atom(Atom)|Clauses0],
+    extractWith(Flag, Pre, Clauses, Cdr).
+otherwise.
+extractWith(Flag, none, Clauses0, [Cls0|Cdr]) --> true |
+  {{kl1cmp_reader:count_variables(Cls0, Cls1, 0, Nv),
+    kl1cmp_vargen:variable_generator(Nv, _, Var),
+    extractNewVariable(Var, [], &stream, MacroStream),
+    expandClause(Kl1, [], _, _, &macro, MacroStream, [], &cstream, Cls1),
+    convertListToWrapTerm(Kl1, Cls2),
+    getFunctorAndArity(Cls2, Cls, FA)}},
+    Clauses=[Cls|Clauses0],
+    extractWith(Flag, FA, Clauses, Cdr).
+extractWith(_, none, _, []) --> true | true.
+otherwise.
+extractWith(Flag, Pre, Clauses0, [Cls0|Cdr]) --> true |
+  {{kl1cmp_reader:count_variables(Cls0, Cls1, 0, Nv),
+    kl1cmp_vargen:variable_generator(Nv, _, Var),
+    extractNewVariable(Var, [], &stream, MacroStream),
+    expandClause(Kl1, [], _, _, &macro, MacroStream, [], &cstream, Cls1),
+    convertListToWrapTerm(Kl1, Cls2),
+    getFunctorAndArity(Cls2, Cls, FA)}},
+    sameORnew(Flag, Pre, FA, Cls, Clauses0, Clauses),
+    extractWith(Flag, FA, Clauses, Cdr).
+extractWith(Flag, Pre, Clauses0, []) --> true |
+    sameORnew(Flag, Pre, none, [], Clauses0, _).
+
+sameORnew(_, FA, FA, Cls, Clauses0, Clauses) --> true |
+    Clauses=[Cls|Clauses0].
+otherwise.
+sameORnew(append, Pre, _, Cls, Clauses0, Clauses) --> true |
+    {{reverse(Clauses0, Clauses1)}},
+    &cstream <<= [append_clause(Pre-Clauses1)],
+    Clauses=[Cls].
+sameORnew(replace, Pre, _, Cls, Clauses0, Clauses) --> true |
+    {{reverse(Clauses0, Clauses1)}},
+    &cstream <<= [replace_clause(Pre-Clauses1)],
+    Clauses=[Cls].
+
+:- local_implicit upper:oldnew.
+extractNestedWhenWhere([Msg|Cdr]) --> true |
+    &upper <<= [Msg],
+    extractNestedWhenWhere(Cdr).
+extractNestedWhenWhere([]) --> true | true.
+%
+
+:- local_implicit err:oldnew, tbl:oldnew, var:oldnew.
+%:- local_implicit err:oldnew, tbl:oldnew.
+distributeMessage_(Stream1, ['$sagi_macro_inf'(Msg)|Cdr]) --> true |
+    &tbl <<= [Msg],
+    distributeMessage_(Stream1, Cdr).
+distributeMessage_(Stream1, ['$sagi_var_inf'(Msg)|Cdr]) --> true |
+    &var <<= [Msg],
+    distributeMessage_(Stream1, Cdr).
+otherwise.
+distributeMessage_(Stream1, [Msg|Cdr]) --> true |
+    Stream1=[Msg|Stream2],
+    distributeMessage_(Stream2, Cdr).
+distributeMessage_(Stream1, []) --> true | Stream1=[].
+
+:- local_implicit err:oldnew, bag:oldnew, atom:oldnew, atom_no:shared, macro:shared.
+distributeMessage([new_atom(Str, Atom)|Cdr]) --> true |
+    &atom <<= [intern(Str, normal(Atom))],
+    distributeMessage(Cdr).
+% added by murayama 93.7
+distributeMessage([new_predicate_name(Func/Ari, Pred)|Cdr]) --> true |
+    &atom <<= [get_atom_name(Func, normal(Fn))],
+  {{convert_integer_to_string(Ari, An),
+    convert_integer_to_string(&atom_no, N),
+    builtin#append_string([Fn, string#"/", An, string#"_", N], StrFunc)}},
+    &atom <<= [intern(StrFunc, normal(Pred))],
+    &atom_no <= &atom_no + 1,
+    distributeMessage(Cdr).
+%
+distributeMessage([get_atom_name(Atom, Name)|Cdr]) --> true |
+    &atom <<= [get_atom_name(Atom, Name)],
+    distributeMessage(Cdr).
+distributeMessage([get_module_name(Name)|Cdr]) --> true |
+  {{getModule(&bag, Name)}},
+    distributeMessage(Cdr).
+distributeMessage([get_predicate(Func)|Cdr]) --> true |
+  {{getPred(&bag, Func)}},
+    distributeMessage(Cdr).
+distributeMessage([error(Str, Args)|Cdr]) --> 
+    &err <<= [error(Str, Args)],
+    distributeMessage(Cdr).
+distributeMessage([warning(Str, Args)|Cdr]) --> true |
+    &err <<= [warning(Str, Args)],
+    distributeMessage(Cdr).
+distributeMessage([info(Str, Args)|Cdr]) --> true |
+    &err <<= [info(Str, Args)],
+    distributeMessage(Cdr).
+distributeMessage([message(Str, Args)|Cdr]) --> true |
+    &err <<= [message(Str, Args)],
+    distributeMessage(Cdr).
+distributeMessage([error(Str, Args, Pos)|Cdr]) --> 
+    &err <<= [error(Str, Args, Pos)],
+    distributeMessage(Cdr).
+distributeMessage([warning(Str, Args, Pos)|Cdr]) --> true |
+    &err <<= [warning(Str, Args, Pos)],
+    distributeMessage(Cdr).
+distributeMessage([info(Str, Args, Pos)|Cdr]) --> true |
+    &err <<= [info(Str, Args, Pos)],
+    distributeMessage(Cdr).
+distributeMessage([message(Str, Args, Pos)|Cdr]) --> true |
+    &err <<= [message(Str, Args, Pos)],
+    distributeMessage(Cdr).
+otherwise.
+distributeMessage([Msg|Cdr]) --> true |
+    &bag <<= [Msg],
+    distributeMessage(Cdr).
+distributeMessage([]) --> true | true.
+
+convert_integer_to_string(A, Astr) :- true |
+    convert_integer_to_list(Alist, [], 1, N, A),
+    new_string(Str0, N, 16),
+    convert_list_to_string(Alist, 0, Str0, Astr).
+
+:- local_implicit char_list:oldnew, len:oldnew.
+convert_integer_to_list(Int) --> Int < 10 | 
+    Int_char:=Int+16#"2330",
+    &char_list <<= [Int_char].
+convert_integer_to_list(Int) --> Int >= 10 |
+    Int1:=Int/10,
+    Mod:=Int mod 10,
+    Mod_char:=Mod+16#"2330",
+    convert_integer_to_list(Int1),
+   &len <= &len+1,
+   &char_list <<= [Mod_char].
+
+len_of_list([_|Rest], Num) :- true |
+   len_of_list(Rest, Num1),
+   Num:=Num1+1.
+len_of_list([], N) :- true | N=0.
+
+convert_list_to_string([C|Rest], Pos, Str0, Str) :- true |
+   set_string_element(Str0, Pos, C, Str1),
+   Pos1:=Pos+1,
+   convert_list_to_string(Rest, Pos1, Str1, Str).
+convert_list_to_string([], _, Str0, Str) :- true | Str0=Str.
+
+:- local_implicit kl1:oldnew.
+makeUpClause([One0-Pos|Clause]) --> true |
+  {{kl1cmp_variable:nameVariables(One0, One1),
+    makeUpClause(One1, One)}},
+    &kl1 <<= [One-Pos],
+    makeUpClause(Clause).
+makeUpClause([]) --> true | true.
+
+makeUpClause(wrap#(Bef=>Aft:-G0|B0), Cls) :- true |
+    makeUpGoals(no_macro, G0, G),
+    makeUpGoals(macro, B0, B),
+    Cls=wrap#(Bef=>Aft:-G|B).
+otherwise.
+makeUpClause(wrap#(H:-G0|B0), Cls) :- true |
+    makeUpGoals(no_macro, G0, G),
+    makeUpGoals(no_macro, B0, B),
+    Cls=wrap#(H:-G|B).
+makeUpClause(wrap#(H-->G0|B0), Cls) :- true |
+    makeUpGoals(no_macro, G0, G),
+    makeUpGoals(macro, B0, B),
+    Cls=wrap#(H-->G|B).
+otherwise.
+makeUpClause(wrap#(Bef=>Aft:-B0),Cls) :- true |
+    makeUpGoals(macro, B0, B),
+    Cls=wrap#(Bef=>Aft:-true|B).
+otherwise.
+makeUpClause(wrap#(H:-B0), Cls) :- true |
+    makeUpGoals(no_macro, B0, B),
+    Cls=wrap#(H:-true|B).
+makeUpClause(wrap#(H-->B0), Cls) :- true |
+    makeUpGoals(macro, B0, B),
+    Cls=wrap#(H-->true|B).
+otherwise.
+makeUpClause(H, Cls) :- true | Cls=H.
+
+makeUpGoals(Flag, Goals0, Goals) :- true |
+    flatten(List0, [], Flag, Goals0),
+    makeUp(List0, Goals).
+
+flatten(Flag, wrap#(G0,G1)) --> true |
+    flatten(Flag, G0),
+    flatten(Flag, G1).
+otherwise.
+flatten(_, wrap#(true)) --> true | true.
+flatten(_, vector({vector(Macro0)})) --> vector(Macro0, 0) | true.
+flatten(no_macro, vector({vector(Macro0)})) --> vector(Macro0, N), N>0 |
+    stripGoals(0, N, Macro0).
+flatten(macro, vector({vector(Macro0)})) --> vector(Macro0, N), N>0 |
+  {{flatten(GoalList, [], no_macro, vector({vector(Macro0)})),
+    makeVector(GoalList, Goal),
+    &kl1 <<= [vector({vector(Goal)})]}}.
+flatten(Flag, (wrap#(G0;G1))) --> true |
+  {{flattenInCase(Flag, G0, NewG0),
+    flattenInCase(Flag, G1, NewG1)}},
+    &kl1 <<= [wrap#(NewG0;NewG1)].
+flatten(Flag, (wrap#(G0->B0))) --> true |
+  {{makeUpGoals(no_macro, G0, NewG0),
+    makeUpGoals(Flag, B0, NewB0)}},
+    &kl1 <<= [wrap#(NewG0->NewB0)].
+otherwise.
+flatten(_, Goal) --> true | &kl1 <<= [Goal].
+
+stripGoals(A, N, Macro0) --> A<N |
+  {{set_vector_element(Macro0, A, Goal0, [], Macro1)}},
+    flatten(no_macro, Goal0),
+    A1:=A+1,
+    stripGoals(A1, N, Macro1).
+stripGoals(N, N, _) --> true | true.
+
+flattenInCase(Flag, wrap#(G0;G1), Goals) :- true |
+    flattenInCase(Flag, G0, NewG0),
+    flattenInCase(Flag, G1, NewG1),
+    Goals=wrap#(NewG0;NewG1).
+flattenInCase(Flag, wrap#(G0->B0), Goals) :- true |
+    makeUpGoals(no_macro, G0, NewG0),
+    makeUpGoals(Flag, B0, NewB0),
+    Goals=wrap#(NewG0->NewB0).
+otherwise.
+flattenInCase(Flag, Goal0, Goal) :- true  |
+    makeUpGoals(Flag, Goal0, Goal).
+
+makeUp([Goal], Goals) :- true | Goals=Goal.
+otherwise.
+makeUp([Goal|Rest], Goals0) :- true |
+    Goals0=wrap#(Goal,Goals),
+    makeUp(Rest, Goals).
+makeUp([], Goals) :- true | Goals=wrap#(true).
+
+removeTrue(wrap#(A,true), Out) :- true | Out=A.
+removeTrue(wrap#(true,A), Out) :- true | Out=A.
+otherwise.
+removeTrue(vector(Vect0), Out) :- vector(Vect0, N) |
+    removeTrue(0, N, Vect0, Vect), Out=vector(Vect).
+removeTrue(list([Car0|Cdr0]), Out) :- true |
+    removeTrue(Car0, Car),
+    removeTrue(Cdr0, Cdr),
+    Out=list([Car|Cdr]).
+otherwise.
+removeTrue(One0, One) :- true | One0=One.
+
+removeTrue(A, N, Vect0, Vect) :- A<N |
+    set_vector_element(Vect0, A, Elm0, Elm, Vect1),
+    removeTrue(Elm0, Elm),
+    A1:=A+1,
+    removeTrue(A1, N, Vect1, Vect).
+removeTrue(N, N, Vect0, Vect) :- true | Vect0=Vect.
+
+unify_value(In1, In2, YorN):- true |
+    pool:keyed_set(VarTbl),
+    unify_value_1(VarTbl, [], 0, Result, In1, In2),
+    result_check(Result, YorN).
+
+result_check(0, YorN):- true | YorN=yes.
+otherwise.
+result_check(_, YorN):- true | YorN=no.
+
+:- local_implicit tbl:oldnew, result:oldnew.
+unify_value_1(vector(In1), vector(In2))--> vector(In1, Size1), vector(In2, Size2) |
+   (Size1=Size2 -> unify_vector(Size1, 0, In1, In2);
+    otherwise;
+    true -> &result <= &result+1).
+unify_value_1(list([Term1|Cdr1]), list([Term2|Cdr2]))--> true |
+    unify_value_1(Term1, Term2),
+    unify_value_1(Cdr1, Cdr2).
+unify_value_1([Term1|Cdr1], [Term2|Cdr2])--> true |
+    unify_value_1(Term1, Term2),
+    unify_value_1(Cdr1, Cdr2).
+unify_value_1(variable(Var), In2)--> true |
+    &tbl <<= [get_if_any(Var, Value)],
+    analize_var(Var, Value, In2).
+otherwise.
+unify_value_1(In, In)--> true | true.
+otherwise.
+unify_value_1(_, _)--> true |
+    &result <= &result + 1.
+
+analize_var(Var, {}, In2)--> true |
+    &tbl <<= [put(Var, In2, _)].
+otherwise.
+analize_var(Var, {Value}, In2)--> true |
+    &tbl <<= [put(Var, Value, _)],
+    unify_value_1(Value, In2).
+
+unify_vector(Size, N, In1, In2)--> N < Size |
+  {{set_vector_element(In1, N, Elm1, Elm1, NewIn1),
+    set_vector_element(In2, N, Elm2, Elm2, NewIn2)}},
+    NN:=N+1,
+    unify_value_1(Elm1, Elm2),
+    unify_vector(Size, NN, NewIn1, NewIn2).
+otherwise.
+unify_vector(_, _, _, _)--> true | true.
+
+:- local_implicit kl1:oldnew.
+setPosition(Pos0, Pos, [Cls|Cdr])--> true |
+    &kl1 <<= [Cls-Pos0],
+    setPosition(Pos0, Pos, Cdr).
+setPosition(Pos0, Pos, [])--> true | Pos0=Pos.
+
+:- local_implicit err:oldnew.
+setErrPosition(Pos0, Pos, [error(Str, Arg)|Cdr])--> true |
+    &err <<= [error(Str, Arg, Pos0)],
+    setErrPosition(Pos0, Pos, Cdr).
+setErrPosition(Pos0, Pos, [warning(Str, Arg)|Cdr])--> true |
+    &err <<= [warning(Str, Arg, Pos0)],
+    setErrPosition(Pos0, Pos, Cdr).
+otherwise.
+setErrPosition(Pos0, Pos, [Msg|Cdr])--> true |
+    &err <<= [Msg],
+    setErrPosition(Pos0, Pos, Cdr).
+setErrPosition(Pos0, Pos, [])--> true | Pos0=Pos.
+
+%% defined 91/09/20 D.Sekita
+:- local_implicit stream:oldnew.
+putModule(Name) --> true |
+   &stream <<= [empty('$current_module_name$', YorN)],
+   putModule_(YorN, Name).
+
+putModule_(yes, Name) --> true | 
+   &stream <<= [put('$current_module_name$', Name)].
+putModule_(no, Name) --> true | 
+   &stream <<= [get_and_put('$current_module_name$', _, Name)].
+
+getModule(Name) --> true |
+  &stream <<= [empty('$current_module_name$', YorN)],
+  getModule_(YorN, Name).
+
+getModule_(yes, Name) --> true | Name=[].
+getModule_(no, Name) --> true | 
+   &stream <<= [get_and_put('$current_module_name$', Name, Name)].
+
+registratePred(wrap#(H0:-GB), Cls) --> true |
+ {{getFunctorAndArity(H0, H1, Func, Ari)}},
+   Cls=wrap#(H1:-GB),
+   registratePred(Func/Ari).
+registratePred(wrap#(H0-->GB), Cls) --> true |
+ {{getFunctorAndArity(H0, H1, Func, Ari)}},
+   Cls=wrap#(H1-->GB),
+   registratePred(Func/Ari).
+otherwise.
+registratePred(Cls0, Cls) --> true | Cls0=Cls.
+
+getFunctorAndArity(wrap#(H0:-GB), Cls, FA) :- true |
+   getFunctorAndArity(H0, H1, Func, Ari),
+   FA=Func/Ari,
+   Cls=wrap#(H1:-GB).
+
+getFunctorAndArity(vector(H0), WH, Func, Ari) :- vector(H0, N) |
+   set_vector_element(H0, 0, {Type,Func}, {Type,Func}, H),
+   WH=vector(H),
+   Ari:=N-1.
+getFunctorAndArity(atom(H0), H, Func, Ari) :- true |
+   Func=H0,
+   H=atom(H0),
+   Ari=0.
+otherwise.
+getFunctorAndArity(H0, H, Func, Ari) :- true |
+   H0=H, Func=[], Ari=0.
+
+registratePred(Func) --> true |
+   &stream <<= [empty('$current_predicate_functor$', YorN)],
+   registratePred_(YorN, Func).
+
+registratePred_(yes, Func) --> true | 
+   &stream <<= [put('$current_predicate_functor$', Func/0)].
+registratePred_(no, Func) --> true |
+   &stream <<= [get_and_put('$current_predicate_functor$', OldFuncN, NewFuncN)],
+   nextPred(OldFuncN, Func, NewFuncN).
+
+nextPred(Func/N, Func, NewFuncN) --> true |
+   N1:=N+1,
+   NewFuncN=Func/N1.
+otherwise.
+nextPred(_, Func, NewFuncN) --> true |
+   NewFuncN=Func/0.
+
+getPred(Func) --> true |
+  &stream <<= [empty('$current_predicate_functor$', YorN)],
+  getPred(YorN, Func).
+
+getPred(yes, Func) --> true | Func=wrap#([]/0/0).
+getPred(no, Func) --> true |
+  &stream <<= [get_and_put('$current_predicate_functor$', Func0, Func0)],
+{{kl1cmp_wrap:wrap(Func0, Func)}}.
+
+%% begin/end pattern
+
+%% prologue invokes the codes which associate with `end' of old macros, and invoks 'begin'.
+:- local_implicit kl1:oldnew, err:oldnew, stream:oldnew, cstream:oldnew, modtbl:stream.
+prologue(Macros) --> true |
+ {{normalizeMacros(&kl1, &err, &stream, &cstream, &modtbl, [], Macros, MacroCodes0),
+   getAllCodes(MacroCodes, [], MacroCodes0),
+   callSpecial(&stream, &cstream, MacroCodes, begin)}}.
+
+:- local_implicit kl1:oldnew, err:oldnew, stream:oldnew, cstream:oldnew.
+epilogue(Macros) --> true |
+   &stream <<= ['$sagi_var_inf'(get_module_table(ModTbl))],
+   epilogue(ModTbl, [], Macros).
+
+:- local_implicit kl1:oldnew, err:oldnew, stream:oldnew, cstream:oldnew, modtbl:oldnew. 
+epilogue(Macros) --> list(Macros) |
+   normalizeMacros(Macros, MacroCodes0),
+ {{getAllCodes(MacroCodes, [], MacroCodes0),
+   reverse(MacroCodes, RmacroCodes),
+   callSpecial(&stream, &cstream, RmacroCodes, end)}}.
+otherwise.
+epilogue(_) --> true | true.
+
+normalizeMacros([Cod|Rest], MacroCodes0) --> code(Cod, 6, _, _) |
+   MacroCodes0=[Cod|MacroCodes],
+   normalizeMacros(Rest, MacroCodes).
+otherwise.
+normalizeMacros([Cod|Rest], MacroCodes0) --> code(Cod, _, Mod, _) |
+ {{predicate_to_code(Mod, expand_macro, 6, Code)}},
+   MacroCodes0=[Code|MacroCodes],
+   normalizeMacros(Rest, MacroCodes).
+normalizeMacros([Mod|Rest], MacroCodes0) --> module(Mod, _) |
+ {{predicate_to_code(Mod, expand_macro, 6, Code)}},
+   MacroCodes0=[Code|MacroCodes],
+   normalizeMacros(Rest, MacroCodes).
+otherwise.
+normalizeMacros([ModuleName|Rest], MacroCodes0) --> atom(ModuleName) |
+   &modtbl <<= [get_code(ModuleName, expand_macro, 6, Code)],
+   checkCode(Code, Rest, MacroCodes0).
+normalizeMacros([], MacroCodes) --> true | MacroCodes=[].
+
+checkCode(normal(Code), Rest, MacroCodes0) --> true |
+   MacroCodes0=[Code|MacroCodes],
+   normalizeMacros(Rest, MacroCodes).
+otherwise.
+checkCode(_, Rest, MacroCodes) --> true |
+   normalizeMacros(Rest, MacroCodes).
+
+:- local_implicit stream:oldnew, cstream:oldnew.
+callSpecial(MacroModules, Pat) --> true |
+ {{callExpandMacro(MacroModules, &stream, &stream, clause, body, _, _, Pat, _)}}.
+
+reverse(In, Out) :- true |
+   reverse(In, Out, []).
+
+reverse([One|Rest], Out0, Out) :- true |
+   reverse(Rest, Out0, [One|Out]).
+reverse([], Out0, Out) :- true | Out0=Out.
+
+:- local_implicit code:oldnew.
+getAllCodes([Code|Codes]) --> true |
+ {{code_to_predicate(Code, Mod, _, _, _),
+   predicate_to_code(Mod, '$my_super_macro_module', 1, SP),
+   &code <<= [Code]}},
+   callSuper(SP),
+   getAllCodes(Codes).
+getAllCodes([]) --> true | true.
+
+callSuper(Super) --> code(Super, _, _, _) |
+ {{apply(Super, {GrandSuper})}},
+   checkSuper(GrandSuper).
+otherwise.
+callSuper(_) --> true | true.
+
+checkSuper(Super) --> module(Super,_) |
+ {{predicate_to_code(Super, expand_macro, 6, SuperCode)}},
+   &code <<= [SuperCode],
+ {{predicate_to_code(Super, '$my_super_macro_modules', 1, GrandSuper)}},
+   callSuper(GrandSuper).
+otherwise.
+checkSuper(_) --> true | true.
+
+%% common processings
+:- local_implicit kl1:oldnew, err:oldnew, macro:oldnew, stream:oldnew, cstream:oldnew.
+module(Func, Name, Pos) --> true |
+    &kl1 <<= [vector({atom(':-'),vector({atom(Func),Name})})-Pos],
+  {{putModule(&stream, Name)}}.
+
+% :- with_macro with macro module.
+with_macro(List, Pos0) --> true |
+  {{checkArg(&err, List, Macro, Pos0, Pos)}},
+  (&macro(old) = 0 -> true ;
+   otherwise;
+   true -> {{epilogue(&kl1, &err, &stream, &cstream, &macro(old))}},
+           &err <<= [warning("macro module replaced : :- with_macro ~W",[List],Pos)]
+  ),
+  &macro <= Macro.
+
+% :- with_macro without macro module.
+with_macro(Pos) --> true |
+ (&macro(old)=0 -> true;
+  &macro(old)=1 -> &err <<= [warning("duplicate macro declaration : :- with_macro",[], Pos)];
+  otherwise;
+  true -> {{epilogue(&kl1, &err, &stream, &cstream, &macro(old))}}
+%%          &err <<= [warning("macro module is no longer referenced : :- with_macro",[], Pos)]),
+  ),
+  &macro <= 1.
+
+define(on, yes, Sym0, Val0, atom(Sym0), Val, Pos, NewVal) --> true |
+   {{check_value(Val, 0, Stat0),
+     regist_value(&err, &stream, Sym0, Val, Stat0, Stat, Pos)}},
+   {{check_replace(Stat, Val0, Val, NewVal)}}.
+otherwise.
+define(on, yes, _, Val0, atom(Sym), Val, Pos, NewVal) --> true |
+ {{check_value(Val, 0, Stat0),
+   regist_value(&err, &stream, Sym, Val, Stat0, _, Pos)}},
+   Val0=NewVal.
+otherwise.
+define(_, _, _, Val0, atom(_), _, _, NewVal) --> true |
+   NewVal=Val0.
+otherwise.
+define(_, _, _, Val0, Symbol, Value, Pos, NewVal) --> true |
+   &err <<= [error("invalid macro declaration : :- define(~W, ~W)", [Symbol, Value], Pos)],
+   NewVal=Val0.
+
+undefine(on, yes, Sym0, atom(Sym0), Pos) --> true |
+    &err <<= [warning("referenced macro undefined : :- undefine(~T)",[Sym0],Pos)].
+otherwise.
+undefine(on, yes, _, atom(Sym), Pos) --> true |
+   &stream <<= ['$sagi_macro_inf'(get_if_any(Sym, Old))],
+ {{check_empty(&err, Sym, Old, Pos)}}.
+otherwise.
+undefine(_, _, _, atom(_), _) --> true | true.
+otherwise.
+undefine(_, _, _, Symbol, Pos) --> true |
+   &err <<= [error("invalid macro declaration : :- undefine(~W)",[Symbol], Pos)].
+
+
+if_equal(ONOFF, YorN, atom(Symbol), Value, Pos, Cdr, Cont) --> true |
+   (ONOFF = on, YorN = yes ->
+    &stream <<= ['$sagi_macro_inf'(empty(Symbol, YorN1))],
+    check_if_equal(on, YorN1, Symbol, Value, Cdr, Cont, Pos);
+    otherwise;
+    true -> mode_if(off, no, Symbol, nil, Cdr, Cont)).
+otherwise.
+if_equal(_, _, Symbol, Value, Pos, Cdr, Cont) --> true |
+    &err <<= [error("invalid macro declaration : :- if_equal(~W, ~W)",[Symbol, Value], Pos)],
+    mode_if(off, no, Symbol, nil, Cdr, Cont).
+
+if_not_equal(ONOFF, YorN, atom(Symbol), Value, Pos, Cdr, Cont) --> true |
+   (ONOFF = on, YorN = yes ->
+    &stream <<= ['$sagi_macro_inf'(empty(Symbol, YorN1))],
+    check_if_not_equal(on, YorN1, Symbol, Value, Cdr, Cont, Pos);
+    otherwise;
+    true -> mode_if(off, no, Symbol, nil, Cdr, Cont)).
+otherwise.
+if_not_equal(_, _, Symbol, Value, Pos, Cdr, Cont) --> true |
+    &err <<= [error("invalid macro declaration : :- if_not_equal(~W, ~W)",[Symbol, Value], Pos)],
+    mode_if(off, no, Symbol, nil, Cdr, Cont).
+
+if_defined(on, yes, atom(Symbol), _, Cdr, Cont) --> true |
+    &stream <<= ['$sagi_macro_inf'(empty(Symbol, YorN))],
+  {{check_if_defined(&stream, YorN, YorN1, Symbol, Value)}},
+    mode_if(on, YorN1, Symbol, Value, Cdr, Cont).
+otherwise.
+if_defined(_, _, atom(Symbol), _, Cdr, Cont) --> true |
+    mode_if(off, no, Symbol, nil, Cdr, Cont).
+otherwise.
+if_defined(_, _, Symbol, Pos, Cdr, Cont) --> true |
+    &err <<= [error("invalid macro declaration : :- if_defined(~W)",[Symbol],Pos)],
+    mode_if(off, no, Symbol, nil, Cdr, Cont).
+
+if_not_defined(on, yes, atom(Symbol), _, Cdr, Cont) --> true |
+    &stream <<= ['$sagi_macro_inf'(empty(Symbol, YorN))],
+  {{check_if_not_defined(&stream, YorN, YorN1, Symbol, Value)}},
+    mode_if(on, YorN1, Symbol, Value, Cdr, Cont).
+otherwise.
+if_not_defined(_, _, atom(Symbol), _, Cdr, Cont) --> true |
+    mode_if(off, no, Symbol, nil, Cdr, Cont).
+otherwise.
+if_not_defined(_, _, Symbol, Pos, Cdr, Cont) --> true |
+    &err <<= [error("invalid macro declaration : :- if_not_defined(~W)",[Symbol],Pos)],
+    mode_if(off, no, Symbol, nil, Cdr, Cont).
+
+switch(on, yes, atom(Symbol), Pos, Cdr, Cont) --> true |
+    &stream <<= ['$sagi_macro_inf'(empty(Symbol,YorN1))],
+    switch_start(on, Symbol, YorN1, Cdr, Cont, Pos).
+otherwise.
+switch(_, _, atom(Symbol), _, Cdr, Cont) --> true |
+    mode_case(off, no, off, Symbol, nil, Cdr, Cont).
+otherwise.
+switch(_, _, Symbol0, Pos, Cdr, Cont) --> true |
+    true -> &err <<= [error("invalid macro declaration : :- switch(~W)", [Symbol0],Pos)],
+    mode_case(off, no, off, Symbol0, nil, Cdr, Cont).
+
+case(ONOFF, YorN, SW, Sym, Val, atom(case), Func, Dec, Pos, Cdr, Cont) --> true |
+    Func=atom(case),
+    expandCaseOrNot(ONOFF, YorN, SW, Sym, Val, Dec, Pos, Cdr, Cont).
+otherwise.
+case(ONOFF, YorN, SW, Sym, Val, Func0, Func, Dec, Pos, Cdr, Cont) --> true |
+    Func0=Func,
+    expandOrdinaryClauseInSwitch(ONOFF, YorN, SW, Sym, Val,
+            vector({atom(':-'), vector(Dec)})-Pos, Cdr, Cont).
+
+expandCaseOrNot(on, _, SW, Sym, Val, Dec, _, Cdr, Cont) --> vector(Dec, N) |
+  {{unify_values(1, N, Dec, Val, no, YorN0),
+    orAnswer(YorN0, SW, NewSW)}},
+    mode_case(on, YorN0, NewSW, Sym, Val, Cdr, Cont).
+otherwise.
+expandCaseOrNot(_, _, SW, Sym, Val, _, _, Cdr, CdrOut) --> true |
+    mode_case(off, no, SW, Sym, Val, Cdr, CdrOut).
+
+orAnswer(yes, _, SW) :- SW=on.
+orAnswer(no, SW0, SW) :- SW0=SW.
+
+unify_values(A, N, Dec0, Val, no, YorN) :- A<N |
+   set_vector_element(Dec0, A, Val0, Val0, Dec1),
+   unify_value(Val0, Val, YorN1),
+   A1:=A+1,
+   unify_values(A1, N, Dec1, Val, YorN1, YorN).
+unify_values(_, _, _, _, yes, YorN) :- true |
+   YorN=yes.
+otherwise.
+unify_values(_, _, _, _, _, YorN) :- true | YorN=no.
+
+expandOrdinaryClauseInSwitch(ONOFF, YorN, SW, Sym, Val, Term, Cdr, Cont) --> true |
+  (ONOFF = on, YorN = yes ->
+    {{expandStart(&kl1, &err, &stream, &cstream, &macro(old), [Term|Cdr], CodeOut, Cont0)}},
+      &macro <= CodeOut,
+      mode_case(on, yes, on, Sym, Val, Cont0, Cont);
+  otherwise;
+  true -> mode_case(ONOFF, YorN, SW, Sym, Val, Cdr, Cont)).
+
+%% make new {{...}}
+makeVector(Goals0, Goals) :- true |
+    length(Goals0, Goals1, 0, N),
+    new_vector(Goals2, N),
+    makeVector(0, Goals1, Goals2, Goals).
+
+length([G|Rest], GList0, A, N) :- true |
+    A1:=A+1,
+    GList0=[G|GList],
+    length(Rest, GList, A1, N).
+length([], GList, A, N) :- true | A=N, GList=[].
+
+makeVector(A, [G|Rest], Goals0, Goals) :- true |
+    set_vector_element(Goals0, A, _, G, Goals1),
+    A1:=A+1,
+    makeVector(A1, Rest, Goals1, Goals).
+makeVector(_, [], Goals0, Goals) :- true | Goals0=Goals.

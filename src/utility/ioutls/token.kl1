@@ -1,0 +1,811 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi253::>sys>user>fujise>token.kl1.3, 31-Oct-92 16:29:21, Edit by fujise
+% icpsi366::>sys>user>wada>PIMOS>ioutls>token.kl1.3, 24-Feb-92 17:34:48, Edit by wada
+%% icpsi167::>sys>user>koshimura>kl1>token.kl1.42, 28-Nov-89 10:37:09, Edit by koshimura
+:- module(token).
+:- include("pimos.h").
+:- with_macro pimos.
+:- public tokens/4, ct/2.
+
+:- implicit out:oldnew.
+
+%
+%    tokens(-InStream,+InStream, -AtomManager, -TokenList)
+%
+
+:- local_implicit atom:stream.
+
+tokens(TL) --> true |
+        &out<<=[getc(C)],
+        tokens0(TL,C).
+
+tokens0(TL,C) --> wait(C) |
+        {{ct(C,T)}},
+        tokens(TL,C,T).
+
+%
+%    tokens(-InStream,+InStream, -AtomManager, -TokenList, +Char,+Type)
+%            
+tokens(TL,C,0) --> true |        % lowercase
+        &out<<=[getc(C1)],
+        normal_atom(Token,LC,LT,1,[C],C1),
+        TL = [Token|TL0],
+        tokens(TL0,LC,LT).
+tokens(TL,C,1) --> true |        % uppercase
+        &out<<=[getc(C1)],
+        {{variable(&out,Token,LC,LT,1,[C],C1)}},
+        TL = [Token|TL0],
+        tokens(TL0,LC,LT).
+tokens(TL,C,2) --> true |        % underline
+        &out<<=[getc(C1)],
+        {{after_ul(&out,Token,LC,LT,1,[C],C1)}},
+        TL = [Token|TL0],
+        tokens(TL0,LC,LT).
+tokens(TL,C,3) --> true |    % numeral
+        {{number(&out,3,C, {Token, LT,LC})}},
+        TL = [Token|TL0],
+        tokens(TL0,LC,LT).
+%tokens(4,#"$", V,NV, AtomMan, TL, InS,NInS) :- true |
+%    AtomMan = {AtomMan1, AtomMan2},
+%    InS = [getc(C1)|InS0], ct(C1, T1),
+%    afterDollar(T1,C1, Token, LT,LC, AtomMan1, InS0,InS1),
+%    TL = [Token|TL0],
+%    tokens(LT,LC, V,NV, AtomMan2, TL0, InS1,NInS).
+tokens(TL,C,4) --> C = #"+" |
+        &out<<=[getc(C1)],
+        afterSign(TL,TL1,C, LT,LC,C1),
+        tokens(TL1,LC,LT).
+tokens(TL,C,4) --> C = #"-" |
+        &out<<=[getc(C1)],
+        afterSign(TL,TL1,C, LT,LC,C1),
+        tokens(TL1,LC,LT).
+tokens(TL,C,4) --> C =\= #"+", C =\= #"-" |
+        &out<<=[getc(C1)],
+        special_atom(TL,TL1,LC,LT,C,C1),
+        tokens(TL1,LC,LT).
+tokens(TL,_,5) --> true |    % period
+        &out<<=[getc(C1)],
+        after_period(Token,LC,LT,C1),
+        TL = [Token|TL0],
+        tokens(TL0,LC,LT).
+tokens(TL,_,6) --> true |    % quote
+        quoted_atom(Token, LT,LC),
+        TL = [Token|TL0],
+        tokens(TL0,LC,LT).
+tokens(TL,_,7) --> true |    % percent
+        &out<<=[skip(key#lf)],        % 10 is LF
+        tokens(TL).
+tokens(TL,_,8) --> true |    % double quote
+        {{string(&out,Token, LT,LC)}},
+        TL = [Token|TL0],
+        tokens(TL0,LC,LT).
+tokens(TL,_,9) --> true |
+        &out<<=[getc(C)],
+        {{ct(C,T)}},
+        {{test_par(&out,T,C, (!), {Token, LT,LC})}},
+        TL = [Token|TL0],
+        tokens(TL0,LC,LT).
+tokens(TL,_,10) --> true |
+        &out<<=[getc(C)],
+        {{ct(C,T)}},
+        {{test_par(&out,T,C, (;), {Token, LT,LC})}},
+        TL = [Token|TL0],
+        tokens(TL0,LC,LT).
+tokens(TL,_,11) --> true |
+        TL = ['('|TL0],
+        tokens(TL0).
+tokens(TL,_,12) --> true | 
+        TL = [')'|TL0],
+        tokens(TL0).
+tokens(TL,_,13) --> true | 
+        TL = ['['|TL0],
+        tokens(TL0).
+tokens(TL,_,14) --> true | 
+        TL = [']'|TL0],
+        tokens(TL0).
+tokens(TL,_,15) --> true | 
+        TL = ['{'|TL0],
+        tokens(TL0).
+tokens(TL,_,16) --> true | 
+        TL = ['}'|TL0],
+        tokens(TL0).
+tokens(TL,_,17) --> true | 
+        TL = [('|')|TL0],
+        tokens(TL0).
+tokens(TL,_,18) --> true |
+        TL = [(',')|TL0],
+        tokens(TL0).
+tokens(TL,_,20) --> true |
+        tokens(TL).
+tokens(TL,C,21) --> true |        % EOF
+        TL = [end_of_file],
+        &out<<=[ungetc(C)].
+tokens(TL,C,22) --> true |        % ABORT
+        TL = [abort],
+        &out<<=[ungetc(C)].
+tokens(TL,_,end) --> true |     % end of a term
+        TL = [].
+tokens(TL,_,abort) --> true |     % abortion of device
+        TL = [].
+
+%
+%    normal_atom(-InStream,-NewInStream, -AtomManager, -Token, -LastCharType,-LastChar, +Char)
+%
+normal_atom(Token,LC,LT,I,CList,C) --> wait(C) |
+        {{ct(C,T)}},
+        normal_atom1(Token,LC,LT,I,CList,C,T).
+
+normal_atom1(Token,LC,LT,I,CList,C,Type) --> 0=<Type,Type=<3 |
+        &out<<=[getc(C1)],
+        normal_atom(Token,LC,LT,~(I+1),[C|CList],C1).
+normal_atom1(Token,LC,LT,I,CList,_,Type) --> Type=11 |
+        &out<<=[getc(LC)],
+        {{ct(LC,LT)}},
+        {{builtin#new_string(Str0,I)}},
+        {{intern_atom(&atom,open,Token,Str0,~(I-1),CList)}}.
+otherwise.
+normal_atom1(Token,LC,LT,I,CList,C,Type) --> true |
+        LT=Type,LC=C,
+        {{builtin#new_string(Str0,I)}},
+        {{intern_atom(&atom,atom,Token,Str0,~(I-1),CList)}}.
+
+intern_atom(Atom,F,Token,Str,I,[C|L]) :- true |
+        set_string_element(Str,I,C,Str1),
+        intern_atom(Atom,F,Token,Str1,~(I-1),L).
+intern_atom(Atom,F,Token,Str,_,[]) :- true |
+        Atom=[intern(Str,Status)],
+        internAtomDecide(Status,F,Token).
+
+%
+% internAtomDecide(+InternStatus, +Functor, -Token)
+%
+internAtomDecide(normal(Atom), F, Token) :- true | Token = {F, Atom}.
+internAtomDecide(abnormal, _, Token) :- true | Token = error(atom_device_abnormal).
+internAtomDecide(aborted, _, Token) :- true | Token = error(atom_device_aborted).
+
+make_string(Str,Str1,I,[C|L]) :- true |
+        set_string_element(Str,I,C,Str0),
+        make_string(Str0,Str1,~(I-1),L).
+make_string(Str,Str1,_,[]) :- true | Str=Str1.
+
+afterSign(TL,TL1,C, LT,LC,C1) --> wait(C1) |
+        {{ct(C1,T1)}},
+        afterSignDecide(TL,TL1,T1,C1, C, LT,LC).
+
+afterSignDecide(TL,TL1,3,C1, C, LT,LC) --> true | % Numeral
+        {{number(&out,3,C1, C,{Token, LT,LC})}},
+        TL = [Token|TL1].
+otherwise.
+afterSignDecide(TL,TL1,_,C1, C, LT,LC) --> true |
+        special_atom(TL,TL1,LC,LT,C,C1).
+
+%
+% special_atom(-InStream,-NewInStream,-AtomManager,
+%         +Char, -LastCharType,-LastChar, -TokenList,TokenList)
+%
+special_atom(TL,NTL,LC,LT,#"/",C1) --> wait(C1) |
+        {{ct(C1, T1)}},
+        special_atomComment(TL,NTL,T1,C1, #"/", LT,LC).
+otherwise.
+special_atom(TL,NTL,LC,LT,C,C1) --> wait(C1) |
+        TL = [Token|NTL],
+        {{ct(C1, T1)}},
+        special_atom1(Token,LC,LT,1,[C],C1,T1).
+
+special_atom0(Token,LC,LT,I,CList,C) --> wait(C) |
+        {{ct(C,T)}},
+        special_atom1(Token,LC,LT,I,CList,C,T).
+
+special_atom1(Token,LC,LT,I,CList,C,T) --> 4=<T,T=<5 |
+        &out<<=[getc(C1)],
+        special_atom0(Token,LC,LT,~(I+1),[C|CList],C1).
+special_atom1(Token,LC,LT,I,CList,_,T) --> T=11 |
+        &out<<=[getc(LC)],
+        {{ct(LC,LT)}},
+        {{builtin#new_string(Str0,I)}},
+        {{intern_atom(&atom,open,Token,Str0,~(I-1),CList)}}.
+otherwise.
+special_atom1(Token,LC,LT,I,CList,C,T) --> true |
+        LC=C,LT=T,
+        {{builtin#new_string(Str0,I)}},
+        {{intern_atom(&atom,atom,Token,Str0,~(I-1),CList)}}.
+
+special_atomComment(TL,NTL,_,#"*", _, LT,LC) --> true | 
+        TL = NTL,
+        &out<<=[skip(#"*"),getc(C)],
+        {{special_atomCommentDecide(&out,C, LT,LC)}}.
+otherwise.
+special_atomComment(TL,NTL,T,C, PC, LT,LC) --> true |
+        TL = [Token|NTL],
+        special_atom1(Token,LC,LT,1,[PC],C,T).
+
+special_atomCommentDecide(InS,NInS,#"/", LT,LC) :- true |
+    InS = [getc(LC)|NInS], ct(LC,LT).
+special_atomCommentDecide(InS,NInS,#"*", LT,LC) :- true |
+    InS = [getc(C)|InS1],
+    special_atomCommentDecide(InS1,NInS,C, LT,LC).
+special_atomCommentDecide(InS,NInS,-1, LT,LC) :- true |
+    InS = NInS, ct(-1,LT), LC = -1.
+otherwise.
+special_atomCommentDecide(InS,NInS,_, LT,LC) :- true |
+    InS = [skip(#"*"),getc(C)|InS0],
+    special_atomCommentDecide(InS0,NInS,C, LT,LC).
+
+after_period(Token,LC,LT,C) --> wait(C) |
+        {{ct(C,T)}},
+        after_period1(Token,LC,LT,C,T).
+
+after_period1(Token,LC,LT,C,4) --> true |
+        special_atom([Token],[],LC,LT,#".",C).
+after_period1(Token,LC,LT,C,5) --> true |
+        special_atom([Token],[],LC,LT,#".",C).
+after_period1(Token,LC,LT,_,11) --> true |
+        &atom<<=[intern(string#".", Status)],
+        {{internAtomDecide(Status, open, Token)}},
+        &out<<=[getc(LC)],
+        {{ct(LC, LT)}}.
+after_period1(Token,LC,LT,_,20) --> true | Token=end,LT=end.
+after_period1(Token,LC,LT,C,21) --> true | % EOF
+        Token=end,LT=end,
+        &out<<=[ungetc(C)].
+after_period1(Token,LC,LT,C,22) --> true | % ABORT
+        Token=abort,LT=abort,
+        &out<<=[ungetc(C)].
+otherwise.
+after_period1(Token,LC,LT,C,T) --> true |
+        &atom<<=[intern(string#".", Status)],
+        {{internAtomDecide(Status, atom, Token)}},
+        LT = T, LC = C.
+
+:- local_implicit.
+
+%
+% variable(-InStream,+InStream, +Char, -Token, -LastCharType,-LastChar)
+%
+variable(Token,LC,LT,I,CList,C) --> wait(C) |
+        {{ct(C,T)}},
+        variable1(Token,LC,LT,I,CList,C,T).
+
+variable1(Token,LC,LT,I,CList,C,T) --> 0=<T,T<4 |
+        &out<<=[getc(C1)],
+        variable(Token,LC,LT,~(I+1),[C|CList],C1).
+variable1(Token,LC,LT,I,CList,C,T) --> T>=4 |
+        LT=T,LC=C,
+        Token=variable(Name),
+        {{builtin#new_string(Name0,I)}},
+        {{make_string(Name0,Name,~(I-1),CList)}}.
+
+after_ul(Token,LC,LT,I,CList,C) --> wait(C) |
+        {{ct(C,T)}},
+        after_ul(Token,LC,LT,I,CList,C,T).
+
+after_ul(Token,LC,LT,I,CList,C,T) --> T=<3 |
+        &out<<=[getc(C1)],
+        variable(Token,LC,LT,~(I+1),[C|CList],C1).
+after_ul(Token,LC,LT,_,_,C,T) --> T>=4 |
+        LT=T,LC=C,
+        Token=variable("_").
+
+%
+%    number(-InStream,-NewInStream, +Type,+Char, +{-Token, -LastCharType,-LastChar})
+%
+number(InS,InS0,T,C, Sign,ETC) :- true |
+    builtin#new_string(String, Size),
+    number1(InS,InS0,T,C, Sign,ETC, 0,Size, String).
+
+number(InS,InS0,T,C, ETC) :- true | 
+    number(InS,InS0,T,C, 0,ETC).
+
+number1(InS,InS0,3,C, Sign,ETC, M,N, Str) :- true |
+    set_string_element(Str,M, C, Str1),
+    M1 := M + 1,
+    InS = [getc(C1)|InS1], ct(C1,T1),
+    number1(InS1,InS0,T1,C1, Sign,ETC, M1,N, Str1).
+number1(InS,InS0,5,C, Sign,ETC, M,N, Str) :- true | %Period
+    N := M,
+    number2(Sign,Str, Int),
+    InS = [getc(C1)|InS1], ct(C1,T1),
+    numberAfterPeriod(InS1,InS0,T1,C1, 5,C, Int, ETC).
+number1(InS,InS0,6,C, Sign,ETC, M,N, Str) :- true | %Quote
+    N := M,
+    number2(Sign,Str, Int),
+    InS = [getc(C1)|InS1], ct(C1,T1),
+    numberAfterQuote(InS1,InS0,T1,C1, 5,C, Int, ETC).
+otherwise.
+number1(InS,InS0,T,C, Sign,{Token, LT,LC}, M,N, Str) :- true |
+    LT = T, LC = C, N := M, InS = InS0, number2(Sign,Str, Token).
+
+number2(Sign,Str, Token) :- true |
+    bignum:parse(Str, Int),
+    (Sign = #"+"   ->  Token = pint(Int); 
+     Sign = #"-"   ->  Token = mint(Int); 
+     Sign = 0   ->  Token = int(Int)).
+
+%
+% numberAfterPeriod(InStream,NewInStream, +Type,+Char, +PreType,+PreChar, +TokenizedInteger, 
+%        +{-Token, -LastCharType,-LastChar})
+%
+:- switch(floating_point).
+:- case(no).
+numberAfterPeriod(InS,InS0,T,C, PT,PC, Int, {Token, LT,LC}) :- true |
+    InS = [ungetc(C)|InS0],
+    Token = Int,
+    LT = PT, LC = PC.
+
+:- case(yes).
+numberAfterPeriod(In,In1,3,C,_,_,Int,ETC) :- true |
+        In=[getc(C1)|In0],
+        ct(C1,T1),
+        if_extended(In0,In1,T1,C1,Int,ETC,[C]).
+numberAfterPeriod(In,In1,T,C,PT,PC,Int,{Token,LT,LC}) :- T=\=3 |
+        In=[ungetc(C)|In1],
+        Token=Int,
+        LT=PT,LC=PC.
+
+if_extended(In,In1,3,C,Int,ETC,List) :- true |
+        In=[getc(C1)|In0],
+        ct(C1,T1),
+        if_extended(In0,In1,T1,C1,Int,ETC,[C|List]).
+if_extended(In,In1,_,C,Int,ETC,List) :- (C= #"E" ; C= #"e"),Int={Type,M} |
+        float(List,M,$~(float(0)),Float),
+        In=[getc(C1)|In0],
+        ct(C1,T1),
+        float_exp(In0,In1,T1,C1,Float,Type,ETC,single).
+:- switch(extended_floating_point).
+:- case(yes).
+if_extended(In,In1,_,C,Int,ETC,List) :- (C= #"X" ; C= #"x"),Int={Type,M} |
+        integer_to_extended_floating_point(0,Zero),
+        floatX(List,M,Zero,Float),
+        In=[getc(C1)|In0],
+        ct(C1,T1),
+        float_exp(In0,In1,T1,C1,Float,Type,ETC,extended).
+if_extended(In,In1,T,C,Int,ETC,List) :- C=\= #"E",C=\= #"e",C=\= #"X",C=\= #"x",
+    ETC={Token,LT,LC},Int={Type,M} |
+        LT=T,LC=C,In=In1,
+        Token={FType,Float},
+        get_float_type(Type,single,FType),
+        float(List,M,$~(float(0)),Float).
+:- case(no).
+if_extended(In,In1,T,C,Int,ETC,List) :- C=\= #"E",C=\= #"e",
+    ETC={Token,LT,LC},Int={Type,M} |
+        LT=T,LC=C,In=In1,
+        Token={FType,Float},
+        get_float_type(Type,single,FType),
+        float(List,M,$~(float(0)),Float).
+:- end_switch.
+
+float_exp(In,In1,_,C,Float,Type,ETC,EX) :- (C= #"+" ; C= #"-") |
+        In=[getc(C1)|In0],
+        ct(C1,T1),
+        number(In0,In1,T1,C1,{Token,LT,LC}),
+        float_exp2(C,Float,Type,ETC,Token,LT,LC,EX).
+float_exp(In,In1,3,C,Float,Type,ETC,EX) :- true |
+        number(In,In1,3,C,{Token,LT,LC}),
+        float_exp2(#"+",Float,Type,ETC,Token,LT,LC,EX).
+otherwise.
+float_exp(In,In1,T,C,Float,_,{Token,LT,LC},EX) :- true |
+        LT=T,LC=C,In=In1,
+        get_error_token(EX,Float),
+        Token=error(Float).
+
+get_error_token(single,F) :- true | F=floating.
+get_error_token(extended,F) :- true | F=extended_floating.
+
+float_exp2(#"+",Float,Type,{Token,LT,LC},int(Int),T,C,EX) :- true |
+        LT=T,LC=C,
+        Token={FType,Float1},
+        get_float_type(Type,EX,FType),
+        float_exp2multiply(Int,Float,Float1,EX).
+float_exp2(#"-",Float,Type,{Token,LT,LC},int(Int),T,C,EX) :- true |
+        LT=T,LC=C,
+        Token={FType,Float1},
+        get_float_type(Type,EX,FType),
+        float_exp2divide(Int,Float,Float1,EX).
+otherwise.
+float_exp2(_,_,_,{Token,LT,LC},_,T,C,EX) :- true |
+        LT=T,LC=C,
+        get_error_token(EX,Float),
+        Token=error(Float).
+
+get_float_type(pint,single,Type) :- true | Type=pfloat.
+get_float_type(mint,single,Type) :- true | Type=mfloat.
+get_float_type(int,single,Type) :- true | Type=float.
+get_float_type(pint,extended,Type) :- true | Type=pfloatX.
+get_float_type(mint,extended,Type) :- true | Type=mfloatX.
+get_float_type(int,extended,Type) :- true | Type=floatX.
+
+:- switch(extended_floating_point).
+:- case(no).
+float_exp2multiply(N,F,F1,_) :- wait(F) |
+        float_exp2multiply(N,F,F1).
+float_exp2divide(N,F,F1,_) :- wait(F) |
+        float_exp2divide(N,F,F1).
+
+:- case(yes).
+float_exp2multiply(N,F,F1,single) :- wait(F) |
+        float_exp2multiply(N,F,F1).
+float_exp2multiply(N,F,F1,extended) :- wait(F) |
+        floatX_exp2multiply(N,F,F1).
+
+float_exp2divide(N,F,F1,single) :- wait(F) |
+        float_exp2divide(N,F,F1).
+float_exp2divide(N,F,F1,extended) :- wait(F) |
+        floatX_exp2divide(N,F,F1).
+
+floatX_exp2multiply(0,F,F1) :- true | F=F1.
+floatX_exp2multiply(N,F,F1) :- N>0 |
+        integer_to_extended_floating_point(10,Ten),
+        F0 $$:= F*Ten,
+        floatX_exp2multiply(~(N-1),F0,F1).
+
+floatX_exp2divide(0,F,F1) :- true | F=F1.
+floatX_exp2divide(N,F,F1) :- N>0 |
+        integer_to_extended_floating_point(10,Ten),
+        F0 $$:= F/Ten,
+        floatX_exp2divide(~(N-1),F0,F1).
+
+floatX([C|L],M,F,F1) :- true |
+        CV := C- #"0",
+        integer_to_extended_floating_point(CV,CVXF),
+        integer_to_extended_floating_point(10,Ten),
+        F0 $$:= CVXF+ F/Ten,
+        floatX(L,M,F0,F1).
+floatX([],M,F,F1) :- integer(M) |
+        integer_to_extended_floating_point(M,MXF),
+        integer_to_extended_floating_point(10,Ten),
+        F1 $$:= MXF+ F/Ten.
+floatX([],M,F,F1) :- bignum#bignum(M) |
+        bignum:numer(M,_,B),
+        bignum_to_floatX(B,F,F1).
+
+bignum_to_floatX(B,F,F1) :- string(B,N,_) |
+        integer_to_extended_floating_point(0,M0),
+        bignum_to_floatX1(B,F,F1,M0,0,N).
+
+bignum_to_floatX1(B,F,F1,M,I,N) :- I<N,string_element(B,I,E),E>=0 |
+        integer_to_extended_floating_point(16#"40000000",A),
+        integer_to_extended_floating_point(4,A1),
+        integer_to_extended_floating_point(E,EXF),
+        M1 $$:= M*A*A1+EXF,
+        bignum_to_floatX1(B,F,F1,M1,~(I+1),N).
+bignum_to_floatX1(B,F,F1,M,I,N) :- I<N,string_element(B,I,E),E<0 |
+        E1:= E/\16#"7fffffff",
+        integer_to_extended_floating_point(16#"40000000",A),
+        integer_to_extended_floating_point(4,A1),
+        integer_to_extended_floating_point(2,A2),
+        integer_to_extended_floating_point(E1,EXF),
+        M1 $$:= (M*A1+A2)*A+EXF,
+        bignum_to_floatX1(B,F,F1,M1,~(I+1),N).
+bignum_to_floatX1(_,F,F1,M,N,N) :- true |
+        integer_to_extended_floating_point(10,Ten),
+        F1 $$:= M+ F/Ten.
+
+:- end_switch.
+
+float_exp2multiply(0,F,F1) :- true | F=F1.
+float_exp2multiply(N,F,F1) :- N>0 |
+        F0 $:= F*float(10),
+        float_exp2multiply(~(N-1),F0,F1).
+
+float_exp2divide(0,F,F1) :- true | F=F1.
+float_exp2divide(N,F,F1) :- N>0 |
+        F0 $:= F/float(10),
+        float_exp2divide(~(N-1),F0,F1).
+
+float([C|L],M,F,F1) :- true |
+        CV := C- #"0",
+        F0 $:= float(CV)+ F/float(10),
+        float(L,M,F0,F1).
+float([],M,F,F1) :- integer(M) |
+        F1 $:= float(M)+ F/float(10).
+float([],M,F,F1) :- bignum#bignum(M) |
+        bignum:numer(M,_,B),
+        bignum_to_float(B,F,F1).
+
+bignum_to_float(B,F,F1) :- string(B,N,_) |
+        M0 $:= float(0),
+        bignum_to_float1(B,F,F1,M0,0,N).
+
+bignum_to_float1(B,F,F1,M,I,N) :- I<N,string_element(B,I,E),E>=0 |
+        M1 $:= M*float(16#"40000000")*float(4)+float(E),
+        bignum_to_float1(B,F,F1,M1,~(I+1),N).
+bignum_to_float1(B,F,F1,M,I,N) :- I<N,string_element(B,I,E),E<0 |
+        E1:= E/\16#"7fffffff",
+        M1 $:= M*float(16#"40000000")*float(4)+
+            float(16#"40000000")*float(2)+float(E1),
+        bignum_to_float1(B,F,F1,M1,~(I+1),N).
+bignum_to_float1(_,F,F1,M,N,N) :- true |
+        F1 $:= M+ F/float(10).
+
+:- end_switch.
+
+%
+% numberAfterQuote(InStream,NewInStream, +Type,+Char, +PreType,+PreChar +TokenizedAdic
+%       +{-Token, -LastCharType,-LastChar})
+%
+numberAfterQuote(InS,InS0,T,C, _,_, {Sign,A}, ETC) :- 2 =< A, A =< 36 |
+    builtin#new_string(Str, Size),
+    numberAfterQuoteArgs(InS,InS0,0,Size, Str, T,C, Sign,A, ETC).
+otherwise.
+numberAfterQuote(InS,InS0,T,C, _,PC, A, {Token, LT,LC}) :- true |
+    InS = [ungetc(PC)|InS0],
+    LT = T, LC = C, Token = A.
+
+numberAfterQuoteArgs(InS,InS0,M,N, Str, T,C, Sign,A, ETC) :- true |
+    numberAfterQuoteArgs1(T,C, A, Status),
+    (Status = normal(C1)  ->
+        set_string_element(Str, M, C1, Str1),
+        M1 := M + 1,
+        InS = [getc(C2)|InS1], ct(C2,T2),
+        numberAfterQuoteArgs(InS1,InS0,M1,N, Str1, T2,C2, Sign,A, ETC);
+     Status = abnormal(T1,C1), ETC = {Token, LT,LC}   ->
+        N := M, LT = T1, LC = C1, InS = InS0,
+        mklib:string_to_integer(Str,A, Int),
+        (Int = normal(Int0) -> Token = {Sign,Int0};
+         Int = abnormal(Info) -> Token = error(Info))).
+
+numberAfterQuoteArgs1(3,C, A, Status) :-    % numeral
+    Digit := C - #"0", 0 =< Digit, Digit < A |
+    Status = normal(C).
+numberAfterQuoteArgs1(1,C, A, Status) :-    % uppercase
+    Digit := C - #"A" + 10, 10 =< Digit, Digit < A |
+    Status = normal(C).
+numberAfterQuoteArgs1(0,C, A, Status) :-    % lowercase
+    Digit := C - #"a" + 10, 10 =< Digit, Digit < A |
+    Status = normal(C).
+otherwise.
+numberAfterQuoteArgs1(T,C, A, Status) :- true |
+    Status = abnormal(T,C).
+
+%
+%    string(-InStream,-NewInStream,-Token, -LastCharType,-LastChar)
+%
+string(InS,NInS,Token, LT,LC) :- true |
+    builtin#new_string(Str, Size),
+    InS = [getc(C)|InS1],
+    string1(InS1,NInS,C, 0,Size, LT,LC, Str, Token).
+
+string1(InS,NInS,#"""", M,N, LT,LC, Str, Token) :- true |    % 34 = """"
+    InS = [getc(C1)|InS1], ct(C1, T1), 
+    after_double_quote(InS1,NInS,T1,C1, M,N, LT,LC, Str, Token).
+%string1(InS,NInS,key#lf, M,N, LT,LC, Str, Token) :- true |    % 10 is NL
+%    shoen:raise(pimos_tag#job, 
+%            fatal(string#"Newline occurred in a string",[]), _),
+%    InS = [getc(C1)|InS1], ct(C1, T1), 
+%    after_double_quote(InS1,NInS,T1,C1, M,N, LT,LC, Str, Token).
+string1(InS,NInS,key#lf, M,N, LT,LC, _, Token) :- true |
+    N := M,
+    InS = [getc(LC)|NInS], ct(LC, LT),
+    Token = error(newline_occurred_in_a_string).
+string1(InS,NInS,-1, M,N, LT,LC, Str, Token) :- true |    % EOF
+    N := M, ct(-1, LT), LC := -1, Token = string(Str), NInS = InS.
+otherwise.
+string1(InS,NInS,C, M,N, LT,LC, Str, Token) :- true |
+    set_string_element(Str, M, C, Str1),
+    InS = [getc(C1)|InS1],
+    M1 := M + 1,
+    string1(InS1,NInS,C1, M1,N, LT,LC, Str1, Token).
+
+after_double_quote(InS,NInS,8,C, M,N, LT,LC, Str, Token) :- true |
+    set_string_element(Str, M, C, Str1),
+    InS = [getc(C1)|InS1], 
+    M1 := M + 1,
+    string1(InS1,NInS,C1, M1,N, LT,LC, Str1, Token).
+otherwise.
+after_double_quote(InS,NInS,T,C, M,N, LT,LC, Str, Token) :- true |
+    N := M,
+    Token = string(Str),
+    NInS = InS,
+    LT = T, LC = C.
+
+%
+%    quoted_atom(-InStream,-NewInStream,-AtomManager, -Token, -LastCharType,-LastChar)
+%
+quoted_atom(InS,NInS,AtomMan, Token, LT,LC) :- true |
+    builtin#new_string(Str, Size),
+    InS = [getc(C)|InS1],
+    quoted_atom1(InS1,NInS,AtomMan, C, 0,Size, LT,LC, Str, Token).
+
+quoted_atom1(InS,NInS,AtomMan,#"'", M,N, LT,LC, Str, Token) :- true |
+            % 39 is "'" ascii
+    InS = [getc(C)|InS1], ct(C, T),
+    after_quote(InS1,NInS,AtomMan, T,C, M,N, LT,LC, Str, Token).
+%quoted_atom1(InS,NInS,AtomMan, key#lf, M,N, LT,LC, Str, Token) :- true |
+%            % 10 is NL ascii
+%    shoen:raise(pimos_tag#job, 
+%        fatal(string#"Newline occurred in quoted atom~n",[]), _),
+%    InS = [getc(C)|InS1], ct(C, T),
+%    after_quote(InS1,NInS,AtomMan, T,C, M,N, LT,LC, Str, Token).
+quoted_atom1(InS,NInS,AtomMan, key#lf, M,N, LT,LC, _, Token) :- true |
+    N := M,
+    InS = [getc(LC)|NInS], ct(LC, LT),
+    Token = error(newline_occurred_in_quoted_atom),
+    AtomMan = [].
+quoted_atom1(InS,NInS,AtomMan, -1, M,N, LT,LC, Str, Token) :- true | % EOF
+    N := M, 
+    AtomMan = [intern(Str,Status)],
+    internAtomDecide(Status, atom, Token),
+    LC := -1, ct(-1,LT), InS = NInS.
+otherwise.
+quoted_atom1(InS,NInS,AtomMan, C, M,N, LT,LC, Str, Token) :- true |
+    set_string_element(Str, M, C, Str1),
+    InS = [getc(C1)|InS0],
+    M1 := M + 1,
+    quoted_atom1(InS0,NInS,AtomMan, C1, M1,N, LT,LC, Str1, Token).
+    
+after_quote(InS,NInS,AtomMan, 6,C, M,N, LT,LC, Str, Token) :- true | % quote
+    set_string_element(Str, M, C, Str1),
+    InS = [getc(C1)|InS1],
+    M1 := M + 1,
+    quoted_atom1(InS1,NInS,AtomMan, C1, M1,N, LT,LC, Str1, Token).
+after_quote(InS,NInS,AtomMan, 11,_, M,N, LT,LC, Str, Token) :- true |
+    N := M,
+    AtomMan = [intern(Str, Status)],
+    internAtomDecide(Status, open, Token),
+    InS = [getc(LC)|NInS], ct(LC, LT).
+%after_quote(InS,NInS,AtomMan, 21,C, M,N, LT,LC, Str, Token) :- true |
+%    N := M,
+%    AtomMan = [intern(Str, Status)],
+%    internAtomDecide(Status, atom, Token),
+%    InS = NInS, LT := 21, LC = C.
+otherwise.
+after_quote(InS,NInS,AtomMan, T,C, M,N, LT,LC, Str, Token) :- true |
+    N := M,
+    AtomMan = [intern(Str, Status)],
+    internAtomDecide(Status, atom, Token),
+    LT = T, LC = C,
+    NInS = InS.
+
+%
+%    test_par(-InStream,-NewInStream,+Type,+Char, +Atom, {-Token, -LastCharType,-LastChar})
+%
+test_par(InS,InS0,11,_, A, {Token, T,C}) :- true |
+    InS = [getc(C)|InS0], ct(C, T),
+    Token = open(A).
+test_par(InS,InS0,T,C, A, {Token, T1,C1}) :- T =\= 11 |
+    Token = atom(A),
+    T1 = T, C1 = C,
+    InS0 = InS.
+
+%
+%    ct(+ASCII, -TYPE)
+%
+%ct(end_of_file,X) :- true | X := 21.
+%p :- mode ct(+,-).
+%p ct(  0,20). ct(  1,20). ct(  2,20). ct(  3,20).
+%p ct(  4,20). ct(  5,20). ct(  6,20). ct(  7,20).
+%p ct(  8,20). ct(  9,20). ct( 10,20). ct( 11,20).
+%p ct( 12,20). ct( 13,20). ct( 14,20). ct( 15,20).
+%p ct( 16,20). ct( 17,20). ct( 18,20). ct( 19,20).
+%p ct( 20,20). ct( 21,20). ct( 22,20). ct( 23,20).    
+%p ct( 24,20). ct( 25,20). ct( 26,21). ct( 27,20).    % 26=^Z=EOF
+%p ct( 28,20). ct( 29,20). ct( 30,20). ct( 31,20).    
+%p ct( 32,20). ct( 33, 9). ct( 34, 8). ct( 35, 4).    %  !"#
+%p ct( 36, 4). ct( 37, 7). ct( 38, 4). ct( 39, 6).    % $%&'
+%p ct( 40,11). ct( 41,12). ct( 42, 4). ct( 43, 4).    % ()*+
+%p ct( 44,18). ct( 45, 4). ct( 46, 5). ct( 47, 4).    % ,-./    
+%p ct( 48, 3). ct( 49, 3). ct( 50, 3). ct( 51, 3).    % 0123
+%p ct( 52, 3). ct( 53, 3). ct( 54, 3). ct( 55, 3).    % 4567
+%p ct( 56, 3). ct( 57, 3). ct( 58, 4). ct( 59,10).    % 89:;
+%p ct( 60, 4). ct( 61, 4). ct( 62, 4). ct( 63, 4). % <=>?    
+%p ct( 64, 4). ct( 65, 1). ct( 66, 1). ct( 67, 1).    % @ABC
+%p ct( 68, 1). ct( 69, 1). ct( 70, 1). ct( 71, 1).    % DEFG
+%p ct( 72, 1). ct( 73, 1). ct( 74, 1). ct( 75, 1). % HIJK
+%p ct( 76, 1). ct( 77, 1). ct( 78, 1). ct( 79, 1).    % LMNO
+%p ct( 80, 1). ct( 81, 1). ct( 82, 1). ct( 83, 1). % PQRS
+%p ct( 84, 1). ct( 85, 1). ct( 86, 1). ct( 87, 1).    % TUVW
+%p ct( 88, 1). ct( 89, 1). ct( 90, 1). ct( 91,13).    % XYZ[
+%p ct( 92, 4). ct( 93,14). ct( 94, 4). ct( 95, 2).    % \]^_
+%p ct( 96, 4). ct( 97, 0). ct( 98, 0). ct( 99, 0).    % `abc
+%p ct(100, 0). ct(101, 0). ct(102, 0). ct(103, 0).    % defg
+%p ct(104, 0). ct(105, 0). ct(106, 0). ct(107, 0).    % hijk
+%p ct(108, 0). ct(109, 0). ct(110, 0). ct(111, 0).    % lmno
+%p ct(112, 0). ct(113, 0). ct(114, 0). ct(115, 0).    % pqrs
+%p ct(116, 0). ct(117, 0). ct(118, 0). ct(119, 0).    % tuvw
+%p ct(120, 0). ct(121, 0). ct(122, 0). ct(123,15).    % xyz{
+%p ct(124,17). ct(125,16). ct(126, 4). ct(127,20).    % |}~
+%p */
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% For PDSS and V.2 system 
+% "%o" predicates are for clause indexing version
+
+ct( -1,X) :- true | X := 21.
+ct( -2,X) :- true | X := 22.
+
+%o ct(  0,X) :- true | X := 20.      ct(  1,X) :- true | X := 20.
+%o ct(  2,X) :- true | X := 20.        ct(  3,X) :- true | X := 20.
+%o ct(  4,X) :- true | X := 20.        ct(  5,X) :- true | X := 20.
+%o ct(  6,X) :- true | X := 20.        ct(  7,X) :- true | X := 20.
+%o ct(  8,X) :- true | X := 20.        ct(  9,X) :- true | X := 20.
+%o ct( 10,X) :- true | X := 20.        ct( 11,X) :- true | X := 20.
+%o ct( 12,X) :- true | X := 20.        ct( 13,X) :- true | X := 20.
+%o ct( 14,X) :- true | X := 20.        ct( 15,X) :- true | X := 20.
+%o ct( 16,X) :- true | X := 20.        ct( 17,X) :- true | X := 20.
+%o ct( 18,X) :- true | X := 20.        ct( 19,X) :- true | X := 20.
+%o ct( 20,X) :- true | X := 20.        ct( 21,X) :- true | X := 20.
+%o ct( 22,X) :- true | X := 20.        ct( 23,X) :- true | X := 20.
+%o ct( 24,X) :- true | X := 20.        ct( 25,X) :- true | X := 20.
+
+ct(  N,X) :- 0=<N, N=<25 | X := 20.    % control#"@" ~ control#"y"
+
+ct( 26,X) :- true | X := 21.        % control#"z" = EOF
+
+%o ct( 27,X) :- true | X := 20.        ct( 28,X) :- true | X := 20.
+%o ct( 29,X) :- true | X := 20.        ct( 30,X) :- true | X := 20.
+%o ct( 31,X) :- true | X := 20.        ct( 32,X) :- true | X := 20.
+
+ct(  N, X) :- 27=<N, N=<32 | X := 20.    % key#esc ~ #" "
+
+ct( #" ",  X) :- true | X := 20.    ct( #"!", X) :- true | X := 9.
+ct( #"""", X) :- true | X := 8.        ct( #"#", X) :- true | X := 4.
+ct( #"$", X) :- true | X := 4.        ct( #"%", X) :- true | X := 7.
+ct( #"&", X) :- true | X := 4.        ct( #"'", X) :- true | X := 6.
+ct( #"(",X) :- true | X := 11.        ct( #")",X) :- true | X := 12.
+ct( #"*", X) :- true | X := 4.        ct( #"+", X) :- true | X := 4.
+ct( #",",X) :- true | X := 18.        ct( #"-", X) :- true | X := 4.
+ct( #".", X) :- true | X := 5.        ct( #"/", X) :- true | X := 4.
+
+%o ct( #"0", X) :- true | X := 3.    ct( #"1", X) :- true | X := 3.
+%o ct( #"2", X) :- true | X := 3.    ct( #"3", X) :- true | X := 3.
+%o ct( #"4", X) :- true | X := 3.    ct( #"5", X) :- true | X := 3.
+%o ct( #"6", X) :- true | X := 3.    ct( #"7", X) :- true | X := 3.
+%o ct( #"8", X) :- true | X := 3.    ct( #"9", X) :- true | X := 3.
+
+ct(  N, X) :- #"0" =< N, N =< #"9" | X := 3.  
+
+ct( #":", X) :- true | X := 4.        ct( #";",X) :- true | X := 10.
+ct( #"<", X) :- true | X := 4.        ct( #"=", X) :- true | X := 4.
+ct( #">", X) :- true | X := 4.        ct( #"?", X) :- true | X := 4.
+ct( #"@", X) :- true | X := 4.
+
+%o ct( #"A", X) :- true | X := 1.    ct( #"B", X) :- true | X := 1.
+%o ct( #"C", X) :- true | X := 1.    ct( #"D", X) :- true | X := 1.
+%o ct( #"E", X) :- true | X := 1.    ct( #"F", X) :- true | X := 1.
+%o ct( #"G", X) :- true | X := 1.    ct( #"H", X) :- true | X := 1.
+%o ct( #"I", X) :- true | X := 1.    ct( #"J", X) :- true | X := 1.
+%o ct( #"K", X) :- true | X := 1.    ct( #"L", X) :- true | X := 1.
+%o ct( #"M", X) :- true | X := 1.    ct( #"N", X) :- true | X := 1.
+%o ct( #"O", X) :- true | X := 1.    ct( #"P", X) :- true | X := 1.
+%o ct( #"Q", X) :- true | X := 1.    ct( #"R", X) :- true | X := 1.
+%o ct( #"S", X) :- true | X := 1.    ct( #"T", X) :- true | X := 1.
+%o ct( #"U", X) :- true | X := 1.    ct( #"V", X) :- true | X := 1.
+%o ct( #"W", X) :- true | X := 1.    ct( #"X", X) :- true | X := 1.
+%o ct( #"Y", X) :- true | X := 1.    ct( #"Z", X) :- true | X := 1.
+
+ct(  N, X) :- #"A" =< N, N =< #"Z" | X := 1.
+
+ct( #"[",X) :- true | X := 13.        ct( #"\", X) :- true | X := 4.
+ct( #"]",X) :- true | X := 14.        ct( #"^", X) :- true | X := 4.
+ct( #"_", X) :- true | X := 2.        ct( #"`", X) :- true | X := 4.
+
+%o ct( #"a", X) :- true | X := 0.    ct( #"b", X) :- true | X := 0.
+%o ct( #"c", X) :- true | X := 0.    ct( #"d", X) :- true | X := 0.
+%o ct( #"e", X) :- true | X := 0.    ct( #"f", X) :- true | X := 0.
+%o ct( #"g", X) :- true | X := 0.    ct( #"h", X) :- true | X := 0.
+%o ct( #"i", X) :- true | X := 0.    ct( #"j", X) :- true | X := 0.
+%o ct( #"k", X) :- true | X := 0.    ct( #"l", X) :- true | X := 0.
+%o ct( #"m", X) :- true | X := 0.    ct( #"n", X) :- true | X := 0.
+%o ct( #'o", X) :- true | X := 0.    ct( #"p", X) :- true | X := 0.
+%o ct( #'q", X) :- true | X := 0.    ct( #"r", X) :- true | X := 0.
+%o ct( #"s", X) :- true | X := 0.    ct( #'t", X) :- true | X := 0.
+%o ct( #"u", X) :- true | X := 0.    ct( #'v", X) :- true | X := 0.
+%o ct( #"w", X) :- true | X := 0.    ct( #"x", X) :- true | X := 0.
+%o ct( #"y", X) :- true | X := 0.    ct( #"z", X) :- true | X := 0.
+
+ct(  N, X) :- #"a" =< N, N =< #"z" | X := 0.
+
+ct( #"{", X) :- true | X := 15.        ct( #"|", X) :- true | X := 17.
+ct( #"}", X) :- true | X := 16.        ct(#"~",  X) :- true | X := 4.
+ct(127,X) :- true | X := 20.
+
+otherwise.
+%%% other characters are treated as lowercase alpha
+
+ct(N, X) :- true | X := 0.

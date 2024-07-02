@@ -1,0 +1,119 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module change_password_body.
+:- with_macro pimos.
+:- public go/0 .
+
+go:- true|
+    shoen:raise(pimos_tag#task,general_request,
+                    [get_puid(PUID),getenv(task:make_window,MW)|GR]),
+    wait_go0(PUID,MW,GR).
+
+wait_go0(normal(Puid),MW,GR):-
+    true|
+    wait_go01(MW,Puid,GR).
+
+wait_go01(normal(no),Puid,GR):-
+    true|
+    shoen:raise(pimos_tag#task,get_std(inter),IO),
+    IO = [putb("old password: "),getl(OLD),
+          putb("new password: "),getl(NEW),
+          putb("retype new password: "),getl(RN)|ION],
+    wait_go02(OLD,NEW,RN,ION,Puid,GR).
+otherwise.
+wait_go01(_,Puid,GR):-
+    true|
+    go(Puid,GR).
+
+wait_go02(OLD,NEW,NEW,IO,Puid,GR):-
+    string(OLD,_,_),
+    string(NEW,_,_)|
+    GR = [request(login_server,_,RR)],
+    wait_go03(RR,OLD,NEW,IO,Puid).
+
+wait_go03(normal(LO),OLD,NEW,IO,Uid):-
+    true|
+    LO = [reset(_),change_password(Uid,OLD,NEW,St)],
+    wait_go04(St,IO).
+
+wait_go04(normal,IO):-
+    true| IO = [].
+otherwise.
+wait_go04(_,IO):-
+    true|
+    IO = [putl("Sorry")].
+    
+go(Uid,GR):- true|
+    shoen:raise(pimos_tag#shell,get_std_out,Out),
+    GR = [request(login_server,_,UR)|GRN],
+    wait_go2(UR,Out,GRN,Uid).
+
+wait_go2(normal(LO),Out,GR,Uid):-
+    true|
+    LO = [reset(_)|LON],
+    GR = [string_io(STR)],
+    wait_go21(STR,LON,Out,Uid).
+otherwise.
+wait_go2(_,Out,GR,_):-
+    true|
+    Out = [putl(string#"Sorry")],
+    GR = [].
+
+wait_go21(normal(STR,_,_),LO,Out,Uid):-
+    true|
+    STR = [create(string#"pimos_standard_io_window",Win)],
+    wait_go22(Win,LO,Out,Uid).
+otherwise.
+wait_go21(_,LO,Out,_):-
+    true|
+    LO = [],
+    Out = [putl(string#"Sorry")].
+
+wait_go22(normal(Win,_,_),LO,Out,Uid):-
+    true|
+    new_string(ST0,4,16),
+%   window position & size
+    set_string_element(ST0,0,324,ST1),
+    set_string_element(ST1,1,328,ST2),
+    set_string_element(ST2,2,40,ST3),
+    set_string_element(ST3,3,6,ST),
+    Win = [io(104,ST,normal(Wait)),
+    io(130,"Change Password",normal(Wait2)),
+    io(141,"",normal(Wait3)),
+           io(111,string#"Old Password: ",normal(Wait4)),
+    io(112,"",Old)|WinN],
+    wait_go23(Wait4,{Uid,Old},LO,WinN,Out).
+otherwise.
+wait_go22(_,LO,Out,_):-
+    true|
+    LO = [],
+    Out = [putl(string#"Sorry")].
+
+wait_go23(Wait,{Uid,normal(Pass)},LO,Win,Out):-
+    wait(Wait)|
+    Win = [io(111,string#"New Password: ",normal(Wait)),
+    io(112,"",NPass),
+           io(111,string#"Retype New Password: ",normal(Wait2)),
+    io(112,"",RPass)],
+    wait_go31(NPass,RPass,Uid,LO,Pass,Out).
+otherwise.
+wait_go23(_,_,LO,Win,Out):-
+    true|
+    Win = [],
+    LO = [],
+    Out = [putl(string#"Sorry")].
+
+wait_go31(normal(NewPass),normal(NewPass),Uid,LO,Pass,Out):-
+    true|
+    LO = [change_password(Uid,Pass,NewPass,Res)],
+    wait_go04(Res,Out).
+otherwise.
+wait_go31(_,_,_,LO,_,Out):-
+    true|
+    LO = [],
+    Out = [putl(string#"Sorry")].
+

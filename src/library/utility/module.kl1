@@ -1,0 +1,409 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Util>module.kl1.19, 28-Jul-92 20:08:24, Edit by hori
+%%%%%%%%%%%%%%%%%%%
+% MODULE ANALYZER %
+%%%%%%%%%%%%%%%%%%%
+
+:- module (module).
+:- with_macro pimos.
+:- public go/1.                         % shell invocation entry
+:- public info/1, info/2.
+:- public get_attributes/2.
+:- public where/1.                      % 
+:- public aux/1.
+:- public predicates/2.                 % subroutine entry
+:- public get_code/4.                   % subroutine entry
+:- public get_module_name/2, get_module_name/3.
+:- public get_predicate_info/6, get_predicate_info/7.
+:- public compare/5.                    % for sorter comparator
+:- public usage/1.                      % usage
+:- public remove/1.
+
+usage(Usage) :- true |
+    Usage = [{string#"Usage : module(ModuleName)~n",[]},
+             {string#"        module:where(ModuleName)~n",[]},
+             {string#"        module:aux(ModuleName)~n",[]},
+             {string#"        module:info(ModuleName)~n",[]},
+             {string#"        module:remove(ModuleName)~n",[]}].
+
+go(ModName) :- atom(ModName) |
+    module_table:cache_table([get_module(ModName,Status)]),
+    wait_get_module(Status,ModName).
+go(ModName) :- ModName = {(::),Package,ModuleName}, atom(Package), atom(ModuleName) |
+    module_table:cache_table([get_module(ModName,Status)]),
+    wait_get_module(Status,ModName).
+otherwise.
+go(_) :- true | usage:go(module).
+
+wait_get_module(normal(Module),_) :- true |
+    predicates(Module,OUT),
+    output(OUT,Module).
+otherwise.
+wait_get_module(_,ModName) :- true | 
+    shoen:raise(pimos_tag#shell,get_std_mes,STDMES),
+    STDMES = [putf(string#"Undefined Module : ~t~n",[ModName])].
+
+predicates(Module,OUT) :- true |
+    module_utility:predicates(Module,OUT).
+
+%% get_module_name %%
+
+get_module_name(Module,Name) :- true |
+    module_utility:get_module_name(Module,Name).
+
+get_module_name(Module,PackageName,ModuleName) :- true |
+    module_utility:get_module_name(Module,PackageName,ModuleName).
+
+% Utility
+
+get_predicate_info(Info,PackageName,ModuleName,Pred,Arity,SoftInfo) :- true |
+    module_utility:get_predicate_info(Info,PackageName,ModuleName,Pred,Arity,SoftInfo).
+
+get_predicate_info(Module,Offset,KLB,PackageName,ModuleName,Pred,Arity) :- true |
+    module_utility:get_predicate_info(Module,Offset,KLB,PackageName,ModuleName,Pred,Arity).
+
+%% get_code %%
+
+get_code(ModName,Pred,Arity,Code) :- true |
+    module_utility:get_code(ModName,Pred,Arity,Code).
+
+%% output routine %%
+
+output(Preds,Module) :- true |
+    sort(Preds,Sorted),
+    shoen:raise(pimos_tag#shell,get_std_out,STDOUT),
+    output(Sorted,0,Module,STDOUT).
+
+sort(Preds,Sorted) :- true |
+    predicate_to_code({(#),(module),(module)},compare,5,CompareCode),
+    pool:keyed_sorted_set(CompareCode,Pool),
+    put_all(Preds,Pool,[get_all(Sorted)]).
+
+compare({Type1,Pred,Arity1},{Type2,Pred,Arity2},Smaller,Larger,Swapped) :-
+    Arity1 < Arity2 |
+    Smaller = {Type1,Pred,Arity1},
+    Larger  = {Type2,Pred,Arity2},
+    Swapped = no.
+compare({Type1,Pred,Arity1},{Type2,Pred,Arity2},Smaller,Larger,Swapped) :-
+    Arity2 < Arity1 |
+    Smaller = {Type2,Pred,Arity2},
+    Larger  = {Type1,Pred,Arity1},
+    Swapped = yes.
+otherwise.
+compare({Type1,Pred1,Arity1},{Type2,Pred2,Arity2},Smaller,Larger,Swapped) :- true |
+    compare_atom_name(Pred1,Pred2,Result),
+    comp(Result,Type1,Pred1,Arity1,Type2,Pred2,Arity2,Smaller,Larger,Swapped).
+
+compare_atom_name(Atom1,Atom2,Result) :- true |
+    atom_table:get_atom_name(Atom1,normal(Name1)),
+    atom_table:get_atom_name(Atom2,normal(Name2)),
+    comparator:sort(Name1,Name2,_,_,Result).
+
+comp(no,Type1,Pred1,Arity1,Type2,Pred2,Arity2,Smaller,Larger,Swapped) :- true |
+    Smaller = {Type1,Pred1,Arity1},
+    Larger  = {Type2,Pred2,Arity2},
+    Swapped = no.
+comp(yes,Type1,Pred1,Arity1,Type2,Pred2,Arity2,Smaller,Larger,Swapped) :- true |
+    Smaller = {Type2,Pred2,Arity2},
+    Larger  = {Type1,Pred1,Arity1},
+    Swapped = yes.
+
+put_all([{Type,Pred,Arity}|Preds],Pool0,Pool) :- true |
+    Pool0 = [put((Pred/Arity),Type,_)|Pool1],
+    put_all(Preds,Pool1,Pool).
+put_all([],Pool0,Pool) :- true |
+    Pool0 = Pool.
+
+output([{PredArity,(public)}|Preds],N,Module,STDOUT) :- true |
+    STDOUT = [putf(string#"~t (public)~n",[PredArity])|STDOUT1],
+    N1 := N + 1,
+    output(Preds,N1,Module,STDOUT1).
+output([{PredArity,local}|Preds],N,Module,STDOUT) :- true |
+    STDOUT = [putf(string#"~t~n",[PredArity])|STDOUT1],
+    N1 := N + 1,
+    output(Preds,N1,Module,STDOUT1).
+output([],N,Module,STDOUT) :- true |
+    get_module_name(Module,Name),
+    STDOUT = [putf(string#"~n~t predicates defined in ~t~n",[N,Name]),flush(Done)],
+    wait_done(Done).
+
+%%%%%%%%%%%%%
+%   where   %
+%%%%%%%%%%%%%
+
+where(ModuleName) :- atom(ModuleName) |
+    module_table:cache_table(ModTbl),
+    shoen:raise(pimos_tag#shell,get_std_out,STDOUT), 
+    where(ModuleName,ModTbl,STDOUT).
+
+where(ModuleName,ModTbl0,STDOUT) :- true |
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:package,DP)]),
+    wait_default_package(DP,DefaultPackage),
+    ModTbl0 = [get_module_info(ModuleName,Status)|ModTbl1],
+    where_0(Status,ModuleName,DefaultPackage,ModTbl1,STDOUT).
+
+wait_default_package(normal(Package),Status) :- atom(Package) |
+    Status = Package.
+otherwise.
+wait_default_package(_,Status) :- true |
+    Status = user.
+
+where_0(normal(Package,_,Length),ModuleName,_,ModTbl0,STDOUT0) :- true |
+    STDOUT0 = [putf(string#"  ~t::~t (~t)~n",[Package,ModuleName,Length])|STDOUT1],
+    ModTbl0 = [get_super_package(Package,Status)|ModTbl1],
+    where_1(Status,ModuleName,ModTbl1,STDOUT1).
+otherwise.
+where_0(_,ModuleName,Package,ModTbl0,STDOUT0) :- true |
+    ModTbl0 = [get_super_package(Package,Status)|ModTbl1],
+    where_1(Status,ModuleName,ModTbl1,STDOUT0).
+
+where_1(normal(SuperPackage),ModuleName,ModTbl0,STDOUT0) :- true |
+    ModTbl0 = [get_module_info(SuperPackage,ModuleName,Status)|ModTbl1],
+    where_0(Status,ModuleName,SuperPackage,ModTbl1,STDOUT0).
+otherwise.
+where_1(_,ModuleName,ModTbl0,STDOUT0) :- true |
+    ModTbl0 = [],
+    STDOUT0 = [flush(Done)],
+    wait_done(Done).
+
+wait_done(Done) :- wait(Done) | true .
+
+%% INFO
+
+info(ModuleName) :- true | info(ModuleName,short).
+
+info(ModuleName,Format) :- atom(ModuleName) |
+    module_table:cache_table([get_module(ModuleName,Status)]),
+    info_0(Status,Format,ModuleName).
+info(ModName,Format) :-
+    ModName = {(::),Package,ModuleName}, atom(Package), atom(ModuleName) |
+    module_table:cache_table([get_module(ModName,Status)]),
+    info_0(Status,Format,ModName).
+otherwise.
+info(_,_) :- true | usage:go(module).
+
+get_attributes(Module,Attributes) :- module(Module,Length) |
+    module_utility:get_attributes(Module,Attributes).
+
+info_0(normal(Module),Format,_) :- module(Module,Length) |
+    get_module_name(Module,ModuleName),
+    module_utility:get_attributes(Module,Status),
+    info_1(Status,Format,ModuleName,Length).
+otherwise.
+info_0(_,_,ModuleName) :- true |
+    shoen:raise(pimos_tag#shell,get_std_mes,STDMES),
+    STDMES = [putf(string#"Undefined Module : ~t~n",[ModuleName])].
+
+info_1(normal({CDateTime,LDateTime,SourceFile,SDateTime,Depends}),all,ModuleName,Length) :-
+    true |
+    shoen:raise(pimos_tag#shell,get_std_out,STDOUT),
+    date_time_string(CDateTime,CDS,CTS),
+    date_time_string(LDateTime,LDS,LTS),
+    date_time_string(SDateTime,SDS,STS),
+    STDOUT = [putf(string#"~t  ~t  ~s ~s  ~s ~s  ~s  ~s ~s  ~t~n",
+                [ModuleName,Length,CDS,CTS,LDS,LTS,SourceFile,SDS,STS,Depends])].
+info_1(normal({CDateTime,LDateTime,SourceFile,SDateTime,Depends}),long,ModuleName,Length) :-
+    true |
+    shoen:raise(pimos_tag#shell,get_std_out,STDOUT),
+    date_time_string(CDateTime,CDS,CTS),
+    date_time_string(LDateTime,LDS,LTS),
+    STDOUT = [putf(string#"~t  ~t  ~s ~s  ~s  ~s ~s  ~t~n",
+                [ModuleName,Length,CDS,CTS,LDS,LTS,SourceFile,Depends])].
+otherwise.
+info_1(normal({CDateTime,LDateTime,SourceFile,SDateTime,Depends}),_,ModuleName,Length) :-
+    true |
+    shoen:raise(pimos_tag#shell,get_std_out,STDOUT),
+    date_time_string(CDateTime,CDS,CTS),
+    STDOUT = [putf(string#"~t  ~t  ~s ~s  ~s~n",[ModuleName,Length,CDS,CTS,SourceFile])].
+otherwise.
+info_1(_,_,ModuleName,Length) :-
+    shoen:raise(pimos_tag#shell,get_std_out,STDOUT),
+    STDOUT = [putf(string#"~t  ~t~n",[ModuleName,Length])].
+
+date_time_string({DateCount,TimeCount},DateString,TimeString) :- true |
+    timer_utility:get_date_string(DateCount,DateString),
+    timer_utility:get_time_string(TimeCount,TimeString).
+
+%% AUX
+
+aux(ModuleName) :- atom(ModuleName) |
+    module_table:cache_table([get_module(ModuleName,normal(Module))]),
+    module_utility:get_ex_preds(Module,ExCalls),
+    module_utility:get_ex_mods(Module,ExMods),
+    summarize_aux(ExCalls,ExMods).
+aux(ModName) :- ModName = {(::),Package,ModuleName}, atom(Package), atom(ModuleName) |
+    module_table:cache_table([get_module(ModName,normal(Module))]),
+    module_utility:get_ex_preds(Module,ExCalls),
+    module_utility:get_ex_mods(Module,ExMods),
+    summarize_aux(ExCalls,ExMods).
+
+summarize_aux(ExCalls,ExMods) :- true |
+    shoen:raise(pimos_tag#shell,get_std_out,STDOUT0),
+    pool:keyed_set(Pool0),
+    merge_ex_calls(ExCalls,Pool0,Pool1),
+    merge_ex_calls(ExMods,Pool1,Pool2),
+    Pool2 = [get_all(All)],
+    output_ex_calls(All,STDOUT0).
+
+merge_ex_calls([{ModuleName,Module}|In],EP0,EP) :-
+    ModuleName = {(::),Package,ModName}, atom(ModName) |
+    EP0 = [empty({ModuleName,Module},YorN)|EP1],
+    merge_ex_mods(YorN,ModuleName,Module,In,EP1,EP).
+merge_ex_calls([{ModuleName,Module}|In],EP0,EP) :-
+    atom(ModuleName) |
+    EP0 = [empty({ModuleName,Module},YorN)|EP1],
+    merge_ex_mods(YorN,ModuleName,Module,In,EP1,EP).
+merge_ex_calls([{ExCall,Module}|In],EP0,EP) :-
+    ExCall = {(::),Package,{(:),ModName,{(/),Pred,Arity}}} |
+    ModuleName = {(::),Package,ModName}, 
+    EP0 = [empty({ModuleName,Module},YorN)|EP1],
+    merge_ex_calls(YorN,ModuleName,Module,Pred,Arity,In,EP1,EP).
+merge_ex_calls([{ExCall,Module}|In],EP0,EP) :-
+    ExCall = {(:),ModuleName,{(/),Pred,Arity}} |
+    EP0 = [empty({ModuleName,Module},YorN)|EP1],
+    merge_ex_calls(YorN,ModuleName,Module,Pred,Arity,In,EP1,EP).
+merge_ex_calls([ModuleName|In],EP0,EP) :-
+    ModuleName = {(::),Package,ModName}, atom(ModName) |
+    EP0 = [empty(ModuleName,YorN)|EP1],
+    merge_ex_mods(YorN,ModuleName,undef,In,EP1,EP).
+merge_ex_calls([ModuleName|In],EP0,EP) :-
+    atom(ModuleName) |
+    EP0 = [empty(ModuleName,YorN)|EP1],
+    merge_ex_mods(YorN,ModuleName,undef,In,EP1,EP).
+merge_ex_calls([ExCall|In],EP0,EP) :-
+    ExCall = {(::),Package,{(:),ModName,{(/),Pred,Arity}}} |
+    ModuleName = {(::),Package,ModName}, 
+    EP0 = [empty(ModuleName,YorN)|EP1],
+    merge_ex_calls(YorN,ModuleName,undef,Pred,Arity,In,EP1,EP).
+merge_ex_calls([ExCall|In],EP0,EP) :-
+    ExCall = {(:),ModuleName,{(/),Pred,Arity}} |
+    EP0 = [empty(ModuleName,YorN)|EP1],
+    merge_ex_calls(YorN,ModuleName,undef,Pred,Arity,In,EP1,EP).
+merge_ex_calls([],EP0,EP) :- true |
+    EP0 = EP.
+
+merge_ex_mods(no,ModuleName,Module,In,EP0,EP) :- module(Module,_) |
+    EP0 = [get_and_put({ModuleName,Module},Old,New)|EP1],
+    if_not_yet('$SCNST',Old,New),
+    merge_ex_calls(In,EP1,EP).
+merge_ex_mods(no,ModuleName,undef,In,EP0,EP) :- true |
+    EP0 = [get_and_put(ModuleName,Old,New)|EP1],
+    if_not_yet('$SCNST',Old,New),
+    merge_ex_calls(In,EP1,EP).
+merge_ex_mods(yes,ModuleName,Module,In,EP0,EP) :- module(Module,_) |
+    EP0 = [put({ModuleName,Module},['$SCNST'],_)|EP1],
+    merge_ex_calls(In,EP1,EP).
+merge_ex_mods(yes,ModuleName,undef,In,EP0,EP) :- true |
+    EP0 = [put(ModuleName,['$SCNST'],_)|EP1],
+    merge_ex_calls(In,EP1,EP).
+
+merge_ex_calls(no,ModuleName,Module,Predicate,Arity,In,EP0,EP) :- module(Module,_) |
+    EP0 = [get_and_put({ModuleName,Module},Old,New)|EP1],
+    if_not_yet({(/),Predicate,Arity},Old,New),
+    merge_ex_calls(In,EP1,EP).
+merge_ex_calls(no,ModuleName,undef,Predicate,Arity,In,EP0,EP) :- true |
+    EP0 = [get_and_put(ModuleName,Old,New)|EP1],
+    if_not_yet({(/),Predicate,Arity},Old,New),
+    merge_ex_calls(In,EP1,EP).
+merge_ex_calls(yes,ModuleName,Module,Predicate,Arity,In,EP0,EP) :- module(Module,_) |
+    EP0 = [put({ModuleName,Module},[{(/),Predicate,Arity}],_)|EP1],
+    merge_ex_calls(In,EP1,EP).
+merge_ex_calls(yes,ModuleName,undef,Predicate,Arity,In,EP0,EP) :- true |
+    EP0 = [put(ModuleName,[{(/),Predicate,Arity}],_)|EP1],
+    merge_ex_calls(In,EP1,EP).
+
+if_not_yet(Member,[Member|Old],New) :- true | New = [Member|Old].
+otherwise.
+if_not_yet(Member,[Mem|Old],New) :- true |
+    New = [Mem|New0],
+    if_not_yet(Member,Old,New0).
+if_not_yet(Member,[],New) :- true |
+    New = [Member].
+
+output_ex_calls([{{{(::),Package,ModName},Module},['$SCNST']}|All],STDOUT0) :- true |
+    module_utility:get_module_name(Module,PN,MN),
+    STDOUT0 = [putf(string#"~t::~t (~t::~t)~n",[Package,ModName,PN,MN])|STDOUT1],
+    output_ex_calls(All,STDOUT1).
+output_ex_calls([{{(::),Package,Module},['$SCNST']}|All],STDOUT0) :- true |
+    STDOUT0 = [putf(string#"~t::~t~n",[Package,Module])|STDOUT1],
+    output_ex_calls(All,STDOUT1).
+output_ex_calls([{{ModName,Module},['$SCNST']}|All],STDOUT0) :- atom(ModName) |
+    module_utility:get_module_name(Module,PN,MN),
+    STDOUT0 = [putf(string#"~t (~t::~t)~n",[ModName,PN,MN])|STDOUT1],
+    output_ex_calls(All,STDOUT1).
+output_ex_calls([{Module,['$SCNST']}|All],STDOUT0) :- atom(Module) |
+    STDOUT0 = [putf(string#"~t~n",[Module])|STDOUT1],
+    output_ex_calls(All,STDOUT1).
+otherwise.
+output_ex_calls([{{{(::),Package,ModName},Module},PredArityList}|All],STDOUT0) :- true |
+    module_utility:get_module_name(Module,PN,MN),
+    STDOUT0 = [putf(string#"~t::~t (~t::~t)~n",[Package,ModName,PN,MN])|STDOUT1],
+    output_pred_list(PredArityList,STDOUT1,STDOUT2),
+    output_ex_calls(All,STDOUT2).
+output_ex_calls([{{(::),Package,Module},PredArityList}|All],STDOUT0) :- true |
+    STDOUT0 = [putf(string#"~t::~t~n",[Package,Module])|STDOUT1],
+    output_pred_list(PredArityList,STDOUT1,STDOUT2),
+    output_ex_calls(All,STDOUT2).
+output_ex_calls([{{ModName,Module},PredArityList}|All],STDOUT0) :- atom(ModName) |
+    module_utility:get_module_name(Module,PN,MN),
+    STDOUT0 = [putf(string#"~t (~t::~t)~n",[ModName,PN,MN])|STDOUT1],
+    output_pred_list(PredArityList,STDOUT1,STDOUT2),
+    output_ex_calls(All,STDOUT2).
+output_ex_calls([{Module,PredArityList}|All],STDOUT0) :- atom(Module) |
+    STDOUT0 = [putf(string#"~t~n",[Module])|STDOUT1],
+    output_pred_list(PredArityList,STDOUT1,STDOUT2),
+    output_ex_calls(All,STDOUT2).
+output_ex_calls([],STDOUT) :- true |
+    STDOUT = [flush(Done)],
+    wait_done(Done).
+
+output_pred_list(['$SCNST'|Rest],STDOUT0,STDOUT) :- true |
+    output_pred_list(Rest,STDOUT0,STDOUT).
+otherwise.
+output_pred_list([PredArity|Rest],STDOUT0,STDOUT) :- true |
+    STDOUT0 = [putf(string#"    ~t~n",[PredArity])|STDOUT1],
+    output_pred_list(Rest,STDOUT1,STDOUT).
+output_pred_list([],STDOUT0,STDOUT) :- true |
+    STDOUT0 = STDOUT.
+
+%%%% REMOVE %%%%
+
+remove((*)) :- true |
+    module_table:cache_table(MT0),
+    MT0 = [get_default_package(normal(Package)),
+           get_all_modules(Package,Status)|MT1],
+    remove_all_0(Status,MT1).
+otherwise.
+remove(ModuleName) :- atom(ModuleName) |
+    module_table:cache_table([remove_module(ModuleName,Status)]),
+    wait_removed(Status).
+remove(ModuleName) :- ModuleName = {(::),PacName,ModName} |
+    module_table:cache_table([remove_module(ModuleName,Status)]),
+    wait_removed(Status).
+remove(Modules) :- list(Modules) |
+    module_table:cache_table(MT0),
+    remove_all(Modules,MT0).
+
+remove_all_0(normal(Modules),MT0) :- true |
+    remove_all(Modules,MT0).
+otherwise.
+remove_all_0(_,MT0) :- true | MT0 = [].
+
+remove_all([{ModuleName,_,_}|Rest],MT0) :- true |
+    MT0 = [remove_module(ModuleName,Status)|MT1],
+    wait_removed(Status),
+    remove_all(Rest,MT1).
+remove_all([],MT0) :- true | MT0 = [].
+otherwise.
+remove_all([ModuleName|Rest],MT0) :- true |
+    MT0 = [remove_module(ModuleName,Status)|MT1],
+    wait_removed(Status),
+    remove_all(Rest,MT1).
+
+wait_removed(Status) :- wait(Status) | true.

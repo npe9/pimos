@@ -1,0 +1,82 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- if_not_defined(included).
+:- macro_module  expand_pimos.
+%:- with_macro    pimos.
+%:- inherit_macro pimos.
+:- end_if.
+
+% added by murayama 93.7/7
+vector({atom(#), atom(macro), vector({atom(new_atom), String, NewAtom})}) =>
+      wrap#(&stream <<= [new_atom(String, NewAtom)])
+   :- as_a_goal, in_the_body | true.
+
+vector({atom(#), atom(macro), vector({atom(new_atom), String})}) => NewAtom
+      when wrap#(&stream <<= [new_atom(String, NewAtom)])
+   :- as_an_argument | true.
+
+vector({atom(#), atom(macro), vector({atom(new_predicate_name), Pred})}) =>
+      wrap#(&stream <<=
+     [expand_macro(as_an_argument, in_the_body, ``(vector({atom(#), atom(macro), atom(predicate)})), vector({atom(/),vector({atom(/),atom(Func),integer(Ari)}),integer(Num)})),
+      new_predicate_name(Func/Ari, Pred)])
+   :- as_a_goal, in_the_body | true.
+
+vector({atom(#), atom(macro), vector({atom(new_predicate_name)})}) => Pred
+      when wrap#(&stream <<=
+     [expand_macro(as_an_argument, in_the_body, ``(vector({atom(#), atom(macro), atom(predicate)})), vector({atom(/),vector({atom(/),atom(Func),integer(Ari)}),integer(Num)})),
+      new_predicate_name(Func/Ari, Pred)])
+   :- as_an_argument | true.
+
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), atom(as_a_goal), atom(in_the_guard), Term0, Term})}) =>
+       wrap#(&stream <<= [expand_macro(as_a_goal, in_the_guard, Term0, Term)])
+   :- as_a_goal, in_the_body | true!
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), atom(as_a_goal), atom(in_the_body), Term0, Term})}) =>
+       wrap#(&stream <<= [expand_macro(as_a_goal, in_the_body, Term0, Term)])
+   :- as_a_goal, in_the_body | true!
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), atom(as_a_clause), Position, Term0, Term})}) =>
+       wrap#(&stream <<= [expand_macro(as_a_clause, Position, Term0, Term)])
+   :- as_a_goal, in_the_body | true!
+otherwise!
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), Level, Position, Term0, Term})}) =>
+       wrap#(&stream <<= [expand_macro(Level, Position, Term0, Term)])
+   :- true | &stream <<= [error("Illegal term in macro#expand_macro(4) : ~T, ~T", [Level, Position])].
+
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), atom(as_a_goal), atom(in_the_guard), Term0})}) => Term
+       when wrap#(&stream <<= [expand_macro(as_a_goal, in_the_guard, Term0, Term)])
+   :- as_an_argument | true!
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), atom(as_a_goal), atom(in_the_body), Term0})}) => Term
+       when wrap#(&stream <<= [expand_macro(as_a_goal, in_the_body, Term0, Term)])
+   :- as_an_argument | true!
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), atom(as_a_clause), Position, Term0})}) => Term
+       when wrap#(&stream <<= [expand_macro(as_a_clause, Position, Term0, Term)])
+   :- as_an_argument | true!
+otherwise!
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), Level, Position, Term0})}) => Term
+       when wrap#(&stream <<= [expand_macro(Level, Position, Term0, Term)])
+   :- true | &stream <<= [error("Illegal term in macro#expand_macro(3) : ~T, ~T", [Level, Position])].
+
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), atom(as_an_argument), Position, Term0, When, Term, Where})}) =>
+       wrap#(&stream <<= [expand_macro(as_an_argument, Position, Term0, When, Term, Where)])
+   :- as_a_goal, in_the_body | true!
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), atom(as_a_goal), atom(in_the_head), Term0, When, Term, Where})}) =>
+       wrap#(&stream <<= [expand_macro(as_a_goal, in_the_head, Term0, When, Term, Where)])
+   :- as_a_goal, in_the_body | true!
+otherwise!
+vector({atom(#), atom(macro),
+       vector({atom(expand_macro), Level, Position, Term0, When, Term, Where})}) =>
+       wrap#(&stream <<= [expand_macro(Level, Position, Term0, When, Term, Where)]) 
+   :- true | &stream <<= [error("Illegal term in macro#expand_macro(6) : ~T, ~T", [Level, Position])].

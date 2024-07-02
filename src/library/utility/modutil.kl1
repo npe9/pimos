@@ -1,0 +1,627 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Util>modutil.kl1.5, 28-Jul-92 18:20:29, Edit by hori
+
+:- module module_utility.
+
+:- with_macro pimos.
+:- include("pimos.h").
+:- public predicates/2, get_code/4.
+:- public get_module_name/2, get_module_name/3.
+:- public get_predicate_info/6, get_predicate_info/7.
+:- public get_attributes/2.
+:- public ground_module/3.
+:- public get_ex_mods/2.
+:- public get_ex_preds/2.
+:- public relink_module/7.
+
+%% GET_ATTRIBUTES
+
+get_attributes(Module,Status) :- true |
+    module_element(Module,3,MagicNum),
+    module_element(Module,4,ModInfo),
+    get_attributes(MagicNum,ModInfo,Status).
+
+get_attributes(MagicNum,ModInfo,Status) :- integer(MagicNum), vector(ModInfo,8) |
+    Status = normal({CDateTime,LDateTime,SourceFile,SDateTime,Depends}),
+    vector_element(ModInfo,0,CDate,ModInfo1),
+    vector_element(ModInfo1,1,CTime,ModInfo2),
+    CDateTime = {CDate,CTime},
+    vector_element(ModInfo2,2,LDate,ModInfo3),
+    vector_element(ModInfo3,3,LTime,ModInfo4),
+    LDateTime = {LDate,LTime},
+    vector_element(ModInfo4,4,SourceFile,ModInfo5),
+    vector_element(ModInfo5,5,SDate,ModInfo6),
+    vector_element(ModInfo6,6,STime,ModInfo7),
+    SDateTime = {SDate,STime},
+    vector_element(ModInfo7,7,Depends,_).
+otherwise.
+get_attributes(MagicNum,ModInfo,Status) :- true |
+    Status = non_existent.
+
+%% RELINK
+
+relink_module(Module,ModTbl0,ModTbl,Date,Time,DP,LF) :- module(Module,Size) |
+    Size1 := Size + 1,
+    new_vector(ModVec,Size1),
+    module_element(Module,0,GcSize),
+    deref_and_set(ModVec,1,GcSize,ModVec0),
+    module_element(Module,1,ModuleName),
+    deref_and_set(ModVec0,2,ModuleName,ModVec1),
+    set_package_name(LF,DP,Module,ModVec1,ModVec2,Package),
+    GcAreaMax := GcSize + 1,
+    module_element(Module,3,MagicNum),
+    module_element(Module,4,InfoVec),
+    relink_gc_area(MagicNum,InfoVec,Module,3,GcAreaMax,4,ModVec2,P,Q,ModVec3,ExMod,Date,Time),
+    copy_rest(Module,P,Q,Size,ModVec3,ModVec4),
+    kl1_loader:new_module(NewModule,ModVec4,Size),
+    ModTbl0 = [module(Package,ModuleName,NewModule,ExMod)|ModTbl].
+
+set_package_name(on,_,Module,ModVec0,ModVec,PackageName0) :- true |
+    module_element(Module,2,PackageName),
+    deref_and_set(ModVec0,3,PackageName,ModVec),
+    PackageName = PackageName0.
+set_package_name(off,PackageName,Module,ModVec0,ModVec,PackageName0) :- true |
+    deref_and_set(ModVec0,3,PackageName,ModVec),
+    PackageName = PackageName0.
+
+relink_gc_area(MagicNum,InfoVec,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod,Date,Time) :-
+    integer(MagicNum), vector(InfoVec,_) |
+    deref_and_set(ModVec0,4,MagicNum,ModVec1),
+    module_information:link_stamp(MagicNum,Date,Time,InfoVec,NewInfo),
+    deref_and_set(ModVec1,5,NewInfo,ModVec2),
+    relink_gc_area(Module,5,GcMax,6,ModVec2,P,Q,ModVec,ExMod).
+otherwise.
+relink_gc_area(MagicNum,InfoVec,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod,Date,Time) :-
+    true |
+    relink_gc_area(Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod).
+
+relink_gc_area(Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :- P0 < GcMax |
+    module_element(Module,P0,ModElm),
+    relink_ex_mod(ModElm,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod).
+otherwise.
+relink_gc_area(Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :- true |
+    P0 = P,
+    Q0 = Q,
+    ModVec0 = ModVec,
+    ExMod = [].
+
+relink_ex_mod(ExModule,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :-
+    module(ExModule,_) |
+    P1 := P0 + 1,
+    module_element(Module,P1,PredHash),
+    P2 := P1 + 1,
+    module_element(Module,P2,ModName),
+    P3 := P2 + 1,
+    module_element(Module,P3,PackageName),
+    check_ex_mod(ExModule,PredHash,ModName,PackageName,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod).
+relink_ex_mod(ExModule,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :-
+    ExModule = {(::),PackageNameAtom,ModuleNameAtom},
+    atom(ModuleNameAtom),
+    atom(PackageNameAtom) |
+    P1 := P0 + 1,
+    module_element(Module,P1,PredHash),
+    P2 := P1 + 1,
+    module_element(Module,P2,ModName),
+    P3 := P2 + 1,
+    module_element(Module,P3,PackageName),
+    check_undef(ExModule,PredHash,ModName,PackageName,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod).
+otherwise.
+relink_ex_mod(ModElm,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :- true |
+    deref_and_set(ModVec0,Q0,ModElm,ModVec1),
+    P1 := P0 + 1,
+    Q1 := Q0 + 1,
+    relink_gc_area(Module,P1,GcMax,Q1,ModVec1,P,Q,ModVec,ExMod).
+
+check_ex_mod(ExModule,PredHash,ModName,PackageName,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :-
+    P0 + 3 < GcMax, atom(PredHash), atom(ModName) |
+    pred_hash(PredHash,Pred,Arity),
+    get_module_name(ExModule,_,ModuleName),
+    ExMod = [ext_mod({(::),PackageName,ModuleName},{NewModule,Pred,Arity})|ExMod1],
+    Qm1 := Q0 - 1,
+    deref_and_set(ModVec0,Qm1,0,ModVec1),   % reset cache field
+    set_vector_element(ModVec1,Q0,_,NewModule,ModVec2),
+    Q1 := Q0 + 1,
+    deref_and_set(ModVec2,Q1,PredHash,ModVec3),
+    Q2 := Q1 + 1,
+    deref_and_set(ModVec3,Q2,ModName,ModVec4),
+    Q3 := Q2 + 1,
+    deref_and_set(ModVec4,Q3,PackageName,ModVec5),
+    Q4 := Q3 + 1,
+    P4 := P0 + 4,
+    relink_gc_area(Module,P4,GcMax,Q4,ModVec5,P,Q,ModVec,ExMod1).
+otherwise.
+check_ex_mod(ExModule,PackageName,Elm1,Elm2,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :- true |
+    get_module_name(ExModule,_,ModuleName),
+    ExMod = [ext_mod({(::),PackageName,ModuleName},{NewModule})|ExMod1],
+    set_vector_element(ModVec0,Q0,_,NewModule,ModVec1),
+    Q1 := Q0 + 1,
+    deref_and_set(ModVec1,Q1,PackageName,ModVec2),
+    Q2 := Q1 + 1,
+    P2 := P0 + 2,
+    relink_gc_area(Module,P2,GcMax,Q2,ModVec2,P,Q,ModVec,ExMod1).
+
+check_undef(ExModule,PredHash,ModName,0,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :-
+    ExModule = {(::),PackageName,ModName},
+    atom(ModName),
+    atom(PackageName),
+    P0 + 3 < GcMax, atom(PredHash) |
+    pred_hash(PredHash,Pred,Arity),
+    ExMod = [ext_mod({(::),PackageName,ModName},{NewModule,Pred,Arity})|ExMod1],
+    Qm1 := Q0 - 1,
+    deref_and_set(ModVec0,Qm1,0,ModVec1),   % reset cache field
+    set_vector_element(ModVec1,Q0,_,NewModule,ModVec2),
+    Q1 := Q0 + 1,
+    deref_and_set(ModVec2,Q1,PredHash,ModVec3),
+    Q2 := Q1 + 1,
+    deref_and_set(ModVec3,Q2,ModName,ModVec4),
+    Q3 := Q2 + 1,
+    deref_and_set(ModVec4,Q3,PackageName,ModVec5),
+    Q4 := Q3 + 1,
+    P4 := P0 + 4,
+    relink_gc_area(Module,P4,GcMax,Q4,ModVec5,P,Q,ModVec,ExMod1).
+check_undef(ExModule,PredHash,ModName,PackageName,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :-
+    ExModule = {(::),PackageName,ModName},
+    atom(ModName),
+    atom(PackageName),
+    P0 + 3 < GcMax, atom(PredHash) |
+    pred_hash(PredHash,Pred,Arity),
+    ExMod = [ext_mod({(::),PackageName,ModName},{NewModule,Pred,Arity})|ExMod1],
+    Qm1 := Q0 - 1,
+    deref_and_set(ModVec0,Qm1,0,ModVec1),   % reset cache field
+    set_vector_element(ModVec1,Q0,_,NewModule,ModVec2),
+    Q1 := Q0 + 1,
+    deref_and_set(ModVec2,Q1,PredHash,ModVec3),
+    Q2 := Q1 + 1,
+    deref_and_set(ModVec3,Q2,ModName,ModVec4),
+    Q3 := Q2 + 1,
+    deref_and_set(ModVec4,Q3,PackageName,ModVec5),
+    Q4 := Q3 + 1,
+    P4 := P0 + 4,
+    relink_gc_area(Module,P4,GcMax,Q4,ModVec5,P,Q,ModVec,ExMod1).
+otherwise.
+check_undef(ExModule,0,Elm1,Elm2,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :-
+    ExModule = {(::),PackageName,ModName},
+    atom(ModName),
+    atom(PackageName) |
+    ExMod = [ext_mod({(::),PackageName,ModName},{NewModule})|ExMod1],
+    set_vector_element(ModVec0,Q0,_,NewModule,ModVec1),
+    Q1 := Q0 + 1,
+    deref_and_set(ModVec1,Q1,PackageName,ModVec2),
+    Q2 := Q1 + 1,
+    P2 := P0 + 2,
+    relink_gc_area(Module,P2,GcMax,Q2,ModVec2,P,Q,ModVec,ExMod1).
+check_undef(ExModule,PackageName,Elm1,Elm2,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :-
+    ExModule = {(::),PackageName,ModName},
+    atom(ModName),
+    atom(PackageName) |
+    ExMod = [ext_mod({(::),PackageName,ModName},{NewModule})|ExMod1],
+    set_vector_element(ModVec0,Q0,_,NewModule,ModVec1),
+    Q1 := Q0 + 1,
+    deref_and_set(ModVec1,Q1,PackageName,ModVec2),
+    Q2 := Q1 + 1,
+    P2 := P0 + 2,
+    relink_gc_area(Module,P2,GcMax,Q2,ModVec2,P,Q,ModVec,ExMod1).
+otherwise.
+check_undef(Struct,_,Elm1,Elm2,Module,P0,GcMax,Q0,ModVec0,P,Q,ModVec,ExMod) :-
+    deref_and_set(ModVec0,Q0,Struct,ModVec1),
+    Q1 := Q0 + 1,
+    P1 := P0 + 1,
+    relink_gc_area(Module,P1,GcMax,Q1,ModVec1,P,Q,ModVec,ExMod).
+
+copy_rest(Module,P,Q,Size,ModVec0,ModVec) :- P < Size |
+    module_element(Module,P,Elm),
+    deref_and_set(ModVec0,Q,Elm,ModVec1),
+    P1 := P + 1,
+    Q1 := Q + 1,
+    copy_rest(Module,P1,Q1,Size,ModVec1,ModVec).
+otherwise.
+copy_rest(_,_,_,_,ModVec0,ModVec) :- true |
+    ModVec0 = ModVec.
+
+deref_and_set( Vector, Position, Element, NewVector ) :-
+    wait(Element) |
+    set_vector_element( Vector, Position, OldElement, Element, NewVector ).
+
+pred_hash(PredHash,PredAtom,Arity) :- true |
+    tag_and_value(PredHash,Tag,Hash),
+    Arity := Hash >> 24,
+    PredAtomNum := ( Hash /\ 16#"FFFFFF" ) - Arity,
+    new_instruction(PredAtom,02,PredAtomNum).
+
+tag_and_value(Obj,Tag,Value) :- 
+    wait(Obj),
+    tag_and_value(Obj,Tag1,Value1) |
+    Tag = Tag1,
+    Value = Value1.
+
+%% GET_EX_MODS
+
+get_ex_mods(Module,ExMods) :- module(Module,Size) |
+    module_element(Module,0,GcSize),
+    GcAreaMax := GcSize + 1,
+    scan_gc_area(Module,2,GcAreaMax,ExMods).
+
+scan_gc_area(Module,P0,Max,ExMods0) :- P0 < Max |
+    module_element(Module,P0,ModElm),
+    P1 := P0  + 1,
+    scan_gc_area(ModElm,Module,P1,Max,ExMods0).
+otherwise.
+scan_gc_area(Module,P0,Max,ExMods0) :- true |
+    ExMods0 = [].
+
+scan_gc_area(ExModule,Module,P1,Max,ExMods0) :- 
+    module(ExModule,_) |
+    module_element(Module,P1,PredHash),
+    P2 := P1 + 1,
+    module_element(Module,P2,ModName),
+    P3 := P2 + 1,
+    module_element(Module,P3,PName),
+    if_mod(PredHash,ModName,PName,ExModule,ExMods0,ExMods1),
+    scan_gc_area(Module,P2,Max,ExMods1).
+scan_gc_area(Undef,Module,P1,Max,ExMods0) :- 
+    Undef = {(::),Pac,MN}, atom(MN) |
+    module_element(Module,P1,PredHash),
+    P2 := P1 + 1,
+    module_element(Module,P2,ModName),
+    P3 := P2 + 1,
+    module_element(Module,P3,PName),
+    if_undef(PredHash,ModName,PName,Undef,ExMods0,ExMods1),
+    scan_gc_area(Module,P2,Max,ExMods1).
+otherwise.
+scan_gc_area(ModElm,Module,P,Max,ExMods0) :- true |
+    scan_gc_area(Module,P,Max,ExMods0).
+
+if_mod(PredHash,ModName,PName,ExModule,ExMods0,ExMods) :-
+    atom(PredHash), atom(ModName), atom(PName) |     % External Predicate Call
+    ExMod = {{(::),PName,ModName},ExModule},
+    ExMods0 = [ExMod|ExMods].
+if_mod(PredHash,ModName,0,ExModule,ExMods0,ExMods) :-
+    atom(PredHash), atom(ModName) |     % External Predicate Call
+    ExMod = {ModName,ExModule},
+    ExMods0 = [ExMod|ExMods].
+otherwise.
+if_mod(PName,_,_,ExModule,ExMods0,ExMods) :- atom(PName) |
+    get_module_name(ExModule,_,ModName),  % Module Constant
+    ExMod = {{(::),PName,ModName},ExModule},
+    ExMods0 = [ExMod|ExMods].
+if_mod(0,_,_,ExModule,ExMods0,ExMods) :- true |
+    get_module_name(ExModule,PName,ModName), % Module Constant
+    ExMod = {ModName,ExModule},
+    ExMods0 = [ExMod|ExMods].
+
+if_undef(PredHash,ModName,0,Undef,ExMods0,ExMods) :-    % Default Package
+    atom(PredHash), atom(ModName), Undef = ModName |
+    ExMods0 = [Undef|ExMods].
+if_undef(PredHash,ModName,0,Undef,ExMods0,ExMods) :-
+    atom(PredHash), atom(ModName), Undef = {(::),PName,ModName} |
+    ExMods0 = [Undef|ExMods].
+if_undef(PredHash,ModName,PName,Undef,ExMods0,ExMods) :-
+    atom(PredHash), atom(ModName), atom(PName), Undef = {(::),PName,ModName} |
+    ExMods0 = [Undef|ExMods].
+otherwise.
+if_undef(PredHash,ModName,PName,Undef,ExMods0,ExMods) :- true |
+    ExMods0 = ExMods.                   % Simply it is just a structure constatnt except module
+
+%% GET_EX_PREDS
+
+get_ex_preds(Module,ExMods) :- module(Module,Size) |
+    module_element(Module,0,GcSize),
+    GcAreaMax := GcSize + 1,
+    search_ex_pred(Module,2,GcAreaMax,ExMods).
+
+search_ex_pred(Module,P0,Max,ExMods0) :- P0 < Max |
+    module_element(Module,P0,ModElm),
+    P1 := P0  + 1,
+    search_ex_pred(ModElm,Module,P1,Max,ExMods0).
+otherwise.
+search_ex_pred(Module,P0,Max,ExMods0) :- true |
+    ExMods0 = [].
+
+search_ex_pred(ExModule,Module,P1,Max,ExMods0) :- 
+    module(ExModule,_) |
+    module_element(Module,P1,PredHash),
+    P2 := P1 + 1,
+    module_element(Module,P2,ModName),
+    P3 := P2 + 1,
+    module_element(Module,P3,PName),
+    if_ex_pred(PredHash,ModName,PName,ExModule,ExMods0,ExMods1),
+    search_ex_pred(Module,P2,Max,ExMods1).
+search_ex_pred(Undef,Module,P1,Max,ExMods0) :- 
+    Undef = {(::),Pac,MN}, atom(MN) |
+    module_element(Module,P1,PredHash),
+    P2 := P1 + 1,
+    module_element(Module,P2,ModName),
+    P3 := P2 + 1,
+    module_element(Module,P3,PName),
+    if_undef_pred(PredHash,ModName,PName,Undef,ExMods0,ExMods1),
+    search_ex_pred(Module,P2,Max,ExMods1).
+otherwise.
+search_ex_pred(ModElm,Module,P,Max,ExMods0) :- true |
+    search_ex_pred(Module,P,Max,ExMods0).
+
+if_ex_pred(PredHash,ModName,PName,ExModule,ExMods0,ExMods) :-
+    atom(PredHash), atom(ModName), atom(PName) |     % External Predicate Call
+    pred_hash(PredHash,PredAtom,Arity),
+    ExMod = {{(::),PName,{(:),ModName,{(/),PredAtom,Arity}}},ExModule},
+    ExMods0 = [ExMod|ExMods].
+if_ex_pred(PredHash,ModName,0,ExModule,ExMods0,ExMods) :-
+    atom(PredHash), atom(ModName) |     % External Predicate Call
+    pred_hash(PredHash,PredAtom,Arity),
+    ExMod = {{(:),ModName,{(/),PredAtom,Arity}},ExModule},
+    ExMods0 = [ExMod|ExMods].
+otherwise.
+if_ex_pred(_,_,_,_,ExMods0,ExMods) :- true |
+    ExMods0 = ExMods.
+
+if_undef_pred(PredHash,ModName,0,Undef,ExMods0,ExMods) :-    % Default Package
+    atom(PredHash), atom(ModName), Undef = ModName |
+    pred_hash(PredHash,PredAtom,Arity),
+    ExMod = {{(:),ModName,{(/),PredAtom,Arity}},ExModule},
+    ExMods0 = [ExMod|ExMods].
+if_undef_pred(PredHash,ModName,0,Undef,ExMods0,ExMods) :-
+    atom(PredHash), atom(ModName), Undef = {(::),PName,ModName} |
+    pred_hash(PredHash,PredAtom,Arity),
+    ExMod = {{(::),PName,{(:),ModName,{(/),PredAtom,Arity}}},ExModule},
+    ExMods0 = [ExMod|ExMods].
+if_undef_pred(PredHash,ModName,PName,Undef,ExMods0,ExMods) :-
+    atom(PredHash), atom(ModName), atom(PName), Undef = {(::),PName,ModName} |
+    pred_hash(PredHash,PredAtom,Arity),
+    ExMod = {{(::),PName,{(:),ModName,{(/),PredAtom,Arity}}},ExModule},
+    ExMods0 = [ExMod|ExMods].
+otherwise.
+if_undef_pred(PredHash,ModName,PName,Undef,ExMods0,ExMods) :- true |
+    ExMods0 = ExMods.                   % Simply it is just a structure constatnt except module
+
+%% GET_CODE %%
+
+get_code(ModName,Pred,Arity,Code) :- atom(ModName), atom(Pred), Arity >= 0 |
+    module_table:cache_table([get_module(ModName,Status)]),
+    wait_get_module(Status,ModName,Pred,Arity,Code).
+get_code(ModName,Pred,Arity,Code) :- 
+    ModName = {(::),Package,ModuleName}, atom(Package), atom(ModuleName), 
+    atom(Pred), Arity >= 0 |
+    module_table:cache_table([get_module(ModName,Status)]),
+    wait_get_module(Status,ModName,Pred,Arity,Code).
+get_code(Module,Pred,Arity,Code) :- module(Module,_), atom(Pred), Arity >= 0 |
+    wait_get_module(normal(Module),_,Pred,Arity,Code).
+
+wait_get_module(normal(Module),_,Pred,Arity,Code) :- true |
+    predicate_to_code(Module,Pred,Arity,Code1),
+    get_code(Code1,Module,Pred,Arity,Code).
+otherwise.
+wait_get_module(_,ModName,_,_,Code) :- true | Code = ModName.
+
+get_code(Code0,Module,Pred,Arity,Code) :- code(Code0,_,_,_) |   % Public Predicate
+    Code0 = Code.
+otherwise.
+get_code(_,Module,Pred,Arity,Code) :- module(Module,Size) | % Local Predicate
+    module_element(Module,0,GcSize),
+    MaskPos := GcSize + 1,
+    module_element(Module,MaskPos,Mask),
+    HashSize := Mask + 1,
+    P := MaskPos + 1,
+    skip_public(Module,P,HashSize,0,NP),
+    Q := P + HashSize + ( NP * 2 ),
+    Max := Size - 4,
+    search_local(Module,Q,Max,Pred,Arity,Code).
+
+skip_public(Module,P,HashSize,NP0,NP) :- HashSize > 0 |
+    module_element(Module,P,HashIndex),
+    N := HashIndex >> 16,
+    H1 := HashSize - 1,
+    NP1 := NP0 + N,
+    P1 := P + 1,
+    skip_public(Module,P1,H1,NP1,NP).
+skip_public(_,_,0,NP0,NP) :- true |
+    NP0 = NP.
+
+search_local(Module,Q,Max,Pred,Arity,Code) :- Q < Max |
+    Q1 := Q + 1,
+    module_element(Module,Q,PredName),
+    Q2 := Q1 + 1,
+    module_element(Module,Q2,PredHead),
+    Q3 := Q2 + 1,
+    module_element(Module,Q3,Length),
+    check_predicate(PredName,PredHead,Length,Module,Q,Max,Pred,Arity,Code).
+otherwise.
+search_local(Module,_,_,Pred,Arity,Code) :- true |
+    Code = {Module,Pred,Arity}. 
+
+check_predicate(Pred0,PredHead,Length,Module,Q,Max,Pred,Arity,Code) :-
+    atom(Pred0),
+    wait(PredHead), tag_and_value(PredHead,16#"24",Value),
+    integer(Length) |
+    Arity0 := Value >> 24,
+    Q1 := Q + ( Length >> 16 ) + 4,
+    local_predicate(Pred0,Pred,Arity0,Arity,Module,Q,Q1,Max,Code).
+otherwise.
+check_predicate(_,_,_,Module,Q,Max,Pred,Arity,Code) :- true |
+    Q1 := Q + 1,
+    search_local(Module,Q1,Max,Pred,Arity,Code).
+
+local_predicate(Pred,Pred,Arity,Arity,Module,Q,Q1,Max,Code) :- true |
+    Offset := Q + 5,
+    module_offset_to_code(Module,Offset,Code).
+otherwise.
+local_predicate(_,Pred,_,Arity,Module,Q,Q1,Max,Code) :- true |
+    search_local(Module,Q1,Max,Pred,Arity,Code).
+
+%%%% GET_MODULE_NAME/2, /3
+
+get_module_name(Module,Name) :-
+    module(Module,Size),
+    tag_and_value(Module,_,Value), Value < 0 |
+    module_element(Module,1,ModuleName),
+    module_element(Module,2,PackageName),
+    Name = {(::),PackageName,ModuleName}.
+otherwise.
+get_module_name(Module,Name) :-
+    module(Module,Size) |
+    Name = {(::),firm,'D-Code'}.
+
+get_module_name(Module,PackageName,ModuleName) :-
+    module(Module,Size),
+    tag_and_value(Module,_,Value), Value < 0 |
+    module_element(Module,1,ModuleName),
+    module_element(Module,2,PackageName).
+otherwise.
+get_module_name(Module,PackageName,ModuleName) :-
+    module(Module,Size) |
+    PackageName = firm,
+    ModuleName = 'D-Code'.
+
+%%%% GET_PREDICATE_INFO
+
+get_predicate_info({Module,Offset},PackageName,ModuleName,Pred,Arity,SoftInfo) :- 
+    module(Module,Length), Offset =< Length, Offset > 5, 
+    tag_and_value(Module,_,Value), Value < 0 |  % Do not care about D-code
+    Pos := Offset-1,
+    module_element(Module,Pos,KLB),
+    get_module_name(Module,PackageName,ModuleName),
+    get_predicate_name(KLB,Module,Pos,Pred,Arity,SoftInfo).
+get_predicate_info(Code,PackageName,ModuleName,Pred,Arity,SoftInfo) :-
+    code(Code,_Arity,_Module,Offset) |
+    code_to_predicate(Code,Module,Pred,Arity,SoftInfo),
+    Pos := Offset-1,
+    module_element(Module,Pos,KLB),
+    get_module_name(Module,PackageName,ModuleName).
+otherwise.
+get_predicate_info({Module,Offset},PackageName,ModuleName,Pred,Arity,SoftInfo) :-
+    module(Module,Length) |
+    PackageName = firm,
+    ModuleName = 'D-Code',
+    Pred = 'D-Code',
+    Arity = 0,
+    SoftInfo = 0.
+
+get_predicate_info(Module,Offset,KLB,PackageName,ModuleName,Pred,Arity) :- 
+    module(Module,Length), Offset < Length, Offset > 5, 
+    tag_and_value(Module,_,Value), Value < 0 |  % Module Address is not in Area 0
+    Pos := Offset-1,
+    module_element(Module,Pos,KLB),
+    get_module_name(Module,PackageName,ModuleName),
+    get_predicate_name(KLB,Module,Pos,Pred,Arity,Info).
+otherwise.
+get_predicate_info(Module,Offset,KLB,PackageName,ModuleName,Pred,Arity) :-
+    module(Module,Length) |
+    KLB = unknown, PackageName = 'D-Code', ModuleName = 'D-Code', Pred = 'D-Code', Arity = 0.
+
+get_predicate_name(KLB,Module,Pos,Pred,Arity,Info) :- 
+    wait(KLB), tag_and_value(KLB,16#"24",Value) |   % 16#"24" is PREDH
+    Arity := Value >> 24,
+    Pos1 := Pos-1,
+    Pos2 := Pos-2,
+    module_element(Module,Pos1,Info),
+    module_element(Module,Pos2,Pred).
+otherwise.
+get_predicate_name(_,Module,Pos,Pred,Arity,Info) :- true |
+    Pos1 := Pos-1,
+    module_element(Module,Pos1,KLB),
+    get_predicate_name(KLB,Module,Pos1,Pred,Arity,Info).
+
+%%%% PREDICATES/2
+
+predicates(Module,OUT) :- module(Module,Size) |
+    module_element(Module,0,GcSize),
+    MaskPos := GcSize + 1,
+    module_element(Module,MaskPos,Mask),
+    HashSize := Mask + 1,
+    P := MaskPos + 1,
+    pool:keyed_set(Pool),
+    analyze_public(Module,P,HashSize,Pool,Pool1,0,NP,OUT,OUT1),
+    Q := P + HashSize + ( NP * 2),
+    Max := Size - 4,
+    analyze_local(Module,Q,Max,Pool1,OUT1).
+
+analyze_public(Module,P,HashSize,Pool0,Pool,NP0,NP,OUT0,OUT) :- HashSize > 0 |
+    module_element(Module,P,HashIndex),
+    N := HashIndex >> 16,
+    Q := HashIndex /\ 16#"FFFF" + P,
+    analyze_collisions(Module,Q,N,Pool0,Pool1,OUT0,OUT1),
+    P1 := P + 1,
+    H1 := HashSize - 1,
+    NP1 := NP0 + N,
+    analyze_public(Module,P1,H1,Pool1,Pool,NP1,NP,OUT1,OUT).
+analyze_public(_,_,0,Pool0,Pool,NP0,NP,OUT0,OUT) :- true |
+    Pool0 = Pool,
+    NP0 = NP,
+    OUT0 = OUT.
+
+analyze_collisions(Module,Q,N,Pool0,Pool,OUT0,OUT) :- N > 0 |
+    module_element(Module,Q,Key),
+    encode_hash_key(Key,Pool0,Pool1,OUT0,OUT1),
+    Q2 := Q + 2,
+    N1 := N - 1,
+    analyze_collisions(Module,Q2,N1,Pool1,Pool,OUT1,OUT).
+analyze_collisions(_,_,0,Pool0,Pool,OUT0,OUT) :- true |
+    Pool0 = Pool,
+    OUT0 = OUT.
+
+encode_hash_key(Key,Pool0,Pool,OUT0,OUT) :-
+    atom(Key), tag_and_value(Key,_,Value) |
+    Arity := Value >> 24,
+    Pred := ( Value - Arity ) /\ 16#"FFFFFF",
+    new_instruction(PredName,02,Pred),
+    Pool0 = [put((PredName/Arity),0,_)|Pool],
+    OUT0 = [public(PredName,Arity)|OUT].
+
+analyze_local(Module,Q,Max,Pool,OUT) :- Q < Max |
+    Q1 := Q + 1,
+    module_element(Module,Q,PredName),
+    Q2 := Q1 + 1,
+    module_element(Module,Q2,PredHead),
+    Q3 := Q2 + 1,
+    module_element(Module,Q3,Length),
+    check_predicate(PredName,PredHead,Length,Module,Q,Max,Pool,OUT).
+otherwise.
+analyze_local(_,_,_,Pool,OUT) :- true |
+    Pool = [],
+    OUT = [].
+
+check_predicate(PredName,PredHead,Length,Module,Q,Max,Pool,OUT) :-
+    atom(PredName),
+    wait(PredHead), tag_and_value(PredHead,16#"24",Value),
+    integer(Length) |
+    Arity := Value >> 24,
+    Pool = [empty((PredName/Arity),YorN)|Pool1],
+    Q1 := Q + ( Length >> 16 ) + 4,
+    local_predicate(YorN,PredName,Arity,Module,Q1,Max,Pool1,OUT).
+otherwise.
+check_predicate(_,_,_,Module,Q,Max,Pool,OUT) :- true |
+    Q1 := Q + 1,
+    analyze_local(Module,Q1,Max,Pool,OUT).
+
+local_predicate(yes,PredName,Arity,Module,Q,Max,Pool,OUT) :- true |
+    OUT = [local(PredName,Arity)|OUT1],
+    analyze_local(Module,Q,Max,Pool,OUT1).
+local_predicate(no,_,_,Module,Q,Max,Pool,OUT) :- true |
+    analyze_local(Module,Q,Max,Pool,OUT).
+
+%%%% GROUND_MODULE/3
+
+ground_module(Module,Done0,Done) :- module(Module,Length) |
+    module_element(Module,0,GCSize),
+    ground_module(1,GCSize,Module,Done0,Done).
+
+ground_module(I,Length,Module,Done0,Done) :- I < Length |
+    module_element(Module,I,Elm),
+    ground(Elm,Done0,Done1),
+    I1 := I + 1,
+    ground_module(I1,Length,Module,Done1,Done).
+otherwise.
+ground_module(_,_,_,Done0,Done) :- true | Done0 = Done.
+
+ground(Elm,Done0,Done) :- wait(Elm) | Done0 = Done.
+
+%
+% dummmy routine to success compilation for pim.
+%
+:- if_not_equal(machine_type, mpsi).
+new_instruction(_, _, _) :- true | true.
+:- end_if.

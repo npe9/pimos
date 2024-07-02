@@ -1,0 +1,128 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v295>Loader>selfcal.kl1.3, 29-Oct-91 13:39:58, Edit by hori
+
+:- module kl1_self_cal.
+:- with_macro pimos.
+:- public cal/6.
+:- public outKLB/7.
+:- public describe/3.
+
+cal(ModuleTerm,Package,IP0,MESG0,PrevStatus,Status) :- true |
+    IP0 = [get(compile:indexing,CO),
+           get(compile:assemble_mode,AM),
+           get(compile:profile,PM),
+           get(compile:structure,SM),
+           get_loader_table(ModTbl0,ModTbl)|IP1],
+    convert_indexing(CO,_,CompMode),
+    convert_asm_mode(AM,AsmMode),
+    convert_profile(PM,_,Profile),
+    convert_struct_mode(SM,Struct),
+    kl1cmp_top:kl1compile(ModuleTerm,MESG1,MESG2,CompOut,CompMode,AsmMode,Profile,Struct,CompStatus),
+    module_information:new_stamp(MagicNum,IP1,[],ModInfoVec),
+    ModInfo = {MagicNum,ModInfoVec},
+    kl1_self_assembler:self_assemble(CompOut,ModInfo,AsmOut,MESG3,MESG4,AsmStatus),
+    kl1_loader:load(AsmOut,Package,Name,MESG5,MESG6,ModTbl1,ModTbl2,LoadStatus),
+    watch_compile(PrevStatus,CompStatus,AsmStatus,LoadStatus,Status,Name,
+                  MESG0,MESG1,MESG2,MESG3,MESG4,MESG5,MESG6,
+                  ModTbl0,ModTbl1,ModTbl2,ModTbl).
+
+outKLB(ModuleTerm,Out0,Out,IP0,MESG0,normal,Status) :- true |
+    IP0 = [get(compile:indexing,CO),
+           get(compile:assemble_mode,AM),
+           get(compile:profile,PM),
+           get(compile:structure,SM)],
+    convert_indexing(CO,_,CompMode),
+    convert_asm_mode(AM,AsmMode),
+    convert_profile(PM,_,Profile),
+    convert_struct_mode(SM,Struct),
+    kl1cmp_top:kl1compile(ModuleTerm,MESG0,[],CompOut,CompMode,AsmMode,Profile,Struct,Status),
+    kl1cmp_output_klb:output(CompOut,Out0,Out).
+
+watch_compile(normal,normal,normal,normal,Status,Name,
+              MESG0,MESG1,MESG2,MESG3,MESG4,MESG5,MESG6,
+              ModTbl0,ModTbl1,ModTbl2,ModTbl3) :- true |
+    Status = normal,
+    MESG0 = MESG1,
+    MESG2 = MESG3,
+    MESG4 = MESG5,
+    MESG6 = [message(string#"Compile Succeeded : ~t~n",[Name])],
+    ModTbl0 = ModTbl1,
+    ModTbl2 = ModTbl3.
+watch_compile(normal,normal,normal,abnormal,Status,Name,
+              MESG0,MESG1,MESG2,MESG3,MESG4,MESG5,MESG6,
+              ModTbl0,ModTbl1,ModTbl2,ModTbl3) :- true |
+    Status = abnormal,
+    MESG0 = MESG1,
+    MESG2 = MESG3,
+    MESG4 = MESG5,
+    MESG6 = [message(string#"Load Aborted : ~t~n",[Name])],
+    ModTbl0 = ModTbl3.
+watch_compile(normal,normal,abnormal,_,Status,Name,
+              MESG0,MESG1,MESG2,MESG3,MESG4,MESG5,MESG6,
+              ModTbl0,ModTbl1,ModTbl2,ModTbl3) :- true |
+    Status = abnormal,
+    MESG0 = MESG1,
+    MESG2 = MESG3,
+    MESG4 = [message(string#"Assemble Aborted : ~t~n",[Name])],
+    ModTbl0 = ModTbl3.
+watch_compile(normal,abnormal,_,_,Status,Name,
+              MESG0,MESG1,MESG2,MESG3,MESG4,MESG5,MESG6,
+              ModTbl0,ModTbl1,ModTbl2,ModTbl3) :- true |
+    Status = abnormal,
+    MESG0 = MESG1,
+    MESG2 = [message(string#"Compile Aborted : ~t~n",[Name])],
+    ModTbl0 = ModTbl3.
+otherwise.
+watch_compile(abnormal,_,_,_,Status,Name,
+              MESG0,MESG1,MESG2,MESG3,MESG4,MESG5,MESG6,
+              ModTbl0,ModTbl1,ModTbl2,ModTbl3) :- true |
+    Status = abnormal,
+    MESG0 = [],
+    ModTbl0 = ModTbl3.
+
+describe(IP0,MESG0,MESG) :- true |
+    IP0 = [get(compile:indexing,CO),
+           get(compile:assemble_mode,AM),
+           get(compile:profile,PM),
+           get(compile:structure,SM)],
+    convert_indexing(CO,CompMode,_),
+    convert_asm_mode(AM,AsmMode),
+    convert_profile(PM,Profile,_),
+    convert_struct_mode(SM,Struct),
+    describe_0(AsmMode,CompMode,Profile,Struct,MESG0,MESG).
+
+describe_0(user,CompMode,Profile,Struct,MESG0,MESG) :- true |
+    MESG0 = [info(string#"  compile:indexing := ~t",[CompMode]),
+             info(string#"  compile:profile := ~t",[Profile])|MESG].
+otherwise.
+describe_0(AsmMode,CompMode,Profile,Struct,MESG0,MESG) :- true |
+    MESG0 = [info(string#"  compile:indexing := ~t",[CompMode]),
+             info(string#"  compile:assemble_mode := ~t",[AsmMode]),
+             info(string#"  compile:profile := ~t",[Profile]),
+             info(string#"  compile:structure := ~t",[Struct])|MESG].
+
+convert_indexing(normal(on),CO,CompMode) :- true | CO = on, CompMode = 4.
+convert_indexing(normal(off),CO,CompMode) :- true | CO = off, CompMode = 3.
+otherwise.
+convert_indexing(_,CO,CompMode) :- true | CO = on, CompMode = 4.
+
+convert_asm_mode(normal(user),AsmMode) :- true | AsmMode = user.
+convert_asm_mode(normal(pimos),AsmMode) :- true | AsmMode = pimos.
+convert_asm_mode(normal(firm),AsmMode) :- true | AsmMode = firm.
+otherwise.
+convert_asm_mode(_,AsmMode) :- true | AsmMode = user.
+
+convert_struct_mode(normal(on),Struct) :- true | Struct = on.
+convert_struct_mode(normal(off),Struct) :- true | Struct = off.
+otherwise.
+convert_struct_mode(_,Struct) :- true | Struct = on.
+
+convert_profile(normal(on),PM,Profile) :- true | PM = on, Profile = debug.
+convert_profile(normal(off),PM,Profile) :- true | PM = off, Profile = no_debug.
+otherwise.
+convert_profile(_,PM,Profile) :- true | PM = off, Profile = no_debug.

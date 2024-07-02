@@ -1,0 +1,561 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%% what manipulator window
+%%% 5.8 for PSI-UX 10.24 update
+
+class as_what_window has
+nature  labeled_sash,with_what_scroll,
+        has_icon_window,as_graphics,
+        as_mouse_input,inferior_window;
+:go(C):-
+%    :create(#font,">sys>csp>FONT.DIR>test_11.font",F),
+    :create(#font,"font:test_11.font",F),
+    :create(C,[size(540,470),title(" What manipulator"),
+            border_flag(off),margin_flag(off)],W),
+    :set_out_font(W,F),
+    :activate(W),
+    :draw(W),
+    :create(#standard_io_window,[size(200,200),
+        position(600,0)],T),
+    :activate(T),
+    repeat,
+    :read(W,Code),
+    :putt(T,Code),:putl(T),
+    Code==exit,!,
+    :kill(T),
+    :kill(W);
+instance
+attribute font_in,adjY,inX,inY,inW,inH,maxN;
+:set_out_font(Win,F):-Win!font_in:=F;
+:get_info(Win,X,Y,W,H,Max):-
+    X=Win!inX,
+    Y=Win!inY+Win!adjY,
+    W=Win!inW,
+    H=Win!inH,
+    Max=Win!maxN;
+:draw(Win):-
+    F=Win!font_in,
+    :get_size(Win,W,Height),
+    H=Height-24,
+    IX=10,
+    IY=10,
+    :draw_filled_rectangle(Win,0,0,W,H,0,fix,set),
+    :draw_filled_rectangle(Win,0,0,W,H,0,light_paint,reset),
+
+%%% up
+    :draw_line(Win,0,1,W,1,2,solid,reset),
+%%% left
+    :draw_line(Win,0,0,0,H,2,solid,reset),
+%%% under
+    :draw_line(Win,1,H-2,W,H-2,1,solid,set),
+    :draw_line(Win,0,H-1,W,H-1,1,solid,set),
+%%% right
+    :draw_line(Win,W-2,1,W-2,H,1,solid,set),
+    :draw_line(Win,W-1,0,W-1,H-1,1,solid,set),
+
+    BY=H-27,
+    Mar=10,
+    Int=6,
+    SW=(W-Mar*2-Int*4)/6,
+    SH=22,
+    BX1=Mar,
+    BX2=Mar+(Int+SW)*1,
+    BX3=Mar+(Int+SW)*2,
+    BX4=Mar+(Int+SW)*3,
+    BX5=Mar+(Int+SW)*4,
+    BX6=Mar+(Int+SW)*5,
+
+    box(Win,BX1,BY,SW,SH,"set",F),
+    box(Win,BX2+1,BY,SW,SH,"set*",F),
+    %box(Win,BX3+1,BY,SW,SH,"set%",F),
+    box(Win,BX3-1,BY,SW,SH,"shell",F), %%% 5/30
+    box(Win,BX4-1,BY,SW,SH,"reset",F),
+    box(Win,BX5,BY,SW,SH,"reset*",F),
+    box(Win,BX6+1,BY,SW,SH,"exit",F),
+
+    :create(#no_image_icon,BX1,BY,B1),
+    :set_code(B1,set),
+    :set_size(B1,SW,SH),
+    :regist(Win,B1),
+    :create(#no_image_icon,BX2,BY,B2),
+    :set_code(B2,set_all),
+    :set_size(B2,SW,SH),
+    :regist(Win,B2),
+    :create(#no_image_icon,BX3,BY,B3),
+    :set_code(B3,set_percent),
+    :set_size(B3,SW,SH),
+    :regist(Win,B3),
+    :create(#no_image_icon,BX4,BY,B4),
+    :set_code(B4,reset),
+    :set_size(B4,SW,SH),
+    :regist(Win,B4),
+    :create(#no_image_icon,BX5,BY,B5),
+    :set_code(B5,reset_all),
+    :set_size(B5,SW,SH),
+    :regist(Win,B5),
+    :create(#no_image_icon,BX6,BY,B6),
+    :set_code(B6,exit),
+    :set_size(B6,SW,SH),
+    :regist(Win,B6),
+
+    :draw_filled_rectangle(Win,IX,IY,W-40,H-40,0,fix,reset),
+    :draw_line(Win,IX-2,IY-1,IX+W-40,IY-1,2,solid,set),
+    :draw_line(Win,IX-2,IY-2,IX-2,IY+H-40,2,solid,set),
+    :create(#scroll_bar_icon,W-27,(H-40-100)/2+10,Scroll),
+    :regist(Win,Scroll),
+
+    :create(#scroll_top_icon,
+        W-27,(H-40-100)/2+10-12,Top),
+    :create(#scroll_bottom_icon,
+        W-27,(H-40-100)/2+10+112+4,Bottom),
+    :regist(Win,Top),
+    :regist(Win,Bottom),
+
+    regist_menu_area(Win,IX,IY,W-40,H-40,ADJ,MaxN),
+    Win!adjY:=ADJ,
+    Win!maxN:=MaxN,
+    Win!inX:=IX,
+    Win!inY:=IY,
+    Win!inW:=W-40,
+    Win!inH:=H-40;
+
+local
+
+box(Win,X,Y,W,H,St,F):-
+    string(St,Len,_),
+    X0=(W-Len*11)/2+X,
+    Y0=Y+2,
+%%% string
+    copy(Win,X0,Y0,Len*11,H,St,F),
+%%% up
+    :draw_line(Win,X,Y+1,X+W,Y+1,2,solid,reset),
+%%% left
+    :draw_line(Win,X,Y,X,Y+H,2,solid,reset),
+%%% under
+    :draw_line(Win,X+1,Y+H-1,X+W,Y+H-1,1,solid,set),
+    :draw_line(Win,X,Y+H,X+W,Y+H,1,solid,set),
+%%% right
+    :draw_line(Win,X+W-1,Y+1,X+W-1,Y+H,1,solid,set),
+    :draw_line(Win,X+W,  Y,  X+W,  Y+H,1,solid,set);
+
+copy(W,X,Y,L,H,S,F):-!,
+    draw_label(W,S,X,Y,F);
+
+draw_label(Obj,String,X,Y,Font):-
+    Win=Obj,
+    Work=Obj,
+    AX=50,
+    AY=50,
+    DX=X,
+    DY=Y,
+    SX=AX+10,
+    SY=AY+20,
+    %:get_parameter(#ipl,bmm_size,Dev),
+    :get_parameter(#profiler_ux_patch,Dev),
+    (Dev==16#"07FF",!,Disp=mono;
+     Dev==16#"0FFF",!,Disp=color;
+     Dev==16#"17FF",!,Disp=color,
+     (#view_selector!color==on,!,
+      :set_color_pair(Win,0,
+        {{45570,56830,60670},{0,0,0}}),!;
+      true);
+     Dev==16#"1FFF",!,Disp=color,
+     (#view_selector!color==on,!,
+      :set_color_pair(Win,0,
+        {{45570,56830,60670},{0,0,0}}),!;
+      true);
+     Disp=mono),
+    (Disp==mono,!,OP1=copy,OP2=reset;OP1=reverse,OP2=set),
+%%% work
+    :draw_filled_rectangle(Work,AX,AY,200,100,0,fix,reset),
+    :draw_string(Work,SX,SY,String,Font,set),
+    :draw_filled_rectangle(Work,SX,SY,67,22,0,light_paint,exclusive_or),
+%%% copy 1
+    :transfer(Win,SX+1,SY+1,DX+1,DY+1,63,20,OP1),
+%%% dist
+    :draw_filled_rectangle(Win,DX,DY,65,22,0,light_paint,OP2),
+%%% copy 2
+    (Dev==16#"1FFF",!,
+     :transfer(Win,SX,SY,DX,DY,65,22,exclusive_or);
+     :transfer(Win,SX+1,SY+1,DX+1,DY+1,63,20,exclusive_or)),
+    true;
+
+%% regist_menu_area(+,+,+,+,+,-)
+%%  ADJ = start Y adjust additon
+
+regist_menu_area(Win,X,Y,W,H,ADJ,Max):-!,
+    Max=H/20,
+    ADJ=(H-Max*20)/2,
+    loop(Max,X,Y+H-ADJ-20,W,Win);
+
+loop(0,_,_,_,_):-!;
+loop(N,X,Y,W,Win):-
+    :create(#no_image_icon,X,Y,I),
+    :set_size(I,W,20),
+    :set_code(I,N),
+    :regist(Win,I),
+    loop(N-1,X,Y-20,W,Win);
+
+end.
+
+class percent_menu_window has
+nature  labeled_sash,as_graphics,has_icon_window,
+        as_mouse_input,inferior_window;
+:go(C):-
+%    :create(#font,">sys>csp>FONT.DIR>test_11.font",F),
+    :create(#font,"font:test_11.font",F),
+    :create(C,[size(200,110),title(" Set percent"),
+            position(500,500),
+            border_flag(off),margin_flag(off)],W),
+    :set_out_font(W,F),
+    :activate(W),
+    :draw(W),
+    :create(#standard_io_window,[size(200,200),
+        position(600,0)],T),
+    :activate(T),
+    :get(W,Code),
+    :putt(T,Code),:putl(T),
+    :kill(T),
+    :kill(W);
+instance
+attribute font_in,adjY,inX,inY,inW,inH,maxN:=1,
+          num:=100;
+:init(W,N):-
+    W!num:=N;
+:set_out_font(Win,F):-Win!font_in:=F;
+:get_info(Win,X,Y,W,H,Max):-
+    X=Win!inX,
+    Y=Win!inY+Win!adjY,
+    W=Win!inW,
+    H=Win!inH,
+    Max=Win!maxN;
+:get(W,Num):-!,
+    repeat,
+    :read(W,Code),
+    (Code==do_it,!,Num=W!num;
+     Code==abort,!,Num=abrot;
+     Code==up,   !,W!num<100,
+        Num=W!num+5,W!num:=Num,:num(W),fail;
+     Code==down, !,W!num>0,
+        Num=W!num-5,W!num:=Num,:num(W),fail),!;
+:num(Win):-
+    N=Win!num,
+    F=Win!font_in,
+    :get_info(Win,X,Y,W,H,_),
+    :get_number_string(#symbolizer,N,St),
+    (N<10,!,L=["  ",St];
+     N==100,!,L=[St];
+     L=[" ",St]),
+    :append(#string,L,String),
+    :draw_string(Win,X+(W-33)/2,Y,String,F,set);
+:draw(Win):-
+    F=Win!font_in,
+    :get_size(Win,W,Height),
+    H=Height-24,
+    IW=40,      %%
+    IH=24,      %%
+    IX=(W-IW)/2,%%
+    IY=14,      %%
+    :draw_filled_rectangle(Win,0,0,W,H,0,fix,set),
+    :draw_filled_rectangle(Win,0,0,W,H,0,light_paint,reset),
+
+%%% up
+    :draw_line(Win,0,1,W,1,2,solid,reset),
+%%% left
+    :draw_line(Win,0,0,0,H,2,solid,reset),
+%%% under
+    :draw_line(Win,1,H-2,W,H-2,1,solid,set),
+    :draw_line(Win,0,H-1,W,H-1,1,solid,set),
+%%% right
+    :draw_line(Win,W-2,1,W-2,H,1,solid,set),
+    :draw_line(Win,W-1,0,W-1,H-1,1,solid,set),
+
+    BY=H-36,
+    Mar=20,
+    Int=20,
+    SW=(W-Mar*2-Int*1)/2,
+    SH=22,
+    BX1=Mar,
+    BX2=Mar+(Int+SW)*1,
+
+    box(Win,BX1+1,BY,SW,SH,"do_it",F),
+    box(Win,BX2-1,BY,SW,SH,"abort",F),
+
+    :create(#no_image_icon,BX1,BY,B1),
+    :set_code(B1,do_it),
+    :set_size(B1,SW,SH),
+    :regist(Win,B1),
+    :create(#no_image_icon,BX2,BY,B2),
+    :set_code(B2,abort),
+    :set_size(B2,SW,SH),
+    :regist(Win,B2),
+
+    PMar=4,
+    Csize=20,
+    copy(Win,IX+IW+PMar,IY+IH/2-Csize/2,11,Csize,"%",F),
+    clear(Win),
+
+    :draw_filled_rectangle(Win,IX,IY,IW,IH,0,fix,reset),
+    :draw_line(Win,IX-2,IY-1,IX+IW,IY-1,2,solid,set),
+    :draw_line(Win,IX-2,IY-2,IX-2,IY+IH,2,solid,set),
+
+    TW=20,
+    TMar=10,
+    TY=IY-5,
+    TH=IH+10,
+    TX=IX-TMar-TW,
+    :create(#up_down_icon,TX,TY,UD),
+    :set_size(UD,TW,TH),
+    :regist(Win,UD),
+
+    Win!adjY:=(IH-Csize)/2,
+    Win!inX:=IX,
+    Win!inY:=IY,
+    Win!inW:=IW,
+    Win!inH:=IH,
+    :num(Win);
+
+local
+
+box(Win,X,Y,W,H,St,F):-
+    string(St,Len,_),
+    X0=(W-Len*11)/2+X,
+    Y0=Y+2,
+%%% string
+    copy(Win,X0,Y0,Len*11,H,St,F),
+%%% up
+    :draw_line(Win,X,Y+1,X+W,Y+1,2,solid,reset),
+%%% left
+    :draw_line(Win,X,Y,X,Y+H,2,solid,reset),
+%%% under
+    :draw_line(Win,X+1,Y+H-1,X+W,Y+H-1,1,solid,set),
+    :draw_line(Win,X,Y+H,X+W,Y+H,1,solid,set),
+%%% right
+    :draw_line(Win,X+W-1,Y+1,X+W-1,Y+H,1,solid,set),
+    :draw_line(Win,X+W,  Y,  X+W,  Y+H,1,solid,set);
+
+copy(W,X,Y,L,H,S,F):-!,
+    draw_label(W,S,X,Y,F);
+
+draw_label(Obj,String,X,Y,Font):-
+    Win=Obj,
+    Work=Obj,
+    AX=10,
+    AY=10,
+    DX=X,
+    DY=Y,
+    SX=AX+2,
+    SY=AY+2,
+    %:get_parameter(#ipl,bmm_size,Dev),
+    :get_parameter(#profiler_ux_patch,Dev),
+    (Dev==16#"07FF",!,Disp=mono;
+     Dev==16#"0FFF",!,Disp=color;
+     Dev==16#"17FF",!,Disp=color,
+     (#view_selector!color==on,!,
+      :set_color_pair(Win,0,
+        {{45570,56830,60670},{0,0,0}}),!;
+      true);
+     Dev==16#"1FFF",!,Disp=color,
+     (#view_selector!color==on,!,
+      :set_color_pair(Win,0,
+        {{45570,56830,60670},{0,0,0}}),!;
+      true);
+     Disp=mono),
+    (Disp==mono,!,OP1=copy,OP2=reset;OP1=reverse,OP2=set),
+%%% work
+    :draw_filled_rectangle(Work,AX,AY,70,30,0,fix,reset),
+    :draw_string(Work,SX,SY,String,Font,set),
+    :draw_filled_rectangle(Work,SX,SY,62,22,0,light_paint,exclusive_or),
+%%% copy 1
+    :transfer(Win,SX+1,SY+1,DX+1,DY+1,60,20,OP1),
+%%% dist
+    :draw_filled_rectangle(Win,DX,DY,62,22,0,light_paint,OP2),
+%%% copy 2
+    :transfer(Win,SX+1,SY+1,DX+1,DY+1,60,20,exclusive_or);
+
+clear(Win):-
+    AX=10,
+    AY=10,
+    :draw_filled_rectangle(Win,AX,AY,70,30,0,fix,set),
+    :draw_filled_rectangle(Win,AX-1,AY-1,72,32,0,light_paint,reset);
+
+down(Win,X,Y,W,H):-
+    :draw_line(Win,X+8,Y+4,X+W-9-1,4,1,solid,reset),
+    :draw_line(Win,W/2+X,Y+H-5,X+8,4,3,solid,reset),
+    :draw_line(Win,X+W-9-1,Y+4,W/2+X,H-5,2,solid,set);
+
+up(Win,X,Y,W,H):-
+    :draw_line(Win,X-2,Y+1,X-2,H-1,set),
+    :draw_line(Win,X-1,Y+0,X-1,H-1,set),
+    :draw_line(Win,X,Y+0,X,H-1,2,solid,reset),
+
+    :draw_line(Win,W/2+X,Y+5,W-9+X,H-5,2,solid,set),
+    :draw_line(Win,W-9+X,Y+H-5,8+X,H-5,2,solid,set),
+    :draw_line(Win,8+X,Y+H-5,W/2+X,5,3,solid,reset);
+
+end.
+
+class up_down_icon has
+
+nature  icon_button,icon_clear;
+
+instance
+attribute
+            width:=20,
+            height:=112;
+
+%% :code(+,+,+,-)
+
+:code(Icon,X,Y,Code):-
+    Height=Icon!height/2,
+    (Y=<Height-3,!,
+     Code=up;
+     Y>=Height+3,!,Code=down;
+     Code='$$nil');
+
+%% :draw(+,+,+,+,+,+)
+
+:draw(Icon,X,Y,W,H,Win):-
+    Int=4,
+    TX=X+W/2,
+    LX=X+1,
+    RX=X+W,
+    UY=Y,
+    DY=Y+H,
+    UBY=Y+H/2-Int/2,
+    DBY=UBY+Int,
+
+    :draw_line(Win,TX,UY,RX,UBY,2,solid,set),
+    :draw_line(Win,LX,UBY,RX,UBY,2,solid,set),
+    :draw_line(Win,LX,UBY,TX,UY,2,solid,reset),
+
+    :draw_line(Win,RX-1,DBY,TX,DY,2,solid,set),
+    :draw_line(Win,RX-1,DBY,LX,DBY,2,solid,reset),
+    :draw_line(Win,TX,DY,LX,DBY,2,solid,reset);
+
+end.
+
+
+class with_what_scroll has
+instance
+:reverse(Win,N):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    (N>Max,!;
+     :draw_filled_rectangle(Win,
+        X,Y+(N-1)*H,(W/11)*11,H,0,fix,exclusive_or));
+:redraw_inside(Win,L):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    draw_lines(L,0,Ans,X,Y,Win!font_in,Win),
+    (Max==Ans,!;
+     Max>Ans,
+     :draw_filled_rectangle(Win,
+        X,Y+Ans*H,W,H*(Max-Ans),0,fix,reset));
+:top(Win,S):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_string(Win,X+11,Y,S,Win!font_in,set);
+:bottom(Win,S):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_string(Win,X+11,Y+(Max-1)*H,S,Win!font_in,set);
+:bottom(Win):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_filled_rectangle(Win,
+        X,Y+(Max-1)*H,W,H,0,fix,reset);    
+:up(Win):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :transfer(Win,X,Y+H,X,Y,W,H*(Max-1),copy);
+:down(Win):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :transfer(Win,X,Y,X,Y+H,W,H*(Max-1),copy);
+:part(Win,N):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    DY=Y+(N-1)*H,
+    SY=DY+H,
+    DH=(Max-N)*H,
+    :transfer(Win,X,SY,X,DY,W,DH,copy);
+:inside_clear(Win):-
+    :get_info(Win,X,Y,W,H,Max),
+    :draw_filled_rectangle(Win,X,Y,W,H,0,fix,reset);
+:draw_ast(Win,N):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_string(Win,X,Y+(N-1)*H,"*",Win!font_in,set);
+:draw_sp(Win,N):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_string(Win,X,Y+(N-1)*H," ",Win!font_in,set);
+:draw_all_sp(Win):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_filled_rectangle(Win,X,Y,11,Max*H,0,fix,reset);
+:draw_all_ast(Win):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    ast_all(X,Y,H,Win!font_in,Y+Max*H,L),
+    :execute_graphics_command(Win,L);
+:draw_ast_and_sp(Win,N):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    Y1=Y+N*H,
+    ast_all(X,Y,H,Win!font_in,Y1,L),
+    :execute_graphics_command(Win,L),
+    :draw_filled_rectangle(Win,X,Y1,11,(Max-N)*H,0,fix,reset);
+:clear_reverse(Win,L):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    rev_loop(L,X,Y,(W/11)*11,H,L1),
+    :execute_graphics_command(Win,L1);
+:draw_asts(Win,L):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    ast_loop(L,X,Y,Win!font_in,H,L1),
+    :execute_graphics_command(Win,L1);
+:clear_asts(Win,L):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    sp_loop(L,X,Y,Win!font_in,H,L1),
+    :execute_graphics_command(Win,L1);
+
+local
+draw_lines([],N,N,_,_,_,_):-!;
+draw_lines([{S,R,A,_,_,_,_,_,_,_,_,_}|L],C,N,X,Y,F,Win):-
+    (R==0,!,OP=set;OP=reset),
+    (A==0,!,:draw_string(Win,X,Y," ",F,OP);
+     :draw_string(Win,X,Y,"*",F,OP)),
+    :draw_string(Win,X+11,Y,S,F,OP),
+    draw_lines(L,C+1,N,X,Y+20,F,Win);
+
+rev_loop([],_,_,_,_,[]):-!;
+rev_loop([{_,1,_,_,_,_,_,_,_,_,_,_}|L],X,Y,W,H,[Com|L1]):-!,
+    Com={draw_filled_rectangle,{X,Y,W,H,0,fix,exclusive_or}},
+    rev_loop(L,X,Y+H,W,H,L1);
+rev_loop([_|L],X,Y,W,H,L1):-
+    rev_loop(L,X,Y+H,W,H,L1);
+
+ast_loop([],_,_,_,_,[]):-!;
+ast_loop([{_,1,_,_,_,_,_,_,_,_,_,_}|L],X,Y,F,H,[Com|L1]):-!,
+    Com={draw_string,{X,Y,"*",F,set}},
+    ast_loop(L,X,Y+H,F,H,L1);
+ast_loop([_|L],X,Y,F,H,L1):-
+    ast_loop(L,X,Y+H,F,H,L1);
+
+sp_loop([],_,_,_,_,[]):-!;
+sp_loop([{_,1,_,_,_,_,_,_,_,_,_,_}|L],X,Y,F,H,[Com|L1]):-!,
+    Com={draw_string,{X,Y," ",F,set}},
+    sp_loop(L,X,Y+H,F,H,L1);
+sp_loop([_|L],X,Y,F,H,L1):-
+    sp_loop(L,X,Y+H,F,H,L1);
+
+ast_all(_,M,_,_,M,[]):-!;
+ast_all(X,Y,H,F,M,[Com|L1]):-!,
+    Com={draw_string,{X,Y,"*",F,set}},
+    ast_all(X,Y+H,H,F,M,L1);
+
+end.

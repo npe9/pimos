@@ -1,0 +1,610 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_cmd_environment.
+:- public do_command/1.
+:- with_macro pimos.
+
+do_command(printenv) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(Status)],
+    listener_utility:out([do(OUT)]),
+    printenv(Status,OUT).
+do_command(printenv(Name)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(Name,Status)],
+    listener_utility:out([do(OUT)]),
+    printenv(Status,Name,OUT).
+
+do_command(getenv(Status)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(Status)].
+do_command(getenv(Name,Status)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(Name,Status)].
+
+do_command(setenv({(:),Key,{(=),Attr,Value}})) :- do_command(setenv((Key:Attr),Value,_)).
+do_command(setenv({(=),Name,Value})          ) :- do_command(setenv(Name,Value,_)      ).
+do_command(unsetenv(Name)                    ) :- do_command(unsetenv(Name,_)          ).
+
+do_command(setenv(task:package,Value,Status)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[setenv(task:package,Value,Status)],
+%                                                    get(title,{_, Fs,Title}),
+%                                                    set(title,{YN,Fs,Title},_)]),
+%    listener_utility:member(default_package,Title,YN),
+    set_default_package_by_setenv(Status).
+do_command(unsetenv(task:package,Status)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[unsetenv(task:package,Status)],
+%                                                    get(title,{_, Fs,Title}),
+%                                                    set(title,{YN,Fs,Title},_)]),
+%    listener_utility:member(default_package,Title,YN),
+    set_default_package_by_setenv(Status).
+
+do_command(setenv(task:io_node,Value,Status)) :- true |
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[connection(Connect)|ENV1],
+    set_io_node(Connect,Value,Status,ENV1).
+
+do_command(environment(Env)) :- atom(Env) |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(normal(Value))],
+    listener_utility:out([do(OUT)]),
+    printAttr(Value,Env,OUT).
+
+do_command(get) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(Value)],
+    listener_utility:out([do(OUT)]),
+    printenv(normal(Value),OUT).
+do_command(get(Value)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(Value)].
+do_command(get(Name,Value)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(Name,Value)].
+do_command(set(Name,Value)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(Name,Value,_)].
+do_command(reset(Name,Value)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[reset(Name,Value)].
+
+do_command(rewrite_length) :- true|
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(rewrite_length,L)],
+    listener_utility:read_term(" Re-write length: ~t => ",[L],L,T),
+    do_command(rewrite_length(T)).
+do_command(rewrite_depth) :- true|
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(rewrite_depth,D)],
+    listener_utility:read_term(" Re-write depth: ~t => ",[D],D,T),
+    do_command(rewrite_depth(T)).
+do_command(print_depth) :- true|
+    listener_utility:buffer(BUF),
+    BUF=[get_print_depth(L)],
+    listener_utility:read_term(" Print depth: ~t => ",[L],L,T),
+    do_command(print_depth(T)).
+do_command(print_length) :- true|
+    listener_utility:buffer(BUF),
+    BUF=[get_print_length(L)],
+    listener_utility:read_term(" Print length: ~t => ",[L],L,T),
+    do_command(print_length(T)).
+do_command(print_string_length) :- true|
+    listener_utility:buffer(BUF),
+    BUF=[get_print_string_length(L)],
+    listener_utility:read_term(" Print string length: ~t => ",[L],L,T),
+    do_command(print_string_length(T)).
+do_command(print_atom_length) :- true|
+    listener_utility:buffer(BUF),
+    BUF=[get_print_atom_length(L)],
+    listener_utility:read_term(" Print atom length: ~t => ",[L],L,T),
+    do_command(print_atom_length(T)).
+do_command(print_integer_radix) :- true|
+    listener_utility:buffer(BUF),
+    BUF=[get_print_integer_radix(L)],
+    listener_utility:read_term(" Print integer radix: ~t => ",[L],L,T),
+    do_command(print_integer_radix(T)).
+
+do_command(rewrite_length(N)) :- N>=0 |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(rewrite_length,N,_)].
+do_command(rewrite_length(OLD,NEW)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(rewrite_length,OLD)],
+    do_command(rewrite_length(NEW)).
+
+do_command(rewrite_depth(N)) :- N>=0 |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(rewrite_depth,N,_)].
+do_command(rewrite_depth(OLD,NEW)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(rewrite_depth,OLD)],
+    do_command(rewrite_depth(NEW)).
+
+do_command(print_length(N)) :- N>=0 |
+    listener_utility:buffer(BUF),
+    BUF=[print_length(N)].
+do_command(print_length(OLD,NEW)) :- true |
+    listener_utility:buffer(BUF),
+    BUF=[get_print_length(OLD)],
+    do_command(print_length(NEW)).
+
+do_command(print_depth(N)) :- N>=0 |
+    listener_utility:buffer(BUF),
+    BUF=[print_depth(N)].
+do_command(print_depth(OLD,NEW)) :- true |
+    listener_utility:buffer(BUF),
+    BUF=[get_print_depth(OLD)],
+    do_command(print_depth(NEW)).
+
+do_command(print_variable_mode) :- true |
+    listener_utility:buffer(BUF),
+    BUF=[print_variable(Pvar,Pvar1)],
+    listener_utility:out(Req),
+    Req=[putf(" Print mode for variable: ~t => ~t~n",[Pvar,Pvar1])],
+    listener_buffer:pvar_mode(Pvar,Pvar1).
+do_command(print_variable_mode(NEW)) :- true |
+    listener_utility:buffer(BUF),
+    BUF=[print_variable(OLD,NEW1)],
+    set_print_variable(OLD,NEW,NEW1).
+do_command(print_variable_mode(OLD,NEW)) :- true |
+    listener_utility:buffer(BUF),
+    BUF=[print_variable(OLD,NEW1)],
+    set_print_variable(OLD,NEW,NEW1).
+
+do_command(print_string_length(N)) :- N>=0 |
+    listener_utility:buffer(BUF),
+    BUF=[print_string_length(N)].
+do_command(print_string_length(OLD,NEW)) :- true |
+    listener_utility:buffer(BUF),
+    BUF=[get_print_string_length(OLD)],
+    do_command(print_string_length(NEW)).
+
+do_command(print_atom_length(N)) :- N>=0 |
+    listener_utility:buffer(BUF),
+    BUF=[print_atom_length(N)].
+do_command(print_atom_length(OLD,NEW)) :- true |
+    listener_utility:buffer(BUF),
+    BUF=[get_print_atom_length(OLD)],
+    do_command(print_atom_length(NEW)).
+
+do_command(print_integer_radix(N)) :- N>=2, N=<36|
+    listener_utility:buffer(BUF),
+    BUF=[print_integer_radix(N)].
+do_command(print_integer_radix(OLD,NEW)) :- true |
+    listener_utility:buffer(BUF),
+    BUF=[get_print_integer_radix(OLD)],
+    do_command(print_integer_radix(NEW)).
+
+
+do_command(nostatistics) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(statistics,off,_)].
+do_command(statistics) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(statistics,on,_)].
+do_command(statistics(on)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(statistics,on,_)].
+do_command(statistics(off)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(statistics,off,_)].
+do_command(statistics(OLD,NEW)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(statistics,OLD,_)],
+    do_command(statistics(NEW)).
+
+do_command(mode) :- true|
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(listener:mode,Status),setenv(listener:mode,New,_)],
+    mode(Status,Mode),
+    listener_utility:read_term(" User mode: ~t => ",[Mode],Mode,New).
+do_command(mode(Mode)) :- true|
+    listener_utility:resource([environment(ENV)]),
+    ENV=[setenv(listener:mode,Mode,_)].
+
+do_command(default_module) :- true|
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(module,Dfm)],
+    listener_utility:read_term(" Default module: ~t => ",[Dfm],Dfm,Mdl),
+    do_command(default_module(Mdl)).
+
+do_command(default_module(0)) :- true | set_default_module(normal(_),0).
+
+do_command(default_module(Mdl)) :- atom(Mdl) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_module(Mdl,Status)],
+    set_default_module(Status,Mdl).
+
+do_command(default_module(Pac::Mdl)) :- atom(Pac), atom(Mdl) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_module(Pac,Mdl,Status)],
+    set_default_module(Status,Pac::Mdl).
+
+do_command(default_module(OLD,NEW)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(module,OLD)],
+    do_command(default_module(NEW)).
+
+
+do_command(default_package) :- true |
+    listener_utility:resource([code(COD)]),
+    COD=[get_default_package(normal(Dfp))],
+    listener_utility:read_term(" Default package: ~t => ",[Dfp],Dfp,Pac),
+    do_command(default_package(Pac)).
+
+do_command(default_package(Pac)) :- atom(Pac) |
+    listener_utility:resource([code(COD)]),
+    COD=[do(CODE)],
+    CODE=[get_package_info(Pac,Status)|CODE1],
+    set_default_package(Status,Pac,CODE1).
+
+do_command(default_package(OLD,NEW)) :- true |
+    listener_utility:resource([code(COD)]),
+    COD=[get_default_package(normal(OLD))],
+    do_command(default_package(NEW)).
+
+
+do_command(environment) :- true |
+    listener_utility:resource(RSC),
+    RSC=[   code([get_default_package(normal(DFP))]),
+            environment([do(ENV)]),
+            command([do(COM)]),
+            alias([get_counter(AEX)]),
+            macro([current_macro(Current)]),
+            error([get_queue_length(EQL)])],
+    listener_utility:buffer([do(BUF)]),
+    (
+    Current=normal(MCR) -> MacroMsg=putt(MCR);
+    otherwise;
+    true        -> MacroMsg=putb("Non-expansible mode")
+    ),
+    COM=[
+        event_number(NUM),
+        get_history_length(HIS)],
+    ENV=[
+        getenv(task:directory,Dir),
+        get(module,           DFM),
+        get(remembrance,      REM),
+        get(display_variables,DVM),
+        get(display_ancestor, DAM),
+        get(statistics,       STA),
+        get(query,            QUE),
+        get(scope,            SCP),
+        get(rewrite_depth,    RWD),
+        get(rewrite_length,   RWL)],
+    directory_msg(Dir,DirMsg),
+    BUF=[
+        get_print_length(LEN),
+        get_print_depth(DEP),
+        get_print_string_length(PSL),
+        get_print_atom_length(PAL),
+        get_print_integer_radix(PIR),
+        get_print_variable(PVM)],
+    listener_utility:out([do(OUT)]),        
+    OUT=[
+        DirMsg,
+        putf(" Default package     : ~t~n",[DFP]),
+        putf(" Default module      : ~t~n",[DFM]),
+        putb(" Macro modules       : "), MacroMsg, nl,
+        putf(" Alias expansion     : ~t~n",[AEX]),
+        putf(" Statistics          : ~t~n",[STA]),
+        putf(" Remembering mode    : ~t~n",[REM]),
+        putf(" Display variables   : ~t~n",[DVM]),
+        putf(" Query mode          : ~t~n",[QUE]),
+        putf(" Display ancestor    : ~t~n",[DAM]),
+        putf(" Scope of variables  : ~t~n",[SCP]),
+        putf(" Print depth         : ~t~n",[DEP]),
+        putf(" Print length        : ~t~n",[LEN]),
+        putf(" Print atom length   : ~t~n",[PAL]),
+        putf(" Print string length : ~t~n",[PSL]),
+        putf(" Print integer radix : ~t~n",[PIR]),
+        putf(" Print variable mode : ~t~n",[PVM]),
+        putf(" Re-write depth      : ~t~n",[RWD]),
+        putf(" Re-write length     : ~t~n",[RWL]),
+        putf(" Error queue length  : ~t~n",[EQL]),
+        putf(" History length      : ~t~n",[HIS]),
+        putf(" Event number        : ~t~n",[NUM])].
+
+do_command(change_macro(Module)) :- true |
+    and_to_list(Module,Macro),
+    listener_utility:resource([macro([do(MCR)])]),
+    MCR=[current_macro(Current),change_macro(Macro,Status)],
+    listener_utility:out([do(OUT)]),
+    change_macro(Status,Current,Macro,OUT).
+do_command(change_macro) :- true |
+    listener_utility:resource([macro([do(MCR)])]),
+    MCR=[current_macro(Current),change_macro(Macro,Status)],
+    listener_utility:inter([do(OUT)]),
+    read_macro(OUT,OUT1,Current,Macro),
+    change_macro(Status,Current,Macro,OUT1).
+
+do_command(change_portray((M:Goal))) :- vector(Goal,Size)|
+    Arity := Size-1,
+    listener_utility:break_up_goal(Goal,Name,ArgV),
+    module_table:cache_table([get_code(M,Name,Arity,Status)]),
+    change_portray(Status,(M:Name/Arity),ArgV).
+do_command(change_portray((M:Goal))) :- atom(Goal)|
+    module_table:cache_table([get_code(M,Goal,0,Status)]),
+    change_portray(Status,(M:Goal/0),{}).
+do_command(change_portray(default)) :- true|
+    listener_utility:buffer([change_portray(default,_)]).
+
+do_command(change_nodes(Start,Nodes)) :- true| do_command(change_nodes({Start,Nodes})).
+do_command(change_nodes(Nodes)) :- true|
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[get(nodes,Total)|ENV1],
+    change_nodes(Nodes,Total,ENV1).
+do_command(change_nodes) :- true |
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[get(node,Nodes), get(nodes,Total)|ENV1],
+    listener_utility:inter([do(IN)]),
+    node_msg(Nodes,Total,IN,Nodes1),
+    change_nodes(Nodes1,Total,ENV1).
+
+otherwise.
+do_command(setenv(Name,Value,Status)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[setenv(Name,Value,Status)].
+do_command(unsetenv(Name,Status)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[unsetenv(Name,Status)].
+
+do_command(scope) :- true |
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[get(scope,SCP)|ENV1],
+    listener_utility:inter([do(IN)]),
+    IN=[putf(" Scope of variables: ~t => ",[SCP]), getl(Line)|IN1],
+    listener_utility:string_to_term(Line,NSCP),
+    (
+    NSCP=end_of_file -> ENV1=[], IN1=[];
+    NSCP=clause      -> ENV1=[set(scope,clause,_)],   IN1=[];
+    NSCP=tracer      -> ENV1=[set(scope,tracer,_)],   IN1=[];
+    otherwise;
+    true ->
+        ENV1=[],
+        IN1=[putf(" Unknown mode>> ~t~n",[NSCP]),
+             putf(" Available modes are 'clause' and 'tracer'.~n",[])]
+    ).
+do_command(scope(SCP)) :- atom(SCP) |
+    listener_utility:resource([environment(ENV)]),
+    (
+    SCP=clause -> ENV=[set(scope,clause,_)];
+    SCP=tracer -> ENV=[set(scope,tracer,_)];
+    otherwise;
+    true ->
+        ENV=[],
+        listener_utility:out([do(
+            [putf(" Unknown mode>> ~t~n",[SCP]),
+             putf(" Available modes are 'clause' and 'tracer'.~n",[])])])
+    ).
+do_command(scope(OLD,NEW)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(scope,OLD)],
+    do_command(scope(NEW)).
+
+do_command(change_portray(ModSpec)) :- true|
+    module_table:cache_table([get_code(ModSpec,go,1,Status)]),
+    change_portray(Status,(ModSpec:go/1),{_}).
+
+otherwise.
+do_command(Goal) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(macro#module_name,"Illegal argument"),Goal).
+
+
+directory_msg(normal(Dir),Msg) :- string(Dir,_,16) | 
+    Msg=putf(" Current directory   : ~s~n",[Dir]).
+directory_msg(abnormal,   Msg) :- true |
+    Msg=putf(" WARNING: task:directory not found.~n",[]).
+% 92.7.2
+directory_msg(abnormal(Reason),   Msg) :- true |
+    Msg=putf(" WARNING: task:directory not found because of ~t.~n",[Reason]).
+otherwise.
+directory_msg(normal(Dir),Msg) :- true |
+    Msg=putf(" WARNING: task:directory = ~t illegal value.~n",[Dir]).
+
+
+set_default_module(normal(_),M) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(module,M,_)].
+%                                                    get(title,{_, Fs,Title}),
+%                                                    set(title,{YN,Fs,Title},_)]),
+%    listener_utility:member(default_module,Title,YN).
+set_default_module(protection_violation,M) :- true |
+    listener_utility:out(OUT),
+    OUT=[putf(" Protection violation>> ~t~n",[M])].
+otherwise.
+set_default_module(_,M) :- true |
+    listener_utility:out(OUT),
+    OUT=[putf(" Nonexistent module>> ~t~n",[M])].
+
+
+set_default_package(normal(_),Pac,CODE) :- true |
+    CODE=[set_default_package(Pac,_)],
+    listener_utility:resource([environment(ENV),spy(SPY)]),
+    listener_utility:buffer(BUF),
+    ENV=[setenv(task:package,Pac,_)],
+%                                                    get(title,{_, Fs,Title}),
+%                                                    set(title,{YN,Fs,Title},_)]),
+%    listener_utility:member(default_package,Title,YN),
+    BUF=[package(Pac)], SPY=[trace(Pac,*,*,*,_)].
+set_default_package(protection_violation,Pac,CODE) :- true |
+    listener_utility:out(OUT),
+    OUT=[putf(" Protection violation>> ~t~n",[Pac])],
+    CODE=[].
+otherwise.
+set_default_package(_,Pac,CODE) :- true |
+    listener_utility:out(OUT),
+    OUT=[putf(" Nonexistent package>> ~t~n",[Pac])],
+    CODE=[].
+
+set_default_package_by_setenv(Status) :- wait(Status) |
+    listener_utility:resource(RSC),    
+    RSC=[code([do(CODE)]),spy(SPY)],
+    CODE=[reset_package,get_default_package(normal(Pac))],
+    listener_utility:buffer(BUF),
+    BUF=[package(Pac)], SPY=[trace(Pac,*,*,*,_)].
+
+
+printenv(normal(Value),OUT) :- true |
+    sorter:sort(Value,Value1),
+    printenv1(Value1,OUT).
+otherwise.
+printenv(_,OUT) :- true | OUT=[].
+
+printenv1([{N,V}|L],OUT) :-
+    OUT=[putf(" ~t = ~t~n",[N,V])|OUT1],
+    printenv1(L,OUT1).
+otherwise.
+printenv1(_,OUT) :- OUT=[].
+
+printenv(normal(Value),Name,OUT) :- true |
+    OUT=[putf(" ~t = ~t~n",[Name,Value])].
+otherwise.
+printenv(_,            Name,OUT) :- true |
+    OUT=[putf(" printenv: ~t nonexistent.~n",[Name])].
+    
+printAttr([{T:N,V}|L],T,OUT) :-
+    OUT=[putf(" ~t = ~t~n",[(T:N),V])|OUT1],
+    printAttr(L,T,OUT1).
+otherwise.
+printAttr([_|L],T,OUT) :- printAttr(L,T,OUT).
+printAttr([],_,OUT) :- OUT=[].
+
+
+set_io_node(normal(Node),     Value,Status,ENV) :- true|
+    ENV=[getenv(task:io_node,GET),setenv(task:io_node,Value,SET)|ENV1],
+    set_io_node1(SET,GET,Node,Status,ENV1).
+% 92.7.2
+set_io_node(abnormal,        _Value,Status,ENV) :- true|
+    ENV=[], Status=abnormal(disconnected).
+set_io_node(abnormal(Reason),_Value,Status,ENV) :- true|
+    ENV=[], Status=abnormal(disconnected(Reason)).
+%
+set_io_node1(normal,GET,Node,Status,ENV) :- true|
+    ENV=[connection(Connect)|ENV1],
+    set_io_node2(Connect,GET,Node,Status,ENV1).
+otherwise.
+set_io_node1(Abnormal,_,_,Status,ENV) :- true|
+    ENV=[], Status=Abnormal.
+
+set_io_node2(normal(_),_,_,Status,ENV) :- true| Status=normal, ENV=[].
+set_io_node2(abnormal,normal(_),Node,Status,ENV) :-
+    Status=abnormal(cannot_connect),
+    ENV=[setenv(task:io_node,Node,_)].
+set_io_node2(abnormal(Reason),normal(_),Node,Status,ENV) :- true|
+    Status=abnormal(cannot_connect(Reason)),
+    ENV=[setenv(task:io_node,Node,_)].
+otherwise.
+set_io_node2(abnormal,_,_,Status,ENV) :-
+    Status=abnormal(cannot_connect),
+    ENV=[unsetenv(task:io_node,_)].
+set_io_node2(abnormal(Reason),_,_,Status,ENV) :-
+    Status=abnormal(cannot_connect(Reason)),
+    ENV=[unsetenv(task:io_node,_)].
+
+
+set_print_variable(_,name,   NEW) :- NEW=name.
+set_print_variable(_,address,NEW) :- NEW=address.
+otherwise.
+set_print_variable(OLD,_,    NEW) :- NEW=OLD.
+
+change_macro(normal,normal(Current),Current, OUT) :- OUT=[].
+change_macro(normal,normal(Current),0,       OUT) :- 
+    OUT=[putf(" ~t => Non-expansible mode~n",[Current])].
+change_macro(abnormal(Info),_,_,OUT) :- error_macro(Info,OUT).
+otherwise.
+change_macro(normal,_,              0,       OUT) :- OUT=[].
+otherwise.
+change_macro(normal,normal(Current),Module,OUT) :- 
+    OUT=[putf(" ~t => ~t~n",[Current,Module])].
+otherwise.
+change_macro(normal,_,              Module,OUT) :-
+    OUT=[putf(" Non-expansible mode => ~t~n",[Module])].
+
+
+error_macro([illegal_macro(Module)|Err],OUT) :-
+    OUT=[putf(" Illegal macro module>> ~t~n",[Module])|OUT1],
+    error_macro(Err,OUT1).
+error_macro([non_existent(Module)|Err], OUT) :-
+    OUT=[putf(" Nonexistent module>> ~t~n",[Module])|OUT1],
+    error_macro(Err,OUT1).
+error_macro([protection_violation(Module)|Err],OUT) :-
+    OUT=[putf(" Protection violation>> ~t~n",[Module])|OUT1],
+    error_macro(Err,OUT1).
+error_macro([],OUT) :- OUT=[].
+otherwise.
+error_macro([{_,Module}|Err],OUT) :-
+    OUT=[putf(" Abnormal macro>> ~t~n",[Module])|OUT1],
+    error_macro(Err,OUT1).
+
+
+read_macro(OUT,OUT1,normal(Current),Macro) :- true|
+    listener_utility:read_term(
+        " Current: ~t~n New    : ",[Current],Current,Mac,OUT,OUT1),
+    and_to_list(Mac,Macro).
+otherwise.
+read_macro(OUT,OUT1,_,Macro) :- true|
+    listener_utility:read_term(
+        " Current: Non-expansible mode~n New    : ",[],0,Mac,OUT,OUT1),
+    and_to_list(Mac,Macro).
+
+and_to_list( 0,   L) :- L=0.
+and_to_list( A,   L) :- list(A) | L=A.
+and_to_list((A,B),L) :- L=[A|L1], and_to_list(B,L1).
+otherwise.
+and_to_list( A,   L) :- L=[A].
+
+
+change_nodes({Start,Nodes},Total,ENV) :- 
+  Start>=0, Nodes>0, Start+Nodes =< Total | ENV=[set(node,{Start,Nodes},_)].
+change_nodes(init,_,ENV) :- true| ENV=[set(node,[],_)].
+change_nodes(end_of_file,_,ENV) :- true| ENV=[].
+otherwise.
+change_nodes({Start,Nodes},_,ENV) :- true|
+    ENV=[],
+    listener_utility:out([putf(" node: ~t,~t illegal node.~n",[Start,Nodes])]).
+otherwise.
+change_nodes(Nodes,_,ENV) :- true|
+    ENV=[],
+    listener_utility:out([putf(" node: ~t illegal node.~n",[Nodes])]).
+
+node_msg({Start,Nodes},Total,IN,Nodes1) :- true|
+    IN=[putf(" Current status is as follows.~n",[]),
+        putf("  Start node     : ~t~n",[Start]),
+        putf("  Number of nodes: ~t~n",[Nodes])|IN1],
+    node_msg([],Total,IN1,Nodes1).
+node_msg([],Total,IN,Nodes1) :- true|
+    IN=[putf(" Input format is as follows.~n",[]),
+        putf("  StartNode,NumberOfNodes~n",[]),
+        putf(" ( 0 =< StartNode =< ~t,~n",[~(Total-1)]),
+        putf("   1 =< NumberOfNodes,~n",[]),
+        putf("   StartNode+NumberOfNodes =< ~t )~n => ",[Total]),
+        getl(Line)],
+    listener_utility:string_to_term(Line,NodeInfo),
+    node(NodeInfo,Nodes1).
+
+node((S,N),Nodes) :- true | Nodes={S,N}.
+otherwise.
+node(Ns,   Nodes) :- true | Nodes=Ns.
+
+
+mode(normal(pimos),Mode) :- true| Mode=pimos.
+mode(normal(firm), Mode) :- true| Mode=firm.
+otherwise.
+mode(_,            Mode) :- true| Mode=user.
+
+
+change_portray(normal(Code),_,ArgV) :- true|
+    listener_utility:buffer([change_portray({Code,ArgV},_)]).
+otherwise.
+change_portray(Abnormal,Pred,_) :- true|
+    listener_utility:out([putf(" portray: ~t ~t~n",[Abnormal,Pred])]).
+

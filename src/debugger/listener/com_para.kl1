@@ -1,0 +1,39 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_cmd_paragraph.
+:- public do_command/1.
+:- with_macro pimos.
+
+do_command(paragraph) :- true |
+    listener_utility:resource([profile_data_pool(PL)]),
+    module:get_module_name(module#listener_cmd_paragraph,Pac,_Mod),
+    module_table:dynamic_link(Pac::profile,output,{PL}).
+
+do_command(interval(Time)) :- Time>0 |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[setenv(profile:interval,Time,_)].
+do_command(interval(infinite)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[setenv(profile:interval,infinite,_)].
+do_command(interval) :- true|
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(profile:interval,Status)],
+    interval(Status,T),
+    listener_utility:read_term(" Interval: ~t => ",[T],T,N),
+    do_command(interval(N)).
+
+otherwise.
+do_command(Goal) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(macro#module_name,"Illegal argument"),Goal).
+
+
+interval(normal(T),Time) :- T>0 | Time=T.
+interval(normal(infinite),Time) :- Time = infinite.
+otherwise.
+interval(_,               Time) :- Time = 2000.

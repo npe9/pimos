@@ -1,0 +1,494 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module input_filter.
+:- with_macro pimos.
+:- public init/5,usage/1.
+
+usage(L) :- true | ioutls_usage:input_filter(L).
+
+init(In,Out,N,OpPool,Atom) :- wait(N) |
+        merge(In,In1),
+        operator_filter:go(Op,OpPool),
+        inputFilter(Op,Atom,Out,[],[],no,0,0,N,"",In1).
+
+:- local_implicit op:stream,atom:stream,out:stream,doBuf:shared,miniBuf:shared,iEF:shared,
+        p:shared,n:shared,bufsize:shared,buf:shared.
+
+%   out : StreamToDevice
+%   doBuf : StackForDoMessage
+%   miniBuf : StackForUngetc
+%   iEF : inputEndFlag
+%
+% inputFilter(+InStream)
+%
+inputFilter([]) --> &doBuf=[] | true.
+inputFilter([]) --> &doBuf=[S|SS] |
+        &doBuf<=SS,
+        inputFilter(S).
+inputFilter([getc(C)|In]) --> true |
+        inputFilterChar(In,C).
+inputFilter([getl(L)|In]) --> true |
+%        {{inputFilterLine(L,In0,In)}},
+%        inputFilter(In0).
+        inputFilterLine(In,L,H,H,0).
+inputFilter([gett(T,VT,NVT)|In]) --> true |
+        &op <<= [do(Op)],
+        {{inputFilterTerm(Op,&atom,normal(VT,NVT),T,In0,In)}},
+        inputFilter(In0).
+inputFilter([gett(T,NVT)|In]) --> true |
+        &op <<= [do(Op)],
+        {{inputFilterTerm(Op,&atom,normal(NVT),T,In0,In)}},
+        inputFilter(In0).
+inputFilter([gett(T)|In]) --> true |
+        &op <<= [do(Op)],
+        {{inputFilterTerm(Op,&atom,normal,T,In0,In)}},
+        inputFilter(In0).
+inputFilter([getft(T,N)|In]) --> true |
+        &op <<= [do(Op)],
+        {{inputFilterTerm(Op,&atom,frozen(N),T,In0,In)}},
+        inputFilter(In0).
+inputFilter([getwt(T)|In]) --> true |
+        &op <<= [do(Op)],
+        {{inputFilterTerm(Op,&atom,wrapped,T,In0,In)}},
+        inputFilter(In0).
+inputFilter([getb(Size,B)|In]) --> true |
+        {{inputFilterBlock(B,Size,In0,In)}},
+        inputFilter(In0).
+inputFilter([skip(N)|In]) --> true |
+        skip(In,N).
+inputFilter([do(S)|In]) --> true |
+        &doBuf <= [In|&doBuf],
+        {{merge(S,S1)}},
+        inputFilter(S1).
+inputFilter([ungetc(C)|In]) --> true |
+        &miniBuf <= [C|&miniBuf],
+        inputFilter(In).
+inputFilter([prompt(Str)|In]) --> true |
+        &out <<= [prompt(Str,_)],
+        inputFilter(In).
+%inputFilter([prompt(Str,Cnt)|In]) --> true |
+%        {{prompt(Str,Cnt,Mes)}},
+%        &out <<= [Mes],
+%        inputFilter(In).
+inputFilter([mkflush(Status)|In]) --> string(&buf,_,_) |        % for private use
+        Status=normal,
+        inputFilter(In).
+
+inputFilter([Msg|In]) -->
+    (Msg=reset(Res) ;
+     Msg=resend(ID,Status) ;
+     Msg=cancel(ID,Status) ;
+     Msg=next_attention(Res)) |
+        &out <<= [Msg],
+        inputFilter(In).
+
+inputFilter([Msg|In]) -->
+    (Msg=add_op(Prec,Type,OpName) ;
+     Msg=remove_op(Prec,Type,OpName) ;
+     Msg=operator(OpName, Def) ;
+     Msg=operator(All)) |
+        &op <<= [Msg],
+        inputFilter(In).
+
+inputFilter([Msg|In]) --> Msg=replace_op_pool(Old,New) |
+        Old= &op,
+        {{inputFilter(New,&atom,&out,&doBuf,&miniBuf,&iEF,&p,&n,&bufsize,&buf,In)}}.
+inputFilter([Msg|In]) --> Msg=change_op_pool(New) |
+        {{inputFilter(New,&atom,&out,&doBuf,&miniBuf,&iEF,&p,&n,&bufsize,&buf,In)}}.
+
+inputFilter([Msg|In]) --> Msg=replace_atom_table(Old,New) |
+        Old= &atom,
+        {{inputFilter(&op,New,&out,&doBuf,&miniBuf,&iEF,&p,&n,&bufsize,&buf,In)}}.
+inputFilter([Msg|In]) --> Msg=change_atom_table(New) |
+        {{inputFilter(&op,New,&out,&doBuf,&miniBuf,&iEF,&p,&n,&bufsize,&buf,In)}}.
+
+inputFilter([Msg|In]) --> Msg=replaceBuffer(Old,New) |
+        Old={&buf,&p,&bufsize},
+        wait_new_buffer(In,New).
+
+inputFilter([Msg|In]) --> Msg=abandon_pool |
+        &out <<= [Msg],
+        &miniBuf <= [],
+        &iEF <= no,
+        &p <= &n,
+        inputFilter(In).
+
+otherwise.
+inputFilter([Msg|In]) --> true |
+        &out <<= [Msg],
+        inputFilter(In).
+
+wait_new_buffer(In,{Buf,P,Size}) --> true |
+        &buf<=Buf,&p<=P,&bufsize<=Size,
+        inputFilter(In).
+
+inputFilterChar(In,C) --> &miniBuf=[C1|Cs] |
+        C=C1,&miniBuf <= Cs,
+        inputFilter(In).
+inputFilterChar(In,C) --> &miniBuf=[], &p < &n |                    % normal case
+        {{string_element(&buf,&p,C,Buf)}},
+        &buf <= Buf,
+        &p <= &p+1,
+        inputFilter(In).
+inputFilterChar(In,C) --> &miniBuf=[], &p >= &n, &iEF=no |          % Buffer empty
+        &out <<= [getb(&bufsize,Res)],
+        wait_buffer(In,C,Res).
+%inputFilterChar(In,C) --> &miniBuf=[], &p >= &n, &iEF=end_of_file | % Buffer empty
+%        C := -1, &iEF <= yes,
+%        inputFilter(In).
+inputFilterChar(In,C) --> &miniBuf=[], &p >= &n, &iEF=yes |
+        {{raise_error(end_of_file,_)}},
+        C := -1,
+        inputFilter(In).
+
+wait_buffer(In,C,normal(Str)) --> string(Str,N,_) |
+        &buf<=Str,&p<=0,&n<=N,
+        inputFilterChar(In,C).
+wait_buffer(In,C,aborted) --> true |
+        C:= -2,
+        {{absorbAbort(&op,[],In)}}.
+wait_buffer(In,C,Res) --> (Res=abnormal ; Res=end_of_file ; Res=disconnected) |
+        C:= -1,
+        &iEF<=yes,&buf<="",&p<=0,&n<=0,
+        inputFilter(In).
+
+/*
+inputFilterChar(In,Buf,C) --> &miniBuf=[],                  % normal case
+    Buf={String,P,BufSize},string(String,N,_),P<N |
+        {{string_element(String, P, C, NString)}},
+        inputFilter(In,{NString,~(P+1),BufSize}).
+inputFilterChar(In,Buf,C) --> &miniBuf=[],&iEF=no,          % Buffer empty
+    Buf={String,P,BufSize},string(String,N,_),P>=N |
+        &out <<= [getb(BufSize, Status)],
+        {{inputFilterWait(Status, NBuf, no,IEF)}},
+        &iEF <= IEF,
+        inputFilter([getc(C)|In],{NBuf,0,BufSize}).
+inputFilterChar(In,Buf,C) --> &miniBuf=[],&iEF=end_of_file, % Buffer empty
+    Buf={String,P,BufSize},string(String,N,_), P>=N |
+        C := -1, &iEF <= yes,
+        inputFilter(In,Buf).
+inputFilterChar(In,Buf,C) --> &miniBuf=[],&iEF=yes |
+        {{raise_error(end_of_file,_)}},
+        C := -1,
+        inputFilter(In,Buf).
+inputFilterChar(In,Buf,C) --> &miniBuf=[C1|Cs] |
+        C = C1, &miniBuf <= Cs,
+        inputFilter(In,Buf).
+
+inputFilterWait(normal(Buf),Buf1,IEF,IEF1) :- string(Buf,_,_) | Buf=Buf1,IEF=IEF1.
+inputFilterWait(aborted,Buf,_,IEF) :- true | Buf="",IEF=aborted.
+inputFilterWait(abnormal,Buf,_,IEF) :- true | Buf="",IEF=end_of_file.
+inputFilterWait(end_of_file,Buf,_,IEF) :- true | Buf="",IEF=end_of_file.
+*/
+
+:- local_implicit op:oldnew.
+%
+% absorbAbort(+In, +OpAtom, +Buf)
+%
+absorbAbort([]) --> true | true.
+absorbAbort([getc(C)|In]) --> true | C := -2, absorbAbort(In).
+absorbAbort([getl(L)|In]) --> true | L := -2, absorbAbort(In).
+absorbAbort([getb(_,B)|In]) --> true | B := -2, absorbAbort(In).
+absorbAbort([gett(T, VT,NVT)|In]) --> true | T = aborted, NVT = VT, absorbAbort(In).
+absorbAbort([gett(T, N)|In]) --> true | T = aborted, N := 0, absorbAbort(In).
+absorbAbort([do(S)|In]) --> true |
+        {{merge(S,S1)}},
+        absorbAbort(S1),
+        absorbAbort(In).
+absorbAbort([Msg|In]) -->
+    (Msg=add_op(Prec,Type,OpName) ;
+     Msg=remove_op(Prec,Type,OpName) ;
+     Msg=operator(OpName, Def) ;
+     Msg=operator(All)) |
+        &op <<= [Msg],
+        absorbAbort(In).
+
+absorbAbort([replace_op_pool(OOpPool, NOpPool)|In]) --> true |
+        OOpPool = &op(old), &op <= NOpPool, absorbAbort(In).
+absorbAbort([change_op_pool(NOpPool)|In]) --> true |
+        absorbAbort([replace_op_pool([], NOpPool)|In]).
+otherwise.
+absorbAbort([_|In]) --> true | absorbAbort(In).
+
+:- local_implicit op:stream,atom:stream,out:stream,doBuf:shared,miniBuf:shared,iEF:shared,
+        p:shared,n:shared,bufsize:shared,buf:shared.
+
+inputFilterLine(In,L,H,T,I) --> &miniBuf=[C|Cs],C=key#lf |
+        T=[],
+        &miniBuf<=Cs,
+        inputFilter(In),
+        {{make_string(H,L,I)}}.
+inputFilterLine(In,L,H,T,I) --> &miniBuf=[C|Cs],C\=key#lf,C>=0 |
+        T=[C|T1],
+        &miniBuf<=Cs,
+        inputFilterLine(In,L,H,T1,~(I+1)).
+inputFilterLine(In,L,_,_,I) --> &miniBuf=[C|Cs],C\=key#lf,C<0,I=0 |
+        L:= -1,
+        inputFilter(In).
+inputFilterLine(In,L,H,T,I) --> &miniBuf=[C|Cs],C\=key#lf,C<0,I>0 |
+        T=[],
+        inputFilter(In),
+        {{make_string(H,L,I)}}.
+inputFilterLine(In,L,H,T,I) --> &miniBuf=[],&p < &n |
+        {{search_character(&buf,&p,~(&n-1),key#lf,Here,Buf)}},
+        &buf <= Buf,
+        wait_here(In,L,H,T,I,Here).
+inputFilterLine(In,L,H,T,I) --> &miniBuf=[],&p >= &n,&iEF=no |
+        &out <<= [getb(&bufsize,Res)],
+        wait_buffer_line(In,L,H,T,I,Res).
+inputFilterLine(In,L,_,_,I) --> &miniBuf=[],&p >= &n,&iEF=yes |
+        L:= -1,
+        {{raise_error(end_of_file,_)}},
+        inputFilter(In).
+
+wait_buffer_line(In,L,H,T,I,normal(Str)) --> string(Str,N,_) |
+        &buf<=Str,&p<=0,&n<=N,
+        inputFilterLine(In,L,H,T,I).
+wait_buffer_line(In,L,_,_,I,aborted) --> I=0 |
+        L:= -2,
+        {{absorbAbort(&op,[],In)}}.
+wait_buffer_line(In,L,H,T,I,aborted) --> I>0 |
+        T=[],
+        {{make_string(H,L,I)}},
+        {{absorbAbort(&op,[],In)}}.
+wait_buffer_line(In,L,_,_,I,Res) --> (Res=abnormal ; Res=end_of_file ; Res=disconnected),I=0 |
+        L:= -1,
+        &iEF<=yes,&buf<="",&p<=0,&n<=0,
+        inputFilter(In).
+wait_buffer_line(In,L,H,T,I,Res) --> (Res=abnormal ; Res=end_of_file ; Res=disconnected),I>0 |
+        T=[],
+        &miniBuf<=[-1|&miniBuf],
+        &iEF<=yes,&buf<="",&p<=0,&n<=0,
+        inputFilter(In),
+        {{make_string(H,L,I)}}.
+
+wait_here(In,L,H,T,I,Here) --> Here>=0 |
+        T=[SubStr],
+        Len:= Here- &p,
+        {{builtin#substring(&buf,&p,Len,SubStr,Buf)}},
+        &p<= Here+1,
+        &buf <= Buf,
+        inputFilter(In),
+        {{make_string(H,L,~(I+Len))}}.
+wait_here(In,L,H,T,I,-1) --> true |
+        T=[SubStr|T1],
+        Len:= &n - &p,
+        {{builtin#substring(&buf,&p,Len,SubStr,Buf)}},
+        &buf<=Buf,&p<= &n,
+        inputFilterLine(In,L,H,T1,~(I+Len)).
+
+make_string(H,L,_) :- integer(H) | L=H.
+make_string(H,L,N) :- list(H),wait(N) |
+        new_string(L0,N,16),
+        make_str(H,L,L0,0).
+
+make_str([C|H],L1,L,I) :- integer(C) |
+        set_string_element(L,I,C,L0),
+        make_str(H,L1,L0,~(I+1)).
+make_str([Str|H],L1,L,I) :- string(Str,N,_) |
+        builtin#set_substring(L,I,Str,L0),
+        make_str(H,L1,L0,~(I+N)).
+make_str([],L1,L,_) :- true | L=L1.
+
+/*
+%
+% inputFilterLine(-String,InHead,InTail)
+%
+inputFilterLine(L,H,T) :- true |
+        H=[getc(C)|H1],
+        inputFilterLine(L,H1,T,0,[],C).
+
+inputFilterLine(L,H,T,I,CList,key#lf) :- true |
+        H=T,
+        builtin#new_string(L0,I),
+        make_line(L,L0,~(I-1),CList).
+inputFilterLine(L,H,T,I,CList,C) :- C>=0,C\= key#lf |
+        H=[getc(C1)|H1],
+        inputFilterLine(L,H1,T,~(I+1),[C|CList],C1).
+inputFilterLine(L,H,T,I,_,C) :- C<0,I=0 | L=C,H=T.
+inputFilterLine(L,H,T,I,CList,C) :- C<0,I>0 |
+        H=[ungetc(C)|T],
+        builtin#new_string(L0,I),
+        make_line(L,L0,~(I-1),CList).
+
+make_line(L1,L,I,[C|Cs]) :- true |
+        set_string_element(L,I,C,L0),
+        make_line(L1,L0,~(I-1),Cs).
+make_line(L1,L,_,[]) :- true | L=L1.
+*/
+/*
+inputFilterLine(L,H,T) :- true |
+    builtin#new_string(L0, Size),
+    H = [getc(C)|H1],
+    inputFilterLine(C, L0,L, H1,T, 0,Size).
+
+inputFilterLine(-1,_,L,H,T,0,N) :- true | L:= -1,H=T,N=0.
+inputFilterLine(-1,L,L1,H,T,M,N) :- M>0 | H=[ungetc(-1)|T],L=L1,M=N.
+inputFilterLine(-2,_,L,H,T,0,N) :- true | L:= -2,H=T,N=0.
+inputFilterLine(-2,L,L1,H,T,M,N) :- M>0| H=[ungetc(-2)|T],L=L1,M=N.
+inputFilterLine(key#lf,L,L1,H,T,M,N) :- true | H=T,L=L1,M=N.
+otherwise.
+inputFilterLine(C,L,L1,H,T,M,N) :- true |
+        set_string_element(L,M,C,L0),
+        H=[getc(C1)|H1],
+        inputFilterLine(C1,L0,L1,H1,T,~(M+1),N).
+*/
+
+:- local_implicit op:stream,atom:stream.
+
+%
+% inputFilterTerm(OperatorPool,AtomManager, +Kind, -Term, InHead,InTail)
+%
+inputFilterTerm(Kind,Term,H,T) --> true |
+        inputFilterWrappedTerm(WTerm,H,H1),
+        (Kind = frozen(N) ->
+            {{variable:unwrapFreeze(WTerm,Term,N)}},
+            H1 = T ;
+         Kind = wrapped ->
+            Term = WTerm,H1=T ;
+        otherwise;          % Kind = normal || normal(NV) || normal(V,NV)
+         true ->
+            inputFilterTerm1(WTerm,Term,Kind,H1,T)).
+
+%
+% inputFilterWrappedTerm(OperatorPool,-AtomManager,-WrappedTerm, 
+%           InHead,InTail)
+%
+inputFilterWrappedTerm(WTerm,H,T) --> true |
+        {{token:tokens(H,T,&atom,TokenList)}},
+        {{parse:parse(TokenList,WTerm,&op,[])}}.
+
+inputFilterTerm1(normal(end_of_file),Term,Kind,H,T) --> true |
+        Term=end_of_file,
+        H=T,
+        {{inputFilterTerm1Kind(Kind)}}.
+inputFilterTerm1(normal(empty),Term,Kind,H,T) --> true |
+        inputFilterTerm(Kind,Term,H,T).
+inputFilterTerm1(normal(WTerm),Term,Kind,H,T) --> WTerm\=end_of_file,WTerm\=empty |
+        (Kind = normal  -> {{variable:unwrap(WTerm, {_, Term})}};
+         Kind = normal(NV) -> {{variable:unwrap(WTerm, {_, Term}, NV)}};
+         Kind = normal(V,NV) -> {{variable:unwrap(WTerm, {_, Term}, V,NV)}}),
+        H=T.
+inputFilterTerm1(abnormal(error(Info)),Term,Kind,H,T) --> true |
+        Term='$error'(Info),
+        H=T,
+        {{inputFilterTerm1Kind(Kind)}}.
+inputFilterTerm1(abnormal(ambiguous(Info)),Term,Kind,H,T) --> true |
+        Term='$ambiguous'(Info),
+        H=T,
+        {{inputFilterTerm1Kind(Kind)}}.
+
+inputFilterTerm1Kind(normal) :- true | true.
+inputFilterTerm1Kind(normal(NV)) :- true | variable:pool2(NV).
+inputFilterTerm1Kind(normal(V,NV)) :- true | V = NV.
+
+%
+% inputFilterBlock(-Buffer,+Size, InHead,InTail)
+%
+inputFilterBlock(B,Size, H,T) :- true |                   
+    builtin#new_string(B1, Leng),
+    H = [getc(C)|H1],
+    inputFilterBlock1(C, B1,B, 0,Size, Leng, H1,T).
+
+inputFilterBlock1(C, B,NB, M,M, L, H,T) :- true |
+    H = [ungetc(C)|T], NB = B, L := M.
+otherwise.
+inputFilterBlock1(-1, _,NB, 0,_, L, H,T) :- true |
+    NB := -1, L := 0, H = T.
+inputFilterBlock1(-1, B,NB, M,_, L, H,T) :- M > 0 |
+    H = [ungetc(-1)|T], NB = B, L := M.
+inputFilterBlock1(-2, _,NB, 0,_, L, H,T) :- true |
+    NB := -2, L := 0, H = T.
+inputFilterBlock1(-2, B,NB, M,_, L, H,T) :- M > 0 |
+    H = [ungetc(-2)|T], NB = B, L := M.
+otherwise.
+inputFilterBlock1(C, B,NB, M,N, L, H,T) :- M < N |
+    set_string_element(B, M, C, B1),
+    H = [getc(C1)|H1],
+    M1 := M + 1,
+    inputFilterBlock1(C1, B1,NB, M1,N, L, H1,T).
+
+%
+% skip(+Code,+SkipCode, InHead,InTail)
+%
+%skip(C,C, H,T) :- true | H = T.
+%skip(-1,_, H,T) :- true | H = [ungetc(-1)|T].
+%skip(-2,_, H,T) :- true | H = [ungetc(-2)|T].
+%otherwise.
+%skip(_,N, H,T) :- true |
+%    H = [getc(C1)|H1], skip(C1,N, H1,T).
+
+
+:- local_implicit op:stream,atom:stream,out:stream,doBuf:shared,miniBuf:shared,iEF:shared,
+        p:shared,n:shared,bufsize:shared,buf:shared.
+
+skip(In,C) --> &miniBuf=[C|Cs] |
+        &miniBuf <= Cs,
+        inputFilter(In).
+skip(In,C) --> &miniBuf=[C1|Cs],C=\=C1 |
+        &miniBuf <= Cs,
+        skip(In,C).
+skip(In,C) --> &miniBuf=[], &p < &n |
+        {{search_character(&buf,&p,~(&n-1),C,Here,Buf)}},
+        &buf <= Buf,
+        skipDecide(In,C,Here).
+skip(In,C) --> &miniBuf=[], &p >= &n |
+        inputFilter([getc(C1),ungetc(C1),skip(C)|In]).
+
+skipDecide(In,C,-1) --> true |
+        &p <= &n,
+        inputFilter([getc(C1)|In0]),
+        {{skipDecideDecide(C1,C,In0,In)}}.
+skipDecide(In,C,Here) --> Here>=0 |
+        &p <= ~(Here+1),
+        inputFilter(In).
+
+/*
+:- local_implicit op:stream,atom:stream,out:stream,doBuf:shared,miniBuf:shared,iEF:shared.
+%
+% skip(+SkipCode, In)
+%
+skip(In,Buf,C) --> &miniBuf = [C|Cs] |
+        &miniBuf <= Cs,
+        inputFilter(In,Buf).
+skip(In,Buf,C) --> &miniBuf = [C1|Cs], C =\= C1 |
+        &miniBuf <= Cs,
+        skip(In,Buf,C).
+skip(In,Buf,C) --> &miniBuf = [], Buf = {String,SPos,_}, string(String,SPos,_) |
+        inputFilter([getc(C1),ungetc(C1),skip(C)|In],Buf).
+skip(In,Buf,C) --> &miniBuf = [], Buf = {String,SPos,SSize},
+    string(String,Size,_), SPos < Size |
+        {{search_character(String,SPos,~(Size-1),C, Here, String1)}},
+        skipDecide(In,{String1,SPos,SSize},C,Here,Size).
+
+skipDecide(In,Buf,C,-1,Size) --> true |
+        {{set_vector_element(Buf,1, _,Size, NBuf)}},
+        inputFilter([getc(C1)|In0],NBuf),
+        {{skipDecideDecide(C1,C,In0,In)}}.
+skipDecide(In,Buf,_,Here,_) --> Here >= 0 |
+        {{set_vector_element(Buf,1, _,~(Here+1), NBuf)}},
+        inputFilter(In,NBuf).
+*/
+
+skipDecideDecide(-1,_, H,T) :- true | H = [ungetc(-1)|T].
+skipDecideDecide(-2,_, H,T) :- true | H = [ungetc(-2)|T].
+skipDecideDecide(C1,C, H,T) :- C1 >= 0 | H = [ungetc(C1),skip(C)|T].
+
+/*
+% prompt(+String,+Count, -Message)
+%
+prompt(Str,Cnt, Mes) :- string(Str, Size, _), Size > Cnt |
+    builtin#substring(Str, 0,Cnt, SubStr, _),
+    Mes=prompt(SubStr,_).
+prompt(Str,Cnt, Mes) :- string(Str, Size, _), Size =< Cnt | Mes=prompt(Str,_).
+*/
+
+
+raise_error(end_of_file,Data) :- true |
+        shoen:raise(pimos_tag#error,
+            '$PIMOS$'(buffer:input_filter,"get exceeds end_of_file"),Data).

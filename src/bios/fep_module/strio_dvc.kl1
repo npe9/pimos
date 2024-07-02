@@ -1,0 +1,484 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module fep_string_io_device.
+:- with_macro pimos.
+:- public device_create/5.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_create(Stream, Node, DevID, DevStream, ^Send)
+%%      Stream     ::  stream of string_io request device
+%%      Node       ::  node number of FEP
+%%      DevID      ::  device ID
+%%      DevStream  ::  stream of string_io device
+%%      Send       ::  send message for SCSI DRIVER
+
+device_create(Stream, Node, DevID, DevStream, Send) :-
+    Stream = {fep#create, Username, Password, Name, Device, Status, _},
+    integer(DevID) |
+        Send = [send({DevID, fep#create_string_io, 
+                Node, Username, Password, Name}, Result)|SendTail],
+        check_send_status(Result, Device, DevID, DevStream, SendTail,
+                    {DevID, Status}).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_status(Status, Stream, DevID, Reply, ^Send, ^Result)
+%%      Status     ::  status of device create message
+%%      Stream     ::  stream of string_io device
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      Send       ::  send message for SCSI DRIVER
+%%      Result     ::  value of I/O message
+
+check_send_status(normal, Stream, DevID, Reply, Send, Result) :-
+    true |
+        reply(Stream, DevID, Reply, Send, Result).
+check_send_status(abnormal, _, _, _, Send, Result) :-
+    display_console("SCSI I/O Error in string_io device creation") |
+        fep_utility:device_abnormal(Result),
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% reply(Stream, DevID, Reply, ^Send, ^Result)
+%%      Stream     ::  stream of string_io device
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      Send       ::  send message for SCSI DRIVER
+%%      Result     ::  value of I/O message
+
+reply(Stream, DevID, [normal(Value)|Reply], Send, Result) :-
+    vector_element(Value, 1, Response),
+    Response = fep#normal |
+        fep_utility:set_value(Value, Result),
+        device_process(Stream, DevID, Reply, Send).
+otherwise.
+reply(_, _, [normal(Value)|_], Send, Result) :-
+    true |
+        fep_utility:set_value(Value, Result),
+        Send = [].
+reply(_, _, [abnormal(Value)|_], Send, Result) :-
+    true |
+        fep_utility:set_value(Value, Result),
+        Send = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_process(Stream, DevID, Reply, ^Send)
+%%      Stream     ::  stream of string_io device
+%%      DevID      ::  device ID
+%%      Reply      ::  reply of I/O message
+%%      Send       ::  send message for SCSI DRIVER
+
+device_process(fep#nil, _, _, Send) :-
+    true |
+        Send = [].
+device_process(Stream, DevID, Reply, Send) :-
+    Stream = {fep#reset, Abort, Attention, Status, Cdr} |
+        Status = fep#normal,
+        device_io(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive),
+        fep_receiver:reply_with_attention([reset(_,Attention)|AtMsg], fep#nil,
+                     _, FepLine, Reply, Receive).
+otherwise.
+device_process(Stream, _, _, Send) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        Send = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_string_io_device: device_process/ 4"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_io(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg, ^Receive)
+%%      Stream     ::  stream of string_io device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_io(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    wait(FepLine) |
+        device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send,
+                            AtMsg, Receive).
+alternatively.
+device_io(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    true |
+        device_io0(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                   Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_disconnected(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg,
+%%                     ^Receive)
+%%      Stream     ::  stream of string_io device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_disconnected(fep#nil, _, Attention, _, DevID, Send, AtMsg, Receive) :-
+    true |
+        AtMsg = [],
+        Send = [send({DevID, fep#close}, Result)|SendTail],
+        device_terminate(Result, Attention, DevID, SendTail, Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive):-
+    Stream = {fep#reset, _, NewAttention, Status, Cdr} |
+        Status = fep#disconnected,
+        NewAttention = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#disconnected,
+        NewAttention = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive) :-
+    Stream = {fep#io, _, _, From_fep, Status, Cdr} |
+        Status = fep#disconneted,
+        From_fep = fep#nil,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+otherwise.
+device_disconnected(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                    Receive) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#disconnected,
+        device_disconnected(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                            Receive).
+    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_io0(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg,
+%%            ^Receive)
+%%      Stream     ::  stream of string_io device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_io0(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    wait(Abort) |
+        Send = [send({DevID, fep#abort}, Result)|SendTail],
+        device_abort0(Result, Stream, Abort, Attention, FepLine, DevID,
+                      SendTail, AtMsg, Receive).
+alternatively.
+device_io0(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    true |
+        device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                   Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_io1(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg,
+%%            ^Receive)
+%%      Stream     ::  stream of string_io device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_io1(fep#nil, _, Attention, _, DevID, Send, AtMsg, Receive) :-
+    true |
+        AtMsg = [],
+        Send = [send({DevID, fep#close}, Result)|SendTail],
+        device_terminate(Result, Attention, DevID, SendTail, Receive).
+device_io1(Stream, _, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        AtMsg = [reset(Attention,NewAttention)|AtMsgTail],
+        Status = fep#normal,
+        device_io(Cdr, NewAbort, NewAttention, FepLine, DevID, Send, AtMsgTail,
+                  Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        AtMsg = [reset(Attention,NewAttention)|AtMsgTail],
+        Status = fep#normal,
+        device_io(Cdr, Abort, NewAttention, FepLine, DevID, Send, AtMsgTail,
+                  Receive).
+device_io1(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg, Receive) :-
+    Stream = {fep#io, Command, To_fep, From_fep, Status, Cdr} |
+        Send = [send({DevID, fep#io, Command, To_fep}, Result)|SendTail],
+        fep_utility:str8_to_str16(From_fep1, From_fep),
+        check_send_status(Result, Cdr, Abort, Attention, FepLine, DevID,
+                    SendTail, {DevID, Status, From_fep1}, AtMsg, Receive).
+otherwise.
+device_io1(Stream, _, Attention, _, _, Send, AtMsg, Receive) :-
+    display_console("Illegal I/O messsage"),
+    display_console(Stream) |
+        fep_utility:close_device(Attention, Send),
+        AtMsg = [],
+        Receive = [],
+        shoen:raise(pimos_tag#error,
+                '$PIMOS$'(invalid_message_to_scsi_fep_module,
+                    "pimos:: fep_string_io_device: device_io1/ 8"),
+                Stream).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_aborted(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg,
+%%                ^Receive)
+%%      Stream     ::  stream of string_io device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_aborted(fep#nil, _, Attention, _, DevID, Send, AtMsg, Receive) :-
+    true |
+        AtMsg = [],
+        Send = [send({DevID, fep#close}, Result)|SendTail],
+        device_terminate(Result, Attention, DevID, SendTail, Receive).
+device_aborted(Stream, _, Attention, FepLine, DevID, Send, AtMsg, Receive):-
+    Stream = {fep#reset, NewAbort, NewAttention, Status, Cdr} |
+        AtMsg = [reset(Attention,NewAttention)|AtMsgTail],
+        Status = fep#normal,
+        device_io(Cdr, NewAbort, NewAttention, FepLine, DevID, Send, AtMsgTail,
+                  Receive).
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+               Receive) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#aborted,
+        NewAttention = fep#nil,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+               Receive) :-
+    Stream = {fep#io, _, _, From_fep, Status, Cdr} |
+        Status = fep#aborted,
+        From_fep = fep#nil,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+otherwise.
+device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+               Receive) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#aborted,
+        device_aborted(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abnormal(Stream, Abort, ^Attention, FepLine, DevID, ^Send, ^AtMsg,
+%%                 ^Receive)
+%%      Stream     ::  stream of string_io device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_abnormal(fep#nil, _, Attention, _, _, Send, AtMsg, Receive) :-
+    true |
+        fep_utility:close_device(Attention, Send),
+        AtMsg = [],
+        Receive = [].
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive):-
+    Stream = {fep#reset, _, NewAttention, Status, Cdr} |
+        Status = fep#abnormal,
+        NewAttention = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive) :-
+    Stream = {fep#next_attention, NewAttention, Status, Cdr} |
+        Status = fep#abnormal,
+        NewAttention = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive) :-
+    Stream = {fep#io, _, _, From_fep, Status, Cdr} |
+        Status = fep#abnormal,
+        From_fep = fep#nil,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+otherwise.
+device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                Receive) :-
+    vector(Stream, Size) |
+        vector_element(Stream, ~(Size-1), Cdr, Stream1),
+        vector_element(Stream1, ~(Size-2), Status, _),
+        Status = fep#abnormal,
+        device_abnormal(Cdr, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+ 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_status(Status, Stream, Abort, ^Attention, FepLine, DevID, ^Send,
+%%                   Vars, ^AtMsg, ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      Vars       ::  variables of I/O message
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+check_send_status(normal, Stream, Abort, Attention, FepLine, DevID, Send,
+                  Vars, AtMsg, Receive) :-
+    true |
+        Receive = [receive(Vars, Result)|ReceiveTail],
+        check_send_normal(Result, Stream, Abort, Attention, FepLine, DevID,
+                          Send, AtMsg, ReceiveTail).
+otherwise.
+check_send_status(abnormal, Stream, Abort, Attention, FepLine, DevID, Send,
+                  Vars, AtMsg, Receive) :-
+    true |
+        fep_utility:device_abnormal(Vars),
+        device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% check_send_normal(Status, Stream, Abort, ^Attention, FepLine, DevID, ^Send,
+%%                   ^AtMsg, ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+check_send_normal(Result, Stream, Abort, Attention, FepLine, DevID, Send,
+                  AtMsg, Receive) :-
+    wait(Abort) |
+            Send = [send({DevID, fep#abort}, Result1)|SendTail],
+            device_abort1(Result1, Result, Stream, Abort, Attention, FepLine, 
+                          DevID, SendTail, AtMsg, Receive).
+alternatively.
+check_send_normal(normal, Stream, Abort, Attention, FepLine, DevID, Send,
+                  AtMsg, Receive) :-
+    true |
+            device_io(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                      Receive).
+check_send_normal(abnormal, Stream, Abort, Attention, FepLine, DevID, Send,
+                  AtMsg, Receive) :-
+    true |
+            device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send,
+                            AtMsg, Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abort0(Status, Stream, Abort, ^Attention, FepLine, DevID, ^Send,
+%%               ^AtMsg, ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_abort0(normal, Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+              Receive) :-
+    true |
+        device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_abort0(abnormal, Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+              Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abort1(StatusA, StatusI, Stream, Abort, ^Attention, FepLine, DevID,
+%%               ^Send, ^AtMsg, ^Receive)
+%%      StatusA    ::  status of device abort message
+%%      StatusI    ::  status of device I/O message
+%%      Stream     ::  stream of timer device
+%%      Abort      ::  abort line from OS
+%%      Attention  ::  attention line from FEP
+%%      FepLine    ::  line status of FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      AtMsg      ::  reset message of attention line
+%%      Receive    ::  result of I/O message
+
+device_abort1(normal, normal, Stream, Abort, Attention, FepLine, DevID, Send,
+              AtMsg, Receive) :-
+    true |
+        device_aborted(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                       Receive).
+device_abort1(abnormal, _, Stream, Abort, Attention, FepLine, DevID, Send,
+              AtMsg, Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+device_abort1(_, abnormal, Stream, Abort, Attention, FepLine, DevID, Send,
+              AtMsg, Receive) :-
+    true |
+        device_abnormal(Stream, Abort, Attention, FepLine, DevID, Send, AtMsg,
+                        Receive).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_terminate(Status, ^Attention, DevID, ^Send, ^Receive)
+%%      Status     ::  status of device I/O message
+%%      Attention  ::  attention line from FEP
+%%      DevID      ::  device ID
+%%      Send       ::  send message for SCSI DRIVER
+%%      Receive    ::  result of I/O message
+
+device_terminate(normal, Attention, DevID, Send, Receive) :-
+    true |
+        Receive = [receive({DevID, _}, Result)],
+        device_terminate1(Result, Attention, Send).
+device_terminate(abnormal, _, _, Send, Receive) :-
+    display_console("SCSI I/O Error in string_io device termination") |
+        Send = [],
+        Receive = [].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_terminate1(Status, ^Attention, ^Send)
+%%      Status     ::  status of device I/O message
+%%      Attention  ::  attention line from FEP
+%%      Send       ::  send message for SCSI DRIVER
+
+device_terminate1(normal, Attention, Send) :-
+    true |
+        fep_utility:close_device(Attention, Send).
+device_terminate1(abnormal, Attention, Send) :-
+    true |
+        fep_utility:close_device(Attention, Send).
+

@@ -1,0 +1,1968 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi361::>sys>user>m-hirata>sim>sim.kl1, 14-Aug-92 14:00:00, Edit by m-hirata
+% icpsi522::>sys>user>yashiro>DISK_SIM>sim.kl1.9, 02-Apr-92 22:41:46, Edit by yashiro
+% icpsi361::>sys>user>m-hirata>sim>sim.kl1, 26-Mar-92 16:31:00, Edit by m-hirata
+% icpsi361::>sys>user>m-hirata>sim>sim.kl1, 13-Feb-92 11:21:00, Edit by m-hirata
+% icpsi522::>sys>user>yashiro>V31>sim.kl1.12, 05-Feb-92 17:08:56, Edit by yashiro
+:- module scsi_simulator.
+:- with_macro pimos.
+:- public create/1,
+          create/2.
+
+%%
+%% create(TOP)
+%%
+create(Result):- true |
+                Result=normal(Simulator),
+                pool:keyed_bag(Multi),
+                pool:keyed_bag(Pool),
+                pool:keyed_bag(Active),
+                protocol(Simulator,Send1,Receive),
+                att_stream(Send2,AtS),
+                get_command0(ok,Multi,Pool,Active,Send1,Send2,Status,AtS),
+                put_command(Receive,Status).
+
+%%% for BIOS '91.10.11 by S.Ishida
+create(_, Result):- true |
+                Result=normal(Simulator),
+                pool:keyed_bag(Multi),
+                pool:keyed_bag(Pool),
+                pool:keyed_bag(Active),
+                protocol(Simulator,Send1,Receive),
+                att_stream(Send2,AtS),
+                get_command0(ok,Multi,Pool,Active,Send1,Send2,Status,AtS),
+                put_command(Receive,Status).
+%%%
+
+%%
+%% protocol
+%%
+protocol([],Send,Receive):- true |
+                Send=[],Receive=[].
+protocol([processor(_,0,Result)|Next],Send,Receive):- true |
+                Result=normal(Send1),
+                merge({Send1,SendN},Send),
+                protocol(Next,SendN,Receive).
+%%% for BIOS '91.10.11 by S.Ishida
+protocol([processor(_,_,0,Result)|Next],Send,Receive):- true |
+                Result=normal(Send1),
+                merge({Send1,SendN},Send),
+                protocol(Next,SendN,Receive).
+protocol([processor(_,_,_,0,Result)|Next],Send,Receive):- true |
+                Result=normal(Send1),
+                merge({Send1,SendN},Send),
+                protocol(Next,SendN,Receive).
+%%%
+protocol([processor(_,1,Result)|Next],Send,Receive):- true |
+                Result=normal(Receive1),
+                merge({Receive1,ReceiveN},Receive),
+                protocol(Next,Send,ReceiveN).
+%%% for BIOS '91.10.11 by S.Ishida
+protocol([processor(_,_,1,Result)|Next],Send,Receive):- true |
+                Result=normal(Receive1),
+                merge({Receive1,ReceiveN},Receive),
+                protocol(Next,Send,ReceiveN).
+protocol([processor(_,_,_,1,Result)|Next],Send,Receive):- true |
+                Result=normal(Receive1),
+                merge({Receive1,ReceiveN},Receive),
+                protocol(Next,Send,ReceiveN).
+%%%
+protocol([get_info(Result)|Next],Send,Receive):- true |
+                Result=normal(8,16384),
+                protocol(Next,Send,Receive).
+%%% for BIOS '91.10.11 by S.Ishida
+protocol([configuration(Result)|Next],Send,Receive):- true |
+%                Result=normal([processor(0, 0)]),
+                Result=normal([processor({0,0,0}, 0,"")]),
+                protocol(Next,Send,Receive).
+%%%
+protocol([direct_access(Unit,LUN,Pathname,Result)|Next],Send,Receive):- true |
+                scsi_disk_simulator:create(Unit,LUN,Pathname,Result),
+                protocol(Next,Send,Receive).
+protocol([sequential_access(_,_,Result)|Next],Send,Receive):- true |
+                Result=abnormal(not_implemented),
+                protocol(Next,Send,Receive).
+protocol([printer(_,_,Result)|Next],Send,Receive):- true |
+                Result=abnormal(not_implemented),
+                protocol(Next,Send,Receive).
+protocol([write_once_multiple_read(_,_,Result)|Next],Send,Receive):- true |
+                Result=abnormal(not_implemented),
+                protocol(Next,Send,Receive).
+protocol([read_only_direct_access(_,_,Result)|Next],Send,Receive):- true |
+                Result=abnormal(not_implemented),
+                protocol(Next,Send,Receive).
+otherwise.
+protocol([Error|Next],Send,Receive):- true |
+                Send=[],Receive=[],
+                variable:wrap(Error,{_,Wrapped},4,10),
+                shoen:raise(pimos_tag#error,
+                        '$PIMOS$'(invalid_protocol_to_SCSI_SIMULATOR,
+                            "scsi_simulator: protocol /3"),
+                        [Wrapped]).
+
+
+
+%%
+%% get_command0
+%%
+get_command0(OK,Multi,Pool,Active,Send1,[attention(Dev)|Next],Status,AtS)
+        :- wait(OK) |
+                merge({Pool1,PoolN},Pool),
+                merge({Active1,ActiveN},Active),
+                merge({Status1,StatusN},Status),
+                merge({AtS1,AtSN},AtS),
+                parser0(OK2,Pool1,Active1,fep#attention,Dev,_,_,Status1,AtS1),
+                get_command0(OK2,Multi,PoolN,ActiveN,Send1,Next,StatusN,AtSN).
+alternatively.
+get_command0(OK,Multi,Pool,Active,Send1,Send2,Status,AtS)
+        :- wait(OK),wait(Send1) |
+                get_command1(Multi,Pool,Active,Send1,Send2,Status,AtS).
+
+
+
+%%
+%% get_command1
+%%
+get_command1(Multi,Pool,Active,[],Send2,Status,AtS):- true |
+                AtS=[],
+                Multi=[],
+                get_command2(Pool,Active,Send2,Status).
+get_command1(Multi,Pool,Active,
+            [send(FromBuffer,Size,Result)|Next],Send2,Status,AtS)
+        :- true |
+                Result=normal(Actual,NBuffer),
+                string(FromBuffer,_,_,Buffer),
+                string(Buffer,_,_,NBuffer),
+                Size=Actual,
+                multi1(Multi,Pool,Active,Buffer,Size,Next,Send2,Status,AtS).
+%%% for BIOS '91.10.11 by S.Ishida
+get_command1(Multi,Pool,Active,[current_processor(Result)|Next],Send2,Status,AtS)
+        :- true |
+                Result=normal(0, 0),
+                get_command0(ok,Multi,Pool,Active,Next,Send2,Status,AtS).
+%%%
+get_command1(Multi,Pool,Active,[test_unit_ready(Result)|Next],Send2,Status,AtS)
+        :- true |
+                Result=normal,
+                get_command0(ok,Multi,Pool,Active,Next,Send2,Status,AtS).
+get_command1(Multi,Pool,Active,[inquiry(Result)|Next],Send2,Status,AtS)
+        :- true |
+                Result=normal(scsi#processor,not_removable,0,{1,0,0}),
+                get_command0(ok,Multi,Pool,Active,Next,Send2,Status,AtS).
+otherwise.
+get_command1(Multi,Pool,Active,[Error|Next],Send2,Status,AtS):- true |
+                Multi=[],
+                Pool=[],Active=[],Status=[],AtS=[],
+                variable:wrap(Error,{_,Wrapped},4,10),
+                shoen:raise(pimos_tag#error,
+                        '$PIMOS$'(invalid_protocol_to_SCSI_SIMULATOR,
+                            "scsi_simulator: get_command1 /7"),
+                        [Wrapped]).
+
+
+%%
+%% get_command2
+%%
+get_command2(Pool,Active,[],Status):- true |
+                Pool=[get_all([])],Active=[],Status=[].
+%%% if not [] ==> Error 
+%%% All devices are closed by SCSI-FEP module.
+
+get_command2(Pool,Active,[attention(Dev)|Next],Status):- true |
+                get_command2(Pool,Active,Next,Status).
+
+
+
+
+%%
+%% multi1
+%%
+multi1(Multi,Pool,Active,Buffer,Size,Next,Send2,Status,AtS):- true |
+                convert:int32_from_str8(Buffer,0,Dev),
+                convert:int32_from_str8(Buffer,4,Flag),
+                Size2:= Size - 8,
+                builtin#substring(Buffer,8,Size2,Buffer2,_),
+                multi2(Flag,Dev,Multi,Pool,Active,
+                        Buffer2,Next,Send2,Status,AtS).
+
+
+%%
+%% multi2
+%%
+%multi2(fep#packet_continued,
+multi2(1,
+                Dev,Multi,Pool,Active,Buffer,Next,Send2,Status,AtS)
+        :- true |
+                Multi=[get_if_any(Dev,Val)|M2],
+                multi_cont1(Val,Dev,M2,Pool,Active,
+                        Buffer,Next,Send2,Status,AtS).
+%multi2(fep#packet_last,
+multi2(0,
+                Dev,Multi,Pool,Active,Buffer,Next,Send2,Status,AtS)
+        :- true |
+                Multi=[get_if_any(Dev,Val)|M2],
+                multi_last1(Val,Dev,M2,Pool,Active,
+                        Buffer,Next,Send2,Status,AtS).
+
+
+%%
+%% multi_cont1
+%%
+multi_cont1({Pre},Dev,Multi,Pool,Active,Buffer,Next,Send2,Status,AtS)
+        :- true |
+                builtin#append_string(Pre,Buffer,New),
+                Multi=[put(Dev,New)|M2],
+                get_command0(ok,M2,Pool,Active,Next,Send2,Status,AtS).
+multi_cont1({},Dev,Multi,Pool,Active,Buffer,Next,Send2,Status,AtS)
+        :- true |
+                convert:int32_to_str8(Dev,DevString),
+                builtin#append_string(DevString,Buffer,New),
+                Multi=[put(Dev,New)|M2],
+                get_command0(ok,M2,Pool,Active,Next,Send2,Status,AtS).
+
+
+%%
+%% multi_last1
+%%
+multi_last1({Pre},Dev,Multi,Pool,Active,Buffer,Next,Send2,Status,AtS)
+        :- true |
+                builtin#append_string(Pre,Buffer,New),
+                convert:int32_from_str8(New,4,Com),
+                merge({Pool1,PoolN},Pool),
+                merge({Active1,ActiveN},Active),
+                merge({Status1,StatusN},Status),
+                merge({AtS1,AtSN},AtS),
+                string(New,Size,8,New2),
+                parser0(OK,Pool1,Active1,Com,Dev,New2,Size,Status1,AtS1),
+                get_command0(OK,Multi,PoolN,ActiveN,Next,Send2,StatusN,AtSN).
+multi_last1({},Dev,Multi,Pool,Active,Buffer,Next,Send2,Status,AtS)
+        :- true |
+                convert:int32_to_str8(Dev,DevString),
+                builtin#append_string(DevString,Buffer,New),
+                convert:int32_from_str8(New,4,Com),
+                merge({Pool1,PoolN},Pool),
+                merge({Active1,ActiveN},Active),
+                merge({Status1,StatusN},Status),
+                merge({AtS1,AtSN},AtS),
+                string(New,Size,8,New2),
+                parser0(OK,Pool1,Active1,Com,Dev,New2,Size,Status1,AtS1),
+                get_command0(OK,Multi,PoolN,ActiveN,Next,Send2,StatusN,AtSN).
+
+
+
+%%
+%% parser0
+%%
+
+%% create_device
+parser0(OK,Pool,Active,fep#create_window,Dev,Buffer,Size,Status,AtS):- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,3),  %number_of_para(must 3)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                cut(Buffer,24,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,_),
+%                Pool=[get_and_put_if_any(Dev,{X},X,_)|NP],
+                Pool=[carbon_copy(Dev,X)|NP],
+                Active=[],
+                create_device1(fep#create_window,
+                        NP,Dev,X,{Node,User,Pass},P,Status,AtS).       
+parser0(OK,Pool,Active,fep#create_with_buffer,Dev,Buffer,Size,Status,AtS)
+        :- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,4),  %number_of_para(must 4)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                convert:int32_from_str8(Buffer,24,Byte4),
+                cut(Buffer,28,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,Pos3),
+                cut(Buffer,Pos3,Byte4,Buf,_),
+                Pool=[carbon_copy(Dev,X)|NP],
+                Active=[],
+                create_device1(fep#create_with_buffer,
+                        NP,Dev,X,{Node,User,Pass},Buf,Status,AtS).       
+parser0(OK,Pool,Active,fep#get_max_size,Dev,Buffer,Size,Status,AtS)
+        :- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,N),
+                Active=[],
+                max_size(N,Pool,Dev,Buffer,Size,Status,AtS).
+parser0(OK,Pool,Active,fep#read_open,Dev,Buffer,Size,Status,AtS)
+        :- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,4),  %number_of_para(must 4)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                convert:int32_from_str8(Buffer,24,Byte4),
+                cut(Buffer,28,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,Pos3),
+                cut(Buffer,Pos3,Byte4,Path,_),
+                Pool=[carbon_copy(Dev,X)|NP],
+                Active=[],
+                create_device1(fep#read_open,
+                        NP,Dev,X,{Node,User,Pass},Path,Status,AtS).       
+parser0(OK,Pool,Active,fep#write_open,Dev,Buffer,Size,Status,AtS)
+        :- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,4),  %number_of_para(must 4)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                convert:int32_from_str8(Buffer,24,Byte4),
+                cut(Buffer,28,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,Pos3),
+                cut(Buffer,Pos3,Byte4,Path,_),
+                Pool=[carbon_copy(Dev,X)|NP],
+                Active=[],
+                create_device1(fep#write_open,
+                        NP,Dev,X,{Node,User,Pass},Path,Status,AtS).       
+parser0(OK,Pool,Active,fep#append_open,Dev,Buffer,Size,Status,AtS)
+        :- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,4),  %number_of_para(must 4)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                convert:int32_from_str8(Buffer,24,Byte4),
+                cut(Buffer,28,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,Pos3),
+                cut(Buffer,Pos3,Byte4,Path,_),
+                Pool=[carbon_copy(Dev,X)|NP],
+                Active=[],
+                create_device1(fep#append_open,
+                        NP,Dev,X,{Node,User,Pass},Path,Status,AtS).       
+parser0(OK,Pool,Active,fep#directory,Dev,Buffer,Size,Status,AtS)
+        :- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,4),  %number_of_para(must 4)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                convert:int32_from_str8(Buffer,24,Byte4),
+                cut(Buffer,28,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,Pos3),
+                cut(Buffer,Pos3,Byte4,Path,_),
+                Pool=[carbon_copy(Dev,X)|NP],
+                Active=[],
+                create_device1(fep#directory,
+                        NP,Dev,X,{Node,User,Pass},Path,Status,AtS).       
+parser0(OK,Pool,Active,fep#create_timer,Dev,Buffer,Size,Status,AtS)
+        :- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,3),  %number_of_para(must 3)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                cut(Buffer,24,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,_),
+                Pool=[carbon_copy(Dev,X)|NP],
+                Active=[],
+                create_device1(fep#create_timer,
+                        NP,Dev,X,{Node,User,Pass},P,Status,AtS).       
+parser0(OK,Pool,Active,fep#create_string_io,Dev,Buffer,Size,Status,AtS)
+        :- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,4),  %number_of_para(must 4)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                convert:int32_from_str8(Buffer,24,Byte4),
+                cut(Buffer,28,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,Pos3),
+                cut(Buffer,Pos3,Byte4,Name,_),
+                Pool=[carbon_copy(Dev,X)|NP],
+                Active=[],
+                create_device1(fep#create_string_io,
+                        NP,Dev,X,{Node,User,Pass},Name,Status,AtS).       
+parser0(OK,Pool,Active,fep#create_socket,Dev,Buffer,Size,Status,AtS):- true |
+                OK=ok,
+                convert:int32_from_str8(Buffer,8,3),  %number_of_para(must 3)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                cut(Buffer,24,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,_),
+%                Pool=[get_and_put_if_any(Dev,{X},X,_)|NP],
+                Pool=[carbon_copy(Dev,X)|NP],
+                Active=[],
+                create_device1(fep#create_socket,
+                        NP,Dev,X,{Node,User,Pass},P,Status,AtS).       
+
+
+%% abort,attention,close
+parser0(OK,Pool,Active,fep#abort,Dev,_,_,Status,AtS):- true |
+                OK=ok,Pool=[],Status=[],AtS=[],
+                Active=[carbon_copy(Dev,X)],
+                abort_device(X).
+%                Active=[carbon_copy(Dev,AC)],
+%                Pool=[get_if_any(Dev,X)],
+%                OK=ok,AtS=[],
+%                abort_device(AC,Dev,X,Status).
+parser0(OK,Pool,Active,fep#attention,Dev,_,_,Status,AtS):- true |
+%                OK=ok,Active=[],AtS=[],
+%                Pool=[carbon_copy(Dev,X)],
+%                attention_device(Dev,X,Status).
+                Active=[carbon_copy(Dev,AC)],
+                Pool=[do([get_if_any(Dev,X)|Next])],
+                attention_device(OK,Next,AC,Dev,X,Status,AtS).
+parser0(OK,Pool,Active,fep#close,Dev,_,_,Status,AtS):- true |
+                OK=ok,Active=[],AtS=[],
+                Pool=[get_if_any(Dev,X)],
+                close_device(Dev,X,Status).
+%%% for pimfep '91.10.11 by S.Ishida
+%parser0(OK,Pool,Active,fep#terminate,-1,_,_,Status,AtS):- true |
+parser0(OK,Pool,Active,80,-1,_,_,Status,AtS):- true |
+                OK=ok,Active=[],AtS=[],
+                check_terminate(Pool, -1, Status).
+%%%
+%% etc
+otherwise.
+parser0(OK,Pool,Active,Com,Dev,Buffer,Size,Status,AtS):- true |
+                parser1(OK,Pool,Active,Com,Dev,Buffer,Size,Status,AtS).
+
+
+
+%%
+%% parser1
+%%
+parser1(OK,Pool,Active,Com,Dev,Buffer,Size,Status,AtS):- true |
+                Pool=[do([get_if_any(Dev,X)|Next])|NP],
+                parser1_2(OK,Com,Next,NP,Active,Dev,X,Buffer,Size,Status,AtS).
+
+
+%%
+%% parser1_2
+%%
+%parser1_2(OK,Com,Next,NP,Active,Dev,{{S,Ab,attention}},Buffer,Size,Status,AtS)
+%        :- true |
+%                S=[next_attention(Result)|NS],
+%                parser1_3(Result,OK,Com,Next,NP,Active,Dev,{NS,Ab},
+%                    Buffer,Size,Status,AtS).
+%alternatively.
+parser1_2(OK,Com,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                parser2(OK,Com,Next,NP,Active,Dev,{{S,Ab,At}},
+                    Buffer,Size,Status,AtS).
+parser1_2(OK,Com,Next,NP,Active,Dev,{{socket,S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                parser2(OK,Com,Next,NP,Active,Dev,{{socket,S,Ab,At}},
+                    Buffer,Size,Status,AtS).
+parser1_2(OK,Com,Next,NP,Active,Dev,{{Req,Address}},Buffer,Size,Status,AtS)
+        :- true |
+                parser2(OK,Com,Next,NP,Active,Dev,{{Req,Address}},
+                    Buffer,Size,Status,AtS).
+parser1_2(OK,Com,Next,NP,Active,Dev,{{Req}},Buffer,Size,Status,AtS)
+        :- true |
+                parser2(OK,Com,Next,NP,Active,Dev,{{Req}},
+                    Buffer,Size,Status,AtS).
+%%%%%
+%parser1_2(OK,fep#flush,Next,NP,Active,Dev,{{}},Buffer,Size,Status,AtS)
+parser1_2(OK,Com,Next,NP,Active,Dev,{{}},Buffer,Size,Status,AtS)
+        :- true |
+%                OK=ok,Next=[],NP=[],Active=[],AtS=[],
+%                terminator(fep#normal,Dev,Status,{}).
+                parser2(OK,Com,Next,NP,Active,Dev,{{}},
+                    Buffer,Size,Status,AtS).
+
+%%%%%
+parser1_2(OK,Com,Next,NP,Active,Dev,{},Buffer,Size,Status,AtS)
+        :- true |
+                OK=ok,Next=[],NP=[],Active=[],AtS=[],
+                terminator(fep#abnormal,Dev,Status,{}).
+
+
+%%
+%% parser1_3
+%%
+%parser1_3(normal(At),OK,Com,Next,NP,Active,Dev,{NS,Ab},Buffer,Size,Status,AtS)
+%        :- true |
+%                merge({AtS1,AtS2},AtS),
+%                att_wait(Dev,At,AtS1),
+%                parser2(OK,Com,Next,NP,Active,Dev,{{NS,Ab,At}},
+%                    Buffer,Size,Status,AtS2).
+%otherwise.
+%parser1_3(Result,OK,Com,Next,NP,Active,Dev,{NS,Ab},Buffer,Size,Status,AtS)
+%        :- true |
+%                parser2(OK,Com,Next,NP,Active,Dev,{{NS,Ab,attention}},
+%                    Buffer,Size,Status,AtS).
+
+
+
+%%
+%% parser2
+%%
+
+%% window_device
+%parser2(OK,fep#getl,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+%        :- true |
+%                S=[getb(32768,Result)|NS],
+%                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#getl,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[getb(32768,Result)|NS],
+                removeNLwithSt(Result,Result1),
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result1).
+parser2(OK,fep#putb,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,String,_),
+                S=[putb(String,Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#flush,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[flush(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#beep,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[beep(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#set_inside_size,Next,NP,Active,Dev,{{S,Ab,At}},
+                    Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,2),  %number_of_para(must 2)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                cut(Buffer,20,Byte1,Char,NextPos),
+                cut(Buffer,NextPos,Byte2,Line,_),
+                S=[set_size(char(Char,Line),Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#set_size,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[set_size(mouse,Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#set_position,Next,NP,Active,Dev,{{S,Ab,At}},
+                    Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,2),  %number_of_para(must 2)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                cut(Buffer,20,Byte1,Xpos,NextPos),
+                cut(Buffer,NextPos,Byte2,Ypos,_),
+                S=[set_position(at(Xpos,Ypos),Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#set_position_by_mouse,Next,NP,Active,Dev,{{S,Ab,At}},
+                    _,_,Status,AtS)
+        :- true |
+                S=[set_position(mouse,Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#reshape,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,4),  %number_of_para(must 4)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                convert:int32_from_str8(Buffer,24,Byte4),
+                cut(Buffer,  28,Byte1,Xpos,Pos1),
+                cut(Buffer,Pos1,Byte2,Ypos,Pos2),
+                cut(Buffer,Pos2,Byte3,Char,Pos3),
+                cut(Buffer,Pos3,Byte4,Line,_),
+                S=[reshape(at(Xpos,Ypos),char(Char,Line),Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#reshape_by_mouse,Next,NP,Active,Dev,{{S,Ab,At}},
+                    _,_,Status,AtS)
+        :- true |
+                S=[reshape(mouse,mouse,Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#set_title,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,String,_),
+                S=[set_title(String,Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#set_font,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,String,_),
+                S=[set_font(String,Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#select_buffer,Next,NP,Active,Dev,{{S,Ab,At}},
+                    Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,Buf,_),
+                S=[select_buffer(Buf,Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#buffer_name,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[get_buffer_name(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#activate,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[activate(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#deactivate,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[deactivate(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#show,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[show(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#hide,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[hide(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#clear,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[clear(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#get_inside_size,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[get_char_size(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#get_position,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[get_position(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#get_title,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[get_title(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#get_font,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[get_font(Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#ungetb,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,String,_),
+                S=[ungetb(String,Result)|NS],
+                parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+
+
+
+%% file_device
+parser2(OK,fep#getb,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,BSize,_),
+                S=[getb(BSize,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#end_of_file,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[end_of_file(Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#pathname,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[pathname(Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#attributes,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[attributes(Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#listing_all,Next,NP,Active,Dev,{{S,Ab,At}},
+                    Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,Wild,_),
+                S=[listing(Wild,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#delete,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,Wild,_),
+                S=[delete(Wild,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#undelete,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,Wild,_),
+                S=[undelete(Wild,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#deleted_all,Next,NP,Active,Dev,{{S,Ab,At}},
+                    Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,Wild,_),
+                S=[deleted(Wild,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#purge,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,Wild,_),
+                S=[purge(Wild,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#expunge,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[expunge(Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+
+
+
+%% timer_device
+parser2(OK,fep#get_count,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[get_count(Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#on_at,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,Count,_),
+                S=[on_at(Count,Result)|NS],
+                parser5(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#on_after,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,Count,_),
+                S=[on_after(Count,Result)|NS],
+                parser5(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#get_date_time,Next,NP,Active,Dev,{{S,Ab,At}},_,_,Status,AtS)
+        :- true |
+                S=[get_date_time(Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+
+%% stringIO_device
+parser2(OK,fep#io,Next,NP,Active,Dev,{{S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,2),  %number_of_para(must 2)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                cut(Buffer,20,Byte1,Com,NextPos),
+                cut(Buffer,NextPos,Byte2,ToFep,_),
+                S=[io(Com,ToFep,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result).
+
+
+
+%% socket_device
+parser2(OK,fep#bind,Next,NP,Active,Dev,{{Req}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                cut(Buffer,16,Byte1,Addstr,_),
+                socket_address_string_to_vector(Addstr,Address),
+                parser4(OK,Next,NP,Active,Dev,{Req,Address},Status,AtS,normal).
+parser2(OK,fep#listen,Next,NP,Active,Dev,{{Req,Address}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                cut(Buffer,16,Byte1,Backlog,_),
+                Req=[listen(Address,Backlog,Result)],
+%                parser4(OK,Next,NP,Active,Dev,{},Status,AtS,Result).
+                parser2_socket(OK,Next,NP,Active,Dev,Status,AtS,Result).
+parser2(OK,fep#connect,Next,NP,Active,Dev,{{Req}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                cut(Buffer,16,Byte1,Addstr,_),
+                socket_address_string_to_vector(Addstr,Address),
+                Req=[connect(Address,Result)],
+%                parser4(OK,Next,NP,Active,Dev,{},Status,AtS,Result).
+                parser2_socket(OK,Next,NP,Active,Dev,Status,AtS,Result).
+parser2(OK,fep#accept,Next,NP,Active,Dev,
+    {{socket,S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,NewID,_),
+                S=[accept(Result)|NS],
+                parser4_accept(OK,Next,NP,Active,Dev,
+                        {socket,NS,Ab,At},Status,AtS,Result,NewID).
+parser2(OK,fep#set_socket_option,
+    Next,NP,Active,Dev,{{socket,S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                socket_option_string_to_list(Buffer,Option),
+                S=[set_option(Option,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,
+                        {socket,NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#putb,Next,NP,Active,Dev,
+    {{socket,S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,2),  %number_of_para(must 2)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                cut(Buffer,20,Byte1,String,NextPos),
+                cut(Buffer,NextPos,Byte2,SendSize,_),
+                change_element_size(String,8,Str2),
+                builtin#substring(Str2,0,SendSize,Str3,_),
+                S=[send(Str3,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,
+                        {socket,NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#getb,Next,NP,Active,Dev,
+    {{socket,S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte),
+                cut(Buffer,16,Byte,BSize,_),
+                S=[receive(BSize,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,
+                        {socket,NS,Ab,At},Status,AtS,Result).
+%%%
+parser2(OK,fep#flush,Next,NP,Active,Dev,{{socket,S,Ab,At}},_,_,Status,AtS)
+        :- true |
+%                S=[flush(Result)|NS],
+%                parser4(OK,Next,NP,Active,Dev,
+%                        {socket,NS,Ab,At},Status,AtS,Result).
+
+%                S=[flush(Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,
+                        {socket,S,Ab,At},Status,AtS,normal).
+parser2(OK,fep#flush,Next,NP,Active,Dev,{{}},_,_,Status,AtS)
+        :- true |
+                parser4(OK,Next,NP,Active,Dev,{},Status,AtS,normal).
+%%%
+parser2(OK,fep#send_timeout,
+    Next,NP,Active,Dev,{{socket,S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                cut(Buffer,16,Byte1,Time,_),
+                S=[send_timeout(Time,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,
+                        {socket,NS,Ab,At},Status,AtS,Result).
+parser2(OK,fep#receive_timeout,
+    Next,NP,Active,Dev,{{socket,S,Ab,At}},Buffer,Size,Status,AtS)
+        :- true |
+                convert:int32_from_str8(Buffer,8,1),  %number_of_para(must 1)
+                convert:int32_from_str8(Buffer,12,Byte1),
+                cut(Buffer,16,Byte1,Time,_),
+                S=[receive_timeout(Time,Result)|NS],
+                parser4(OK,Next,NP,Active,Dev,
+                        {socket,NS,Ab,At},Status,AtS,Result).
+
+
+%%
+%% parser2_socket
+%%
+parser2_socket(OK,Next,NP,Active,Dev,Status,AtS,normal(S,Ab,At))
+:- true |
+                parser4(OK,Next,NP,Active,Dev,
+                        {socket,S,Ab,At},Status,AtS,normal).
+otherwise.
+parser2_socket(OK,Next,NP,Active,Dev,Status,AtS,Result)
+:- true |
+                parser4(OK,Next,NP,Active,Dev,{},Status,AtS,Result).
+
+
+
+%%
+%% parser3
+%%
+parser3(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result):- true |
+                Next=[get_if_any_and_put(Dev,Y1,{NS,Ab,At})],
+                Active=[get_if_any_and_put(Dev,X,Abort)|NA],
+                r_0(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS).
+
+
+%%
+%% parser4
+%%
+parser4(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result):- true |
+                Next=[get_if_any_and_put(Dev,Y1,{NS,Ab,At})],
+                Active=[get_if_any_and_put(Dev,X,Abort)|NA],
+                r_no_att_0(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS).
+parser4(OK,Next,NP,Active,Dev,{socket,NS,Ab,At},Status,AtS,Result):- true |
+                Next=[get_if_any_and_put(Dev,Y1,{socket,NS,Ab,At})],
+                Active=[get_if_any_and_put(Dev,X,Abort)|NA],
+                r_no_att_0_soc(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS,_).
+parser4(OK,Next,NP,Active,Dev,{Req,Address},Status,AtS,Result):- true |
+                Next=[get_if_any_and_put(Dev,Y1,{Req,Address})],
+                Active=[get_if_any_and_put(Dev,X,Abort)|NA],
+                r_no_att_0_soc(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS,_).
+parser4(OK,Next,NP,Active,Dev,{},Status,AtS,Result):- true |
+                Next=[get_if_any_and_put(Dev,Y1,{})],
+                Active=[get_if_any_and_put(Dev,X,Abort)|NA],
+                r_no_att_0_soc(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS,_).
+
+
+parser4_accept(OK,Next,NP,Active,Dev,SAA,Status,AtS,Result,NewID)
+:- true |
+                Next=[get_if_any_and_put(Dev,Y1,SAA)],
+                Active=[get_if_any_and_put(Dev,X,Abort)|NA],
+                r_no_att_0_soc(OK,X,Y1,NP,NA,Dev,
+                        Status,Result,Abort,AtS,NewID).
+
+
+%%
+%% parser5
+%%
+parser5(OK,Next,NP,Active,Dev,{NS,Ab,At},Status,AtS,Result):- true |
+                Next=[get_if_any_and_put(Dev,Y1,{NS,Ab,At})],
+                Active=[get_if_any_and_put(Dev,X,Abort)|NA],
+                r_timer_0(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS).
+
+
+%%
+%% max_size
+%%
+max_size(4,Pool,Dev,Buffer,Size,Status,AtS):- true |
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                convert:int32_from_str8(Buffer,24,Byte4),
+                cut(Buffer,28,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,Xpos,Pos2),
+                cut(Buffer,Pos2,Byte3,Ypos,Pos3),
+                cut(Buffer,Pos3,Byte4,Path,_),
+                Pool=[carbon_copy(Dev,X)|NP],
+                create_device1(fep#get_max_size,
+                        NP,Dev,X,{Node,0,0},{Xpos,Ypos,Path},Status,AtS).       
+max_size(6,Pool,Dev,Buffer,Size,Status,AtS):- true |
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                convert:int32_from_str8(Buffer,24,Byte4),
+                convert:int32_from_str8(Buffer,28,Byte5),
+                convert:int32_from_str8(Buffer,32,Byte6),
+                cut(Buffer,36,Byte1,Node,Pos1),
+                cut(Buffer,Pos1,Byte2,User,Pos2),
+                cut(Buffer,Pos2,Byte3,Pass,Pos3),
+                cut(Buffer,Pos3,Byte4,Xpos,Pos4),
+                cut(Buffer,Pos4,Byte5,Ypos,Pos5),
+                cut(Buffer,Pos5,Byte6,Path,_),
+                Pool=[carbon_copy(Dev,X)|NP],
+                create_device1(fep#get_max_size,
+                        NP,Dev,X,{Node,User,Pass},{Xpos,Ypos,Path},Status,AtS).
+
+
+%%
+%% wait_max_size
+%%
+wait_max_size(Dev,Status,normal(Char,Line)):- true |
+                terminator_plus2(Char,Line,Dev,Status,{}).
+wait_max_size(Dev,Status,abnormal):- true |
+                terminator(fep#abnormal,Dev,Status,{}).
+
+
+
+%%
+%% r_0
+%%
+r_0(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS):- X={},Y1={} |
+%                                                  wait Pool & Active changed
+                OK=ok,
+                r_1(NP,NA,Dev,Status,Result,Abort,AtS).
+
+
+%%
+%% r_1
+%%
+r_1(NP,NA,Dev,Status,Result,Abort,AtS):- wait(Abort) |
+%{S,Ab,At} => always exist
+                NP=[do([get(Dev,{S,Ab,At}),
+                    get_if_any_and_put(Dev,Y1,Put)])|NP2],
+                Ab=abort,
+                S=[reset(Reset)|Next],
+                merge({AtS1,AtS2},AtS),
+                reset_device({Ab,At},Reset,Next,Dev,Put,AtS1),
+                r_2(Y1,NP2,NA,Dev,Status,Result,AtS2).
+alternatively.
+r_1(NP,NA,Dev,Status,Result,Abort,AtS):- wait(Result) |
+                NA=[get_if_any(Dev,X)],
+                r_1_2(NP,X,Dev,Status,Result,AtS).
+
+
+%%
+%% r_1_2
+%%
+r_1_2(NP,{_},Dev,Status,Result,AtS):- true |
+                NP=[do([get(Dev,{S,Ab,At})|Next])],
+                r_1_3({S,Ab,At},Next,Dev,Status,Result,AtS).
+
+
+%%
+%% r_1_3
+%%
+%r_1_3({S,Ab,At},Next,Dev,Status,Result,AtS):- wait(At) |
+r_1_3({S,Ab,At},Next,Dev,Status,Result,AtS):- true |
+                S=[next_attention(Ret)|NS],
+                r_1_5(Ret,{NS,Ab},Next,Dev,Status,Result,AtS).
+%alternatively.
+%r_1_3({S,Ab,At},Next,Dev,Status,Result,AtS):- true |
+%                AtS=[],
+%                Next=[get_if_any_and_put(Dev,X,{S,Ab,At})],
+%                r_1_4(X,Dev,Status,Result).
+
+
+%%
+%% r_1_4
+%%
+r_1_4({},Dev,Status,normal):- true |
+                terminator(fep#normal,Dev,Status,{}).
+r_1_4({},Dev,Status,normal(Val)):- true |
+                terminator_plus1(Val,Dev,Status,{}).
+r_1_4({},Dev,Status,normal(Val1,Val2)):- true |
+                terminator_plus2(Val1,Val2,Dev,Status,{}).
+r_1_4({},Dev,Status,abnormal):- true |
+                terminator(fep#abnormal,Dev,Status,{}).
+r_1_4({},Dev,Status,aborted):- true |
+                terminator(fep#aborted,Dev,Status,{}).
+r_1_4({},Dev,Status,disconnected):- true |
+                terminator(fep#disconnected,Dev,Status,{}).
+
+
+%%
+%% r_1_5
+%%
+r_1_5(normal(At),{NS,Ab},Next,Dev,Status,Result,AtS):- true |
+                Next=[get_if_any_and_put(Dev,X,{NS,Ab,At})],
+                att_wait(Dev,At,AtS),
+                r_1_4(X,Dev,Status,Result).
+r_1_5(abnormal,{NS,Ab},Next,Dev,Status,Result,AtS):- true |
+                Next=[get_if_any_and_put(Dev,X,{NS,Ab,attention})],
+                AtS=[],
+                r_1_4(X,Dev,Status,Result).
+
+
+%%
+%% r_2
+%%
+r_2({},NP,NA,Dev,Status,Result,AtS):- wait(Result) |
+                NA=[get_if_any(Dev,X)],
+                r_1_2(NP,X,Dev,Status,Result,AtS).
+
+
+
+%%
+%% r_no_att_0
+%%
+r_no_att_0(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS):- X={},Y1={} |
+%                                                  wait Pool & Active changed
+                OK=ok,
+                r_no_att_1(NP,NA,Dev,Status,Result,Abort,AtS).
+
+
+%%
+%% r_no_att_1
+%%
+r_no_att_1(NP,NA,Dev,Status,Result,Abort,AtS):- wait(Abort) |
+%{S,Ab,At} => always exist
+                NP=[do([get(Dev,{S,Ab,At}),
+                    get_if_any_and_put(Dev,Y1,Put)])|NP2],
+                Ab=abort,
+                S=[reset(Reset)|Next],
+                merge({AtS1,AtS2},AtS),
+                reset_device({Ab,At},Reset,Next,Dev,Put,AtS1),
+                r_no_att_2(Y1,NP2,NA,Dev,Status,Result,AtS2).
+alternatively.
+r_no_att_1(NP,NA,Dev,Status,Result,Abort,AtS):- wait(Result) |
+                NA=[get_if_any(Dev,X)],
+                NP=[],AtS=[],
+                r_no_att_1_2(X,Dev,Status,Result).
+
+
+%%
+%% r_no_att_1_2
+%%
+r_no_att_1_2({_},Dev,Status,Result):- true |
+                r_no_att_1_3({},Dev,Status,Result).
+
+
+%%
+%% r_no_att_1_3
+%%
+r_no_att_1_3({},Dev,Status,normal):- true |
+                terminator(fep#normal,Dev,Status,{}).
+r_no_att_1_3({},Dev,Status,normal(Val)):- true |
+                terminator_plus1(Val,Dev,Status,{}).
+r_no_att_1_3({},Dev,Status,normal(Val1,Val2)):- true |
+                terminator_plus2(Val1,Val2,Dev,Status,{}).
+r_no_att_1_3({},Dev,Status,abnormal):- true |
+                terminator(fep#abnormal,Dev,Status,{}).
+r_no_att_1_3({},Dev,Status,aborted):- true |
+                terminator(fep#aborted,Dev,Status,{}).
+r_no_att_1_3({},Dev,Status,disconnected):- true |
+                terminator(fep#disconnected,Dev,Status,{}).
+% special value
+r_no_att_1_3({},Dev,Status,end_of_file):- true |
+                terminator(fep#eod,Dev,Status,{}).
+r_no_att_1_3({},Dev,Status,normal(V1,V2,V3,V4,V5,V6,V7,V8,V9)):- true |
+                terminator_plus9(V1,V2,V3,V4,V5,V6,V7,V8,V9,Dev,Status,{}).
+
+
+%%
+%% r_no_att_2
+%%
+r_no_att_2({},NP,NA,Dev,Status,Result,AtS):- wait(Result) |
+                NA=[get_if_any(Dev,X)],
+                NP=[],AtS=[],
+                r_no_att_1_2(X,Dev,Status,Result).
+
+
+
+%%
+%% r_no_att_0_soc
+%%
+r_no_att_0_soc(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS,ID):- X={},Y1={} |
+                OK=ok,
+                r_no_att_1_soc(NP,NA,Dev,Status,Result,Abort,AtS,ID).
+
+
+%%
+%% r_no_att_1_soc
+%%
+r_no_att_1_soc(NP,NA,Dev,Status,Result,Abort,AtS,ID):- wait(Abort) |
+                NP=[do([get(Dev,{socket,S,Ab,At}),
+                    get_if_any_and_put(Dev,Y1,Put)])|NP2],
+                Ab=abort,
+                S=[reset(Reset)|Next],
+                merge({AtS1,AtS2},AtS),
+                reset_device({socket,Ab,At},Reset,Next,Dev,Put,AtS1),
+                r_no_att_2_soc(Y1,NP2,NA,Dev,Status,Result,AtS2,ID).
+alternatively.
+r_no_att_1_soc(NP,NA,Dev,Status,Result,Abort,AtS,ID):- wait(Result) |
+                NA=[get_if_any(Dev,X)],
+%                NP=[],
+                AtS=[],
+                r_no_att_1_2_soc(X,Dev,Status,Result,ID,NP).
+
+
+%%
+%% r_no_att_1_2_soc
+%%
+r_no_att_1_2_soc({_},Dev,Status,Result,ID,NP):- true |
+                r_no_att_1_3_soc({},Dev,Status,Result,ID,NP).
+
+
+%%
+%% r_no_att_1_3_soc
+%%
+r_no_att_1_3_soc({},Dev,Status,normal,ID,NP):- true |
+                NP=[],
+                terminator(fep#normal,Dev,Status,{}).
+r_no_att_1_3_soc({},Dev,Status,normal(Val),ID,NP):- true |
+                NP=[],
+                terminator_plus1(Val,Dev,Status,{}).
+r_no_att_1_3_soc({},Dev,Status,normal(Val1,Val2),ID,NP):- true |
+                NP=[],
+                terminator_plus2(Val1,Val2,Dev,Status,{}).
+%%%%%%%
+r_no_att_1_3_soc({},Dev,Status,normal(Add,S,Ab,At),ID,NP):- true |
+                NP=[get_if_any_and_put(ID,X,{socket,S,Ab,At,accept})],
+                socket_address_vector_to_string(Add,AddStr),
+                terminator_plus1(AddStr,Dev,Status,X).
+%%%%%%%
+r_no_att_1_3_soc({},Dev,Status,abnormal,ID,NP):- true |
+                NP=[],
+                terminator(fep#abnormal,Dev,Status,{}).
+r_no_att_1_3_soc({},Dev,Status,aborted,ID,NP):- true |
+                NP=[],
+                terminator(fep#aborted,Dev,Status,{}).
+r_no_att_1_3_soc({},Dev,Status,disconnected,ID,NP):- true |
+                NP=[],
+                terminator(fep#disconnected,Dev,Status,{}).
+
+
+%%
+%% r_no_att_2_soc
+%%
+r_no_att_2_soc({},NP,NA,Dev,Status,Result,AtS,ID):- wait(Result) |
+                NA=[get_if_any(Dev,X)],
+%                NP=[],
+                AtS=[],
+                r_no_att_1_2_soc(X,Dev,Status,Result,ID,NP).
+
+
+
+%%
+%% r_timer_0
+%%
+r_timer_0(OK,X,Y1,NP,NA,Dev,Status,Result,Abort,AtS):- X={},Y1={} |
+%                                                  wait Pool & Active changed
+%% 91/10/9 %%%%%%%%%%%%%
+                OK=ok,
+                r_timer_1(OK,NP,NA,Dev,Status,Result,Abort,AtS).
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%%
+%% r_timer_1
+%%
+r_timer_1(OK,NP,NA,Dev,Status,Result,Abort,AtS):- wait(Abort) |
+%{S,Ab,At} => always exist
+                NP=[do([get(Dev,{S,Ab,At}),
+                    get_if_any_and_put(Dev,Y1,Put)])|NP2],
+                Ab=abort,
+                S=[reset(Reset)|Next],
+                merge({AtS1,AtS2},AtS),
+                reset_device({Ab,At},Reset,Next,Dev,Put,AtS1),
+                r_timer_2(OK,Y1,NP2,NA,Dev,Status,Result,AtS2).
+alternatively.
+%otherwise.
+%% 90/10/9 %%%%%%%%%%%%%%%%%%%%%%
+%r_timer_1(OK,NP,NA,Dev,Status,Result,Abort,AtS):- wait(Result) |
+%                NA=[get_if_any(Dev,X)],
+%                NP=[],AtS=[],
+%                r_timer_1_2(OK,X,Dev,Status,Result).
+r_timer_1(OK,NP,NA,Dev,Status,Result,Abort,AtS):- Result={normal,wake_up} |
+                NA=[get_if_any(Dev,X)],
+                NP=[],AtS=[],
+                r_timer_1_2(OK,X,Dev,Status,Result).
+r_timer_1(OK,NP,NA,Dev,Status,Result,Abort,AtS):- Result=abnormal |
+                NA=[get_if_any(Dev,X)],
+                NP=[],AtS=[],
+                r_timer_1_2(OK,X,Dev,Status,Result).
+r_timer_1(OK,NP,NA,Dev,Status,Result,Abort,AtS):- Result=aborted |
+                NA=[get_if_any(Dev,X)],
+                NP=[],AtS=[],
+                r_timer_1_2(OK,X,Dev,Status,Result).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%
+%% r_timer_1_2
+%%
+r_timer_1_2(OK,{_},Dev,Status,Result):- true |
+                OK=ok,
+                r_timer_1_3({},Dev,Status,Result).
+
+
+%%
+%% r_timer_1_3
+%%
+r_timer_1_3({},Dev,Status,normal(Now)):- true |
+                timer_wait_device(Dev,Status,Now).
+r_timer_1_3({},Dev,Status,abnormal):- true |
+                terminator(fep#abnormal,Dev,Status,{}).
+r_timer_1_3({},Dev,Status,aborted):- true |
+                terminator(fep#aborted,Dev,Status,{}).
+r_timer_1_3({},Dev,Status,disconnected):- true |
+                terminator(fep#disconnected,Dev,Status,{}).
+
+
+%%
+%% r_timer_2
+%%
+r_timer_2(OK,{},NP,NA,Dev,Status,Result,AtS):- wait(Result) |
+                NA=[get_if_any(Dev,X)],
+                NP=[],AtS=[],
+                r_timer_1_2(OK,X,Dev,Status,Result).
+
+
+
+%%
+%% create_device1
+%%
+create_device1(fep#create_socket,NP,Dev,[{socket,S,Ab,At,accept}],
+        {Node,User,Pass},P,Status,AtS)
+:- true |
+                AtS=[],
+                NP=[get_and_put_if_any(Dev,{_},{socket,S,Ab,At},Y)],
+                terminator(fep#normal,Dev,Status,Y).
+otherwise.
+create_device1(_,NP,Dev,[_],_,_,Status,AtS):- true |
+                NP=[],AtS=[],
+                terminator(fep#abnormal,Dev,Status,{}).
+create_device1(Com,NP,Dev,[],{_,0,0},P,Status,AtS):- true |
+                shoen:raise(pimos_tag#task,general_request,GRD),
+                GRD=[connection(Result)|Next],
+                create_device2(Com,NP,Dev,P,Status,Result,Next,AtS).
+otherwise.
+create_device1(Com,NP,Dev,[],{string#"",User,Pass},P,Status,AtS):- true |
+                shoen:raise(pimos_tag#task,
+                        general_request(0,User,Pass),GRD),
+                GRD=[connection(Result)|Next],
+                create_device2(Com,NP,Dev,P,Status,Result,Next,AtS).
+otherwise.
+create_device1(Com,NP,Dev,[],{Node,User,Pass},P,Status,AtS):- true |
+                shoen:raise(pimos_tag#task,
+                        general_request(Node,User,Pass),GRD),
+                GRD=[connection(Result)|Next],
+                create_device2(Com,NP,Dev,P,Status,Result,Next,AtS).
+
+
+
+%%
+%% create_device2
+%%
+create_device2(fep#create_window,NP,Dev,P,Status,normal(_),Next,AtS):- true |
+                Next=[window(Result)],
+                create_device3(fep#create_window,NP,Dev,P,Status,Result,AtS).
+create_device2(fep#create_with_buffer,NP,Dev,P,Status,normal(_),Next,AtS)
+        :- true |
+                Next=[window(Result)],
+                create_device3(fep#create_with_buffer,
+                        NP,Dev,P,Status,Result,AtS).
+create_device2(fep#get_max_size,NP,Dev,P,Status,normal(_),Next,AtS)
+        :- true |
+                Next=[window(Result)],
+                create_device3(fep#get_max_size,
+                        NP,Dev,P,Status,Result,AtS).
+create_device2(fep#read_open,NP,Dev,P,Status,normal(_),Next,AtS)
+        :- true |
+                Next=[file(Result)],
+                check_logical_name(P,P1),
+                create_device3(fep#read_open,
+                        NP,Dev,P1,Status,Result,AtS).
+create_device2(fep#write_open,NP,Dev,P,Status,normal(_),Next,AtS)
+        :- true |
+                Next=[file(Result)],
+                check_logical_name(P,P1),
+                create_device3(fep#write_open,
+                        NP,Dev,P1,Status,Result,AtS).
+create_device2(fep#append_open,NP,Dev,P,Status,normal(_),Next,AtS)
+        :- true |
+                Next=[file(Result)],
+                check_logical_name(P,P1),
+                create_device3(fep#append_open,
+                        NP,Dev,P1,Status,Result,AtS).
+create_device2(fep#directory,NP,Dev,P,Status,normal(_),Next,AtS)
+        :- true |
+                Next=[file(Result)],
+                check_logical_name(P,P1),
+                create_device3(fep#directory,
+                        NP,Dev,P1,Status,Result,AtS).
+create_device2(fep#create_timer,NP,Dev,P,Status,normal(_),Next,AtS)
+        :- true |
+                Next=[timer(Result)],
+                create_device3(fep#create_timer,
+                        NP,Dev,P,Status,Result,AtS).
+create_device2(fep#create_string_io,NP,Dev,P,Status,normal(_),Next,AtS)
+        :- true |
+                Next=[string_io(Result)],
+                create_device3(fep#create_string_io,
+                        NP,Dev,P,Status,Result,AtS).
+create_device2(fep#create_socket,NP,Dev,P,Status,normal(_),Next,AtS)
+        :- true |
+                Next=[socket(Result)],
+                create_device3(fep#create_socket,
+                        NP,Dev,P,Status,Result,AtS).
+
+create_device2(_,NP,Dev,_,Status,abnormal,Next,AtS):- true |
+                NP=[],Next=[],AtS=[],
+                terminator(fep#abnormal,Dev,Status,{}).
+
+
+
+%%
+%% create_device3
+%%
+create_device3(fep#create_window,NP,Dev,P,Status,normal(Req,_,_),AtS):- true |
+                Req=[create(Result)],
+                create_device4(NP,Dev,Status,Result,AtS).
+create_device3(fep#create_with_buffer,NP,Dev,P,Status,normal(Req,_,_),AtS)
+        :- true |
+                Req=[create(P,Result)],
+                create_device4(NP,Dev,Status,Result,AtS).
+create_device3(fep#get_max_size,NP,
+                        Dev,{Xpos,Ypos,Path},Status,normal(Req,_,_),AtS)
+        :- true |
+                Req=[get_max_size(Xpos,Ypos,Path,Result)],
+                NP=[],AtS=[],
+                wait_max_size(Dev,Status,Result).
+create_device3(fep#read_open,NP,Dev,P,Status,normal(Req,_,_),AtS)
+        :- true |
+                Req=[open(P,read(Result))],
+                create_device4(NP,Dev,Status,Result,AtS).
+create_device3(fep#write_open,NP,Dev,P,Status,normal(Req,_,_),AtS)
+        :- true |
+                Req=[open(P,write(Result))],
+                create_device4(NP,Dev,Status,Result,AtS).
+create_device3(fep#append_open,NP,Dev,P,Status,normal(Req,_,_),AtS)
+        :- true |
+                Req=[open(P,append(Result))],
+                create_device4(NP,Dev,Status,Result,AtS).
+create_device3(fep#directory,NP,Dev,P,Status,normal(Req,_,_),AtS)
+        :- true |
+                Req=[directory(P,Result)],
+                create_device4(NP,Dev,Status,Result,AtS).
+create_device3(fep#create_timer,NP,Dev,P,Status,normal(Req,_,_),AtS)
+        :- true |
+                Req=[create(Result)],
+                create_device4(NP,Dev,Status,Result,AtS).
+create_device3(fep#create_string_io,NP,Dev,P,Status,normal(Req,_,_),AtS)
+        :- true |
+                Req=[create(P,Result)],
+                create_device4(NP,Dev,Status,Result,AtS).
+create_device3(fep#create_socket,NP,Dev,P,Status,normal(Req,_,_),AtS):- true |
+                create_device4_socket(NP,Dev,Status,Req,AtS).
+
+create_device3(_,NP,Dev,P,Status,abnormal,AtS):- true |
+                NP=[],AtS=[],
+                terminator(fep#abnormal,Dev,Status,{}).
+
+
+
+%%
+%% create_device4
+%%
+create_device4(NP,Dev,Status,normal(S,Ab,At),AtS):- true |
+                NP=[do([get_if_any(Dev,X)|Next])],
+                create_device5(Next,Dev,Status,X,{S,Ab,At},AtS).
+create_device4(NP,Dev,Status,abnormal,AtS):- true |
+                NP=[],AtS=[],
+                terminator(fep#abnormal,Dev,Status,{}).
+
+
+%%
+%% create_device5
+%%
+create_device5(Next,Dev,Status,{},{S,Ab,At},AtS):- true |
+                Next=[get_if_any_and_put(Dev,X,{S,Ab,At})],
+                terminator(fep#normal,Dev,Status,X),
+                att_wait(Dev,At,AtS).
+create_device5(Next,Dev,Status,{_},{S,Ab,At},AtS):- true |
+                Next=[],S=[],AtS=[],
+                terminator(fep#abnormal,Dev,Status,{}).
+
+
+%%
+%% create_device4_socket
+%%
+create_device4_socket(NP,Dev,Status,Req,AtS):- true |
+                NP=[do([get_if_any(Dev,X)|Next])],
+                create_device5_socket(Next,Dev,Status,X,Req,AtS).
+
+
+%%
+%% create_device5_socket
+%%
+create_device5_socket(Next,Dev,Status,{},Req,AtS):- true |
+                Next=[get_if_any_and_put(Dev,X,{Req})],
+                terminator(fep#normal,Dev,Status,X),
+                AtS=[].
+create_device5_socket(Next,Dev,Status,{_},Req,AtS):- true |
+                Next=[],Req=[],AtS=[],
+                terminator(fep#abnormal,Dev,Status,{}).
+
+
+
+%%
+%% timer_wait_device
+%%
+timer_wait_device(Dev,Status,wake_up):- true |
+                terminator_plus1(fep#wake_up,Dev,Status,{}).
+timer_wait_device(Dev,Status,aborted):- true |
+%%% for pimfep '91.10.11 by S.Ishida
+%                terminator_plus1(fep#aborted,Dev,Status,{}).
+                terminator(fep#aborted,Dev,Status,{}).
+%%%
+timer_wait_device(Dev,Status,disconnected):- true |
+                terminator(fep#disconnected,Dev,Status,{}).
+otherwise.
+timer_wait_device(Dev,Status,Now):- true | Status=[].
+
+
+%%
+%% abort_device
+%%
+abort_device([Abort]):- true | Abort=abort.
+abort_device([]):- true | true.
+
+%%
+%% attention_device
+%%
+%attention_device(Dev,[{S,Ab,At}],Status):- true |
+%                terminator(fep#attention,Dev,Status,{}).
+%attention_device(Dev,[],Status):- true |
+%                Stauts=[].
+
+attention_device(OK,Next,[],Dev,{},Status,AtS):- true |
+                OK=ok,Next=[],Status=[],AtS=[].
+attention_device(OK,Next,[],Dev,{{S,Ab,At}},Status,AtS):- true |
+                S=[next_attention(Result)|NS],
+                attention_device3(OK,Next,Dev,{NS,Ab,At},Status,AtS,Result).
+attention_device(OK,Next,[Abort],Dev,{{S,Ab,At}},Status,AtS):- true |
+                Next=[get_if_any_and_put(Dev,X,{S,Ab,At})],
+                AtS=[],
+                attention_device2(OK,Dev,X,Status).
+%attention_device(OK,Next,[Abort],Dev,{},Status,AtS):- true |
+%                OK=ok,Next=[],Status=[],AtS=[].
+
+
+%%
+%% attention_device2
+%%
+attention_device2(OK,Dev,{},Status):- true |
+                OK=ok,terminator(fep#attention,Dev,Status,{}).
+
+
+%%
+%% attention_device3
+%%
+attention_device3(OK,Next,Dev,{NS,Ab,At},Status,AtS,normal(At2))
+        :- true |
+                Next=[get_if_any_and_put(Dev,X,{NS,Ab,At2})],
+                att_wait(Dev,At2,AtS),
+                attention_device2(OK,Dev,X,Status).
+attention_device3(OK,Next,Dev,{NS,Ab,At},Status,AtS,abnormal)
+        :- true |
+                Next=[get_if_any_and_put(Dev,X,{NS,Ab,At})],
+                AtS=[],
+                attention_device2(OK,Dev,X,Status).
+
+%%% for pimfep '91.10.11 by S.Ishida
+%%
+%% check_terminate
+%%
+check_terminate(Pool,Dev,Status):- true |
+                Pool=[empty(Ans)|NPool],
+              ( Ans = yes ->
+                  NPool = [],
+%                  terminator(fep#end,Dev,Status,{})
+                  terminator(11,Dev,Status,{})
+              ; otherwise
+              ; true ->
+                  check_terminate(NPool,Dev,Status) ).
+%%%
+
+%%
+%% close_device
+%%
+close_device(Dev,{},Status):- true |
+                terminator(fep#abnormal,Dev,Status,{}).
+close_device(Dev,{{S,Ab,At}},Status):- true |
+                terminator(fep#normal,Dev,Status,{}),
+                S=[].
+close_device(Dev,{{socket,S,Ab,At}},Status):- true |
+                terminator(fep#normal,Dev,Status,{}),
+                S=[].
+close_device(Dev,{{}},Status):- true |
+                terminator(fep#normal,Dev,Status,{}).
+
+
+%%
+%% reset_device
+%%
+reset_device({Ab,At},normal(Ab2,At2,ID),Next,Dev,Put,AtS):- true |
+                Next=[cancel(ID,_)|Next2],
+                Put={Next2,Ab2,At2},
+                att_wait(Dev,At2,AtS).
+reset_device({Ab,At},abnormal,Next,Dev,Put,AtS):- true |
+                Put={Next,Ab,At},AtS=[].
+reset_device({socket,Ab,At},normal(Ab2,At2,ID),Next,Dev,Put,AtS):- true |
+                Next=[cancel(ID,_)|Next2],
+                Put={socket,Next2,Ab2,At2},
+                att_wait(Dev,At2,AtS).
+reset_device({socket,Ab,At},abnormal,Next,Dev,Put,AtS):- true |
+                Put={socket,Next,Ab,At},AtS=[].
+
+
+
+%%
+%% att_stream
+%% att_wait
+%%
+att_stream(Send,[]):- true | Send=[].
+att_stream(Send,[attention(Dev)|Next]):- true |
+                Send=[attention(Dev)|Send2],
+                att_stream(Send2,Next).
+
+
+att_wait(Dev,attention,AtS):- true |
+                AtS=[attention(Dev)].
+otherwise.
+att_wait(Dev,At,AtS):- true | AtS=[].
+
+
+%%
+%% cut
+%%
+cut(Buffer,Pos,-1,Val,NextPos):- true |
+                convert:int32_from_str8(Buffer,Pos,Val),
+                NextPos:= Pos+4.
+cut(Buffer,Pos,0,Val,NextPos):- true |
+                Val=string#"",
+                Pos=NextPos.
+otherwise.
+cut(Buffer,Pos,Byte,Val,NextPos):- true |
+                convert:str16_from_str8(Buffer,Pos,Byte,Val),
+                Pad:= (Byte+3)/4*4,
+                NextPos:= Pos+Pad.
+
+
+
+%%
+%% put_command
+%%
+put_command([],[]):- true | true.
+put_command([],[Status|NextS]):- true |
+                put_command([],NextS).
+put_command(_,[]):- true | true.
+
+put_command([receive(Buffer,Size,Result)|NextR],[Status|NextS])
+        :- string(Status,StrSize,8) |
+                convert:int32_from_str8(Status,0,Dev),
+                StrSize2:= StrSize - 4,
+                builtin#substring(Status,4,StrSize2,Status2,_),
+                multi_put(StrSize2,Dev,
+                        [receive(Buffer,Size,Result)|NextR],[Status2|NextS]).
+
+put_command([test_unit_ready(Result)|Next],Status)
+        :- true |
+                Result=normal,
+                put_command(Next,Status).
+put_command([inquiry(Result)|Next],Status)
+        :- true |
+                Result=normal(processor,not_removable,0,{1,0,0}),
+                put_command(Next,Status).
+otherwise.
+put_command([Error|Next],_):- true |
+                variable:wrap(Error,{_,Wrapped},4,10),
+                shoen:raise(pimos_tag#error,
+                        '$PIMOS$'(invalid_protocol_to_SCSI_SIMULATOR,
+                            "scsi_simulator: put_command /2"),
+                        [Wrapped]).
+
+
+
+%%
+%% multi_put
+%%
+multi_put(StrSize,Dev,[receive(Buffer,Size,Result)|NextR],[Status|NextS])
+        :- CheckSize:= Size - 8,StrSize =< CheckSize |
+                convert:int32_to_str8(Dev,DevString),
+%                convert:int32_to_str8(fep#packet_last,Flag),
+                convert:int32_to_str8(0,Flag),
+                builtin#append_string([DevString,Flag,Status],New),
+                string(New,NewSize,8,New2),
+                Result=normal(NewSize,NBuffer),
+                convert:copy_str_to_str(New2,Buffer,NBuffer),
+                put_command(NextR,NextS).
+otherwise.
+multi_put(StrSize,Dev,[receive(Buffer,Size,Result)|NextR],[Status|NextS])
+        :- true |
+                convert:int32_to_str8(Dev,DevString),
+%                convert:int32_to_str8(fep#packet_continued,Flag),
+                convert:int32_to_str8(1,Flag),
+                Cut1:= Size - 8,
+                Cut2:= StrSize - Cut1,
+                builtin#substring(Status,0,Cut1,CutString1,Status2),
+                builtin#substring(Status2,Cut1,Cut2,CutString2,_),
+                builtin#append_string([DevString,Flag,CutString1],New),
+                string(New,NewSize,8,New2),
+                Result=normal(NewSize,NBuffer),
+                convert:copy_str_to_str(New2,Buffer,NBuffer),
+                multi_put(Cut2,Dev,NextR,[CutString2|NextS]).
+
+
+
+%%
+%% terminator
+%%
+terminator(Val,Dev,Status,Y1):- Y1={} |
+                convert:int32_to_str8(Dev,Str1),
+                convert:int32_to_str8(Val,Str2),
+                convert:int32_to_str8(0,Str3),
+                builtin#append_string([Str1,Str2,Str3],NewStr),
+                Status=[NewStr].
+
+terminator_plus1(Val,Dev,Status,Y1):- Y1={},string(Val,ReturnSize,8) |
+                change_element_size(Val,16,Val2),
+                convert:int32_to_str8(Dev,Str1),
+                convert:int32_to_str8(fep#normal,Str2),
+                convert:int32_to_str8(2,Str3),
+                string(Val2,Size,16,Val3),
+                NewSize:= Size*2,
+                convert:int32_to_str8(NewSize,Str4),
+                convert:int32_to_str8(-1,Str5),
+                convert:str16_to_str8(Val3,Str6),
+                convert:int32_to_str8(ReturnSize,Str7),
+                builtin#append_string([Str1,Str2,Str3,
+                        Str4,Str5,Str6,Str7],NewStr),
+                Status=[NewStr].
+terminator_plus1(Val,Dev,Status,Y1):- Y1={},string(Val,Size,16) |
+                convert:int32_to_str8(Dev,Str1),
+                convert:int32_to_str8(fep#normal,Str2),
+                convert:int32_to_str8(1,Str3),
+                NewSize:= Size*2,
+                convert:int32_to_str8(NewSize,Str4),
+                convert:str16_to_str8(Val,Str5),
+                builtin#append_string([Str1,Str2,Str3,Str4,Str5],NewStr),
+                Status=[NewStr].
+terminator_plus1(Val,Dev,Status,Y1):- Y1={},integer(Val) |
+                convert:int32_to_str8(Dev,Str1),
+                convert:int32_to_str8(fep#normal,Str2),
+                convert:int32_to_str8(1,Str3),
+                convert:int32_to_str8(-1,Str4),
+                convert:int32_to_str8(Val,Str5),
+                builtin#append_string([Str1,Str2,Str3,Str4,Str5],NewStr),
+                Status=[NewStr].
+terminator_plus1(Val,Dev,Status,Y1):- Y1={},Val=yes |
+                convert:int32_to_str8(Dev,Str1),
+                convert:int32_to_str8(fep#normal,Str2),
+                convert:int32_to_str8(1,Str3),
+                convert:int32_to_str8(-1,Str4),
+                convert:int32_to_str8(fep#yes,Str5),
+                builtin#append_string([Str1,Str2,Str3,Str4,Str5],NewStr),
+                Status=[NewStr].
+terminator_plus1(Val,Dev,Status,Y1):- Y1={},Val=no |
+                convert:int32_to_str8(Dev,Str1),
+                convert:int32_to_str8(fep#normal,Str2),
+                convert:int32_to_str8(1,Str3),
+                convert:int32_to_str8(-1,Str4),
+                convert:int32_to_str8(fep#no,Str5),
+                builtin#append_string([Str1,Str2,Str3,Str4,Str5],NewStr),
+                Status=[NewStr].
+terminator_plus1(Val,Dev,Status,Y1):- Y1={},list(Val) |
+                list_to_str16(Val,ListStr),
+                convert:int32_to_str8(Dev,Str1),
+                convert:int32_to_str8(fep#normal,Str2),
+                convert:int32_to_str8(1,Str3),
+                string(ListStr,Size,16,_),
+                NewSize:= Size*2,
+                convert:int32_to_str8(NewSize,Str4),
+                convert:str16_to_str8(ListStr,Str5),
+                builtin#append_string([Str1,Str2,Str3,Str4,Str5],NewStr),
+                Status=[NewStr].
+
+terminator_plus2(Val1,Val2,Dev,Status,Y1):- Y1={} |
+                convert:int32_to_str8(Dev,Str1),
+                convert:int32_to_str8(fep#normal,Str2),
+                convert:int32_to_str8(2,Str3),
+                convert:int32_to_str8(-1,Str4),
+                convert:int32_to_str8(-1,Str5),
+                convert:int32_to_str8(Val1,Str6),
+                convert:int32_to_str8(Val2,Str7),
+                builtin#append_string(
+                        [Str1,Str2,Str3,Str4,Str5,Str6,Str7],NewStr),
+                Status=[NewStr].
+
+terminator_plus9(V1,V2,V3,V4,V5,V6,V7,V8,V9,Dev,Status,Y1):- Y1={} |
+                new_string(De,1,16),
+                set_string_element(De,0,10,De2),
+                convert:int32_cv_str16(V7,Sv7),
+                convert:int32_cv_str16(V8,Sv8),
+                convert:int32_cv_str16(V9,Sv9),
+                builtin#append_string(
+                        [V1,De2,V2,De2,V3,De2,V4,De2,V5,De2,V6,De2,
+                                Sv7,De2,Sv8,De2,Sv9],Attri),
+                string(Attri,Size,16,_),
+                NewSize:= Size*2,
+                convert:int32_to_str8(Dev,Str1),
+                convert:int32_to_str8(fep#normal,Str2),
+                convert:int32_to_str8(1,Str3),
+                convert:int32_to_str8(NewSize,Str4),
+                convert:str16_to_str8(Attri,Str5),
+                builtin#append_string(
+                        [Str1,Str2,Str3,Str4,Str5],NewStr),
+                Status=[NewStr].
+
+
+%%
+%% list_to_str16
+%%
+list_to_str16([S1|Next],ListStr):- true |
+                new_string(De,1,16),
+                set_string_element(De,0,10,De2),
+                list_append_str16(S1,Next,De2,ListStr).
+
+list_append_str16(S1,[],De,List):- true | S1=List.
+list_append_str16(S1,[S2|Next],De,List):- true |
+                builtin#append_string([S1,De,S2],NewStr),
+                list_append_str16(NewStr,Next,De,List).
+
+removeNLwithSt(normal(Str),Result) :-
+    true |
+        Result=normal(Str1),
+        removeNL(Str,Str1).
+otherwise.
+removeNLwithSt(Result,RResult) :-
+    true |
+        Result=RResult.
+
+removeNL(String,NewString):-
+   string(String,Size,ES),
+   Size1 := Size - 1|
+   new_string(MedString,Size1,ES),
+   copy_string(String,MedString,NewString,Size1).
+copy_string(String,MedString,NewString,0):- true|
+   NewString = MedString.
+otherwise.
+copy_string(String,MedString,NewString,N):-
+   N1 := N  - 1|
+   string_element(String,N1,E,StringN),
+   set_string_element(MedString,N1,E,MedStringN),
+   copy_string(StringN,MedStringN,NewString,N1).
+
+% for VM interface
+check_logical_name(Path,NPath) :-
+    string(Path,Length,16) |
+        check_logical_name(0,Length,Path,NPath).
+
+check_logical_name(Cnt,Len,Path,NPath) :-
+    Cnt < Len |
+        string_element(Path,Cnt,Elem,Path1),
+        check_logical_name1(Elem,Cnt,Len,Path1,NPath).
+otherwise.
+check_logical_name(Cnt,Len,Path,NPath) :-
+    true |
+        Path = NPath.
+
+check_logical_name1(Elem,Cnt,Len,Path,NPath) :-
+    Elem =:= #":",
+    Cnt1 := Cnt + 1 |
+        check_logical_name2(Cnt1,Len,Path,NPath).
+otherwise.
+check_logical_name1(_,Cnt,Len,Path,NPath) :-
+    Cnt1 := Cnt + 1 |
+        check_logical_name(Cnt1,Len,Path,NPath).
+
+check_logical_name2(Cnt,Len,Path,NPath) :-
+    Cnt < Len |
+        string_element(Path,Cnt,Elem,Path1),
+        check_logical_name3(Elem,Cnt,Len,Path1,NPath).
+otherwise.
+check_logical_name2(Cnt,Len,Path,NPath) :-
+    true |
+        Path = NPath.
+
+check_logical_name3(Elem,Cnt,Len,Path,NPath) :-
+    Elem =:= #":",
+    Cnt1 := Cnt + 1 |
+        check_logical_name(Cnt1,Len,Path,NPath).
+otherwise.
+check_logical_name3(_,Cnt,Len,Path,NPath) :-
+    true |
+        check_pimos_logical_name(Cnt,Len,Path,NPath).
+
+check_pimos_logical_name(Cnt,Len,Path,NPath) :-
+    Cnt > 5 |
+        builtin#substring(Path,~(Cnt-6),~(Cnt-1),PIMOS,Path1),
+        equal_string(PIMOS,"pimos",YorN),
+        check_pimos_logical_name1(YorN,Cnt,Len,Path1,NPath).
+otherwise.
+check_pimos_logical_name(Cnt,Len,Path,NPath) :-
+    true |
+        Path=NPath.
+
+check_pimos_logical_name1(yes,Cnt,Len,Path,NPath) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR = [getenv(vm:directory,Result)],
+        replace_logical_name(Result,Cnt,Len,Path,NPath).
+otherwise.
+check_pimos_logical_name1(_,Cnt,Len,Path,NPath) :-
+    true |
+        Path=NPath.
+
+replace_logical_name(normal(Dir),Cnt,Len,Path,NPath) :-
+    Remain := Len - Cnt,
+    string(Dir,_,16) |
+        builtin#substring(Path,Cnt,Remain,Tail,_),
+        builtin#append_string([Dir,">",Tail],NPath).
+otherwise.
+replace_logical_name(_,Cnt,Len,Path,NPath) :-
+    Remain := Len - Cnt |
+        shoen:raise(pimos_tag#task,get_std(out),STD),
+        new_string(LF,1,16),
+        set_string_element(LF,0,key#lf,NLF),
+        builtin#append_string(["environment variable ""vm:directory"" is not set.",NLF,
+                               """pimos:"" is replaced with "">sys>user>me>"" ", NLF], MES),
+        STD=[putb(MES,_),flush(_)],
+        Dir = ">sys>user>me>",
+        builtin#substring(Path,Cnt,Remain,Tail,_),
+        builtin#append_string([Dir,Tail],NPath).
+
+
+equal_string(STR1,STR2,YorN) :-
+    string(STR1,Len1,16),
+    string(STR2,Len2,16),
+    Len1 =:= Len2 |
+        equal_string(Len1,STR1,STR2,YorN).
+otherwise.
+equal_string(_,_,YorN) :-
+    true |
+        YorN = no.
+
+equal_string(Len,STR1,STR2,YorN) :-
+    Len > 0,
+    Len1 := Len - 1 |
+        string_element(STR1,Len1,Elem1,NSTR1),
+        string_element(STR2,Len1,Elem2,NSTR2),
+        equal_string(Elem1,Elem2,Len1,NSTR1,NSTR2,YorN).
+otherwise.
+equal_string(_,_,_,YorN) :-
+    true |
+        YorN = yes.
+
+equal_string(Elem,Elem,Len,STR1,STR2,YorN) :-
+    true |
+        equal_string(Len,STR1,STR2,YorN).
+otherwise.
+equal_string(_,_,_,_,_,YorN) :-
+    true |
+        YorN = no.
+
+
+
+socket_address_string_to_vector(Address,AddVec):- string(Address,_,16) |
+        change_element_size(Address,8,New),
+        string_element(New,4,Add4,New2),
+        string_element(New2,5,Add3,New3),
+        string_element(New3,6,Add2,New4),
+        string_element(New4,7,Add1,New5),
+        string_element(New5,2,Port1,New6),
+        string_element(New6,3,Port2,_),
+        Port3:= Port2 << 8,
+        Port:= Port3 + Port1,
+        AddVec={{Add1,Add2,Add3,Add4},Port}.
+
+
+socket_address_vector_to_string({{Add1,Add2,Add3,Add4},Port},AddStr):- true |
+        new_string(New,16,8),
+        set_string_element(New,0,16#"02",New1),
+        set_string_element(New1,1,16#"00",New2),
+        set_string_element(New2,4,Add4,New3),
+        set_string_element(New3,5,Add3,New4),
+        set_string_element(New4,6,Add2,New5),
+        set_string_element(New5,7,Add1,New6),
+        and(16#"FF",Port,Port1),
+        set_string_element(New6,2,Port1,New7),
+        shift_right(Port,8,Port2),
+        and(16#"FF",Port2,Port3),
+        set_string_element(New7,3,Port3,New8),
+        change_element_size(New8,16,AddStr).
+
+
+socket_option_string_to_list(Buffer,Option):- true |
+                convert:int32_from_str8(Buffer,8,N),
+                socket_option_string_to_list(N,Buffer,Option).
+
+socket_option_string_to_list(1,Buffer,Option):- true |
+                convert:int32_from_str8(Buffer,12,Byte1),
+                cut(Buffer,16,Byte1,Option1,_),
+                socket_option_int_to_atom(Option1,Atom1),
+                Option=[Atom1].
+socket_option_string_to_list(2,Buffer,Option):- true |
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                cut(Buffer,20,Byte1,Option1,Next1),
+                cut(Buffer,Next1,Byte2,Option2,_),
+                socket_option_int_to_atom(Option1,Atom1),
+                socket_option_int_to_atom(Option2,Atom2),
+                Option=[Atom1,Atom2].
+socket_option_string_to_list(3,Buffer,Option):- true |
+                convert:int32_from_str8(Buffer,12,Byte1),
+                convert:int32_from_str8(Buffer,16,Byte2),
+                convert:int32_from_str8(Buffer,20,Byte3),
+                cut(Buffer,24,Byte1,Option1,Next1),
+                cut(Buffer,Next1,Byte2,Option2,Next2),
+                cut(Buffer,Next2,Byte3,Option3,_),
+                socket_option_int_to_atom(Option1,Atom1),
+                socket_option_int_to_atom(Option2,Atom2),
+                socket_option_int_to_atom(Option3,Atom3),
+                Option=[Atom1,Atom2,Atom3].
+
+socket_option_int_to_atom(fep#so_debug    ,Atom):- true | Atom=debug.
+socket_option_int_to_atom(fep#so_reuseaddr,Atom):- true | Atom=reuseaddr.
+socket_option_int_to_atom(fep#so_keepalive,Atom):- true | Atom=keepalive.

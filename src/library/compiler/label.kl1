@@ -1,0 +1,97 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_label.
+:- public label_generator/14.
+
+:- local_implicit io:oldnew, num:oldnew, reg:oldnew.
+label_generator(Label, Stream, Pred, Code0, Code, Last, Stat0, Stat) --> true |
+    {{pool:keyed_bag(Pool0),
+      initialize_pool(Pool0, Pool, 0, &reg(old)),
+%%      check_register(&io, Stat0, Stat1, &reg)}},
+    check_register(&io, Stat0, Stat1, &reg)}},
+    label_generator(Pool, [], Stat1, Stat, Label, _, Stream, Pred, Code0, Code, Last).
+
+:- local_implicit pool:oldnew.
+initialize_pool(A, N) --> A<N |
+    A1 := A+1,
+    &pool <<= [put(arg(A1), A1)],
+    initialize_pool(A1, N).
+initialize_pool(N, N) --> true | true.
+
+:- local_implicit io:oldnew, num:oldnew, reg:oldnew, pool:oldnew, stat:oldnew.
+label_generator(Label, Table, [new_register(Var, Reg)|Cdr], Pred, 
+                Code0, Code, Last) --> true |
+    &pool <<= [empty(Var, YorN)],
+    {{alloc_if_empty(&io, &reg, &pool, &stat, YorN, Var, Reg)}},
+    label_generator(Label, Table, Cdr, Pred, Code0, Code, Last).
+%%label_generator(Label, Table, [new_register(Reg)|Cdr], Pred,
+%%                Code0, Code, Last) --> true |
+%%    Reg = &reg(old),
+%%    &reg <= &reg + 1,
+%%    label_generator(Label, Table, Cdr, Pred, Code0, Code, Last).
+label_generator(Fail, Table, [new_label(Label)|Cdr], Pred,
+                Code0, Code, Last) --> true |
+    Label = &num(old),
+    &num <= &num + 1,
+    label_generator(Fail, Table, Cdr, Pred, Code0, Code, Last).
+label_generator([], Table, [get_label(Label)|Cdr], Pred,
+                Code0, Code, Last) --> true |
+    Label = &num(old),
+    &num <= &num +1,
+    label_generator(Label, Table, Cdr, Pred, Code0, Code, Last).
+label_generator(Label0, Table, [get_label(Label)|Cdr], Pred,
+                Code0, Code, Last) --> integer(Label0) |
+    Label0=Label,
+    label_generator(Label0, Table, Cdr, Pred, Code0, Code, Last).
+label_generator(Label, Table0, [get_register_table(Table)|Cdr], Pred,
+                Code0, Code, Last) -->
+        true |
+    Table=Table0,
+    label_generator(Label, Table, Cdr, Pred, Code0, Code, Last).
+label_generator(Label, Table, [], F/A, Code0, Code, last) --> integer(Label) |
+    &pool <<= [get_all(Table)],
+    Code0=[label(Label),suspend(A,F/A)|Code].
+label_generator(Label, Table, [], _, Code0, Code, nonlast) --> integer(Label) |
+    &pool <<= [get_all(Table)],
+    Code0=[label(Label)|Code].
+label_generator([], Table, [], _, Code0, Code, last) --> true |
+    &pool <<= [get_all(Table)],
+    Code0=Code.
+%% This must be WARNING !
+label_generator([], Table, [], _, Code0, Code, nonlast) --> true |
+    &pool <<= [get_all(Table)],
+    Code0=Code.
+
+:- local_implicit
+                io:oldnew,
+                reg:oldnew,
+                pool:oldnew,
+                stat:oldnew.
+alloc_if_empty(yes, Val, Reg) --> true |
+%%    Reg = &reg(old),
+%%    &reg <= &reg + 1,
+%%    {{check_register(&io, &stat, &reg)}},
+  {{check_register(&io, &stat, &reg, Reg)}},
+    &pool <<= [put(Val, &reg(old))].
+alloc_if_empty(no, Val, Reg) --> true |
+    &pool <<= [get_and_put(Val, R, R)],
+    Reg:=R-1.
+
+:- local_implicit io:oldnew.
+% for argument registrers
+check_register(_, Flag, R0, R) --> R0 >= 32 |
+    R0=R, Flag=abnormal.
+check_register(Flag0, Flag, R0, R) --> R0 < 32 | Flag0=Flag, R0=R.
+
+check_register(Flag0, Flag, 31, R, Reg) --> true |
+  Reg=32,
+  R=33, Flag0=Flag.
+otherwise.
+check_register(Flag0, Flag, R0, R, Reg) --> true |
+  Reg=R0,
+  R := R0+1, Flag0=Flag.
+

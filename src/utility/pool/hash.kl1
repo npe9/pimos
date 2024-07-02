@@ -1,0 +1,118 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module hasher.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public hash/3,usage/1.
+
+usage(L) :- true |
+        pool_usage:hasher(L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% hash(X,^H,^Y)
+%%      X       :: value to be hashed
+%%      H       :: hashed value
+%%      Y       :: new value (==X)
+
+hash(X,H,Y) :- true | hash0(X,H,Y,6).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% hash0(X,^H,^Y,Cnt)
+%%      X       :: value to be hashed
+%%      H       :: hashed value
+%%      Y       :: new value (==X)
+%%      Cnt     :: level for analysis
+
+hash0(X,H,Y,_) :- X>=0 | X=Y,X=H.
+hash0(X,H,Y,_) :- 16#"80000000"<X,X<0 | X=Y,H:= -X.
+hash0(X,H,Y,_) :- X=16#"80000000" | X=Y,H=0.
+:- switch(floating_point).
+:- case(yes).
+hash0(X,H,Y,_) :- floating_point(X) |
+        builtin:hash(X,H0,Y),
+        get_positive_value(H0,H).
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+hash0(X,H,Y,_) :- extended_floating_point(X,_) |
+        builtin:hash(X,H0,Y),
+        get_positive_value(H0,H).
+:- end_switch.
+hash0(X,H,Y,_) :- atom(X) | builtin:hash(X,H,Y).
+hash0(X,H,Y,_) :- string(X,_,_) | builtin:hash(X,H,Y).
+hash0(X,H,Y,C) :- list(X) | hash_list(X,H,Y,C).
+hash0(X,H,Y,C) :- vector(X,L) | hash_vect(X,H,Y,C,L).
+/*
+hash0(X,H,Y,C) :- module(X,L) | X=Y,hash_mod(X,H,C,L).
+*/
+hash0(X,H,Y,_) :- module(X,L) | X=Y, H=L.
+hash0(X,H,Y,C) :- code(X,Arity,Mod,Pos) |
+        X=Y,
+        hash_cod(Mod,H,C,~(Arity+Pos)).
+otherwise.
+hash0(X,H,Y,_) :- true |
+        builtin:hash(X,H0,Y),
+        get_positive_value(H0,H).
+
+get_positive_value(H,H1) :- H>=0 | H=H1.
+get_positive_value(H,H1) :- H<0 | H1:= -H.
+
+
+hash_list([A|X],H,Y,C) :- C>0 |
+        Y=[A1|X1],
+        C1:=C-1,
+        hash0(A,M,A1,C1),
+        hash0(X,N,X1,C1),
+        H:=(M/\16#"1fffffff")+((N<<2)/\16#"1fffffff")+(N/\16#"1fffffff").
+hash_list(X,H,Y,0) :- true | H:=0,X=Y.
+
+hash_vect(X,H,Y,Cnt,L) :- Cnt>0,L>0,MP:=L/2,LP:=L-1 |
+        set_vector_element(X,0,A,A1,X1),
+        set_vector_element(X1,MP,B,B1,X2),
+        set_vector_element(X2,LP,C,C1,Y),
+        Cnt1:=Cnt-1,
+        hash0(A,Hf,A1,Cnt1),
+        hash0(B,Hm0,B1,Cnt1),
+        hash0(C,Hl0,C1,Cnt1),
+        wait_hashed_value(Hf,Hm0,Hl0,H,L).
+hash_vect(X,H,Y,0,_) :- true | H:=0,X=Y.
+hash_vect(X,H,Y,_,0) :- true | H:=0,X=Y.
+
+hash_mod(X,H,Cnt,L) :- Cnt>0,L>0,MP:=L/2,LP:=L-1 |
+        module_element(X,0,A),
+        module_element(X,MP,B),
+        module_element(X,LP,C),
+        Cnt1:=Cnt-1,
+        hash0(A,Hf,_,Cnt1),
+        hash0(B,Hm0,_,Cnt1),
+        hash0(C,Hl0,_,Cnt1),
+        wait_hashed_value(Hf,Hm0,Hl0,H,L).
+hash_mod(_,H,0,_) :- true | H:=0.
+hash_mod(_,H,_,0) :- true | H:=0.
+
+wait_hashed_value(Hf,Hm0,Hl0,H,L) :- 
+    X=16#"3fffffff",
+    Hm:=((Hm0<<1)/\X) + (Hm0/\X),
+    Hl:=((Hl0<<2)/\X) + (Hl0/\X),
+    H0:=((Hf/\X) + (Hm/\X))/\X,
+    H1:=((Hl/\X) + (L/\X))/\X |
+        H:=H0+H1.
+
+/*
+hash_cod(Mod,H,C,AritPos) :- C>0,module(Mod,L) |
+        hash_mod(Mod,H1,~(C-1),L),
+        wait_hashed_balue_cod(H,H1,AritPos).
+*/
+
+hash_cod(Mod,H,C,AritPos) :- C>0,module(Mod,L) |
+	H := L+C.
+hash_cod(_,H,0,_) :- true | H=0.
+
+/*
+wait_hashed_balue_cod(H,M,N) :- wait(M) |
+        H:=(M/\16#"1fffffff")+((N<<2)/\16#"1fffffff")+(N/\16#"1fffffff").
+*/

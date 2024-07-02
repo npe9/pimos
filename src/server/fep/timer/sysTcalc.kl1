@@ -1,0 +1,132 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module timer_calc.
+:- with_macro pimos.
+:- public count_check/2.
+:- public trans/2,a_day/1.
+:- public dbl_to_bignum/3,int_to_bignum/2.
+
+trans({Unit,From},{Unit,To}) :- true |
+        int_to_bignum(From,To).
+
+trans({sec,From},{msec,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,1000,To).
+trans({sec,From},{msec16,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,16000,To).
+trans({sec,From},{usec,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,1000000,To).
+trans({sec,From},{usec15,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,15000000,To).
+
+trans({msec,From},{sec,To}) :- true |
+        bignum:construct('+',From,FromB),
+        bignum:divide(FromB,1000,ToB),
+        bignum:numer(ToB,_,To0),
+        int_to_bignum(To0,To).
+trans({msec,From},{msec16,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,16,To).
+trans({msec,From},{usec,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,1000,To).
+trans({msec,From},{usec15,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,15000,To).
+
+trans({msec16,From},{sec,To}) :- true |
+        bignum:construct('+',From,FromB),
+        bignum:divide(FromB,16000,ToB),
+        bignum:numer(ToB,_,To0),
+        int_to_bignum(To0,To).
+trans({msec16,From},{msec,To}) :- true |
+        bignum:construct('+',From,FromB),
+        bignum:shift_right_abs(FromB,4,ToB),
+        bignum:numer(ToB,_,To0),
+        int_to_bignum(To0,To).
+trans({msec16,From},{usec,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,1000,From1),
+        bignum:construct('+',From1,FromB),
+        bignum:shift_right_abs(FromB,4,ToB),
+        bignum:numer(ToB,_,To0),
+        int_to_bignum(To0,To).
+trans({msec16,From},{usec15,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,15000,From1),
+        bignum:construct('+',From1,FromB),
+        bignum:shift_right_abs(FromB,4,ToB),
+        bignum:numer(ToB,_,To0),
+        int_to_bignum(To0,To).
+
+trans({usec,From},{sec,To}) :- true |
+        bignum:construct('+',From,FromB),
+        bignum:divide(FromB,1000000,ToB),
+        bignum:numer(ToB,_,To0),
+        int_to_bignum(To0,To).
+trans({usec,From},{msec,To}) :- true |
+        bignum:construct('+',From,FromB),
+        bignum:divide(FromB,1000,ToB),
+        bignum:numer(ToB,_,To0),
+        int_to_bignum(To0,To).
+trans({usec,From},{msec16,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,16,From1),
+        bignum:construct('+',From1,FromB),
+        bignum:divide(FromB,1000,ToB),
+        bignum:numer(ToB,_,To0),
+        int_to_bignum(To0,To).
+trans({usec,From},{usec15,To}) :- true |
+        mdlib#multiply_bignum_by_word(From,15,To).
+
+a_day(sec(Day)) :-    true | Day= 32#{86400}.              % Day:=24*60*60.
+a_day(msec(Day)) :-   true | Day= 32#{86400000}.           % Day:=24*60*60*1000.
+a_day(msec16(Day)) :- true | Day= 32#{1382400000}.         % Day:=24*60*60*1000*16.
+a_day(usec(Day)) :-   true | Day= 32#{20,500654080}.       % Day:=24*60*60*1000*1000.
+a_day(usec15(Day)) :- true | Day= 32#{301,-1080123392}.    % Day:=24*60*60*1000*1000*15.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% double-num => 32-bit string
+
+dbl_to_bignum(U,L,X) :- U=\=0 |
+        new_string(X0,2,32),                % X=32#{U,L}
+        set_string_element(X0,0,U,X1),
+        set_string_element(X1,1,L,X).
+dbl_to_bignum(0,L,X) :- true |
+        new_string(X0,1,32),                % X=32#{L}
+        set_string_element(X0,0,L,X).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% integer ; 32-bit string => 32-bit string
+
+int_to_bignum(0,Y) :- true | Y=32#{}.
+int_to_bignum(X,Y) :- integer(X),X=\=0 |
+        new_string(Y0,1,32),                % Y=32#{X}
+        set_string_element(Y0,0,X,Y).
+int_to_bignum(X,Y) :- string(X,_,32) | X=Y.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% count_check(Cnt,^Res)
+%%      integer ; 32-bit string ; '$bignum'('+',Numer) => 32-bit string
+%%
+%%      Cnt     :: on_after count (input from user)
+%%      Res     :: Checked result
+%%                 = normal(Cnt), Cnt is 32-bit string (firmware bignum format)
+%%                   ; abnormal(Cnt)
+
+count_check(Cnt,Res) :- Cnt>0 |
+        new_string(S,1,32),             % Res=normal(32#{Cnt})
+        set_string_element(S,0,Cnt,S1),
+        Res=normal(S1).
+count_check(Cnt,Res) :- Cnt=0 | Res=normal(32#{}).
+count_check(Cnt,Res) :- string(Cnt,N,32),N>0,string_element(Cnt,0,E),E=\=0 | Res=normal(Cnt).
+count_check(Cnt,Res) :- string(Cnt,0,32) | Res=normal(Cnt).
+otherwise.
+count_check(Cnt,Res) :- bignum#bignum(Cnt) |
+        bignum:sign(Cnt,Cnt0,Sign),
+        bignum:numer(Cnt0,_,Cnt1),
+        if_positive(Cnt1,Res,Sign).
+otherwise.
+count_check(Cnt,Res) :- true | Res=abnormal(Cnt).
+
+if_positive(Cnt,Res,'+') :- true | Res=normal(Cnt).
+if_positive(_,Res,'-') :- true | Res=abnormal.
+

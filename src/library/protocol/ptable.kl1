@@ -1,0 +1,66 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module protDeftable.
+:- public defTable/2.
+:- with_macro pimos.
+
+defTable(Put,Read):- true |
+        merge(Put,Put2),
+        merge(Read,Read2),
+        pool:keyed_set(Table),
+        defTableput(Put2,Read2,Table).
+
+%%%% register definigions
+
+defTableput([initialize|Put],Read,Table):- true |
+        Table = [get_all(All)|Ttail],
+        defTableput(Put,Read,Ttail).
+defTableput([register(Key,Name,Def)|Put],Read,Table):- true |
+        Table = [put(Key,{Name,Def},Old)|Ttail],
+        checkP(Old,Key,Put,Read,Ttail).
+
+defTableput([],Read,Table):- true |
+        defTableR(Read,Table).
+
+checkP({},_Key,Put,Read,Table):- true |
+        defTableput(Put,Read,Table).
+otherwise.
+checkP({_Data},Key,Put,Read,Table):- true |
+        shoen:raise(pimos_tag#shell,get_std_out,Out),
+        Out = [putt(multiple_definition),nl,putt(Key),nl,flush(S)],
+        Table = [],
+        suicide(S).
+
+suicide(S):- wait(S) |
+        shoen:raise(pimos_tag#pimos, general_request,[abort([],_)]).
+%        shoen:raise(pimos_tag#pimos, general_request,[suicide(_)]).
+
+
+defTableR([initialize|Read],Table):- true |
+        defTableR(Read,Table).
+defTableR([find(Key,Name,Def)|Read],Table):- true |
+        Table = [get_if_any_and_put(Key,Data,Y)|Tail],
+        checkR(Data,Y,Read,Tail,Key,Name,Def).
+defTableR([],Table):- true |
+        Table = [].
+
+checkR({Data},Y,Read,Table,_Key,Name,Def):- true |
+        Y = Data,
+        Data = {Name,Def},
+        defTableR(Read,Table).
+checkR({},Y,Read,Table,Key,Name,Def):- true |
+        shoen:raise(pimos_tag#shell,get_std_out,Out),
+        Out = [putt(undefined_protocol),nl,putt(Key),flush(S)],
+        Y = {},
+        Name = '$undefined',
+        Def = '$undefined',
+        Table = [],
+        suicide(S).
+
+%        shoen:raise(pimos_tag#pimos, general_request,[abort([],_)]).
+%        shoen:raise(pimos_tag#pimos, general_request,[suicide(_)]).
+

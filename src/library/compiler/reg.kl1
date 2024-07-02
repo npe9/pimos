@@ -1,0 +1,556 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%%
+%%  Register Allocation
+%%
+%%
+
+:- module kl1cmp_register.
+:- public compile_predicate/13,
+        compile_and_output_one_clause/14,
+        determine_registers/14,
+        register_predefined/9,
+        register_preference/15,
+        output_code_or_retry/19,
+        makeUsedTable/2,
+        make_used/12.
+
+:- local_implicit code:oldnew, error:oldnew, bltref:oldnew, opt:shared, class:shared,
+    label:shared, start:shared.
+
+%:- mode compile_predicate(+, +, +, +, -, ? ).
+compile_predicate(Blocks, F/A, C0) --> wait(&start) |
+%   &code <<= [label(Pred)],
+ {{compile_predicate(&code, &error, &bltref, &opt, &class, &label, Blocks, F/A, C0)}},
+%   &code <<= [suspend(Pred)].
+   &code <<= [suspend(A,F/A)].
+
+:- local_implicit code:oldnew, error:oldnew, bltref:oldnew, opt:shared, class:shared,
+    label:shared.
+
+compile_predicate([], _, _) --> true | true.
+compile_predicate([One], Pred, C0) --> true |
+  compile_last_one_block(One, Pred, C0).
+otherwise.
+compile_predicate( [One_block|Rest], Pred, C0) --> true |
+  compile_one_block( One_block, Pred, C0, C1),
+  compile_predicate(Rest, Pred, C1).
+
+% added 871021 D.Sekita
+compile_last_one_block([atom(otherwise)], Pred/Ari, _) --> true |
+  &error<<=[warning(string#"no cluase after OTHERWISE : ~T",
+    [vector({atom((/)),atom(Pred),integer(Ari)})])].
+compile_last_one_block([atom(alternatively)], Pred/Ari, _) --> true |
+  &error<<=[warning(string#"no clause after ALTERNATIVELY : ~T",
+    [vector({atom((/)), atom(Pred), integer(Ari)})])].
+otherwise.
+compile_last_one_block([OneClause0], Pred, _) --> true |
+{{kl1cmp_variable_name:string_to_integer(OneClause0, OneClause, Vtbl0),
+  kl1cmp_error_filter:error_filter(&error, Err, Vtbl0, _),
+  compile_and_output_one_clause(&code, Err, [], &bltref, &opt, &class, &label,
+        0, OneClause, Pred, 0, _)}}.
+otherwise.
+compile_last_one_block([atom(otherwise)|Rest], F/A, C0) --> true |
+  &code <<= [otherwise(A,F/A)],
+  compile_last_one_block(Rest, F/A, C0).
+compile_last_one_block([atom(alternatively)|Rest], Pred, C0) --> true |
+  &code <<= [read_eagerly],
+  compile_last_one_block(Rest, Pred, C0).
+otherwise.
+compile_last_one_block([OneClause0|Rest], Pred, C0) --> true |
+%% modified for error message
+{{kl1cmp_variable_name:string_to_integer(OneClause0, OneClause1, Vtbl0),
+  kl1cmp_error_filter:error_filter(&error, Err, Vtbl0, _),
+  compile_and_output_one_clause(&code, Err, [], &bltref, &opt, &class, &label,
+        0, OneClause1, Pred, C0, C1)}},
+  compile_last_one_block(Rest, Pred, C1).
+
+compile_and_output_one_clause(Nopt, One, Pred, C0, C) --> true |
+ {{create_tables(Nv, From, To, Reg),
+   Label := &label + C0,
+   kl1cmp_compile:compile_one_clause(&error, &bltref,
+    Code0, [],  &class,   Nopt, One, Label,
+    From, From0, To, To0, Reg, Reg0, Argtbl, Nv, PC0, Attr),
+   kl1cmp_mrb:mrb_optimization(MrbCode, [], PC0, PC, From0, From1, To0, To1,
+        &opt, Code0, Nv, Argtbl, Attr),
+%%   kl1cmp_reader:herrey(PC, [], Used0),
+   makeUsedTable(PC, Used0),
+   register_predefined(From1, From2, To1, To2, Reg0, Reg1, Used0, Used1, Nv),
+   register_preference(RegCode, [], &error, success, Ans1,
+        From2, From3, To2, To3, Reg1, Reg2, Used1, Used2, MrbCode),
+   determine_registers(&error, Ans1, Ans, From3, From4, To3, To4, Reg2, Reg3,
+                Used2, _, Nv, 0),
+   output_code_or_retry(&code, &error, &bltref, &opt, &class, &label, Ans, Nopt, Nv,
+    From4, To4, Reg3, Pred, C0, RegCode, One),
+   C := C0+1}}.
+
+makeUsedTable(Size, Used) :- true |
+    number_of_work_space(Max),
+    number_of_registers(RegNum),
+    new_vector(Used0, Max),
+    fillString(0, RegNum, Size, Used0, Used).
+%%HM    Used0=Used.
+
+fillString(A, Max, Size, Used0, Used) :- A<Max|
+    new_string(Str, Size, 1),
+    set_vector_element(Used0, A, _, Str, Used1),
+    A1 := A+1,
+    fillString(A1, Max, Size, Used1, Used).
+fillString(N, N, _, Used0, Used) :- true | Used0=Used.
+
+create_tables(Nv, From, To, Reg) :- wait(Nv) |
+   kl1cmp_reader:herrey(Nv, [], From),
+   kl1cmp_reader:herrey(Nv, [], To),
+   kl1cmp_reader:herrey(Nv, [], Reg).
+
+:- local_implicit code:oldnew, error:oldnew, bltref:oldnew, opt:shared, class:shared,
+        label:shared.
+output_code_or_retry(success, _, Nv, From, To, Reg, Pred, C0,
+    Code, Src) --> true |
+ {{kl1cmp_reader:herrey(Nv, [], Type0),
+   kl1cmp_output:erace_or_convert_instruction(From, _, To, _,
+        Reg, _, Type0, _, Code1, [], 0, Code),
+   kl1cmp_instr:convert_instrs(&code, Code1),
+   Label := &label + C0}},
+   &code <<= [label(Label)].
+output_code_or_retry(fail, 0, _, _, _, _, Pred, C0, _, Src0) --> true |
+   &error<<=[warning(string#"insufficient register. trying to compile once again", [])],
+ {{kl1cmp_variable_name:string_to_integer(Src0, Src, Vtbl0),
+   kl1cmp_error_filter:error_filter(&error, Err, Vtbl0, _),
+   compile_and_output_one_clause(&code, Err, [], &bltref, &opt, &class, &label,
+        1, Src, Pred, C0, _)}}.
+otherwise.
+output_code_or_retry(_, _, _, _, _, _, _, _, _, Src) --> true |
+   &error<<=[error(string#"insufficient register (Too many arguments or variables) : ~T", [Src])].
+
+:- local_implicit code:oldnew, error:oldnew, bltref:oldnew, opt:shared, class:shared,
+        label:shared.
+% This predicate was originaly compile_predicate 870914 D,Sekita
+%:- mode compile_one_block(+, +, +, -, +, -, ?).
+compile_one_block([atom(otherwise)|Rest], F/A, C0, C) --> true |
+    &code <<= [otherwise(A,F/A)],
+    compile_one_block(Rest, F/A, C0, C).
+compile_one_block([atom(alternatively)|Rest], Pred, C0, C) --> true |
+    &code <<= [read_eagerly],
+    compile_one_block(Rest, Pred, C0, C).
+otherwise.
+compile_one_block([One0|Rest], Pred, C0, C) --> true |
+  {{kl1cmp_variable_name:string_to_integer(One0, One, Vtbl0),
+    kl1cmp_error_filter:error_filter(&error, Err, Vtbl0, _),
+    compile_and_output_one_clause(&code, Err, [], &bltref, &opt, &class, &label,
+        0, One, Pred, C0, C1)}},
+    compile_one_block(Rest, Pred, C1, C).
+compile_one_block([], _, C0, C) --> true | {{C0 = C}}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Register allocation  %%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- local_implicit from:oldnew, to:oldnew, reg:oldnew, used:oldnew.
+
+register_predefined(0)--> true | true.
+otherwise.
+register_predefined(V)--> V1:=V-1 |
+   init_used_table(V1),
+   register_predefined(V1).
+
+init_used_table(V1) --> vector_element(&reg(old), V1, []) | true.
+init_used_table(V1) --> vector_element(&reg(old), V1, R), integer(R) |
+ {{ref_vector(&from, V1, Fv),
+   ref_vector(&to, V1, Tv),
+   use_register(&used, Fv, Tv, R)}}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Register preferences  %%%%%%%%%%%%%%%%%%%%%%%%%%
+:- local_implicit code:oldnew, err:oldnew, ans:oldnew,
+         from:oldnew, to:oldnew, reg:oldnew, used:oldnew.
+
+%:- mode register_preference(+, +, ?, +, -, -, ?).
+register_preference(Instr) --> true |
+%% patched 910328
+ {{find_initial_register(&used, Init)}},
+   register_preference(Instr, Init).
+
+:- local_implicit code:oldnew, err:oldnew, ans:oldnew,
+         from:oldnew, to:oldnew, reg:oldnew, used:oldnew.
+register_preference([], _) --> true | true.
+register_preference([Instr|Code], Ent0) --> true | 
+   one_register_pref(Instr, Ent0, Ent1),
+   register_preference(Code, Ent1).
+
+%:- mode one_register_pref(+, +, ?, +, -, -, ?).
+% When call variable variablenotice that the 1st argument
+% must not be alloceted to any register 2nd argument must be alloceted
+% to  a register. This source code is wrong in this sense.
+:- local_implicit code:oldnew, err:oldnew, ans:oldnew,
+         from:oldnew, to:oldnew, reg:oldnew, used:oldnew.
+
+one_register_pref(wait_variable(variable(X),variable(Y)), Ent0, Ent)--> true |
+    {{ref_vector(&reg, X, Rx),
+      ref_vector(&reg, Y, Ry)}},
+      &code <<= [wait_variable(variable(X),variable(Y))],
+    {{allocate_on_same_registers(&err, &ans, &from, &to, &reg, &used, Rx, Ry, X, Y, Ent0, Ent)}}.
+one_register_pref(put_value(variable(X),variable(Y)), Ent0, Ent) --> true |
+    {{ref_vector(&reg, X, Rx),
+      ref_vector(&reg, Y, Ry)}},
+      &code <<= [put_value(variable(X), variable(Y))],
+    {{allocate_on_same_registers(&err, &ans, &from, &to, &reg, &used, Rx, Ry, X, Y, Ent0, Ent)}}.
+one_register_pref(trans_value(variable(X),variable(Y)), Ent0, Ent) --> true |
+    {{ref_vector(&reg, X, Rx),
+      ref_vector(&reg, Y, Ry)}},
+      &code <<= [trans_value(variable(X), variable(Y))],
+    {{allocate_on_same_registers(&err, &ans, &from, &to, &reg, &used, Rx, Ry, X, Y, Ent0, Ent)}}.
+otherwise.
+one_register_pref(Code, Ent0, Ent) --> true | &code <<= [Code], Ent0=Ent.
+
+:- local_implicit  err:oldnew, ans:oldnew,
+         from:oldnew, to:oldnew, reg:oldnew, used:oldnew.
+
+
+allocate_on_same_registers([], [], X, Y, Ent0, Ent) --> true |
+   one_register_pref_bar(X, Y, Ent0, Ent).
+otherwise.
+allocate_on_same_registers(Rx, [], X, Y, Ent0, Ent) --> true |
+   one_register_pref_foo(Y, X, Rx, Ent0, Ent).
+allocate_on_same_registers([], Ry, X, Y, Ent0, Ent) --> true |
+   one_register_pref_foo(X, Y, Ry, Ent0, Ent).
+otherwise.
+allocate_on_same_registers(_, _, _, _, Ent0, Ent) --> true | Ent0=Ent.
+
+% There is a preference, lets see if we can use it.
+:- local_implicit err:oldnew, ans:oldnew,
+         from:oldnew, to:oldnew, reg:oldnew, used:oldnew.
+
+one_register_pref_foo(X, Y, R, Ent0, Ent) --> true |
+ {{ref_vector(&from, X, Fx),
+   ref_vector(&from, Y, Fy),
+   ref_vector(&to, X, Tx),
+   ref_vector(&to, Y, Ty),
+   return_less(Fx, Fy, F), return_greater(Ty, Tx, T),
+   register_available(&used, F, Fy, R, yes, PF),
+   register_available(&used, Ty, T, R, PF, PT),
+   decision_on_answer(&used, PT, F, Fy, R),
+   decision_on_answer(&used, PT, Ty, T, R),
+   one_register_pref_foobar_or_not(&from, &to, &reg, PT, X, Y, R, F, T, Ent0, Ent)}}.
+
+:- local_implicit used:oldnew.
+decision_on_answer(yes, P1, P2, R) --> true |
+   use_register(P1, P2, R).
+otherwise.
+decision_on_answer(_, _, _, _) --> true | true.
+
+:- local_implicit from:oldnew, to:oldnew, reg:oldnew.
+one_register_pref_foobar_or_not(yes, X, Y, R, F1, F2, Ent0, Ent) --> true |
+   one_register_pref_foobar(X, Y, R, F1, F2), Ent0=Ent.
+otherwise.
+one_register_pref_foobar_or_not(_, _, _, _, _, _, Ent0, Ent) --> true | Ent0=Ent.
+
+
+:- local_implicit err:oldnew, ans:oldnew,
+         from:oldnew, to:oldnew, reg:oldnew, used:oldnew.
+%%:- mode one_register_pref_bar(+, +, +, +, +, -, -, ?).debug D.Sekita 870825
+one_register_pref_bar(X, Y, Ent0, Ent) --> true |
+  {{ref_vector(&from, X, Fx),
+    ref_vector(&from, Y, Fy),
+    ref_vector(&to, X, Tx),
+    ref_vector(&to, Y, Ty),
+    return_less(Fx, Fy, F), return_greater(Ty, Tx, T),
+    number_of_registers(Max),
+    find_free_register(&err, &ans, &used, Ent0, Max, R, F, T),
+    one_register_pref_foobar(&from, &to, &reg, X, Y, R, F, T),
+    nextEntry(R, Max, Ent)}}.
+
+:- local_implicit from:oldnew, to:oldnew, reg:oldnew.
+one_register_pref_foobar(X, Y, R, F, T) --> true |
+ {{set_vector(&from, X, F),
+   set_vector(&from, Y, F),
+   set_vector(&to, X, T),
+   set_vector(&to, Y, T),
+   set_vector(&reg, X, R),
+   set_vector(&reg, Y, R)}}.
+
+%:- mode return_less(+, +, -).
+return_less(X, Y, Z) :- X < Y | X=Z.
+return_less(X, Y, Z) :- X >= Y | Y=Z.
+
+%:- mode return_greater(+, +, -).
+return_greater(X, Y, Z) :- X > Y | X=Z.
+return_greater(X, Y, Z) :- X =< Y | Y=Z.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Determine registers  %%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- local_implicit code:oldnew, ans:oldnew,
+        from:oldnew, to:oldnew, reg:oldnew, used:oldnew.
+%:- mode determine_registers(+, +, +, +, +, -, -, -, +, -, -, ?).
+determine_registers(V, I) --> true |
+  {{find_initial_register(&used, Init)}},
+    determine_registers(V, I, Init).
+
+determine_registers(0, _, _) --> true | true.
+otherwise.
+determine_registers(V, I, Ent0) --> vector_element(&reg(old), I, []) |
+  {{ref_vector(&from, I, F),
+    ref_vector(&to, I, T)}},
+    check_void_variable(F, T, I, Ent0, Ent1),
+  {{V1 := V-1, I1 := I+1}},
+    determine_registers(V1, I1, Ent1).
+otherwise.
+determine_registers(V, I, Ent0) --> true |
+ {{V1 := V-1, I1 := I+1}},
+   determine_registers(V1, I1, Ent0).
+
+check_void_variable(F, F, I, Ent0, Ent) --> true |
+    {{set_vector(&reg, I, 0),
+      number_of_registers(Max),
+      nextEntry(Ent0, Max, Ent)}}.
+otherwise.
+check_void_variable(F, T, I, Ent0, Ent) --> true |
+    {{number_of_registers(Max),
+      find_free_register(&code, &ans, &used, Ent0, Max, R, F, T),
+      set_vector(&reg, I, R),
+      nextEntry(R, Max, Ent)}}.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Find a free register  %%%%%%%%%%%%%%%%%%%%%%%%%%
+nextEntry(R, Max, Ent) :- R > Max | Ent = 1.
+otherwise.
+nextEntry(R, Max, Ent) :- true | R=Ent.
+
+%:- mode number_of_registers(-).
+% The number of th registers of Muti-PSI is 32.
+number_of_registers(X) :- true | X=32.
+number_of_work_space(X) :- true | X=1024.
+
+:- local_implicit code:oldnew, ans:oldnew, used:oldnew.
+find_free_register(Ent, Max, R, F, T) --> F < T |
+%%   Ent1 := Ent+1,
+ {{incrementRegisterNumber(Ent, Max, Ent1),
+   Len := T - F,
+   new_string(Mask0, Len, 1)}},
+   find_free_register(Ent1, Ent, Max, R, F, Len, Mask0).
+
+find_free_register(End, End, _, R, F, Len, Mask0) --> true |
+%% {{R=0}},
+%%   &ans<=fail,
+%%   &code<<=[try_again(string#"insufficient registers :", [])].
+  {{number_of_work_space(Max)}},
+    findWorkSpace(33, Max, R, F, Len, Mask0).
+otherwise.
+find_free_register(N, End, Max, R, F, Len, Mask0) --> true |
+ {{register_available(&used, F, Len, N, yes, P, Mask0, Mask)}},
+ ( P=yes ->
+    {{N=R, use_register(&used, F-Len, R)}} ;
+   P=no ->
+%%    {{N1 := N+1}},
+   {{incrementRegisterNumber(N, Max, N1)}},
+     find_free_register(N1, End, Max, R, F, Len, Mask)).
+
+findWorkSpace(R0, R, F, T) --> true |
+  {{number_of_work_space(Max),
+    Len := T - F,
+    new_string(Mask, Len, 1)}},
+    findWorkSpace(R0, Max, R, F, Len, Mask).
+
+findWorkSpace(R0, R0, R, _, _, _) --> true |
+  {{R=0}},
+    &ans<=fail,
+    &code<<=[error("insufficient register restoring space :", [])].
+otherwise.
+findWorkSpace(R0, Max, R, F, Len, Mask0) --> true |
+  {{register_available(&used, F, Len, R0, yes, P, Mask0, Mask)}},    
+ ( P=yes ->
+   {{R0=R, use_register(&used, F-Len, R)}};
+   P=no ->
+   {{R1 := R0 + 1}},
+   findWorkSpace(R1, Max, R, F, Len, Mask)).
+
+incrementRegisterNumber(N, Max, N1) :- N+1>=Max | N1 = 1.
+otherwise.
+incrementRegisterNumber(N, _, N1) :- true | N1 := N+1.
+
+:- local_implicit used:oldnew.
+
+%:- mode register_available(+, +, +, +, -).
+register_available(To, To, _, P0, P) --> true | P0=P.
+register_available(From, To, R, P0, P) --> From<To |
+    {{Len := To - From,
+      new_string(Mask0, Len, 1)}},
+      register_available(From, Len, R, P0, P, Mask0, _).
+
+register_available(From, Len, R, P0, P, Mask0, Mask) --> true |
+    {{rep_vector(&used, R, N0, N),
+      checkRegisterTable(N0, N, From, Len, P0, P, Mask0, Mask)}}.
+
+checkRegisterTable(0, N, _, _, P0, P, Mask0, Mask) :- N=0, P0=P, Mask0=Mask.
+checkRegisterTable(N0, N, From, Len, P0, P, Mask0, Mask) :- string(N0, _, _) |
+      builtin#substring(N0, From, Len, Substr0, N),
+%%      builtin#or_string_elements(Substr0, 0, Len, Mask0, 0, Substr1, Mask1),
+%%      or_string_elements(Substr0, 0, Len, Mask0, 0, Substr1, Mask1),
+      register_available(Substr0, Mask0, Mask, P0, P).
+
+or_string_elements(Str0, Pos0, Len, Str1, Pos1, AStr0, AStr1) :- true |
+      or_string_elements(Str0, Pos0, 0, Len, Str1, Pos1, AStr0, AStr1).
+
+or_string_elements(Str0, Pos0, A, Len, Str1, Pos1, AStr0, AStr1) :- A<Len |
+      Pos00 := Pos0 + A,
+      string_element(Str0, Pos00, Elm0, Str01),
+      Pos10 := Pos1 + A,
+      string_element(Str1, Pos10, Elm1, Str11),
+      Elm := Elm0 \/ Elm1,
+      set_string_element(Str01, Pos00, Elm, Str02),
+      A1 := A+1,
+      or_string_elements(Str02, Pos0, A1, Len, Str11, Pos1, AStr0, AStr1).
+or_string_elements(Str0, _, Len, Len,  Str1, _, AStr0, AStr1) :- true |
+      Str0=AStr0, Str1=AStr1.
+
+register_available(Mask0, Mask0, Mask, P0, P) :- true | P0=P, Mask0=Mask.
+otherwise.
+register_available(_, Mask0, Mask, _, P) :- true | P=no, Mask0=Mask.
+
+:- local_implicit used:oldnew.
+use_register(Bref0, Bref, To, To, _) :- true | Bref0=Bref.
+otherwise.
+use_register(Bref0, Bref, From, To, R) :- true |
+   {{allocUsedElement(Bref0, R, N0, N, Bref),
+     Len := To - From,
+     unary_string_operation(string_operation#set, N0, From, Len, N)}}.
+
+set_string_elements(Str0, From, Len, Str) :- true |
+    Last := From + Len,
+    set_string_element_(Str0, From, Last, Str).
+
+set_string_element_(Str0, From, Last, Str) :- From < Last |
+    set_string_element(Str0, From, 1, Str1),
+    From1 := From + 1,
+    set_string_element_(Str1, From1, Last, Str).
+set_string_element_(Str0, Last, Last, Str) :- true | Str0=Str.
+
+allocUsedElement(Bref0, R, N0, N, Bref) :- true |
+     set_vector_element(Bref0, 0, Init0, Init, Bref1),
+     set_vector_element(Bref1, R, N00, N, Bref),
+     allocUsedElement(Init0, Init, N00, N0).
+
+allocUsedElement(Init0, Init, N00, N0) :- string(N00, _, _) |
+     Init0=Init, N00=N0.
+allocUsedElement(Init0, Init, 0, N0) :- string(Init0, Size, _) |
+     Init0=Init, new_string(N0, Size, 1).
+
+use_register(Bref0, Bref, _-0, _) :- true | Bref0=Bref.
+otherwise.
+use_register(Bref0, Bref, From-Len, R) :- true |
+   {{allocUsedElement(Bref0, R, N0, N, Bref),
+     unary_string_operation(string_operation#set, N0, From, Len, N)}}.
+
+%% This predicate make MRB of vector element black.
+ref_vector(Tabs0, Tabs, Pos, Ele) :- true |
+   set_vector_element(Tabs0, Pos, Ele, Ele, Tabs).    
+
+set_vector(Tabs0, Tabs, Pos, Ele) :- true |
+   set_vector_element(Tabs0, Pos, _, Ele, Tabs).
+
+rep_vector(Tabs0, Tabs, Pos, OldEle, NewEle) :- true |
+   set_vector_element(Tabs0, Pos, OldEle, NewEle, Tabs).
+
+
+%%
+%% find initial register number
+%%
+find_initial_register(Used0, Used, R) :- true |
+    set_vector_element(Used0, 0, Elm0, Elm, Used1),
+    getPC(Elm0, Elm, PC),
+    new_string(Mask0, PC, 1),
+    number_of_registers(RN),
+    find_initial_register(1, RN, R, Used1, Mask0, Used).
+
+getPC(Elm0, Elm, PC) :- string(Elm0, PC0, _) |
+    PC=PC0, Elm=Elm0.
+
+find_initial_register(RN, RN, R, Used0, _, Used) :- true |
+    R=1, Used0=Used.
+find_initial_register(R0, RN, R, Used0, Mask0, Used) :- R0<RN |
+    set_vector_element(Used0, R0, Elm0, Elm, Used1),
+    find_initial_register(R0, RN, R, Elm0, Elm, Used1, Mask0, Used).
+
+find_initial_register(R0, _, R, Elm0, Elm, Used0, Mask0, Used) :- Elm0=Mask0 |
+    R0=R, Elm0=Elm, Used0=Used.
+otherwise.
+find_initial_register(R0, RN, R, Elm0, Elm, Used0, Mask0, Used) :- true |
+    R1 := R0 + 1,
+    Elm0=Elm,
+    find_initial_register(R1, RN, R, Used0, Mask0, Used).
+%%
+%% generated XXX_used
+%%
+:- local_implicit code:oldnew.
+make_used(From0, From, To0, To, Reg0, Reg, Used0, Used, MRBCode, RegCode) --> true |
+  {{pool:sorted_bag(Pool0),
+    registerRegs(&code, Pool0, [], Pool, MRBCode)}},
+    makeUsed(Pool, [], From0, From, To0, To, Reg0, Reg, Used0, Used, 1, RegCode).
+%% dummy
+%%make_used(From0, From, To0, To, Reg0, Reg, Used0, Used, MRBCode, RegCode) --> true |
+%%    From0=From, To0=To, Reg0=Reg, Used0=Used,
+%%  {{output(&code, MRBCode),
+%%    output(&code, RegCode)}}.
+
+output([Instr|Cdr]) --> true |
+    &code <<= [Instr],
+    output(Cdr).
+output([]) --> true | true.
+
+:- local_implicit code:oldnew, pool:oldnew.
+registerRegs(Pool, [collect_list(A)|Cdr]) --> true |
+    &pool <<= [put(A)],
+    registerRegs(Pool, Cdr).
+otherwise.
+registerRegs(Pool, [Collect|Cdr]) --> true |
+    &code <<= [Collect],
+    registerRegs(Pool, Cdr).
+registerRegs(Pool, []) --> true |
+    generateCollect(Pool).
+
+generateCollect([Msg|Rest]) --> true |
+    &pool <<= [Msg],
+    generateCollect(Rest).
+generateCollect([]) --> true |
+    &pool <<= [get_all(Regs)],
+  {{generateCollect(&code, Regs)}}.
+
+:- local_implicit code:oldnew.
+generateCollect([R|Rest]) --> true |
+    &code <<= [collect_list(R)],
+    generateCollect(Rest).
+generateCollect([]) --> true | true.
+
+:- local_implicit code:oldnew, pool:oldnew.
+makeUsed(From0, From, To0, To, Reg0, Reg, Used0, Used, PC, [put_list(A)|RegCode]) --> true |
+   &pool <<= [empty(YorN)],
+   convertIfEmpty(YorN, From0, From1, To0, To1, Reg0, Reg1, Used0, Used1, PC, A),
+   PC1 := PC + 1,
+   makeUsed(From1, From, To1, To, Reg1, Reg, Used1, Used, PC1, RegCode).
+otherwise.
+makeUsed(From0, From, To0, To, Reg0, Reg, Used0, Used, PC, [Instr|RegCode]) --> true |
+   &code <<= [Instr],
+   PC1 := PC + 1,
+   makeUsed(From0, From, To0, To, Reg0, Reg, Used0, Used, PC1, RegCode).
+makeUsed(From0, From, To0, To, Reg0, Reg, Used0, Used, _, []) --> true |
+   From0=From, To0=To, Reg0=Reg, Used0=Used.
+
+convertIfEmpty(yes, From0, From, To0, To, Reg0, Reg, Used0, Used, _, A) --> true |
+   &code <<= [put_list(A)],
+   From0=From, To0=To, Reg0=Reg, Used0=Used.
+convertIfEmpty(no, From0, From, To0, To, Reg0, Reg, Used0, Used, PC, A) --> true |
+   &pool <<= [get(R)],
+   R1 := R+1,
+ {{register_available(Used0, Used1, 0, PC, R1, yes, Ans)}},
+   outputReuse(Ans, From0, From, To0, To, Reg0, Reg, Used1, Used, R, PC, A).
+
+outputReuse(yes, From0, From, To0, To, Reg0, Reg, Used0, Used, R, PC, A) --> true |
+   &code <<= [put_reused_structure(A, R, 2)],
+   R1 := R+1,
+ {{use_register(Used0, Used, 0, PC, R1)}},
+   From0=From, To0=To, Reg0=Reg.
+outputReuse(no, From0, From, To0, To, Reg0, Reg, Used0, Used, R, _, A) --> true |
+   &pool <<= [put(R)],
+   &code <<= [put_list(A)],
+   From0=From, To0=To, Reg0=Reg, Used0=Used.

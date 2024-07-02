@@ -1,0 +1,259 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module fep_filter.
+:- with_macro pimos.
+:- public 
+    window_filter/3, file_filter/3, timer_filter/3,
+    string_io_filter/3, fep_info_filter/3 ,
+    socket_filter/3.
+
+window_filter(_,In,normal(Out)):-
+    true|
+    Out = [reset(Status)|OutN],
+    wait_filter_go(window,Status,OutN,In).
+otherwise.
+window_filter(_,In,Status):-
+    true|
+    In = Status.
+file_filter(_,In,normal(Out)):-
+    true|
+    Out = [reset(Status)|OutN],
+    wait_filter_go(file,Status,OutN,In).
+otherwise.
+file_filter(_,In,Status):-
+    true|
+    In = Status.
+timer_filter(_,In,normal(Out)):-
+    true|
+        current_node(Me,N),
+        Out = [current_node(Me,N),reset(Status)|OutN],
+        wait_filter_go(timer,Status,OutN,In).
+otherwise.
+timer_filter(_,In,Status):-
+    true|
+    In = Status.
+string_io_filter(_,In,normal(Out)):-
+    true|
+    Out = [reset(Status)|OutN],
+    wait_filter_go(string_io,Status,OutN,In).
+otherwise.
+string_io_filter(_,In,Status):-
+    true|
+    In = Status.
+socket_filter(_,In,normal(Out)):-
+    true|
+    Out = [reset(Status)|OutN],
+    wait_filter_go(socket,Status,OutN,In).
+otherwise.
+socket_filter(_,In,Status):-
+    true|
+    In = Status.
+
+fep_info_filter(_,ipl_versions(Status),Out):-
+    true|
+    Out = ipl_versions(Result),
+    wait_ipl_versions(Result,Status).
+fep_info_filter(_,connection(Status),Out):-
+    true|
+    Out = connection(Result),
+    wait_unify(Result,Status).
+fep_info_filter(_,number_of_feps(Status),Out):-
+    true|
+    Out = number_of_feps(Result),
+    wait_unify(Result,Status).
+fep_info_filter(_,fep_attributes(Status),Out):-
+    true|
+    Out = fep_attributes(Result),
+    wait_fep_attributes(Result,Status).
+
+wait_filter_go(window,normal(Abort,Att,_),Out,In):-
+    true|
+    trans(Med,Out,window),
+    winreq_filter:winreq_filter(In,normal(Med,Abort,Att)).
+wait_filter_go(file,normal(Abort,Att,_),Out,In):-
+    true|
+    trans(Med,Out,file),
+    filereq_filter:filereq_filter(In,normal(Med,Abort,Att)).
+wait_filter_go(timer,normal(Abort,Att,_),Out,In):-
+    true|
+    trans(Med,Out,timer),
+    timerreq_filter:timerreq_filter(In,normal(Med,Abort,Att)).
+wait_filter_go(string_io,normal(Abort,Att,_),Out,In):-
+    true|
+    trans(Med,Out,string_io),
+    string_io_req_filter:string_io_req_filter(In,normal(Med,Abort,Att)).
+wait_filter_go(socket,normal(Abort,Att,_),Out,In):-
+    true|
+    trans(Med,Out,socket),
+    socreq_filter:socreq_filter(In,normal(Med,Abort,Att)).
+otherwise.
+wait_filter_go(_,Result,Out,In):-
+    wait(Result)|
+    Out = [],
+    In = Result.
+
+wait_unify(normal(Dir),Status):-
+    wait(Dir)|
+    Status = normal(Dir).
+otherwise.
+wait_unify(S,S1) :- true | S=S1.
+
+wait_fep_attributes(normal(P1,P2,P3,P4,P5,P6,P7),Status):-
+    wait(P1),wait(P2),wait(P3),wait(P4),wait(P5),wait(P6),wait(P7)|
+    Status = normal(P1,P2,P3,P4,P5,P6,P7).
+otherwise.
+wait_fep_attributes(S,S1) :- true | S=S1.
+
+trans([],Out,_):-
+    true|
+    Out = [close(Wait)|OutN],
+    wait_trans(Wait,OutN).
+trans([create(Result)|In],Out,DvcType):-
+    true|
+    send_create_msg(Result,Out,OutN,DvcType),
+    trans(In,OutN,DvcType).
+trans([create(Param,Result)|In],Out,DvcType):-
+    true|
+    send_create_msg_with_param(Param,Result,Out,OutN,DvcType),
+    trans(In,OutN,DvcType).
+trans([connect(Param,Result)|In],Out,DvcType):-
+    true|
+    Out = [connect(Param,Status)|OutN],
+    wait_creation(Status,Result),
+    trans(In,OutN,DvcType).
+trans([listen(Param1,Param2,Result)|In],Out,DvcType):-
+    true|
+    Out = [listen(Param1,Param2,Status)|OutN],
+    wait_creation(Status,Result),
+    trans(In,OutN,DvcType).
+trans([open(Name,{Type,Result})|In],Out,DvcType):-
+    true|
+    Out = [open(Name,{Type,Status})|OutN],
+    wait_creation(Status,Result),
+    trans(In,OutN,DvcType).
+trans([directory(Name,Result)|In],Out,DvcType):-
+    true|
+    Out = [directory(Name,Status)|OutN],
+    wait_creation(Status,Result),
+    trans(In,OutN,DvcType).
+trans([make_directory(Name,Result)|In],Out,DvcType):-
+    true|
+    Out = [make_directory(Name,Status)|OutN],
+    wait_creation(Status,Result),
+    trans(In,OutN,DvcType).
+otherwise.
+trans([Msg|In],Out,DvcType):-
+    true|
+    Out = [Msg|OutN],
+    trans(In,OutN,DvcType).
+
+wait_trans(Wait,Out):-
+    wait(Wait)|
+    Out = [].
+
+wait_creation(normal(Stream),Result):-
+    true|
+    Stream = [reset(Status)|Next],
+    wait_creation2(Status,Next,Result).
+otherwise.
+wait_creation(Status,Result):-
+    true|
+    Status = Result.
+
+wait_creation2(normal(Ab,At,_),Stream,Result):-
+    true|
+    Result = normal(Stream,Ab,At).
+otherwise.
+wait_creation2(Status,Stream,Result):-
+    true|
+    Status = Result,
+    Stream = [].
+
+send_create_msg(Result,Out,OutN,timer) :- true |
+    Out = [create(Status)|OutN],
+    if_run_protection_filter(Status,Result).
+otherwise.
+send_create_msg(Result,Out,OutN,_) :- true |
+    Out = [create(Status)|OutN],
+    wait_creation(Status,Result).
+
+if_run_protection_filter(normal(Stream),Result) :- true |
+    Stream=[reset(Status)|Next],
+    run_protection_filter(Status,Next,Result).
+otherwise.
+if_run_protection_filter(Status,Result) :- true |
+    Status = Result.
+
+run_protection_filter(normal(Ab,At,_),Out,Result) :- true |
+    trans(Med,Out,timer),
+    timer_filter:timer_filter(Result,normal(Med,Ab,At)).
+otherwise.
+run_protection_filter(Status,Out,Result) :- true |
+    Status=Result,
+    Out=[].
+
+send_create_msg_with_param(Param,Result,Out,OutN,timer) :- true |
+    Out=[create(Param,Status)|OutN],
+    if_throw_protection_filter(Status,Result,Param).
+otherwise.
+send_create_msg_with_param(Param,Result,Out,OutN,_) :- true |
+    Out = [create(Param,Status)|OutN],
+    wait_creation(Status,Result).
+
+if_throw_protection_filter(normal(Stream),Result,Param) :- true |
+    Stream=[reset(Status)|Next],
+    throw_protection_filter(Status,Next,Result,Param).
+otherwise.
+if_throw_protection_filter(Status,Result,_) :- true |
+    Status = Result.
+
+throw_protection_filter(normal(Ab,At,_),Out,Result,Param) :- integer(Param) |
+    trans(Med,Out,timer),
+    timer_filter:timer_filter(Result,normal(Med,Ab,At))@node(Param).
+otherwise.
+throw_protection_filter(normal(Ab,At,_),Out,Result,_) :- true |
+    trans(Med,Out,timer),
+    timer_filter:timer_filter(Result,normal(Med,Ab,At)).
+otherwise.
+throw_protection_filter(Status,Out,Result,_) :- true |
+    Status=Result,
+    Out=[].
+
+wait_ipl_versions(normal(IPLVL),Status):-
+    true|
+    Status = normal(UIPLVL),
+    ipl_versions(IPLVL,UIPLVL).
+
+ipl_versions([],UIPLVL):-
+    true|
+        UIPLVL = [].
+ipl_versions([E|IPLVL],UIPLVL):-
+    true|
+        UIPLVL = [UE|UIPLVLN],
+        ipl_version(E,UE),
+        ipl_versions(IPLVL,UIPLVLN).
+
+ipl_version(V,UV):-
+    vector_element(V,0,VE0),
+    vector_element(V,1,VE1)|
+        new_vector(UV0,2),
+        set_vector_element(UV0,0,_,UVE0,UV1),
+        set_vector_element(UV1,1,_,UVE1,UV),
+        ipl_file_name(VE0,UVE0),
+        ipl_file_info(VE1,UVE1).
+
+ipl_file_name(UVE,VE):-
+    string(UVE,_,_)|
+        UVE = VE.
+ipl_file_info(UVE,VE):-
+    string(UVE,_,_)|
+        UVE = VE.
+ipl_file_info([],VE):-
+    true|
+        VE = [].
+

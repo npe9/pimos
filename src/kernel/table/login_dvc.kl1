@@ -1,0 +1,171 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module login_table_device.
+:- public driver/3.
+:- public login_table/1.
+:- public protection_filter/3.
+:- with_macro pimos.
+
+login_table(LID_TABLE):-
+    true|
+    merge(LID_TABLE,Lid_table0),
+    pool:keyed_set(Lid_table,100),
+    login_table0(Lid_table0,Lid_table,1).
+
+login_table0([get_id(ID)|Next],LT,C):-
+   C1 := C + 1|
+   ID = C,
+   login_table0(Next,LT,C1).
+otherwise.
+login_table0([Mes|Next],LT,C):-
+   true|
+   LT = [Mes|LNext],
+   login_table0(Next,LNext,C).
+login_table0([],LT,_):-
+   true|
+   LT = [].
+%% DRIVER
+driver(Status,Lid_table,Users):-
+    vector_element(Users,2,UID)|
+    Status = normal(In0,_,[]),
+    protection_filter(UID,In0,In),
+    login_table(In,Lid_table,1).
+
+%% LOGIN_TABLE
+login_table([reset(Status)|In],LIDT,Mslid):- true |
+    Status = normal(Abort,[],Mslid),
+    Mslid1 := Mslid + 1,
+    login_table(In,LIDT,Mslid1).
+login_table([next_atteLidion(Status)|In],LIDT,Mslid):- true |
+    Status = normal([]),
+    login_table(In,LIDT,Mslid).
+login_table([resend(Mslid0,Status)|In],LIDT,Mslid):- true |
+    Status = normal,
+    login_table(In,LIDT,Mslid).
+login_table([cancel(Mslid0,Status)|In],LIDT,Mslid):- true |
+    Status = normal,
+    login_table(In,LIDT,Mslid).
+
+login_table([login(UName,Info,Status)|In],LIDT,Mslid) :-
+    true|
+        login(UName,Info,LIDT,LIDT1,Status),
+        login_table(In,LIDT1,Mslid). 
+login_table([logout(LID,Status)|In],LIDT,Mslid):-
+    true|
+        LIDT=[get_if_any(LID,Info)|LIDT1],
+        logout(Info,Status),
+        login_table(In,LIDT1,Mslid).
+login_table([get_info(LID,Status)|In],LIDT,Mslid):- true |
+    LIDT = [get_and_put_if_any(LID,Info,Info1,_)|LIDT1],
+    get_info(Info,Info1,Status),
+    login_table(In,LIDT1,Mslid).
+login_table([get_login(UserName,Status)|In],LIDT,Mslid):- true |
+    LIDT = [get_all(Out1)|LIDT1],
+    get_login(Out1,Out,UserName,LIDT1,LIDT2),
+    Status = normal(Out),
+    login_table(In,LIDT2,Mslid).
+login_table([get_all_info(Status)|In],LIDT,Mslid):- true |
+    LIDT = [get_all(Out1)|LIDT1],
+    get_all_info(Out1,Out,LIDT1,LIDT2),
+    Status = normal(Out),
+    login_table(In,LIDT2,Mslid).
+login_table([],LIDT,Mslid):- true |
+    LIDT = [].
+    
+
+
+get_all_info([],Out,LIDT1,LIDT2):-
+    true|
+    Out = [],
+    LIDT1 = LIDT2.
+get_all_info([{LID,{UN,Info}}|Rest],Out,LIDT1,LIDT2):-
+    true|
+    copy:copy(Info,Info1,Info2),
+    Out = [{UN,LID,Info1}|OutRest],
+    LIDT1 = [put(LID,{UN,Info2},_)|LIDT0],
+    get_all_info(Rest,OutRest,LIDT0,LIDT2).
+
+get_login([],Out,_,LIDT1,LIDT2):-
+    true|
+    Out = [],
+    LIDT1 = LIDT2.
+get_login([{LID,{UN,Info}}|Rest],Out,UN,LIDT1,LIDT2):-
+    true|
+    Out = [LID|OutRest],
+    LIDT1 = [put(LID,{UN,Info},_)|LIDT0],
+    get_login(Rest,OutRest,UN,LIDT0,LIDT2).
+otherwise.
+get_login([{LID,Info0}|Rest],Out,UN,LIDT1,LIDT2):-
+    true|
+    LIDT1 = [put(LID,Info0,_)|LIDT0],
+    get_login(Rest,Out,UN,LIDT0,LIDT2).
+
+
+get_info(Info,Info1,Status):-
+    vector(Info,0)|
+        Info1 = 0,
+        Status = abnormal.
+otherwise.
+get_info({Info},Info1,Status):-
+    true|
+    copy:copy(Info,Info1,Info2),
+    Status = normal(Info2).
+
+logout(V,Status):-
+    vector(V,0)|
+        Status = abnormal.
+otherwise.
+logout(_,Status):-
+    true|
+        Status = normal.
+    
+login(UName,Info,LIDT,LIDT1,Status):-
+    true|
+        LIDT = [get_id(LID),put(LID,{UName,Info},_)|LIDT1],
+        Status = normal(LID).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%
+
+protection_filter(Uid,[login(UserName,Info,Status)|LoginIn],LoginOut) :-
+    Uid \= 0 |       % 
+        Status=abnormal,
+        protection_filter(Uid,LoginIn,LoginOut).
+protection_filter(0,[login(UserName,Info,Status)|LoginIn],LoginOut) :-
+    true |
+        LoginOut=[login(UserName,Info,Status)|LoginOut1],
+        protection_filter(0,LoginIn,LoginOut1).
+protection_filter(Uid,[logout(LID,Status)|LoginIn],LoginOut) :-
+    Uid \= 0 |       % 
+        Status=abnormal,
+        protection_filter(Uid,LoginIn,LoginOut).
+protection_filter(0,[logout(LID,Status)|LoginIn],LoginOut) :-
+    true |
+        LoginOut=[logout(LID,Status)|LoginOut1],
+        protection_filter(0,LoginIn,LoginOut1).
+protection_filter(Uid,[get_login(LoginName,Status)|LoginIn],LoginOut) :-
+    true |
+        LoginOut=[get_login(LoginName,Status)|LoginOut1],
+        protection_filter(Uid,LoginIn,LoginOut1).
+protection_filter(Uid,[get_info(LID,Status)|LoginIn],LoginOut) :-
+    true |
+        LoginOut=[get_info(LID,Status)|LoginOut1],
+        protection_filter(Uid,LoginIn,LoginOut1).
+protection_filter(Uid,[get_all_info(Status)|LoginIn],LoginOut) :-
+    Uid \= 0 |
+        Status=abnormal,
+        protection_filter(Uid,LoginIn,LoginOut).
+protection_filter(0,[get_all_info(Status)|LoginIn],LoginOut) :-
+    true |
+        LoginOut=[get_all_info(Status)|LoginOut1],
+        protection_filter(0,LoginIn,LoginOut1).
+
+protection_filter(_,[],Out):-
+    true|
+        Out = [].

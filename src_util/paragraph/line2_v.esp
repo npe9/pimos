@@ -1,0 +1,407 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+ class line2_v has
+  nature scale,scroll;
+
+  :create(Class,Obj,Attribute):-
+     :new(Class,Obj),
+     set_attribute(Attribute,Obj),
+     heap_vector(Obj!element_name,Size),
+     PoolSize = Size*Obj!x_max/Obj!x_unit+Size,
+     new_heap_vector(ElmPool,PoolSize),
+     init_vector(ElmPool,0,PoolSize),
+     Obj!element_pool1 := ElmPool,
+     :create(#scroll,Scrl),
+     :create(#scale,Scal);
+
+  instance
+    attribute x := 0, 
+              y := 0,
+              x_size := 300,
+              x_max:=nil,
+              y_max:=nil,
+              y_max_all,
+              x_unit,
+              y_unit:=10,
+              y_size := 200,
+              element_pool,
+              element_name,
+              window,
+              t_space := 4,
+              scale_max:=nil,
+              draw_flag,
+              element_pool1,
+              element_pool2,
+              xb,
+              drawing:=draw_all,
+              limit:=nil,
+              p_size,n_size,
+              set_y_max:=nil;     
+ 
+ :set_position(Obj,X,Y):-!,
+    set_attribute([position(X,Y)],Obj);
+
+ :get_max_value_all(Obj,Max):-
+      Max = Obj!y_max_all;
+
+ :get_max_value(Obj,Max):-
+      Max = Obj!y_max;
+
+ :get_element(Obj,List):-!,
+      heap_vector(Obj!element_name,Size),
+      get_element(Obj,Size,0,List,RL);
+
+%%%%%%%%%%      DRAW METHOD      %%%%%%%%%%%%
+ :draw_std(Obj,G_Win):-              %%%%%  standard_hyoji
+      Obj!draw_flag\==invisible,!,
+      Obj!drawing := draw_std,
+      :init(Obj,G_Win),
+      :draw(Obj);
+ :draw_std(Obj,G_Win):-!;
+
+ :draw_std(Obj):-
+      Obj!draw_flag\==invisible,!,
+      Obj!window=G_Win,
+      Obj!drawing := draw_std,
+      :init(Obj,G_Win),
+      :draw(Obj);
+ :draw_std(Obj):-!;
+ 
+ :draw_all(Obj,G_Win):-              %%%%%  all_hyoji
+      Obj!draw_flag\==invisible,!,
+      Obj!drawing := draw_all,
+      :init(Obj,G_Win),
+      :draw(Obj);
+ :draw_all(Obj,G_Win):-!;
+ 
+ :draw_all(Obj):-
+      Obj!draw_flag\==invisible,!,
+      Obj!drawing := draw_all,
+      Obj!window=G_Win,
+      :init(Obj,G_Win),
+      :draw(Obj);
+ :draw_all(Obj):-!;
+
+
+%%%%%%%%%%%%%%   INITIATION   %%%%%%%%%%%%%%%
+  :init(Obj,G_Win):-
+     Obj!window:=G_Win,
+     Obj!draw_flag \== invisible,!,
+    (Obj!drawing = draw_all,!,
+     Obj!element_pool2=ElmPool;
+     Obj!element_pool1=ElmPool),
+     Obj!element_pool:=ElmPool,
+     set_basic_value(Obj,YMaxSize,UnitX,UnitY,W,H),
+     set_slot_value(Obj,G_Win,Win,Font_7,X,Y),
+     :draw_scale(Obj,G_Win,Win,Font_7,X,Y,W,H);
+   :init(Obj,_):-!;
+
+ 
+%%%%%%%%%%   SET ALL  (  ORIGINAL  )  %%%%%%%%%%%
+  :set_all(Obj,List,Layout):-!,
+     set_all(List,0,Max,Obj),
+     set_x_size(Obj,Layout,Xs),
+   ( Obj! set_y_max == nil,!,
+     Obj!y_max  :=Max;
+     Obj!y_max  :=Obj!set_y_max),
+     Obj!x_size/5 = XVisNum,
+    (Obj!x_max+1)/Obj!x_unit = XNum,
+    (XNum > XVisNum,!,
+     set_xb(XVisNum,XB,XNum);
+     XB = 1),
+     Obj!xb:=XB,
+     set_all_pool(Obj,XB,Size,NSize),
+     set_all_data(Obj,XB,0,0,Size,0,NSize),
+     heap_vector(Obj!element_pool2,Size2),
+     set_y_max_all(Obj,0,Size2,0,YMaxAll),
+   ( Obj! set_y_max == nil,!,
+     Obj!y_max_all  :=YMaxAll;
+     Obj!y_max_all  :=Obj!set_y_max);
+ 
+  
+  :draw(Obj):-
+     Obj!draw_flag \== invisible,!,
+     heap_vector(Obj!element_name,Size),
+     heap_vector(Obj!element_pool,PoolSize),
+    (Obj!unit_x_max+1 > PoolSize/Size,
+     DrawX=PoolSize/Size;
+     DrawX=Obj!unit_x_max+1),
+     draw(Obj,0,Size,List,[],DrawX),
+     :execute_graphics_command(Obj!window!window,List);
+  :draw(Obj):-!;
+
+
+
+
+ local
+ 
+ set_slot_value(Obj,G_Win,Win,Font_7,X,Y):-
+      Win=G_Win!window,
+      Font_7=G_Win!font,
+      X=Obj!x,
+      Y=Obj!y;
+
+ set_basic_value(Obj,YMaxSize,UnitX,UnitY,W,H):-
+   ( Obj!drawing = draw_all,!,
+     XB = Obj!xb;
+     XB = 1),
+   ( Obj!drawing = draw_all,!,
+     YMax = Obj!y_max_all;
+     YMax = Obj!y_max),
+   ( YMax = 0,!,
+     NewYMax = 1;
+     NewYMax = YMax),
+     YMaxSize = Obj!y_size * 9/10,
+     integer_to_floating_point(NewYMax,NewYMaxF),
+     integer_to_floating_point(YMaxSize,YMaxSizeF),
+     integer_to_floating_point(Obj!y_unit,YUnitF),
+     UnitYF = YMaxSizeF * YUnitF / NewYMaxF,
+     NewYMaxSizeF = UnitYF * NewYMaxF / YUnitF,
+     floating_point_to_integer(NewYMaxSizeF,NewYMaxSize),
+     floating_point_to_integer(UnitYF,UnitY),
+     Obj!y_max_size := NewYMaxSize,
+     UnitX1 = Obj!x_size * Obj!x_unit *XB/ Obj!x_max,
+   ( UnitX1 = 0,!,
+     Obj!draw_flag:=invisible;
+   (  UnitX1 =< 5,!,
+      UnitX =5;
+      UnitX = UnitX1),
+      Obj!unit_width := UnitX,
+     Obj!unit_x_max :=Obj!x_size/Obj!unit_width),
+   ( UnitY = 0,!,
+     Obj!draw_flag:=invisible;
+     Obj!unit_height := UnitY),
+     W = UnitX * Obj!x_max/XB/Obj!x_unit,
+     integer_to_floating_point(UnitY,UnitYF2),
+     HF = UnitYF2 * NewYMaxF / YUnitF * 11.0 / 10.0,
+     floating_point_to_integer(HF,H),
+     heap_vector(Obj!element_pool1,PoolSize),
+     heap_vector(Obj!element_name,NSize),
+     Obj!p_size := PoolSize,
+     Obj!n_size := NSize;
+ 
+ %%%%%%%%%%   LET'S CALICULATE  %%%%%%%%%%
+
+  set_all([],Max,Max,Obj):-!;
+  set_all([{Unit,Element}|R],MC0,Max,Obj):-
+     heap_vector(Obj!element_name,Size),
+     Num =  Unit / Obj!x_unit * Size,
+     max_value(Element,0,MC,Obj,Num),
+     ( MC0 > MC,!,
+       MC1 = MC0 ;
+       MC1 = MC ),
+     set_all(R,MC1,Max,Obj);
+
+  max_value([],Max,Max,_,_):-!;
+  max_value([{Name,Count}|R],PC,MC,Obj,Num):-
+     Count == nil,!,
+     set_vector_element(Obj!element_pool1,Num,nil),
+     max_value(R,PC,MC,Obj,Num+1);
+  max_value([{Name,Count}|R],PC,MC,Obj,Num):-
+     set_vector_element(Obj!element_pool1,Num,Count),
+     C = Count,
+    (C > PC,!,
+     LC = C;
+     LC = PC),
+     max_value(R,LC,MC,Obj,Num+1);
+
+%%%%%%%%%%%     LINE ORIGINAL  DRAW METHOD   %%%%%%%%%%%% 
+  draw(Obj,Size,Size,R,R,MaxX):-!;
+  draw(Obj,Count,Size,List,RList,MaxX):-
+    (Obj!drawing = draw_all,!,
+     YMax = Obj!y_max_all;
+     YMax = Obj!y_max),
+     set_position_y(Obj,YMax,Y), %%%%%%%%%%%%%%%
+     set_pattern(Count,Pattern),
+     draw_line(Obj,Y,Count,0,MaxX,Size,List,R,Pattern),
+     draw(Obj,Count+1,Size,R,RList,MaxX);
+
+ 
+  draw_line(Obj,Y,Count,Unit,MaxX,Size,R,RList,Pattern):-
+     Unit >=  MaxX,!,
+     RList = R;
+  draw_line(Obj,Y,Count,0,MaxX,Size,List,RList,Pattern):-!,
+     draw_line(Obj,Y,Count+Size,Obj!x_unit,MaxX,Size,List,RList,Pattern);
+  draw_line(Obj,Y,Count,Unit,MaxX,Size,List,RList,Pattern):-
+     vector_element(Obj!element_pool,Count,Value),
+     Value == nil,!,
+     X = Obj!x+Unit*Obj!unit_width/Obj!x_unit,
+     List = [{draw_line,
+             {X-2,Y-2,X+2,Y-2,1,Pattern,set}}|R],
+     draw_line(Obj,Y,Count+2*Size,Unit+2*Obj!x_unit,MaxX,Size,R,RList,Pattern);
+  draw_line(Obj,Y,Count,Unit,MaxX,Size,List,RList,Pattern):-
+     vector_element(Obj!element_pool,Count-Size,PreV),
+     PreV == nil,!,
+     X = Obj!x+Unit*Obj!unit_width/Obj!x_unit-Obj!unit_width,
+     List = [{draw_line,
+             {X-2,Y-2,X+2,Y-2,1,Pattern,set}}|R],
+     draw_line(Obj,Y,Count+Size,Unit+Obj!x_unit,MaxX,Size,R,RList,Pattern);
+  draw_line(Obj,Y,Count,Unit,MaxX,Size,List,RList,Pattern):-
+     vector_element(Obj!element_pool,Count-Size,PreV),
+     vector_element(Obj!element_pool,Count,Value),
+    ( PreV = 0, Value = 0,!, R = List ;
+      integer_to_floating_point(Y,YF),
+      integer_to_floating_point(PreV,PreVF),
+      integer_to_floating_point(Value,ValueF),
+      integer_to_floating_point(Obj!unit_height,UnitHF),
+      integer_to_floating_point(Obj!y_unit,YUnitF),
+      PreHF = YF - PreVF * UnitHF / YUnitF,
+      HF = YF - ValueF * UnitHF / YUnitF,
+      floating_point_to_integer(PreHF,PreH),
+      floating_point_to_integer(HF,H),
+      List = [{draw_line,
+              {Obj!x+Unit*Obj!unit_width/Obj!x_unit-Obj!unit_width,PreH,
+               Obj!x+Unit*Obj!unit_width/Obj!x_unit,H,2,Pattern,set}}|R]),
+     draw_line(Obj,Y,Count+Size,Unit+Obj!x_unit,MaxX,Size,R,RList,Pattern);
+
+
+%%%%%%%%%     ATTRIBUTE     %%%%%%%%%%%%%%%
+
+  set_attribute([],Obj):-!;
+  set_attribute([x(Name,Max,Unit)|R],Obj):- !,
+      Obj!x_name := Name,
+      Obj!x_max := Max,
+      Obj!x_unit := Unit,
+      set_attribute(R,Obj);
+  set_attribute([y_auto(Name)|R],Obj):-!,
+      Obj!y_name := Name,
+      set_attribute(R,Obj);
+  set_attribute([set_y_max(Max)|R],Obj):-!,
+      Obj!set_y_max := Max,
+      set_attribute(R,Obj);
+  set_attribute([size(X,Y)|R],Obj):- !,
+      Obj!x_size := X,
+      Obj!y_size := Y,
+      set_attribute(R,Obj);
+  set_attribute([title(Title)|R],Obj):- !,
+      Obj!title := Title,
+      set_attribute(R,Obj);
+  set_attribute([t_space(Int)|R],Obj):- !,
+      Obj!t_space := Int,
+      set_attribute(R,Obj);
+  set_attribute([position(X,Y)|R],Obj):- !,
+      Obj!x := X + 50,
+      Obj!y := Y,
+      set_attribute(R,Obj);
+  set_attribute([element(Element)|R],Obj):- !,
+      count(Element,0,Num),
+      new_heap_vector(Array,Num),
+      set_element(Element,Array,0),
+      Obj!element_name := Array,
+      set_attribute(R,Obj);
+  set_attribute([scale_max(Max)|R],Obj):-!,
+      Obj!scale_max:=Max,
+      set_attribute(R,Obj);
+  set_attribute([limit(Limit)|R],Obj):-!,
+      Obj!limit:=Limit,
+      set_attribute(R,Obj);
+  set_attribute([H|R],Obj):-
+      set_attribute(R,Obj);
+
+   set_element([],Array,C):-!;
+   set_element([Name|R],Array,C):-!,
+      set_vector_element(Array,C,Name),
+      set_element(R,Array,C+1);
+
+   count([],N,N):-!;
+   count([E|R],C,N):-
+     count(R,C+1,N);
+
+   init_vector(ElmPool,Size,Size):-!;
+   init_vector(ElmPool,C,Size):-
+     set_vector_element(ElmPool,C,nil),
+     init_vector(ElmPool,C+1,Size);
+
+   get_element(Obj,Size,Size,[],[]);
+   get_element(Obj,Size,C,List,RL):-
+       vector_element(Obj!element_name,C,Name),
+       List = [Name|R],
+       get_element(Obj,Size,C+1,R,RL);
+
+  set_xb(XVisNum,XB,XNum):-
+      (XNum/XVisNum = 1,!,
+       XB = 2;
+       XNum mod XVisNum = 0,!,
+       XB = XNum/XVisNum;
+       XB = XNum/XVisNum+1);
+
+  set_all_pool(Obj,XB,Size,NSize):-
+     heap_vector(Obj!element_name,NSize),
+     heap_vector(Obj!element_pool1,Size),
+     NewSize = Size/NSize-1,
+    (NewSize mod XB = 0,!,
+     PoolSize1 = NewSize/XB;
+     PoolSize1 = NewSize/XB+1),
+     PoolSize = (PoolSize1+1)*NSize,
+     new_heap_vector(ElmPool2,PoolSize),
+     init_vector(ElmPool2,0,PoolSize),
+     Obj!element_pool2:=ElmPool2;
+
+  set_all_data(Obj,XB,NT,NewN,P1Size,NSize,NSize);   %%%%%%  NT = NumberTotal?
+  set_all_data(Obj,XB,NT,NewN,P1Size,C,NSize):-
+       P1Size/NSize = DataNum,  
+       heap_vector(Obj!element_pool2,P2Size),
+       set_all_data1(Obj,XB,NT,NewN,DataNum,P2Size,NSize,0),
+       set_all_data(Obj,XB,NT+1,NewN+1,P1Size,C+1,NSize);
+  
+  set_all_data1(Obj,XB,NT,NewN,DataNum,P2Size,NSize,_):-
+       NewN >= P2Size;
+  set_all_data1(Obj,XB,NT,NewN,DataNum,P2Size,NSize,DC0):-
+       NT < NSize,!,
+       vector_element(Obj!element_pool1,NT,Count),
+       set_vector_element(Obj!element_pool2,NT,Count),
+       set_all_data1(Obj,XB,NT+NSize,NewN+NSize,DataNum,P2Size,NSize,DC0+1);
+
+  set_all_data1(Obj,XB,NT,NewN,DataNum,P2Size,NSize,DC0):-
+       bind_count(Obj,XB,0,NT,0,CountSum1,NSize,DataNum,DC0,DC),
+      (Obj!set_y_max == nil,!,
+       CountSum = CountSum1;
+       CountSum = CountSum1 / XB ),
+       set_vector_element(Obj!element_pool2,NewN,CountSum),
+       set_all_data1(Obj,XB,NT+XB*NSize,NewN+NSize,DataNum,P2Size,NSize,DC);
+  
+  bind_count(Obj,XB,NB,NT,CountSum,CountSum,NSize,DN,DN,DN);
+  bind_count(Obj,XB,XB,NT,CountSum,CountSum,NSize,DataNum,DC,DC);
+  bind_count(Obj,XB,NB,NT,Count0,CountSum,NSize,DataNum,DC0,DC):-
+       vector_element(Obj!element_pool1,NT,Count),
+       bind_count(Obj,XB,NB+1,NT+NSize,Count0+Count,CountSum,
+                  NSize,DataNum,DC0+1,DC);
+
+  set_y_max_all(Obj,N,Size,YMaxAll,YMaxAll):-
+        N = Size - 1,!;
+  set_y_max_all(Obj,N,Size,PreMax,YMaxAll):-
+        vector_element(Obj!element_pool2,N,Count),
+        Count \==nil,!,
+        (PreMax > Count,
+         YMaxAll1 = PreMax;
+         YMaxAll1 = Count),
+        set_y_max_all(Obj,N+1,Size,YMaxAll1,YMaxAll);
+  set_y_max_all(Obj,N,Size,PreMax,YMaxAll):-
+        vector_element(Obj!element_pool2,N,Count),
+        Count==nil,!,
+        set_y_max_all(Obj,N+1,Size,PreMax,YMaxAll);
+
+  set_pattern(Count,Pattern):-
+      Count = 0,!,
+      Pattern = solid;
+  set_pattern(Count,Pattern):-
+      Count = 1,!,
+      Pattern = dotted;
+
+   set_x_size(Obj,Layout,Xs):-
+       Layout!w = W1,
+       Layout!width = W2,
+      (W1 > W2,!,
+       Xs = W2-55;
+       Xs = W1-55),
+       Obj!x_size:=Xs;
+
+    set_position_y(Obj,YMax,PositionY):-
+       integer_to_floating_point(Obj!y,YF),
+       integer_to_floating_point(Obj!unit_height,UnitHF),
+       integer_to_floating_point(YMax,YMaxF),
+       integer_to_floating_point(Obj!y_unit,YUnitF),
+       PositionYF = YF + UnitHF * YMaxF / YUnitF * 11.0/10.0,
+       floating_point_to_integer(PositionYF,PositionY);
+             
+end.

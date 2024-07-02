@@ -1,0 +1,314 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+:- module profiling_device.
+:- with_macro pimos.
+:- public create/14.
+
+create(SAb,CAb,From,Itv,Itm,Unit,USR,UAb,Att,Ctr,Ab,normal(TMR,_,_),Prof,ID) :- true|
+    TMR=[set_time_unit(msec,_),on_after(Itv,After)|TMR1],
+    AbID=0,
+    on_after_status(After,Now),
+    add_item(Itm,needless,PrfItm),
+    start(ID,PrfItm,Prof,Prof1),
+    pool:keyed_bag([put(AbID,[])|Bag],4),
+    device(USR,Now,TMR1,From,Itv,Itm,Unit,PrfItm,Prof1,ID,Que,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,running,normal,AbID,Bag).
+
+
+device(_USR,_Now,TMR,_From,_Itv,_Itm,_Unit,PrfItm,Prof,ID,_Data,_Que,
+        _SAb,CAb,Ctr,_Ab,_UAb,_Att,running,_Aborted,_AbID,Bag) :- wait(CAb)|
+    TMR=[], Ctr=[], Bag=[get_all(Msgs)],
+    stop(ID,PrfItm,_,Prof,Prof1),
+    close(Prof1),
+    cancel_all(Msgs).
+device(_USR,_Now,TMR,_From,_Itv,_Itm,_Unit,_PrfItm,Prof,_ID,_Data,_Que,
+        _SAb,CAb,Ctr,_Ab,_UAb,_Att,stopped,_Aborted,_AbID,Bag) :- wait(CAb)|
+    TMR=[], Ctr=[], Bag=[get_all(Msgs)],
+    close(Prof),
+    cancel_all(Msgs).
+
+
+device(USR,_Now,TMR,_From,_Itv,_Itm,_Unit,PrfItm,Prof,ID,_Data,_Que,
+        SAb,CAb,Ctr,_Ab,_UAb,Att,running,_Aborted,_AbID,Bag) :- wait(SAb)|
+    TMR=[], Ctr=[], Att=[], Bag=[get_all(Msgs)],
+    stop(ID,PrfItm,_,Prof,Prof1),
+    close(Prof1),
+    cancel_all(Msgs),
+    abort_msg(USR,CAb).
+device(USR,_Now,TMR,_From,_Itv,_Itm,_Unit,_PrfItm,Prof,_ID,_Data,_Que,
+        SAb,CAb,Ctr,_Ab,_UAb,Att,stopped,_Aborted,_AbID,Bag) :- wait(SAb)|
+    TMR=[], Ctr=[], Att=[], Bag=[get_all(Msgs)],
+    close(Prof),
+    cancel_all(Msgs),
+    abort_msg(USR,CAb).
+
+device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,_Aborted,AbID,Bag) :- wait(UAb)|
+    device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,_,Att,Run,aborted,AbID,Bag).
+
+device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,Aborted,AbID,Bag) :- wait(Now)|
+    TMR=[on_after(Itv,After)|TMR1],    
+    Que=[Data0|Que1],
+    on_after_status(After,NewNow),
+    profile(ID,Data0,Prof,Prof1),
+    device(USR,NewNow,TMR1,From,Itv,Itm,Unit,PrfItm,Prof1,ID,Data,Que1,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,Aborted,AbID,Bag).
+
+alternatively.
+device([get(Status)|USR],Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,[Data0|DataT],Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag) :- true|
+    profiling_data_converter:go(Itm,From,Unit,Data0,Data)@relative_priority(-100),
+    Status=normal(Data),
+    device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,DataT,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag).
+device([get(Status)|USR],Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,[],Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag) :- true|
+    Status=normal(end_of_data),
+    device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,abnormal,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag).
+device([get(Status)|USR],Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,abnormal,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag) :- true|
+    Status=abnormal(end_of_data),
+    device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,abnormal,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag).
+
+
+device([stop(Status)|USR],_Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,running,normal,AbID,Bag) :- true|
+    Status=normal, 
+    stop(ID,PrfItm,Data0,Prof,Prof1),
+    Que=[Data0],
+    device(USR,_,TMR,From,Itv,Itm,Unit,PrfItm,Prof1,ID,Data,_,
+        SAb,CAb,Ctr,Ab,UAb,Att,stopped,normal,AbID,Bag).
+device([stop(Status)|USR],_Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,stopped,normal,AbID,Bag) :- true|
+    Status=abnormal(already_stopped),
+    device(USR,_,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,stopped,normal,AbID,Bag).
+
+
+device([Msg|USR],Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,aborted,AbID,Bag) :- 
+  vector_element(Msg,0,Name), Name \= reset|
+    Bag=[get_and_put(AbID,X,[Msg|X])|Bag1],
+    device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,aborted,AbID,Bag1).
+
+
+device([reset(Status)|USR],Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,_UAb,Att,Run,_Aborted,AbID,Bag) :- true|
+    Att=[], 
+    Status=normal(NewUAb,NewAtt,AbID),
+    NewAbID := AbID+1,
+    Bag=[put(NewAbID,[])|Bag1],
+    device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,NewUAb,NewAtt,Run,normal,NewAbID,Bag1).
+
+device([resend(MsgID,Status)|USR],Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag) :- true|
+    Bag=[get_if_any(MsgID,Msgs)|Bag1],
+    resend(Msgs,Status,USR,NewUSR),
+    device(NewUSR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag1).
+device([cancel(MsgID,Status)|USR],Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag) :- true|
+    Bag=[get_if_any(MsgID,Msgs)|Bag1],
+    cancel(Msgs,Status),
+    device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag1).
+device([next_attention(Status)|USR],Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,Att,Run,normal,AbID,Bag) :- true|
+    Att=[],
+    Status=normal(NewAtt),
+    device(USR,Now,TMR,From,Itv,Itm,Unit,PrfItm,Prof,ID,Data,Que,
+        SAb,CAb,Ctr,Ab,UAb,NewAtt,Run,normal,AbID,Bag).
+
+device([],_,TMR,_From,_Itv,_Itm,_Unit,PrfItm,Prof,ID,_Data,_Que,
+        _SAb,_CAb,Ctr,_Ab,_UAb,Att,running,_Aborted,_AbID,Bag) :- true| 
+    TMR=[], Ctr=[], Att=[], Bag=[get_all(Msgs)],
+    stop(ID,PrfItm,_,Prof,Prof1),
+    close(Prof1),
+    cancel_all(Msgs).
+device([],_,TMR,_From,_Itv,_Itm,_Unit,_PrfItm,Prof,_ID,_Data,_Que,
+        _SAb,_CAb,Ctr,_Ab,_UAb,Att,stopped,_Aborted,_AbID,Bag) :- true| 
+    TMR=[], Ctr=[], Att=[], Bag=[get_all(Msgs)],
+    close(Prof),
+    cancel_all(Msgs).
+
+start(_,_,[],Prof) :- true| Prof=[].
+otherwise.
+start(ID,Itm,[{Node,S}|Prof],Prof1) :- true|
+    Prof1=[{Node,S1}|Prof2],
+    S=[start(ID,Itm)|S1],
+    start(ID,Itm,Prof,Prof2).
+
+
+profile(ID,Data,[{Node,S}|Prof],Prof1) :- true|
+    S=[profile(ID,Data0)|S1],
+    Prof1=[{Node,S1}|Prof2],
+    Data=[{Node,Data0}|Data1],
+    profile(ID,Data1,Prof,Prof2).
+profile(_,Data,[],Prof) :- true| Data=[], Prof=[].
+
+
+stop(ID,Itm,Data,[{Node,S}|Prof],Prof1) :- true|
+    S=[stop(ID,Itm,Data0)|S1],
+    Prof1=[{Node,S1}|Prof2],
+    Data=[{Node,Data0}|Data1],
+    stop(ID,Itm,Data1,Prof,Prof2).
+stop(_,_,Data,[],Prof) :- true| Data=[], Prof=[].
+
+
+close([{_,S}|Prof]) :- true| S=[], close(Prof).
+close([]) :- true| true.
+
+
+abort_msg(_,CAb) :- wait(CAb)| true.
+alternatively.
+abort_msg([get(Status)|User],CAb) :- true|
+    Status=abnormal(out_of_service),
+    abort_msg(User,CAb).
+abort_msg([stop(Status)|User],CAb) :- true|
+    Status=abnormal(out_of_service),
+    abort_msg(User,CAb).
+abort_msg([reset(Status)|User],CAb) :- true|
+    Status=abnormal(out_of_service),
+    abort_msg(User,CAb).
+abort_msg([resend(_,Status)|User],CAb) :- true|
+    Status=abnormal(out_of_service),
+    abort_msg(User,CAb).
+abort_msg([cancel(Status)|User],CAb) :- true|
+    Status=abnormal(out_of_service),
+    abort_msg(User,CAb).
+abort_msg([],_) :- true| true.
+
+
+add_item([idling_time|Im],Flag,New) :- true|
+    New=[idling_time(7)|New1],
+    add_item(Im,Flag,New1).
+add_item([idling_time(0)|Im],Flag,New) :- true|
+    New=[idling_time(7)|New1],
+    add_item(Im,Flag,New1).
+add_item([idling_time(N)|Im],Flag,New) :- N>0|
+    L := N*2+5,
+    New=[idling_time(L)|New1],
+    add_item(Im,Flag,New1).
+
+:- switch(machine).
+:- case(mpsi,pimm).
+
+add_item([gevc|Im],Flag,New) :- true|
+    New=[gevc(4)|New1],
+    change_flag(Flag,NewFlag),
+    add_item(Im,NewFlag,New1).
+add_item([gevc(0)|Im],Flag,New) :- true|
+    New=[gevc(4)|New1],
+    change_flag(Flag,NewFlag),
+    add_item(Im,NewFlag,New1).
+add_item([gevc(N)|Im],Flag,New) :- N>0|
+    L := N+3,
+    New=[gevc(L)|New1],
+    change_flag(Flag,NewFlag),
+    add_item(Im,NewFlag,New1).
+
+:- default.
+
+add_item([gevc|Im],Flag,New) :- true| add_item(Im,Flag,New).
+add_item([gevc(_)|Im],Flag,New) :- true| add_item(Im,Flag,New).
+
+:- end_switch.
+
+add_item([encoded_message_frequency|Im],Flag,New) :- true|
+    New=[encoded_message_frequency(32)|New1],
+    change_flag(Flag,NewFlag),
+    add_item(Im,NewFlag,New1).
+add_item([decoded_message_frequency|Im],Flag,New) :- true|
+    New=[decoded_message_frequency(32)|New1],
+    change_flag(Flag,NewFlag),
+    add_item(Im,NewFlag,New1).
+
+add_item([local_gc|Im],_,New) :- true|
+    L = 8,
+    New=[local_gc(L)|New1],
+    add_item(Im,existent,New1).
+add_item([local_gc(N)|Im],_,New) :- true|
+    L := N*4+8,
+    New=[local_gc(L)|New1],
+    add_item(Im,existent,New1).
+
+add_item([log_event|Im],Flag,New) :- true|
+    New=[log_event(9)|New1],
+    change_flag(Flag,NewFlag),
+    add_item(Im,NewFlag,New1).
+add_item([log_event(N)|Im],Flag,New) :- N=<3 |
+    New=[log_event(9)|New1],
+    change_flag(Flag,NewFlag),
+    add_item(Im,NewFlag,New1).
+add_item([log_event(N)|Im],Flag,New) :- N>3 |
+    L := N*2+1,
+    New=[log_event(L)|New1],
+    change_flag(Flag,NewFlag),
+    add_item(Im,NewFlag,New1).
+
+:- switch(machine).
+:- case(mpsi,pimm).
+add_item([message_handling_time|Im],Flag,New) :- true|
+    New=[message_handling_time(2)|New1],    % For MPSI, PIM/M
+    change_flag(Flag,NewFlag),
+    add_item(Im,NewFlag,New1).
+:- default.
+add_item([message_handling_time|Im],Flag,New) :- true|
+    New=[message_handling_time(4)|New1],    % For MPSI, PIM/M
+    add_item(Im,Flag,New1).
+:- end_switch.
+
+add_item([],need,New) :- true| New=[local_gc(8)].
+otherwise.
+add_item([],_,New) :- true| New=[].
+
+change_flag(needless,F) :- true| F=need.
+otherwise.
+change_flag(F,NF) :- true| NF=F.
+
+
+on_after_status(normal(ON),Now) :- true| Now=ON.
+otherwise.
+on_after_status(_,_) :- true| true.
+
+
+cancel_all([{_ID,Msgs}|MSGS]) :- true|
+    cancel1(Msgs),
+    cancel_all(MSGS).
+cancel_all([]) :- true| true.
+
+resend({},Status,USR,NewUSR) :- true| Status=abnormal(non_existent), NewUSR=USR.
+resend({Msgs},Status,USR,NewUSR) :- true|
+    Status=normal,
+    reverse(Msgs,[],Msg1),
+    append(Msg1,USR,NewUSR).
+
+cancel({},    Status) :- true| Status=abnormal(non_existent).
+cancel({Msgs},Status) :- true| Status=normal, cancel1(Msgs).
+
+cancel1([get(Status)     |Msgs]) :- true| Status=aborted, cancel1(Msgs).
+cancel1([stop(Status)    |Msgs]) :- true| Status=aborted, cancel1(Msgs).
+cancel1([resend(_,Status)|Msgs]) :- true| Status=aborted, cancel1(Msgs).
+cancel1([cancel(_,Status)|Msgs]) :- true| Status=aborted, cancel1(Msgs).
+cancel1([next_attention(Status)|Msgs]) :- true| Status=aborted, cancel1(Msgs).
+cancel1([]) :- true|true.
+
+reverse([A|X],Y,Z) :- true| reverse(X,[A|Y],Z).
+reverse([],Y,Z) :- true| Z=Y.
+
+append([A|X],Y,Z) :- true|
+    Z=[A|Z1], append(X,Y,Z1).
+append([],Y,Z) :- true| Z=Y.
+

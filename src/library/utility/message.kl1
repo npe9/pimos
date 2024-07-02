@@ -1,0 +1,269 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Util>message.kl1.2, 17-Sep-92 21:34:47, Edit by hori
+
+:- module kl1_library_message.
+:- with_macro pimos.
+:- public message/1, message/3.
+:- public log_message/4, log_message/2.
+:- public position/2.
+:- public null/1.
+
+%%%%%%%%%%%%%%%%%
+%   MESSAGE/2   %
+%%%%%%%%%%%%%%%%%
+
+message(MESG) :- true |
+    shoen:raise(pimos_tag#shell,get_std_mes,STDMES),
+    shoen:raise(pimos_tag#task,get_std(out),STDOUT),
+    STDOUT = [print_length(100),print_depth(100),
+              print_atom_length(100),print_string_length(500)|STDOUT1],
+    STDMES = [print_length(100),print_depth(100),
+              print_atom_length(100),print_string_length(500)|STDMES1],
+    err_mesg(MESG,STDOUT1,STDMES1,0,0).
+
+message(MESG,STDOUT,STDMES) :- true |
+    STDOUT = [print_length(100),print_depth(100),
+              print_atom_length(100),print_string_length(500)|STDOUT1],
+    STDMES = [print_length(100),print_depth(100),
+              print_atom_length(100),print_string_length(500)|STDMES1],
+    err_mesg(MESG,STDOUT1,STDMES1,0,0).
+
+log_message(MESG,FileName,FR0,FR) :- string(FileName,_,_) |
+    FR0 = [open(FileName,write(normal(FS,_,_)))|FR],
+    buffer:output_filter(Out0,FS),
+    Out0 = [print_length(1000000),print_depth(1000000),
+            print_atom_length(1000),print_string_length(500000)|Out1],
+    merge({STDOUT,STDMES},Out1),
+    err_mesg(MESG,STDOUT,STDMES,0,0).
+
+log_message(MESG,FileName) :- string(FileName,_,_) |
+    shoen:raise(pimos_tag#task,general_request,[file(Status)]),
+    check_FR_status(Status,FR0),
+    FR0 = [open(FileName,write(normal(FS,_,_)))],
+    buffer:output_filter(Out0,FS),
+    Out0 = [print_length(1000000),print_depth(1000000),
+            print_atom_length(1000),print_string_length(500000)|Out1],
+    merge({STDOUT,STDMES},Out1),
+    err_mesg(MESG,STDOUT,STDMES,0,0).
+
+std_mesg([Message|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- Rest = [Message|_] |
+    std_mesg(Rest,STDOUT,STDMES,ERRCNT,WRNCNT).
+std_mesg([info(Format,ArgList)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- string(Format,_,16) |
+    STDMES = [putf(Format,ArgList),nl|STDMES1],
+    std_mesg(Rest,STDOUT,STDMES1,ERRCNT,WRNCNT).
+std_mesg([stdout(Mesgs)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDMES = [flush(Done)|STDMES1],
+    wait_std_done(Done,[stdmsg(Mesgs)|Rest],STDOUT,STDMES1,ERRCNT,WRNCNT).
+std_mesg([stdout(Mesgs,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDMES = [flush(Done)|STDMES1],
+    wait_std_done(Done,[stdout(Mesgs,PosInfo)|Rest],STDOUT,STDMES1,ERRCNT,WRNCNT).
+std_mesg([stdmsg(Mesgs)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDMES = [do(Mesgs),nl|STDMES1],
+    std_mesg(Rest,STDOUT,STDMES1,ERRCNT,WRNCNT).
+std_mesg([stdmsg(Mesgs,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    position(PosInfo,STDMES,STDMES1),
+    STDMES1 = [do(Mesgs),nl|STDMES12],
+    std_mesg(Rest,STDOUT,STDMES2,ERRCNT,WRNCNT).
+std_mesg([flush(Done)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDMES = [flush(Done)|STDMES1],
+    std_mesg(Rest,STDOUT,STDMES1,ERRCNT,WRNCNT).
+std_mesg([flush|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDMES = [flush(Done)|STDMES1],
+    std_mesg(Rest,STDOUT,STDMES1,ERRCNT,WRNCNT).
+std_mesg([report_total_error(WhatToDo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    report_error_summary(WhatToDo,ERRCNT,WRNCNT,Rest,STDOUT,STDMES).
+std_mesg([],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDMES = [flush(Done)|STDMES1],
+    close_mesg(Done,STDOUT,STDMES1,ERRCNT,WRNCNT).
+std_mesg([info(Format,ArgList,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :-
+    string(Format,_,16) |
+    position(PosInfo,STDMES,STDMES0),
+    STDMES0 = [putf(Format,ArgList),nl|STDMES1],
+    std_mesg(Rest,STDOUT,STDMES1,ERRCNT,WRNCNT).
+otherwise.
+std_mesg(Messages,STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDMES = [flush(Done)|STDMES1],
+    wait_std_done(Done,Messages,STDOUT,STDMES1,ERRCNT,WRNCNT).
+
+wait_std_done(Done,Messages,STDOUT,STDMES,ERRCNT,WRNCNT) :- wait(Done) |
+    err_mesg(Messages,STDOUT,STDMES,ERRCNT,WRNCNT).
+
+err_mesg([Message|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- Rest = [Message|_] |
+    err_mesg(Rest,STDOUT,STDMES,ERRCNT,WRNCNT).
+err_mesg([info(Format,ArgList)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDOUT = [flush(Done)|STDOUT1],
+    wait_err_done(Done,info(Format,ArgList),Rest,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([message(Format,ArgList)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- string(Format,_,16) |
+    STDOUT = [putf(Format,ArgList),nl|STDOUT1],
+    err_mesg(Rest,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([error(Format,ArgList)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- string(Format,_,16) |
+    ERRCNT1 := ERRCNT + 1,
+    STDOUT = [putb(string#"!ERROR! "),putf(Format,ArgList),nl|STDOUT1],
+    err_mesg(Rest,STDOUT1,STDMES,ERRCNT1,WRNCNT).
+err_mesg([syntax_error(ErrInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    ERRCNT1 := ERRCNT + 1,
+    STDOUT = [putb(string#"!ERROR! "),print_error(ErrInfo)|STDOUT1],
+    err_mesg(Rest,STDOUT1,STDMES,ERRCNT1,WRNCNT).
+err_mesg([warning(Format,ArgList)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- string(Format,_,16) |
+    WRNCNT1 := WRNCNT + 1,
+    STDOUT = [putb(string#"!WARNING! "),putf(Format,ArgList),nl|STDOUT1],
+    err_mesg(Rest,STDOUT1,STDMES,ERRCNT,WRNCNT1).
+err_mesg([info(Format,ArgList,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDOUT = [flush(Done)|STDOUT1],
+    wait_err_done(Done,info(Format,ArgList,PosInfo),Rest,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([message(Format,ArgList,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :-
+    string(Format,_,16) |
+    position(PosInfo,STDOUT,STDOUT0),
+    STDOUT0 = [putf(Format,ArgList),nl|STDOUT1],
+    err_mesg(Rest,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([error(Format,ArgList,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :-
+    string(Format,_,16) |
+    ERRCNT1 := ERRCNT + 1,
+    STDOUT = [putb(string#"!ERROR!")|STDOUT0],
+    position(PosInfo,STDOUT0,STDOUT1),
+    STDOUT1 = [putf(Format,ArgList),nl|STDOUT2],
+    err_mesg(Rest,STDOUT2,STDMES,ERRCNT1,WRNCNT).
+err_mesg([syntax_error(ErrInfo,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    ERRCNT1 := ERRCNT + 1,
+    STDOUT = [putb(string#"!ERROR!")|STDOUT0],
+    position(PosInfo,STDOUT0,STDOUT1),
+    STDOUT1 = [print_error(ErrInfo)|STDOUT2],
+    err_mesg(Rest,STDOUT2,STDMES,ERRCNT1,WRNCNT).
+err_mesg([warning(Format,ArgList,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :-
+    string(Format,_,16) |
+    WRNCNT1 := WRNCNT + 1,
+    STDOUT = [putb(string#"!WARNING!")|STDOUT0],
+    position(PosInfo,STDOUT0,STDOUT1),
+    STDOUT1 = [putf(Format,ArgList),nl|STDOUT2],
+    err_mesg(Rest,STDOUT2,STDMES,ERRCNT,WRNCNT1).
+err_mesg([flush(Done)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDOUT = [flush(Done)|STDOUT1],
+    err_mesg(Rest,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([flush|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDOUT = [flush(Done)|STDOUT1],
+    err_mesg(Rest,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([stdout(Mesgs)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDOUT = [do(Mesgs),nl|STDOUT1],
+    err_mesg(Rest,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([stdout(Mesgs,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    position(PosInfo,STDOUT,STDOUT1),
+    STDOUT1 = [do(Mesgs),nl|STDOUT2],
+    err_mesg(Rest,STDOUT2,STDMES,ERRCNT,WRNCNT).
+err_mesg([stdmsg(Mesgs)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDOUT = [flush(Done)|STDOUT1],
+    wait_err_done(Done,stdmsg(Mesgs),Rest,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([stdmsg(Mesgs,PosInfo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDOUT = [flush(Done)|STDOUT1],
+    wait_err_done(Done,stdmsg(Mesgs,PosInfo),Rest,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([report_total_error(WhatToDo)|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDOUT = [flush(Done)|STDOUT1],
+    report_mesg(Done,Rest,WhatToDo,STDOUT1,STDMES,ERRCNT,WRNCNT).
+err_mesg([],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDOUT = [flush(Done)|STDOUT1],
+    close_mesg(Done,STDOUT1,STDMES,ERRCNT,WRNCNT).
+otherwise.
+err_mesg([Term|Rest],STDOUT,STDMES,ERRCNT,WRNCNT) :- true |
+    STDMES = [putb(string#"UNKNOWN MESSAGE : "),putt(Term),nl|STDMES1],
+    err_mesg(Rest,STDOUT,STDMES1,ERRCNT,WRNCNT).
+
+wait_err_done(Done,Message,Rest,STDOUT,STDMES,ERRCNT,WRNCNT) :- wait(Done) |
+    std_mesg([Message|Rest],STDOUT,STDMES,ERRCNT,WRNCNT).
+
+report_mesg(Done1,Rest,WhatToDo,STDOUT,STDMES,ERRCNT,WRNCNT) :- wait(Done1) |
+    report_error_summary(WhatToDo,ERRCNT,WRNCNT,Rest,STDOUT,STDMES).
+
+report_error_summary(WhatToDo,0,0,Rest,STDOUT,STDMES) :- true |
+    STDMES = [putf(string#"~s Succeeded~n",[WhatToDo])|STDMES1],
+    std_mesg(Rest,STDOUT,STDMES1,0,0).
+report_error_summary(_,0,WRNCNT,Rest,STDOUT,STDMES) :- WRNCNT > 0 |
+    STDMES = [putf(string#"Total Number of Warning : ~t~n",[WRNCNT])|STDMES1],
+    std_mesg(Rest,STDOUT,STDMES1,0,0).
+report_error_summary(_,ERRCNT,0,Rest,STDOUT,STDMES) :- ERRCNT > 0 |
+    STDMES = [putf(string#"Total Number of Error : ~t~n",[ERRCNT])|STDMES1],
+    std_mesg(Rest,STDOUT,STDMES1,0,0).
+report_error_summary(_,ERRCNT,WRNCNT,Rest,STDOUT,STDMES) :- ERRCNT > 0, WRNCNT > 0 |
+    STDMES = [putf(string#"Total Number of Warning : ~t~n",[WRNCNT]),
+              putf(string#"Total Number of Error : ~t~n",[ERRCNT])|STDMES1],
+    std_mesg(Rest,STDOUT,STDMES1,0,0).
+
+close_mesg(Done,STDOUT,STDMES,ERRCNT,WRNCNT) :- wait(Done) |
+    STDOUT = [],
+    STDMES = [].
+
+position({Pos,Info},MESG0,MESG) :- true |
+    MESG0 = [putb(string#"[")|MESG1],
+    format(Pos,MESG1,MESG2),
+    MESG2 = [putb(string#"] ")|MESG].
+otherwise.
+position(PosInfo,MESG0,MESG) :- true |
+    MESG0 = [putb(string#" ")|MESG].
+
+format([PathName,Position|Rest],MESG0,MESG) :-
+    string(PathName,_,_), integer(Position), list(Rest) |
+    kl1_library_file_utility:decomp_filename(PathName,Node,Path,FileName,Extension,Version),
+    MESG0 = [putb(FileName),putb(string#"."),putb(Extension),
+             putb(string#"@"),putt(Position),putb(string#":")|MESG1],
+    format(Rest,MESG1,MESG).
+format([PathName,Position],MESG0,MESG) :-
+    string(PathName,_,_), integer(Position) |
+    kl1_library_file_utility:decomp_filename(PathName,Node,Path,FileName,Extension,Version),
+    MESG0 = [putb(FileName),putb(string#"."),putb(Extension),
+             putb(string#"@"),putt(Position)|MESG].
+otherwise.
+format([PathName|Rest],MESG0,MESG) :- string(PathName,_,_), list(Rest) |
+    kl1_library_file_utility:decomp_filename(PathName,Node,Path,FileName,Extension,Version),
+    MESG0 = [putb(FileName),putb(string#"."),putb(Extension),putb(string#":")|MESG1],
+    format(Rest,MESG1,MESG).
+format([Position|Rest],MESG0,MESG) :- integer(Position), list(Rest) |
+    MESG0 = [putt(Position),putb(string#":")|MESG1],
+    format(Rest,MESG1,MESG).
+format([PathName],MESG0,MESG) :- string(PathName,_,_) |
+    kl1_library_file_utility:decomp_filename(PathName,Node,Path,FileName,Extension,Version),
+    MESG0 = [putb(FileName),putb(string#"."),putb(Extension)|MESG].
+format([Position],MESG0,MESG) :- integer(Position) |
+    MESG0 = [putt(Position)|MESG].
+
+%% NULL
+
+null([flush(Done)|Rest]) :- true |
+    Done = done,
+    null(Rest).
+null([]) :- true | true.
+otherwise.
+null([Messages|Rest]) :- true |
+    null(Rest).
+
+%% Utility
+
+check_FR_status(normal(FR0,_,_),FR) :- true |
+    merge(FR,FR0).
+otherwise.
+check_FR_status(Status,FR) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(compiler_error,string#"Unable to get file request device"),Status).
+
+%% position
+
+position(stdout(Messages,{Pos,_}),    Position) :- true | Position = Pos.
+%position(stdout(Messages),            Position) :- true | Position = [].
+position(stdmsg(Messages,{Pos,_}),    Position) :- true | Position = Pos.
+%position(stdmsg(Messages),            Position) :- true | Position = [].
+position(info(Format,Args,{Pos,_}),   Position) :- true | Position = Pos.
+%position(info(Format,Args),           Position) :- true | Position = [].
+position(message(Format,Args,{Pos,_}),Position) :- true | Position = Pos.
+%position(message(Format,Args),        Position) :- true | Position = [].
+position(warning(Format,Args,{Pos,_}),Position) :- true | Position = Pos.
+%position(warning(Format,Args),        Position) :- true | Position = [].
+position(error(Format,Args,{Pos,_}),  Position) :- true | Position = Pos.
+%position(error(Format,Args),          Position) :- true | Position = [].
+position(syntax_error(Err,{Pos,_}),   Position) :- true | Position = Pos.
+%position(syntax_error(Err),           Position) :- true | Position = [].
+%position(flush,                       Position) :- true | Position = [].
+otherwise.
+position(_,Position) :- true | Position = [].

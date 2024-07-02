@@ -1,0 +1,92 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a 'print' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module print.
+:- public printts/4, printrs/4.
+
+printts(No, TSInfo, Win, WinN) :- true |
+    Win = [print_length(50), print_depth(50),
+           print_string_length(80), print_atom_length(80),
+           putl(string#"+------+--------+------+--------+-----------+"),
+           putl(string#"|TaskID|TaskName|Status|RscLimit|ConsumedRsc|"),
+           putl(string#"+------+--------+------+--------+-----------+")
+        | Win0],
+    tsLoop(No, TSInfo, Win0, WinN).
+tsLoop(No, {ID, Name, Stat, Lim, Red, Child}, Win, WinN):- true |
+    Win2 = [putf(string#"~t , ~t , ", [ID, Name]) | Win3],
+    printStat(Win3, Win4, Stat), Win4 = [putb(string#",") | Win5],
+    printNil(Win5, Win6, Lim), Win6 = [putb(string#",") | Win7],
+    printNil(Win7, Win8, Red), Win8 = [nl | Win9],
+    indent(No, Win, Win2, NewNo),
+    tsLoop(NewNo, Child, Win9, WinN).
+tsLoop(No, {ID,  Child}, Win, WinN):- Child \= [] |
+    Win2 = [putf(string#"~t", [ID]) ,nl| Win9],
+    indent(No, Win, Win2, NewNo),
+    tsLoop(NewNo, Child, Win9, WinN).
+tsLoop(No, {ID,  []}, Win, WinN):- true |
+    Win = WinN.
+tsLoop(No, [TS | Next], Win, WinN):- true | tsLoop(No, TS, Win, Win2),
+    tsLoop(No, Next, Win2, WinN).
+tsLoop(No, [], Win, WinN):- true | Win = WinN.
+
+printStat(Win, NWin, Stat) :- Stat = {normal, Reason}, Reason = [] |
+    Win = [putb(string#"running") | NWin].
+printStat(Win, NWin, Stat) :- Stat = {normal, Reason}, Reason \= [] |
+    Win = [putb(string#"stop("), putt(Reason), putb(string#")") | NWin].
+printStat(Win, NWin, Stat) :- Stat = {resource_low, Reason}, Reason = [] |
+    Win = [putb(string#"resource_low") | NWin].
+printStat(Win, NWin, Stat) :- Stat = {resource_low, Reason}, Reason \= [] |
+    Win = [putb(string#"stop("), putt(Reason), putb(string#")") | NWin].
+otherwise.
+printStat(Win, NWin, Stat) :- true | Win = [putt(Stat) | NWin].
+
+printNil(Win, NWin, Data) :- Data={-1,-1} | Win=[putb(string#"***")|NWin].
+printNil(Win, NWin, Data) :- Data=unknown | Win=[putb(string#"unknown")|NWin].
+printNil(Win, NWin, Data) :- Data={0,Low} | Win=[putt(Low)|NWin].
+otherwise.
+printNil(Win, NWin, Data) :- true | Win = [putt(Data) | NWin].
+
+printrs(No, RSInfo, Win, WinN) :- true |
+    Win = [print_length(50), print_depth(50),
+           print_string_length(80), print_atom_length(80),
+           putl(string#"+-----+-------+-------+"),
+           putl(string#"|RscID|RscType|RscName|"),
+           putl(string#"+-----+-------+-------+")
+        | Win0],
+    rsLoop(No, RSInfo, Win0, WinN).
+rsLoop(No, {ID, Type, Name, Child}, Win, WinN):- true |
+    Win2 = [putf(string#"~t , ~t , ~t ~n", [ID, Type, Name]) | Win3],
+    indent(No, Win, Win2, NewNo),
+    rsLoop(NewNo, Child, Win3, WinN).
+rsLoop(No, {ID, Child}, Win, WinN):- Child \= []|
+    Win2 = [putf(string#"~t ~n", [ID]) | Win3],
+    indent(No, Win, Win2, NewNo),
+    rsLoop(NewNo, Child, Win3, WinN).
+rsLoop(No, {ID, []}, Win, WinN):- true |
+    Win = WinN.
+rsLoop(No, [RS | Next], Win, WinN):- true | rsLoop(No, RS, Win, Win2),
+    rsLoop(No, Next, Win2, WinN).
+rsLoop(No, [], Win, WinN):- true | Win = WinN.
+
+indent(No, Win, WinN, NewNo):- true | printbl(No, Win, WinN), NewNo := No + 3.
+
+printbl(0, Win, WinN):- true | Win = WinN.
+printbl(N, Win, WinN):- N > 0, NN := N - 1 |
+    Win = [putb(string#" ") | Win2], printbl(NN, Win2, WinN).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of 'print' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

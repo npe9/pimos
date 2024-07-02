@@ -1,0 +1,675 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ :- module login_server_filter .
+ :- public login_server /2 .
+:- with_macro pimos.
+
+login_server(User,OS) :-true|
+        login_server(User,OS,_,[]) .
+login_server([User|U2],OS,_,Error) :-true|
+        '+login_server_command'(User,OS1,Flag,Error),
+        'login_server$wait'(U2,OS,OS1,Flag,Error) .
+login_server([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+login_server(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        OS =[],
+        raise_error(Error,User) .
+'login_server$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        login_server(U2,OS2,_,Error) .
+'login_server$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+login_server_command'(reset(_1),OS,_,Error) :-true|
+        reset(__1) =OS,
+        '-sstatus'(_1,__1,Flag,Error) .
+'+login_server_command'(setup_partition(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+login_server_command$wait'(setup_partition(__1,__2,__3,_4),OS,Flag,Error),
+        '+part'(_1,__1,Flag,Error),
+        '+start_node'(_2,__2,Flag,Error),
+        '+nodes'(_3,__3,Flag,Error) .
+'+login_server_command'(setup_logging(_1,_2),OS,_,Error) :-true|
+        '+login_server_command$wait'(setup_logging(__1,_2),OS,Flag,Error),
+        '+log'(_1,__1,Flag,Error) .
+'+login_server_command'(setup_user(_1,_2,_3,_4,_5),OS,_,Error) :-true|
+        '+login_server_command$wait'(setup_user(__1,__2,__3,__4,_5),OS,Flag,Error),
+        '+userinfos'(_1,__1,Flag,Error),
+        '+groupinfos'(_2,__2,Flag,Error),
+        '+ufilename'(_3,__3,Flag,Error),
+        '+gfilename'(_4,__4,Flag,Error) .
+'+login_server_command'(setup_user_and_package(_1,_2,_3,_4,_5),OS,_,Error) :-true|
+        '+login_server_command$wait'(setup_user_and_package(__1,__2,__3,__4,_5),OS,Flag,Error),
+        '+userinfos'(_1,__1,Flag,Error),
+        '+groupinfos'(_2,__2,Flag,Error),
+        '+ufilename'(_3,__3,Flag,Error),
+        '+gfilename'(_4,__4,Flag,Error) .
+'+login_server_command'(login(_1,_2,_3),OS,_,Error) :-true|
+        '+login_server_command$wait'(login(__1,__2,_3),OS,Flag,Error),
+        '+username'(_1,__1,Flag,Error),
+        '+password'(_2,__2,Flag,Error) .
+'+login_server_command'(add_user(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+login_server_command$wait'(add_user(__1,__2,__3,_4),OS,Flag,Error),
+        '+username'(_1,__1,Flag,Error),
+        '+userID'(_2,__2,Flag,Error),
+        '+adduserinfo'(_3,__3,Flag,Error) .
+'+login_server_command'(remove_user(_1,_2,_3),OS,_,Error) :-true|
+        '+login_server_command$wait'(remove_user(__1,__2,_3),OS,Flag,Error),
+        '+username'(_1,__1,Flag,Error),
+        '+userID'(_2,__2,Flag,Error) .
+'+login_server_command'(add_group(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+login_server_command$wait'(add_group(__1,__2,__3,_4),OS,Flag,Error),
+        '+groupname'(_1,__1,Flag,Error),
+        '+groupID'(_2,__2,Flag,Error),
+        '+addgroupinfo'(_3,__3,Flag,Error) .
+'+login_server_command'(remove_group(_1,_2,_3),OS,_,Error) :-true|
+        '+login_server_command$wait'(remove_group(__1,__2,_3),OS,Flag,Error),
+        '+groupname'(_1,__1,Flag,Error),
+        '+groupID'(_2,__2,Flag,Error) .
+'+login_server_command'(message(_1,_2),OS,_,Error) :-true|
+        '+login_server_command$wait'(message(__1,_2),OS,Flag,Error),
+        '+message'(_1,__1,Flag,Error) .
+'+login_server_command'(message(_1,_2,_3),OS,_,Error) :-true|
+        '+login_server_command$wait'(message(__1,__2,_3),OS,Flag,Error),
+        '+username'(_1,__1,Flag,Error),
+        '+message'(_2,__2,Flag,Error) .
+'+login_server_command'(authenticate(_1,_2,_3),OS,_,Error) :-true|
+        '+login_server_command$wait'(authenticate(__1,__2,_3),OS,Flag,Error),
+        '+username'(_1,__1,Flag,Error),
+        '+password'(_2,__2,Flag,Error) .
+'+login_server_command'(get_uid(_1,_2),OS,_,Error) :-true|
+        '+login_server_command$wait'(get_uid(__1,_2),OS,Flag,Error),
+        '+username'(_1,__1,Flag,Error) .
+'+login_server_command'(change_password(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+login_server_command$wait'(change_password(__1,__2,__3,_4),OS,Flag,Error),
+        '+userID'(_1,__1,Flag,Error),
+        '+password'(_2,__2,Flag,Error),
+        '+password'(_3,__3,Flag,Error) .
+otherwise .
+'+login_server_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+login_server_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+login_server_command$wait'(setup_partition(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        setup_partition(__1,__2,__3,__4) =OS,
+        '-status'(_4,__4,Flag,Error) .
+'+login_server_command$wait'(setup_logging(__1,_2),OS,_,Error) :-wait(__1)|
+        setup_logging(__1,__2) =OS,
+        '-status'(_2,__2,Flag,Error) .
+'+login_server_command$wait'(setup_user(__1,__2,__3,__4,_5),OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4)|
+        setup_user(__1,__2,__3,__4,__5) =OS,
+        '-status'(_5,__5,Flag,Error) .
+'+login_server_command$wait'(setup_user_and_package(__1,__2,__3,__4,_5),OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4)|
+        setup_user_and_package(__1,__2,__3,__4,__5) =OS,
+        '-status'(_5,__5,Flag,Error) .
+'+login_server_command$wait'(login(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        login(__1,__2,__3) =OS,
+        '-loginstatus'(_3,__3,Flag,Error) .
+'+login_server_command$wait'(add_user(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        add_user(__1,__2,__3,__4) =OS,
+        '-status'(_4,__4,Flag,Error) .
+'+login_server_command$wait'(remove_user(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        remove_user(__1,__2,__3) =OS,
+        '-status'(_3,__3,Flag,Error) .
+'+login_server_command$wait'(add_group(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        add_group(__1,__2,__3,__4) =OS,
+        '-status'(_4,__4,Flag,Error) .
+'+login_server_command$wait'(remove_group(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        remove_group(__1,__2,__3) =OS,
+        '-status'(_3,__3,Flag,Error) .
+'+login_server_command$wait'(message(__1,_2),OS,_,Error) :-wait(__1)|
+        message(__1,__2) =OS,
+        '-status'(_2,__2,Flag,Error) .
+'+login_server_command$wait'(message(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        message(__1,__2,__3) =OS,
+        '-status'(_3,__3,Flag,Error) .
+'+login_server_command$wait'(authenticate(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        authenticate(__1,__2,__3) =OS,
+        '-status'(_3,__3,Flag,Error) .
+'+login_server_command$wait'(get_uid(__1,_2),OS,_,Error) :-wait(__1)|
+        get_uid(__1,__2) =OS,
+        '-uidstatus'(_2,__2,Flag,Error) .
+'+login_server_command$wait'(change_password(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        change_password(__1,__2,__3,__4) =OS,
+        '-status'(_4,__4,Flag,Error) .
+'-sstatus'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(__1,_2,_3),
+        '-attention'(_2,__2,Flag,Error),
+        '-resetID'(_3,__3,Flag,Error) .
+'-sstatus'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-sstatus'(User,aborted,_,Error) :-true|
+        User =aborted .
+'+start_node'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+start_node'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+nodes'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+nodes'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-status'(User,normal,_,Error) :-true|
+        User =normal .
+'-status'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-status'(User,aborted,_,Error) :-true|
+        User =aborted .
+'+log'(off,OS,_,Error) :-true|
+        off =OS .
+'+log'(logon(_1),OS,_,Error) :-true|
+        '+log$wait'(logon(__1),OS,Flag,Error),
+        '+filename'(_1,__1,Flag,Error) .
+otherwise .
+'+log'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+log$wait'(User,OS,fail,Error) :-true|
+        true .
+'+log$wait'(logon(__1),OS,_,Error) :-wait(__1)|
+        logon(__1) =OS .
+'+ufilename'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+ufilename'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+gfilename'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+gfilename'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+username'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+username'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+password'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+password'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-loginstatus'(User,normal(__1,__2,__3,__4,__5),_,Error) :-true|
+        User =normal(_1,_2,_3,_4,__5),
+        '-normal$code$1'(_1,__1,Flag,Error),
+        '-args'(_2,__2,Flag,Error),
+        '-userinfo2'(_3,__3,Flag,Error),
+        '-part0'(_4,__4,Flag,Error) .
+'-loginstatus'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-loginstatus'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-normal$code$1'(User,OS,_,Error) :-code(OS,_,_,_)|
+        OS =User .
+'+userID'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+userID'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+groupname'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+groupname'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+groupID'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+groupID'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+message'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+message'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-uidstatus'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-userID'(_1,__1,Flag,Error) .
+'-uidstatus'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-uidstatus'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-attention'(User,abort,_,Error) :-true|
+        User =abort .
+'-attention'(User,[],_,Error) :-true|
+        User =[] .
+'-resetID'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'+part'([In1|In2],Out,Flag,Error) :-true|
+        '+partpart'(In1,In11,Flag,Error),
+        '+part$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+part'([],Out,Flag,Error) :-true|
+        [] =Out .
+'+part$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+part$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+part$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+part$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+part$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+partpart'(In1,In11,Flag,Error),
+        '+part$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'+filename'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+filename'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+userinfos'([In1|In2],Out,Flag,Error) :-true|
+        '+userinfo'(In1,In11,Flag,Error),
+        '+userinfos$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+userinfos'([],Out,Flag,Error) :-true|
+        [] =Out .
+'+userinfos$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+userinfos$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+userinfos$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+userinfos$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+userinfos$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+userinfo'(In1,In11,Flag,Error),
+        '+userinfos$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'+groupinfos'([In1|In2],Out,Flag,Error) :-true|
+        '+groupinfo'(In1,In11,Flag,Error),
+        '+groupinfos$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+groupinfos'([],Out,Flag,Error) :-true|
+        [] =Out .
+'+groupinfos$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+groupinfos$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+groupinfos$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+groupinfos$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+groupinfos$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+groupinfo'(In1,In11,Flag,Error),
+        '+groupinfos$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'-args'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'+adduserinfo'({_1,_2,_3,_4,_5,_6},OS,_,Error) :-true|
+        '+adduserinfo$wait'({__1,__2,__3,__4,__5,__6},OS,Flag,Error),
+        '+password'(_1,__1,Flag,Error),
+        '+prio'(_2,__2,Flag,Error),
+        '+dir'(_3,__3,Flag,Error),
+        '+node'(_4,__4,Flag,Error),
+        '+entrypoint'(_5,__5,Flag,Error),
+        '+comlist'(_6,__6,Flag,Error) .
+otherwise .
+'+adduserinfo'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+adduserinfo$wait'({__1,__2,__3,__4,__5,__6},OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4),wait(__5),wait(__6)|
+        {__1,__2,__3,__4,__5,__6} =OS .
+'+adduserinfo$wait'(User,OS,fail,Error) :-true|
+        true .
+'+addgroupinfo'({_1,_2},OS,_,Error) :-true|
+        '+addgroupinfo$wait'({__1,__2},OS,Flag,Error),
+        '+userlist'(_1,__1,Flag,Error),
+        '+comlist'(_2,__2,Flag,Error) .
+otherwise .
+'+addgroupinfo'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+addgroupinfo$wait'({__1,__2},OS,_,Error) :-wait(__1),wait(__2)|
+        {__1,__2} =OS .
+'+addgroupinfo$wait'(User,OS,fail,Error) :-true|
+        true .
+'-userID'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-userinfo2'(User,{__1,__2,__3,__4,__5,__6},_,Error) :-true|
+        User ={_1,_2,_3,_4,_5,_6},
+        '-username'(_1,__1,Flag,Error),
+        '-prio'(_2,__2,Flag,Error),
+        '-dir'(_3,__3,Flag,Error),
+        '-node'(_4,__4,Flag,Error),
+        '-entrypoint'(_5,__5,Flag,Error),
+        '-comlist'(_6,__6,Flag,Error) .
+'-part0'(User,[OS|OS2],Flag,Error) :-true|
+        '-partpart0'(User1,OS,Flag,Error),
+        '-part0$wait'(User,OS2,User1,Flag,Error) .
+'-part0'(User,[],Flag,Error) :-true|
+        User =[] .
+'-part0$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-part0'(User2,OS2,Flag,Error) .
+'+prio'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+prio'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+dir'( *,OS,_,Error) :-true|
+         * =OS .
+'+dir'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+dir'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+node'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+node'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+partpart'({_1,_2,_3},OS,_,Error) :-true|
+        '+partpart$wait'({__1,__2,__3},OS,Flag,Error),
+        '+nodes'(_1,__1,Flag,Error),
+        '+parttype'(_2,__2,Flag,Error),
+        '+feps'(_3,__3,Flag,Error) .
+otherwise .
+'+partpart'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+partpart$wait'({__1,__2,__3},OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        {__1,__2,__3} =OS .
+'+partpart$wait'(User,OS,fail,Error) :-true|
+        true .
+'+userinfo'({_1,_2,_3,_4,_5,_6,_7,_8},OS,_,Error) :-true|
+        '+userinfo$wait'({__1,__2,__3,__4,__5,__6,__7,__8},OS,Flag,Error),
+        '+username'(_1,__1,Flag,Error),
+        '+password'(_2,__2,Flag,Error),
+        '+userID'(_3,__3,Flag,Error),
+        '+prio'(_4,__4,Flag,Error),
+        '+dir'(_5,__5,Flag,Error),
+        '+active_node'(_6,__6,Flag,Error),
+        '+entrypoint'(_7,__7,Flag,Error),
+        '+comlist'(_8,__8,Flag,Error) .
+otherwise .
+'+userinfo'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+userinfo$wait'({__1,__2,__3,__4,__5,__6,__7,__8},OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4),wait(__5),wait(__6),wait(__7),wait(__8)|
+        {__1,__2,__3,__4,__5,__6,__7,__8} =OS .
+'+userinfo$wait'(User,OS,fail,Error) :-true|
+        true .
+'+groupinfo'({_1,_2,_3,_4},OS,_,Error) :-true|
+        '+groupinfo$wait'({__1,__2,__3,__4},OS,Flag,Error),
+        '+groupname'(_1,__1,Flag,Error),
+        '+groupID'(_2,__2,Flag,Error),
+        '+userlist'(_3,__3,Flag,Error),
+        '+comlist'(_4,__4,Flag,Error) .
+otherwise .
+'+groupinfo'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+groupinfo$wait'({__1,__2,__3,__4},OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4)|
+        {__1,__2,__3,__4} =OS .
+'+groupinfo$wait'(User,OS,fail,Error) :-true|
+        true .
+'+entrypoint'(In,Out,Flag,Error) :-vector(In,Size)|
+        '+entrypoint$vect1'(In,Out,0,Size,Flag,Error) .
+'+entrypoint'(User,OS,_,Error) :-atom(User)|
+        User =OS .
+otherwise .
+'+entrypoint'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+entrypoint$vect1'(In,Out,Pos,Size,Flag,Error) :-Pos \=Size|
+        vector_element(In,Pos,Elm,Nin),
+        '+entrypoint$ground$1'(Elm,Elm2,Flag,Error),
+        Npos :=Pos + 1,
+        '+entrypoint$vect2'(Elm2,In,Out,Npos,Size,Flag,Error) .
+'+entrypoint$vect1'(In,Out,Size,Size,Flag,Error) :-true|
+        In =Out .
+'+entrypoint$vect2'(Elm,In,Out,Pos,Size,Flag,Error) :-wait(Elm)|
+        '+entrypoint$vect1'(In,Out,Pos,Size,Flag,Error) .
+'+entrypoint$vect2'(Elm,In,Out,Pos,Size,fail,Error) :-true|
+        true .
+'-username'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-prio'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-dir'(User, *,_,Error) :-true|
+        User = * .
+'-dir'(User,OS,_,Error) :-string(OS,_,_)|
+        User =OS .
+'-node'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'+comlist'([In1|In2],Out,Flag,Error) :-true|
+        '+comlist$string$1'(In1,In11,Flag,Error),
+        '+comlist$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+comlist'([],Out,Flag,Error) :-true|
+        [] =Out .
+'+comlist$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+comlist$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+comlist$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+comlist$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+comlist$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+comlist$string$1'(In1,In11,Flag,Error),
+        '+comlist$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'+comlist$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+comlist$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+userlist'([In1|In2],Out,Flag,Error) :-true|
+        '+username'(In1,In11,Flag,Error),
+        '+userlist$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+userlist'([],Out,Flag,Error) :-true|
+        [] =Out .
+'+userlist$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+userlist$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+userlist$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+userlist$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+userlist$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+username'(In1,In11,Flag,Error),
+        '+userlist$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'-entrypoint'(Out,In,Flag,Error) :-vector(In,Size),vector_element(In,0,Elm)|
+        '-entrypoint$vect1'(In,Elm,1,Size,In2,Flag,Error),
+        '-entrypoint$wait'(In2,Out,Flag,Error) .
+'-entrypoint'(User,OS,_,Error) :-atom(OS)|
+        User =OS .
+'-entrypoint$wait'(In2,Out,Flag,Error) :-wait(In2)|
+        Out =In2 .
+'-entrypoint$vect1'(Vector,Elm,Pos,Size,In2,Flag,Error) :-Pos \=Size|
+        '-entrypoint$ground$1'(Elm2,Elm,Flag,Error),
+        '-entrypoint$vect2'(Vector,Pos,Elm2,Size,In2,Flag,Error) .
+'-entrypoint$vect1'(Vector,Elm,Size,Size,In2,Flag,Error) :-true|
+        '-entrypoint$ground$1'(Elm2,Elm,Flag,Error),
+        '-entrypoint$vect2'(Vector,Size,Elm2,Size,In2,Flag,Error) .
+'-entrypoint$vect2'(Vector,Pos,Elm2,Size,In2,Flag,Error) :-wait(Elm2),Pos \=Size,vector_element(Vector,Pos,Nelm)|
+        Npos :=Pos + 1,
+        '-entrypoint$vect1'(Vector,Nelm,Npos,Size,In2,Flag,Error) .
+'-entrypoint$vect2'(Vector,Size,Elm2,Size,In2,Flag,Error) :-wait(Elm2)|
+        Vector =In2 .
+'+parttype'(single,OS,_,Error) :-true|
+        single =OS .
+'+parttype'(multiple,OS,_,Error) :-true|
+        multiple =OS .
+otherwise .
+'+parttype'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+active_node'( *,OS,_,Error) :-true|
+         * =OS .
+'+active_node'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+active_node'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-comlist'(User,[OS|OS2],Flag,Error) :-true|
+        '-comlist$string$1'(User1,OS,Flag,Error),
+        '-comlist$wait'(User,OS2,User1,Flag,Error) .
+'-comlist'(User,[],Flag,Error) :-true|
+        User =[] .
+'-comlist$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-comlist'(User2,OS2,Flag,Error) .
+'-comlist$string$1'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-partpart0'(User,{__1,__2,__3,__4,__5,__6},_,Error) :-true|
+        User ={_1,_2,_3,_4,_5,_6},
+        '-partno'(_1,__1,Flag,Error),
+        '-start_node'(_2,__2,Flag,Error),
+        '-nodes'(_3,__3,Flag,Error),
+        '-parttype0'(_4,__4,Flag,Error),
+        '-feps'(_5,__5,Flag,Error),
+        '-users'(_6,__6,Flag,Error) .
+'+entrypoint$ground$1'(User,OS,_,Error) :-true|
+        '+ground'(User,User2),
+        '+entrypoint$ground$1$wait'(User2,OS,Flag,Error) .
+'+entrypoint$ground$1$wait'(User2,OS,_,Error) :-wait(User2)|
+        User2 =OS .
+'+entrypoint$ground$1$wait'(User2,OS,fail,Error) :-true|
+        true .
+'+feps'([In1|In2],Out,Flag,Error) :-true|
+        '+feps$integer$1'(In1,In11,Flag,Error),
+        '+feps$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+feps'([],Out,Flag,Error) :-true|
+        [] =Out .
+'+feps$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+feps$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+feps$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+feps$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+feps$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+feps$integer$1'(In1,In11,Flag,Error),
+        '+feps$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'+feps$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+feps$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-entrypoint$ground$1'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'-partno'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-start_node'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-nodes'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-parttype0'(User,single,_,Error) :-true|
+        User =single .
+'-parttype0'(User,multiple,_,Error) :-true|
+        User =multiple .
+'-parttype0'(User,occupied,_,Error) :-true|
+        User =occupied .
+'-feps'(User,[OS|OS2],Flag,Error) :-true|
+        '-feps$integer$1'(User1,OS,Flag,Error),
+        '-feps$wait'(User,OS2,User1,Flag,Error) .
+'-feps'(User,[],Flag,Error) :-true|
+        User =[] .
+'-feps$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-feps'(User2,OS2,Flag,Error) .
+'-feps$integer$1'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-users'(User,[OS|OS2],Flag,Error) :-true|
+        '-useri'(User1,OS,Flag,Error),
+        '-users$wait'(User,OS2,User1,Flag,Error) .
+'-users'(User,[],Flag,Error) :-true|
+        User =[] .
+'-users$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-users'(User2,OS2,Flag,Error) .
+'-useri'(User,{__1,__2},_,Error) :-true|
+        User ={_1,_2},
+        '-username'(_1,__1,Flag,Error),
+        '-userID'(_2,__2,Flag,Error) .
+%%%%% system defined protocols %%%%%%%%%%
+'+ground'(X, Y) :- list(X) | '$$groundl'(X, Y).
+'+ground'(X, Y) :- vector(X,Size),Size \= 0 | 
+        '$$groundv'(X, 0, Size, X2),
+        '$$groundv2'(X2, Y).
+otherwise.
+'+ground'(X, Y) :- wait(X) | Y = X.
+'-ground'(X, Y) :- list(Y) | '$$groundl'(Y, X).
+'-ground'(X, Y) :- vector(Y,Size), Size \= 0 | 
+        '$$groundv'(Y, 0, Size, Y2),
+        '$$groundv2'(Y2, X).
+otherwise.
+'-ground'(X, Y) :- wait(Y) | Y = X.
+'$$groundl'([X1|X2], Y) :- true | '+ground'(X1,X11),
+        '$$groundl2'(X11, X2, Y).
+'$$groundl'([], Y) :- true | Y = [].
+'$$groundl2'(X11, X2, Y) :- wait(X11) |
+        '$$groundl31'(X2, [X11|Tail], Tail, Y).
+'$$groundl31'([X1|X2], Top, Tail, Y) :- true |
+        '+ground'(X1,X11),
+        '$$groundl32'(X11, X2, Top, Tail, Y).
+'$$groundl31'([], Top, Tail, Y) :- true |
+        Tail = [],
+        Top = Y.
+'$$groundl32'(X11, X2, Top, Tail, Y) :- wait(X11), X2 \= [] |
+        Tail = [X11|Tail2],
+        '$$groundl31'(X2, Top, Tail2, Y).
+'$$groundl32'(X11, [], Top, Tail, Y) :- wait(X11) |
+        Tail = [X11],
+        Y = Top.
+'$$groundv2'(X2, Y) :- wait(X2) | X2 = Y.
+'$$groundv'(X, Pos, Size, X2) :- Pos \= Size |
+        vector_element(X, Pos, Elm, NX),
+        '+ground'(Elm,Elm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Elm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Pos, Size, X2) :- wait(Elm), Pos \= Size |
+        vector_element(X, Pos, Nelm, NX),
+        '+ground'(Nelm, Nelm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Nelm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Size, Size, X2) :- wait(Elm) |
+        X = X2. 
+%%%%% to raise error %%%%%%%%%%
+raise_error(Info,Msg):- true |
+        atom_table:cache_table(Atom),
+        formatInfo(Info,[],Fstring,Atom),
+        shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_message_to_PIMOS,Fstring),Msg).
+formatInfo([Infoatom | Info], StringList,Fstring,Atom):- 
+        atom(Infoatom) |
+        Atom = [get_atom_name(Infoatom,normal(InfoString)) | Atail],
+        NSlist = [InfoString | StringList],
+        formatInfo(Info, NSlist, Fstring, Atail).
+formatInfo([], Slist, Fstring, Atom):- true |
+        Atom = [],
+        new_string(New,1,16),
+        set_string_element(New,0,key#lf,NL),
+        format(1,Slist,StringList,NL),
+        builtin#append_string([""|StringList], Fstring).
+format(1,[Info|Tail],StringList,NL):- true |
+        StringList = ["Device : ",Info |Stail2],
+        format(2,Tail,Stail2,NL).
+format(2,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,"Message : ",Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(3,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(_,[],StringList,_):- true |
+        StringList = [].

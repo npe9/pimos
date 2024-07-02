@@ -1,0 +1,191 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module timer_server.
+:- with_macro pimos.
+:- public go/3.
+
+go(OK,ABORT,Conf) :- true |
+        shoen:raise(pimos_tag#task,bios,BIOS),
+        BIOS=[system_timers(Res)|BIOS1],
+        wait_system_timers(OK,ABORT,Conf,Res,BIOS1).
+
+wait_system_timers(OK,ABORT,Conf,normal(V),BIOS) :- vector(V,N) |
+        BIOS=[fep(0,Res)],
+        merge(ASIn,ASOut),
+        get_time_equation(Res,ADT),
+        alarm_timer_server(ASOut,V,N),
+        register(OK,ABORT,Conf,{ASIn,ADT}).
+wait_system_timers(OK,ABORT,Conf,abnormal,BIOS) :- true |
+        BIOS=[],
+        register(OK,ABORT,Conf,{}).
+
+get_time_equation(normal(Fep),ADT) :- true |
+        Fep=[timer(Res)],
+        wait_req(Res,ADT).
+
+wait_req(normal(BF),ADT) :- true |
+        mdlib#current_cluster(Me,N),
+%        If={0,[0],{0,0,"me","me",""},Me},
+        If={0,[0],{0,0,0,0,""},Me},
+        timer_request_device:driver([current_node(Me,N),reset(Args)|TRS],
+                        {aborted(BF),_,0},_,If,Conf,DumSCont,_),
+        dummy_scont(DumSCont),
+        wait_req1(TRS,ADT,Args).
+otherwise.
+wait_req(_,ADT) :- true | ADT={0,'+',32#{}}.
+
+wait_req1(TRS,ADT,normal(_,_,_)) :- true |
+        TRS=[create(fep,Args)],
+        wait_bf_timer(Args,ADT).
+otherwise.
+wait_req1(TRS,ADT,_) :- true | TRS=[],ADT={0,'+',32#{}}.
+
+wait_bf_timer(normal(TS),ADT) :- true |
+        TS=[reset(Args)|TS1],
+        wait_reset(TS1,ADT,Args).
+otherwise.
+wait_bf_timer(_,ADT) :- true | ADT={0,'+',32#{}}.
+
+wait_reset(TS,ADT,normal(_,_,_)) :- true |
+        TS=[get_date_time(Args)],
+        wait_date_time(Args,ADT).
+otherwise.
+wait_reset(TS,ADT,_) :- true | TS=[],ADT={0,'+',32#{}}.
+
+wait_date_time(normal(Date,Time),ADT) :- system_timer(NowU,NowL) |
+        timer_calc:dbl_to_bignum(NowU,NowL,Now),
+        timer_calc:int_to_bignum(Time,Time0),
+        timer_calc:trans(msec(Time0),{mdlib#system_timer_unit,Time1}),
+        compare(Date,Time1,Now,ADT).
+otherwise.
+wait_date_time(_,ADT) :- true | ADT={0,'+',32#{}}.
+
+compare(Date,Time,Now,ADT) :- wait(Now),wait(Time) |
+        ADT={Date,Sign,Dif},
+        mdlib#subtract_bignum(Time,Now,Borr,Dif),
+        get_sign(Borr,Sign).
+
+get_sign(0,Sign) :- true | Sign='+'.
+get_sign(1,Sign) :- true | Sign='-'.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% register(OK,ABORT,Conf,SysTim)
+%%      SysTim      :: = {ASOut,ADT} ; {}
+%%                         ASOut :: Output stream to alarm_timer_server (merged)
+%%                         ADT   :: = {Date,Sign,TimeEq}
+%%                     ; {} when PIM has no system_timer
+
+register(OK,ABORT,Conf,SysTim) :- true |
+        shoen:raise(pimos_tag#task,general_request,GRS),
+        GRS=[register(timer_request,{0,0,3},Res)],
+        wait_registered(OK,ABORT,Conf,SysTim,Res).
+
+wait_registered(OK,ABORT,Conf,SysTim,normal(RIn,RAb,_)) :- true |
+        OK=ok,
+        predicate_to_code(module#fep_filter,timer_filter,3,Cod),
+        get_request(RIn,ABORT,Conf,SysTim,RAb,Cod).
+
+get_request(ROut,ABORT,Conf,SysTim,RAb,Cod) :- true |
+        ROut=[get_request(Cod,"timer_request",Res)|ROut1],
+        wait_request(ROut1,ABORT,Conf,SysTim,RAb,Cod,Res).
+
+wait_request(ROut,ABORT,Conf,SysTim,RAb,_,_) :- wait(ABORT) |
+        ROut=[],Conf=[],RAb=abort,
+        terminate(SysTim).
+%alternatively.
+wait_request(ROut,ABORT,Conf,SysTim,RAb,Cod,Res) :-
+    Res=general_request(SCont,Ab,Att,SInfo,FInfo,In) |
+        FInfo=[],
+        merge(SContIn,SCont),
+        set_vector_element(SInfo,2,Remote,Remote1,SInfo1),
+        set_vector_element(Remote,0,Fep,Fep,Remote0),
+        set_vector_element(Remote0,1,IONode,IONode,Remote1),
+        get_fep_num(Fep,IONode,FepNum),
+        Conf=[do([get_if_any_and_put(FepNum,Info,Info1)|DNext])|Conf1],
+        get_fep_stream(Info,Info1,SysTim,SysTim1,SInfo1,In,Att,Ab,SContIn,FepNum,DNext),
+        get_request(ROut,ABORT,Conf1,SysTim1,RAb,Cod).
+otherwise.
+wait_request(ROut,ABORT,Conf,SysTim,RAb,Cod,_) :- true |
+        ROut=[],Conf=[],
+        terminate(SysTim).
+
+get_fep_stream({},Info,SysTim,SysTim1,SInfo,User,Att,Ab,SCont,FepNum,DNext) :- true |
+        DNext=[put(fep,FepsN,{Feps})],
+        Feps=[fep(FepNum,Res)|FepsN],
+        get_fep_stream2(Res,Info,SysTim,SysTim1,SInfo,User,Att,Ab,SCont).
+get_fep_stream({Conf},Info,SysTim,SysTim1,SInfo,User,Att,Ab,SCont,_,DNext) :- true |
+        DNext=[],
+        confirm_0(Conf,Info,SysTim,SysTim1,SInfo,User,Att,Ab,SCont).
+
+get_fep_stream2(normal(Fep),Info,SysTim,SysTim1,SInfo,User,Att,Ab,SCont) :- true |
+        merge(FepIn,Fep),
+        io_node_confirm:go(Conf,FepIn),
+        merge(ConfIn,Conf),
+        confirm_0(ConfIn,Info,SysTim,SysTim1,SInfo,User,Att,Ab,SCont).
+otherwise.
+get_fep_stream2(_,Info,SysTim,SysTim1,_,User,_,Ab,SCont) :- true |
+        Info={},SysTim=SysTim1,User=abnormal,SCont=[],Ab=abort.
+
+confirm_0(Conf,Conf1,SysTim,SysTim1,SInfo,User,Att,Ab,SCont) :- true |
+        set_vector_element(SInfo,2,Remote,RemoteN,SInfo1),
+        set_vector_element(SInfo1,3,ANode,ANode,SInfoN),
+        set_vector_element(Remote,1,IONode,IONode,Remote1),
+        set_vector_element(Remote1,2,RU,RU,Remote2),
+        set_vector_element(Remote2,3,RP,RP,RemoteN),
+        Conf=[confirm(timer,IONode,RU,RP,Att,Res)|Conf1],
+        internal_handler:get_relative_node(ANode,Node),
+        confirm(Res,SysTim,SysTim1,SInfoN,User,Att,Ab,SCont)@node(Node).
+
+%% SysTim  = {ASOut,ADT} ; {}
+confirm(normal(Conf,Fep,_),SysTim,SysTim1,SInfo,User,Att,Ab,SCont) :- true |
+        User=normal(In),
+        get_SysTim(SysTim,SysTim1,Fep,NewSysTim),
+        timer_request_device:driver(In,NewSysTim,Att,SInfo,Conf,SCont,Ab).
+otherwise.
+confirm(Status,SysTim,SysTim1,_,User,Att,Ab,SCont) :- true |
+        SysTim=SysTim1,
+        Status=User,Ab=abort,SCont=[].
+
+get_SysTim({ASOut,ADT},SysTim1,Fep,NewSysTim) :- ADT={Date,Sign,TimeEq} |
+        ASOut={ASOut0,ASOut1},
+        SysTim1={ASOut1,ADT},
+        NewSysTim={aborted(Fep),ASOut0,{Date,Sign,TimeEq}}.
+get_SysTim({},SysTim1,Fep,NewSysTim) :- true |
+        SysTim1={},
+        NewSysTim={aborted(Fep)}.
+
+terminate({ASOut,_}) :- true | ASOut=[].
+terminate({}) :- true | true.
+
+
+alarm_timer_server([get_alarm_timer(I,Res)|In],V,N) :- 0=<I,I<N |
+        set_vector_element(V,I,{TS,TS1},TS1,V1),
+        Res=normal(TS),
+        alarm_timer_server(In,V1,N).
+alarm_timer_server([],V,N) :- true |
+        close_system_timers(V,~(N-1)).
+
+close_system_timers(V,I) :- I>=0 |
+        vector_element(V,I,[],V1),
+        close_system_timers(V1,~(I-1)).
+close_system_timers(_,I) :- I<0 | true.
+
+get_fep_num(_,IONode,FepNum):-
+    integer(IONode)|
+    FepNum = IONode.
+otherwise.
+get_fep_num(Fep,_,FepNum):-
+    true|
+    Fep = FepNum.
+
+dummy_scont([add_resource(_,_,Res)|SCont]) :- true |
+        Res=normal(NSCont,_),
+        dummy_scont(SCont),
+        dummy_scont(NSCont).
+dummy_scont([]) :- true | true.

@@ -1,0 +1,525 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class bar2_h has
+
+  :create(Class,Obj,Attribute):-
+     :new(Class,Obj),
+     set_attribute(Attribute,Obj),
+     heap_vector(Obj!element_pattern,Size),
+     Size / 2 = ElmNum,
+     PoolSize = ElmNum * Obj!y_max/Obj!y_unit,
+     new_heap_vector(ElmPool,PoolSize),
+     init_vector(ElmPool,0,PoolSize),
+     Obj!element_pool := ElmPool;
+
+  instance
+    attribute x := 0, 
+              y := 0,
+              x_size := 200,
+              x_size0,
+              x_max := nil,
+              x_max0,
+              x_name,
+              x_unit:=100,
+              x_unit1:=50,
+              x_max_visibility:=on,
+              x_scale:=off,
+              y_size := 400,
+              y_max := nil,
+              y_name,
+              y_unit,
+              y_scale,
+              y_scale_set:=on,
+              first_unit,
+              unit_width,
+              unit_width0,
+              unit_height,
+              title,
+              element_pool,
+              element_pool2,
+              element_pattern,
+              window,
+              x_name_visibility:=off,
+              y_name_visibility:=off,
+              scale_max:=nil,
+              draw_flag,
+              c;
+
+ :set_position(Obj,X,Y):-!,
+    set_attribute([position(X,Y)],Obj);
+
+ :get_max_value(Obj,Max):-!,
+      Max = Obj!x_max0;
+
+ :get_element(Obj,List):-!,
+      heap_vector(Obj!element_pattern,Size),
+      get_element(Obj,Size,0,List,RL);
+
+ :draw(Obj,G_Win):-
+      Obj!draw_flag\==invisible,!,
+      :init(Obj,G_Win),
+      :draw(Obj);
+ :draw(Obj,G_Win):-!;
+
+ :init(Obj,G_Win):-
+     Obj!draw_flag \== invisible,!,
+     Obj!y_max/Obj!y_unit=NY,
+    (Obj!y_size < NY,!,
+     set_yb(Obj!y_size,YB,NY);
+     YB = 1),
+     heap_vector(Obj!element_pool,Size1),
+     Size1/2=HSize,
+    (HSize mod YB = 0,!,
+     Size2 = HSize/YB*2;
+     Size2 = (HSize/YB+1)*2),
+     new_heap_vector(ElmPool2,Size2),
+     Obj!element_pool2:=ElmPool2,
+     set_new_data(Obj,0,0,YB,Size2,Size1),
+    ( Obj!scale_max \== nil,!,
+      NewMax = Obj!scale_max;
+      Obj!x_max0 < 10,!,
+     NewMax = Obj!x_max0 + 1;
+     integer_to_floating_point(Obj!x_max0,XMax0F),
+     NewMaxF = XMax0F * 11.0/10.0,
+     floating_point_to_integer(NewMaxF,NewMax)),
+    ( NewMax == 0,!, NewMax1 = 1 ;
+      NewMax1 = NewMax ),
+    ( Obj!x_max == nil,!,
+     ( Obj!x_unit > NewMax1,!,
+       Obj!x_unit := NewMax1 ;
+       Obj!x_unit < ( NewMax1/10 ),!,
+       Obj!x_unit := ( NewMax1/10 );
+       true ),
+      Obj!x_max := NewMax1 ; true ),
+   ( Obj!x_max = 0,!,
+      NewMaxX = 1 ;
+      NewMaxX = Obj!x_max ),
+     UnitY = Obj!y_size * Obj!y_unit / Obj!y_max,
+     integer_to_floating_point(Obj!x_unit,XUnitF),
+     integer_to_floating_point(Obj!x_size,XSizeF),
+     integer_to_floating_point(NewMaxX,NewMaxXF),
+     UnitXF = XSizeF * XUnitF / NewMaxXF,
+     floating_point_to_integer(UnitXF,UnitX),
+     Obj!unit_width := UnitX,
+   ( UnitY = 0,!,
+     Obj!unit_height:=1;
+     Obj!unit_height := UnitY),
+     integer_to_floating_point(Obj!x_max0,XMax0F),
+     integer_to_floating_point(Obj!x_max,XMaxF),
+     integer_to_floating_point(Obj!x_unit1,XUnit1F),
+    ( Obj!x_max0=0,Obj!scale_max=nil,!,
+     W = 1;
+     WF = UnitXF * XMaxF / XUnitF,
+     floating_point_to_integer(WF,W)),%%%%%%%%%%%%%%%%%%%
+     heap_vector(Obj!element_pool2,Size2),
+     H = Obj!unit_height* Size2/2,
+     Obj!x_size := W,
+     Obj!y_size := H,
+     W1F = UnitXF * XUnit1F / XUnitF,
+     floating_point_to_integer(W1F,W1),%%%%%%%%%%%%%%%%%
+    (W1 = 0,!,
+     Obj!draw_flag:=invisible;
+     W11 = W1,
+     Obj!unit_width0:=W11,
+     integer_to_floating_point(Obj!unit_width0,UnitW0F),
+     W01F = UnitW0F * XMax0F / XUnit1F ,
+     floating_point_to_integer(W01F,W01),%%%%%%%%%%%%%%
+     ( W01 = 0,!,
+       W0 = 1;
+       W0 = W01),
+     Obj!x_size0:=W0,
+     Win = G_Win!window,
+     Obj!window := Win,
+     Obj!x = X,
+     Obj!y = Y,
+    ( atom(Obj!x_name),!,
+      :get_atom_string(#symbolizer,Obj!x_name,X_String);
+      integer(Obj!x_name),
+      :get_number_string(#symbolizer,Obj!x_name,X_String);
+      string(Obj!x_name,L1,T1),
+      X_String=Obj!x_name),
+    ( atom(Obj!y_name),!,
+      :get_atom_string(#symbolizer,Obj!y_name,Y_String);
+      integer(Obj!y_name),
+      :get_number_string(#symbolizer,Obj!y_name,Y_String);
+      string(Obj!y_name,L2,T2),
+      Y_String=Obj!y_name ),
+     List = [ {draw_line,{X,Y+H,X,Y,1,solid,set}},
+              {draw_line,{X,Y,X+W,Y,1,solid,set}}|RList1],
+     draw_x_unit_scale(Win,Obj,G_Win,X,Y,X+W0,1,RList1,RList2),
+    ( Obj!unit_height > 10,!,
+     ( Obj!first_unit=0,!,
+       draw_y_unit_scale(Win,Obj,G_Win,X,Y,Y+H,0,RList2,RList3);
+       draw_y_unit_scale(Win,Obj,G_Win,X,Y,Y+H,1,RList2,RList3));
+       RList2=RList3),
+       G_Win!font = Font_7,
+     ( Obj!x_name_visibility=on,!,
+       RList3 = [{draw_string,{X+W+2,Y-10,X_String,Font_7,set}}|RList4];
+       RList3 = RList4),
+     ( Obj!y_name_visibility=on,!,
+       RList4 = [{draw_string,{X-7,Y+H-1,Y_String,Font_7,set}}|RList5];
+       RList4 = RList5),
+     TN = W/10,
+     ( string(Obj!title,L3,B),!,
+       (TN >= L3,!,
+        TN1 = L3;
+        TN1 = TN),
+       substring(Obj!title,L3-TN1,TN1,Title),   
+       RList5 = [{draw_string,{X+W/2-TN1*7/2,Y-18,Title,Font_7,set}}|RList6] ;
+       RList5 = RList6),
+      (Obj!x_max_visibility=on,
+      Obj!c=C,
+      XMaxScale=Obj!x_max0,
+      :get_number_string(#symbolizer,XMaxScale,XM_String),
+      string(XM_String,L,T),
+     (L>=6,!,
+      substring(XM_String,0,1,XM1),
+      substring(XM_String,1,2,XM2),
+      MaxStringL2=L-1,
+      :get_number_string(#symbolizer,MaxStringL2,LS2),
+      RList6 = [{draw_string,
+            {X+W11*C-21,Y-15,XM1,Font_7,set}},
+            {draw_string,
+            {X+W11*C-14,Y-15,".",Font_7,set}},
+            {draw_string,
+            {X+W11*C-7,Y-15,XM2,Font_7,set}},
+            {draw_string,
+            {X+W11*C+7,Y-15,"E",Font_7,set}},
+            {draw_string,
+            {X+W11*C+14,Y-15,LS2,Font_7,set}},
+            {draw_line,
+            {X+W0,Y-1,X+W0,Y-5,2,solid,set}}],
+      G_Win!font=Font_7;
+   ( XMaxScale = 0,!,
+        RList6 = [{draw_line,{X+W0,Y-1,X+W0,Y-5,2,solid,set}}|RS] ;
+        RList6 = [{draw_string,{X+W11*C-L*7/2,Y-15,XM_String,Font_7,set}},
+                {draw_line,{X+W0,Y-1,X+W0,Y-5,2,solid,set}}|RS]),
+     G_Win!font=Font_7,
+     (Obj!x_max0 =< Obj!x_unit1,!,
+      XMax = Obj!x_max0,
+      :get_number_string(#symbolizer,XMax,XMax_String),
+      string(XMax_String,XmaxL,XmaxT),
+      RS= [{draw_string,{X+W0-XmaxL*7/2,Y-15,XMax_String,Font_7,set}}];
+      RS=[]))),
+  
+      :execute_graphics_command(Win,List));
+  :init(Obj,_):-!;
+
+  :set(Obj,Unit,Element):-
+     heap_vector(Obj!element_pattern,Size),
+     ( Obj!first_unit == 0,!,
+       Num =  Unit/Obj!y_unit * (Size/2) ;
+       Num =  ( Unit/Obj!y_unit - 1 )*(Size/2) ),
+     set_value(Element,Obj,Num),!;
+
+  :set_all(Obj,List,Layout):-!,
+     set_all(List,0,Max,Obj),
+     Obj!x_max0:=Max;
+   
+  :draw(Obj,Win):- 
+     Obj!draw_flag\==invisible,!,
+     :init(Obj,Win),
+     ( Obj!first_unit == 0,!,
+       draw0(0,Obj!y_max,List,[],Obj,1) ;
+       draw(1,Obj!y_max,List,[],Obj,1) ),
+     :execute_graphics_command(Obj!window,List);
+   :draw(Obj,Win):-!;
+ 
+  :draw(Obj):- 
+     Obj!draw_flag \== invisible,!,
+     ( Obj!first_unit == 0,!,
+       draw0(0,Obj!y_max,List,[],Obj,1) ;
+       draw(1,Obj!y_max,List,[],Obj,1) ),
+     :execute_graphics_command(Obj!window,List);
+  :draw(Obj):-!;
+
+
+ local
+
+   draw_x_unit_scale(Win,Obj,G_Win,X,Y,MaxSize,C,R,R):-
+     X + Obj!unit_width0  > MaxSize,!,
+     Obj!c:=C-1;
+   draw_x_unit_scale(Win,Obj,G_Win,X,Y,MaxSize,C,List,RList):-
+     UnitWidth0 = Obj!unit_width0,
+     List = [{draw_line,
+             {X+UnitWidth0,Y-1,X+UnitWidth0,Y-4,1,solid,set}}|R1],
+    (Obj!x_scale=on,
+     C mod 2==0,
+     Obj!unit_width0 = W11,
+     W11 > 20,!,
+     Obj!x_size0=W0,
+      XScale=C*Obj!x_unit1,
+      :get_number_string(#symbolizer,XScale,X_String),
+      string(X_String,L,T),
+    (L>=6,!,
+      substring(X_String,0,1,X1),
+      substring(X_String,1,2,X2),
+      StringL=L-1,
+      :get_number_string(#symbolizer,StringL,LS2),
+ 
+      R1 = [{draw_string,
+            {X+W11-21,Y-15,X1,Font_7,set}},
+            {draw_string,
+            {X+W11-14,Y-15,".",Font_7,set}},
+            {draw_string,
+            {X+W11-7,Y-15,X2,Font_7,set}},
+            {draw_string,
+            {X+W11+7,Y-15,"E",Font_7,set}},
+            {draw_string,
+            {X+W11+14,Y-15,LS2,Font_7,set}}|R],
+      G_Win!font=Font_7;
+      R1 = [{draw_string,
+            {X+W11-L*7/2,Y-15,X_String,Font_7,set}}|R],
+      G_Win!font=Font_7);
+      R1=R),
+ 
+     draw_x_unit_scale(Win,Obj,G_Win,X+UnitWidth0,Y,MaxSize,C+1,R,RList);
+
+   draw_y_unit_scale(Win,Obj,G_Win,X,Y,MaxSize,C,R,R):-
+     Y + Obj!unit_height > MaxSize,!;
+   draw_y_unit_scale(Win,Obj,G_Win,X,Y,MaxSize,C,List,RList):-
+     C mod 5 == 0,!,
+     UnitHeight = Obj!unit_height,
+     List = [{draw_line,
+             {X-1,Y+UnitHeight,X-3,Y+UnitHeight,1,solid,set}}|R1],
+     (Obj!y_scale_set=on,!,
+      D=C*Obj!y_unit,
+      Obj!y_scale:=D,
+      :get_number_string(#symbolizer,Obj!y_scale,YS_String),
+      string(YS_String,L,T),
+      R1 = [{draw_string,
+            {X-1-L*7,Y+UnitHeight-UnitHeight/2-5,YS_String,Font_7,set}}|R],
+      G_Win!font=Font_7;
+      R1=R),
+     draw_y_unit_scale(Win,Obj,G_Win,X,Y+UnitHeight,MaxSize,C+1,R,RList);
+  draw_y_unit_scale(Win,Obj,G_Win,X,Y,MaxSize,C,List,RList):-
+     UnitHeight = Obj!unit_height,
+     List = [{draw_line,
+             {X-1,Y+UnitHeight,X-3,Y+UnitHeight,1,solid,set}}|R],
+     draw_y_unit_scale(Win,Obj,G_Win,X,Y+UnitHeight,MaxSize,C+1,R,RList);
+
+  set_value([],_,_):-!;
+  set_value([{Name,Count}|R],Obj,Num):-
+     set_vector_element(Obj!element_pool,Num,Count),
+     set_value(R,Obj,Num+1);
+ 
+  set_all([],Max,Max,Obj):-!;
+  set_all([{Unit,Element}|R],MC0,Max,Obj):-
+     heap_vector(Obj!element_pattern,Size),
+     ( Obj!first_unit == 0,!,
+       Num = Unit / Obj!y_unit * (Size/2);
+       Num = ( Unit / Obj!y_unit-1 ) * (Size/2) ),
+     max_value(Element,Obj,Num,0,MC),
+     ( MC0 > MC,!,
+       MC1 = MC0 ;
+       MC1 = MC ),
+     set_all(R,MC1,Max,Obj);
+
+  max_value([],_,_,MC,MC):-!;
+  max_value([{Name,Count}|R],Obj,Num,PC,MC):-
+    ( Count == nil,!, C = 0 ; C = Count ),
+     set_vector_element(Obj!element_pool,Num,Count),
+    ( C > PC,!,
+      LC = C;
+      LC = PC ),
+     max_value(R,Obj,Num+1,LC,MC);
+
+  draw(Unit,Max,R,RList,Obj,C):-
+     heap_vector(Obj!element_pool2,Size2),
+     C >Size2/2,!,
+     R = RList;
+  draw(Unit,Max,List,RList,Obj,C):-!,
+     UnitHeight = Obj!unit_height,
+     PositionX = Obj!x +1,
+     PositionY = Obj!y + Unit*UnitHeight - UnitHeight+1,
+     heap_vector(Obj!element_pattern,Size),
+     Size/2 = ENum,
+     Num = ( Unit - 1 )*ENum,
+     draw_element(0,Num,Size,PositionX,PositionY,Obj,List,RL),!,
+     draw(Unit+1,Max,RL,RList,Obj,C+1);
+
+  draw0(Unit,Max,R,RList,Obj,C):-
+     heap_vector(Obj!element_pool2,Size2),
+     C >Size2/2,!,
+     R = RList;
+  draw0(Unit,Max,List,RList,Obj,C):-!,
+     UnitHeight = Obj!unit_height,
+     PositionX = Obj!x +1,
+     PositionY = Obj!y + Unit*UnitHeight+1,
+     heap_vector(Obj!element_pattern,Size),
+     Size/2 = ENum,
+     Num =  Unit*ENum,
+     draw_element(0,Num,Size,PositionX,PositionY,Obj,List,RL),!,
+     draw0(Unit+1,Max,RL,RList,Obj,C+1);
+
+
+  draw_element(C,Num,ENum,X,Y,Obj,L,DR):-
+     vector_element(Obj!element_pattern,C+1,Pattern1),
+     vector_element(Obj!element_pool2,Num,Count1),
+     vector_element(Obj!element_pattern,C+3,Pattern2),
+     vector_element(Obj!element_pool2,Num+1,Count2),
+    (Count1>=Count2,!,
+     CountB = Count1,
+     CountS = Count2,
+     PatternA = Pattern1;
+     Count1 < Count2,!,
+     CountB = Count2,
+     CountS = Count1,
+     PatternA = Pattern2),
+      H = Obj!unit_height,
+     integer_to_floating_point(Obj!unit_width,UnitW),
+     integer_to_floating_point(Obj!x_unit,XUnit),
+     integer_to_floating_point(CountB,CountBF),
+     integer_to_floating_point(CountS,CountSF),
+     WBF = UnitW * CountBF / XUnit ,%%%%%%%%%%%%%%%%
+     WSF = UnitW * CountSF / XUnit ,%%%%%%%%%%%%%%%%
+     floating_point_to_integer(WBF,WB),
+     floating_point_to_integer(WSF,WS),
+     WBS = WB-WS,
+    (WB = 0,WS = 0,!,
+      L = DR;
+     WB-WS = 0,!,
+      L = [{draw_filled_rectangle,
+           {X,Y,WS,H,1,right_hatch,set}}|DR];
+     WS = 0,!,
+      L = [{draw_filled_rectangle,
+           {X,Y,WB,H,1,PatternA,set}}|DR];
+      L = [{draw_filled_rectangle,
+           {X,Y,WS,H,1,right_hatch,set}},
+           {draw_filled_rectangle,
+           {X+WS,Y,WBS,H,1,PatternA,set}}|DR]);
+  
+
+   set_attribute([],Obj):-!;
+   set_attribute([x(Name,Max,Unit)|R],Obj):- !,
+      Obj!x_name := Name,
+      Obj!x_max := Max,
+      Obj!x_unit := Unit,
+      set_attribute(R,Obj);
+   set_attribute([x_unit(Name,Unit)|R],Obj):- !,
+      Obj!x_name := Name,
+      Obj!x_unit := Unit,
+      set_attribute(R,Obj);
+   set_attribute([x_auto(Name)|R],Obj):-!,
+      Obj!x_name:=Name,
+      set_attribute(R,Obj);
+   set_attribute([y(Name,Max,Unit)|R],Obj):- !,
+      Obj!y_name := Name,
+      Obj!y_max := Max,
+      Obj!y_unit := Unit,
+      Obj!first_unit := Unit,
+      set_attribute(R,Obj);
+   set_attribute([y_max(Name,Max)|R],Obj):- !,
+      Obj!y_name := Name,
+      Obj!y_max := Max,
+      Obj!y_unit := 1,
+      Obj!first_unit := 0,
+      set_attribute(R,Obj);
+   set_attribute([size(X,Y)|R],Obj):- !,
+      ( X = 0,!, X1 = 1 ; X1 = X ),
+      Obj!x_size := X1,
+      Obj!y_size := Y,
+      set_attribute(R,Obj);
+   set_attribute([title(Title)|R],Obj):- !,
+      Obj!title := Title,
+      set_attribute(R,Obj);
+   set_attribute([position(X,Y)|R],Obj):- !,
+      Obj!x := X,
+      Obj!y := Y,
+      set_attribute(R,Obj);
+   set_attribute([element(Element)|R],Obj):- !,
+      count(Element,0,Num),
+      new_heap_vector(Array,Num*2),
+      ( Element = [E],!,
+        set_vector_element(Array,0,E),
+        Pattern = light_paint,
+        set_vector_element(Array,1,Pattern);
+        set_element(Element,Array,0,0)),
+      Obj!element_pattern := Array,
+      set_attribute(R,Obj);
+   set_attribute([y_scale(Visible)|R],Obj):-!,
+      Obj!y_scale_set:=Visible,
+      set_attribute(R,Obj);
+   set_attribute([x_max_visibility(Visible)|R],Obj):-!,
+      Obj!x_max_visibility:=Visible,
+      set_attribute(R,Obj);
+   set_attribute([x_name_visibility(Visible)|R],Obj):-!,
+      Obj!x_name_visibility:=Visible,
+      set_attribute(R,Obj);
+   set_attribute([y_name_visibility(Visible)|R],Obj):-!,
+      Obj!y_name_visibility:=Visible,
+      set_attribute(R,Obj);
+   set_attribute([scale_max(Max)|R],Obj):-!,
+      Obj!scale_max:=Max,
+      set_attribute(R,Obj);
+   set_attribute([x_scale(Visible)|R],Obj):-!,
+      Obj!x_scale:=Visible,
+      set_attribute(R,Obj);
+   set_attribute([H|R],Obj):-
+      set_attribute(R,Obj);
+
+   set_element([],Array,C,_):-!;
+   set_element([Name|R],Array,C,N):-!,
+      set_vector_element(Array,C,Name),
+      heap_vector(Array,Size),
+      ENum=Size/2,
+      set_pattern(ENum-N,Pattern),
+      set_vector_element(Array,C+1,Pattern),
+      set_element(R,Array,C+2,N+1);
+
+   set_pattern(N,Pattern):-
+      N = 1,!,
+      Pattern = rough_dotted;
+   set_pattern(N,Pattern):-
+      N = 2,!,
+      Pattern = light_paint;
+
+   count([],N,N):-!;
+   count([E|R],C,N):-
+     count(R,C+1,N);
+
+   init_vector(ElmPool,Size,Size):-!;
+   init_vector(ElmPool,C,Size):-
+     set_vector_element(ElmPool,C,nil),
+     init_vector(ElmPool,C+1,Size);
+
+  get_element(Obj,Size,Size,[],[]);
+  get_element(Obj,Size,C,List,RL):-
+     vector_element(Obj!element_pattern,C,Name),
+     List = [Name|R],
+     get_element(Obj,Size,C+2,R,RL);
+ 
+  set_new_data(Obj,C1,Size2,YB,Size2,Size1);
+
+  set_new_data(Obj,C,C2,YB,Size2,Size1):-
+     YB2 = YB*2,
+     set_max_num(Obj,C,0,YB2,MaxN,0,0,Size1),
+    (MaxN mod 2 = 0,!,
+     C1 = MaxN;
+     C1 = MaxN-1),
+     vector_element(Obj!element_pool,C1,Count1),
+     vector_element(Obj!element_pool,C1+1,Count2), 
+     set_vector_element(Obj!element_pool2,C2,Count1),
+     set_vector_element(Obj!element_pool2,C2+1,Count2),
+     set_new_data(Obj,C+2*YB,C2+2,YB,Size2,Size1);
+
+  set_max_num(Obj,Size1,N,YB2,MaxN,MaxN,Max,Size1);
+  set_max_num(Obj,C,YB2,YB2,MaxN,MaxN,Max,Size1);
+  set_max_num(Obj,C,N,YB2,MaxN,PreMaxN,PreMax,Size1):-
+     vector_element(Obj!element_pool,C,Count),
+    (PreMax > Count,!,
+     MaxN1 = PreMaxN, Max1 = PreMax;
+     MaxN1 = C,   Max1 = Count),
+     set_max_num(Obj,C+1,N+1,YB2,MaxN,MaxN1,Max1,Size1);
+
+   set_yb(YSize,YB,NY):-
+     (NY/YSize = 1,!,
+      YB = 2;
+      NY mod YSize = 0,!,
+      YB = NY/YSize;
+      YB = NY/YSize+1);
+   
+end.
+
+
+

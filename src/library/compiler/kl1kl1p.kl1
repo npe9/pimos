@@ -1,0 +1,38 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1_macro_expander.
+:- public translate/2.
+:- public translate/5.
+
+translate(In, Out) :- true | In="kl1", Out="pkl1".
+
+translate(Macro, KL1, VP, Msg, Stat) :- true |
+    errFilter(Msg, [], normal, Stat, Err0),
+    kl1cmp_macro_driver:driver(Err0, [], VP, [], Macro, KL1).
+
+:- local_implicit msg:oldnew, stat:oldnew.
+errFilter([error(Str, Arg)|Cdr]) --> true |
+    &msg <<= [error(Str, Arg)],
+    &stat <= abnormal,
+    errFilter(Cdr).
+errFilter([error(Str, Arg, [])|Cdr]) --> true |
+    &msg <<= [error(Str, Arg)],
+    &stat <= abnormal,
+    errFilter(Cdr).
+errFilter([warning(Str, Arg, [])|Cdr]) --> true |
+    &msg <<= [warning(Str, Arg)],
+    errFilter(Cdr).
+otherwise.
+errFilter([error(Str, Arg, Pos)|Cdr]) --> true |
+    &msg <<= [error(Str, Arg, Pos)],
+    &stat <= abnormal,
+    errFilter(Cdr).
+otherwise.
+errFilter([Msg|Cdr]) --> true |
+    &msg <<= [Msg],
+    errFilter(Cdr).
+errFilter([]) --> true | true.

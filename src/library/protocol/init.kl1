@@ -1,0 +1,170 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module procom2.
+:- public go/0, go/1,go/5.
+:- with_macro pimos.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%         top level predicate
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+go:- true |
+    wait_input_from_window(Input,Top,Module,Output),
+    create_process(Input,Top,Module,Output,error).
+
+go(Error):- true |
+    wait_input_from_window(Input,Top,Module,Output),
+    create_process(Input,Top,Module,Output,Error).
+
+go(Input,Top,Module,Error,Output):- true |
+    create_process(Input,Top,Module,Output,Error).
+
+%%%%%%%%%%
+
+wait_input_from_window(InputF,Top,Module,OutputF):- true |
+    shoen:raise(pimos_tag#shell,get_std(in),Win),
+    read_from_win(Win,InputF,Top,Module,OutputF).        
+
+read_from_win(Win, InputF, Top, Module, OutputF):- true |
+    Win = [prompt("Input File Names > "), gett(FileNames) |Win1],
+    inputFile(FileNames,InputF,Win1,Win2,Defout),
+    Win2 = [prompt("Top Level Protocols > "), gett(Protocols) | Win3],
+    protocols(Protocols,Top,Win3,Win4),
+    Win4 = [prompt("Module Name > "), gett(ModuleN) | Win5],
+    moduleName(ModuleN,Module,Win5,Win6),
+    Win6 = [prompt("Output File Name > "), getwt(OutFile)],
+    outputFile(OutFile,OutputF,Defout).
+%    Win8 = [prompt("Please type 'quit' > "), gett(End) | Win9],
+%    waitEnd(End,Win9).
+
+inputFile(File,InputF,Win,WinT,Defout):- integer(File) |
+    InputF = [],
+    Win = WinT.
+inputFile(File,InputF,Win,WinT,Defout):- atom(File) |
+    InputF = [File],
+    Defout = File,
+    Win = WinT.
+inputFile(Files,InputF,Win,WinT,Defout):- vector_element(Files,1,File) |
+    InputF = [File | Input2],
+    Defout = File,
+    vector_element(Files,2,Nfiles,_),
+    Win = WinT,
+    inputFile2(Nfiles, Input2).
+
+inputFile2(Files,InputF):- atom(Files) |
+    InputF = [Files].
+inputFile2(Files,InputF):- vector_element(Files,1,File) |
+    InputF = [File | Input2],
+    vector_element(Files,2,Nfiles,_),
+    inputFile2(Nfiles,Input2).
+
+waitEnd(quit,Win):- true |
+    Win = [].
+otherwise.
+waitEnd(In,Win):- wait(In) |
+    Win = [].
+
+protocols(Prot,Top,Win,WinT):- atom(Prot) |
+    Top = [Prot],
+    Win = WinT.
+%protocols('##'(Prot,Err),Top,Win,WinT):- atom(Prot) |
+%    Top = [{Prot,Err}],
+%    Win = WinT.
+%protocols('##'(Prot),Top,Win,WinT):- atom(Prot) |
+%    Top = [{Prot,Prot}],
+%    Win = WinT.
+protocols('#'(Prot,Err),Top,Win,WinT):- atom(Prot) |
+    Top = [{Prot,Err}],
+    Win = WinT.
+protocols('#'(Prot),Top,Win,WinT):- atom(Prot) |
+    Top = [{Prot,Prot}],
+    Win = WinT.
+otherwise.
+protocols(Prot,Top,Win,WinT):- vector_element(Prot,1,Protocol) |
+    checkErr(Protocol,TopP),
+    Top = [TopP | Top2],
+    vector_element(Prot,2,Nprot,_),
+    Win = WinT,
+    protocols2(Nprot,Top2).
+
+protocols2(Prot,Top) :- atom(Prot) |
+    Top = [Prot].
+%protocols2('##'(Prot,Err),Top):- atom(Prot) |
+%    Top = [{Prot,Err}].
+%protocols2('##'(Prot),Top):- atom(Prot) |
+%    Top = [{Prot,Prot}].
+protocols2('#'(Prot,Err),Top):- atom(Prot) |
+    Top = [{Prot,Err}].
+protocols2('#'(Prot),Top):- atom(Prot) |
+    Top = [{Prot,Prot}].
+otherwise.
+protocols2(Prot,Top) :- vector_element(Prot,1,Protocol) |
+    checkErr(Protocol,TopP),
+    Top = [TopP | Top2],
+    vector_element(Prot,2,Nprot,_),
+    protocols2(Nprot,Top2).
+
+checkErr(Prot,Top) :- atom(Prot) |
+    Top = Prot.
+%checkErr('##'(Prot,Err),Top):- atom(Prot) |
+%    Top = {Prot,Err}.
+%checkErr('##'(Prot),Top):- atom(Prot) |
+%    Top = {Prot,Prot}.
+checkErr('#'(Prot,Err),Top):- atom(Prot) |
+    Top = {Prot,Err}.
+checkErr('#'(Prot),Top):- atom(Prot) |
+    Top = {Prot,Prot}.
+
+moduleName(ModuleN,Module,Win,WinT):- atom(ModuleN) |
+    Module = ModuleN,
+    Win = WinT.
+moduleName(M,Module,Win,WinT):- integer(M) |
+    Module = M,
+    Win = WinT.
+
+outputFile(normal(atom(OutFile)),OutputF,Defout):- true |
+    OutFile = OutputF.
+outputFile(normal(empty),OutputF,Defout):- atom(Defout) |
+    OutputF = Defout.
+otherwise.
+outputFile(Name,OutputF,Defout):- true |
+    OutputF = 1,
+    shoen:raise(pimos_tag#shell,get_std_out,
+        [putt('illegal_fileName_for_output'),nl,flush(S)]),
+    suicide(S).
+
+suicide(S):- wait(S) |
+    shoen:raise(pimos_tag#pimos,general_request,[abort([],_)]).
+
+%%%%%%%%%%
+
+create_process(Inputfile,Top,Module,Outputfile,Flag):- true |    
+    protRead:readDef(Inputfile,Term),
+    protAnalyze:analyzeDef(Top,TopC,TopO,Term,DefTableW),
+    protDeftable:defTable([initialize|DefTableW],[initialize|DefTableR]),   
+    protCompile:compile(TopC,DefTableR,Normal),
+%    output(DefTableW).
+    protCodegen:codegen(Normal,FileOut),
+    protFileout:fileout(Outputfile,TopO,Module,Flag,FileOut).
+
+output(Def):- true |
+    merge(Def,Def2),
+    shoen:raise(pimos_tag#shell,get_std_out,Win),
+    Win = [print_depth(10)|Wtail],
+    output2(Def2,Wtail).
+
+output2([],Win):- true | Win = [putl(string#"!!! Translation Completed !!!")].
+output2(['$error'(ErrInfo)|Tail],Win):- true |
+    Win = [print_error(error(ErrInfo)) | Wtail],
+    output2(Tail,Wtail).
+output2(['$ambiguous'(ErrInfo)|Tail],Win):- true |
+    Win = [print_error(ambiguous(ErrInfo)) | Wtail],
+    output2(Tail,Wtail).
+otherwise.
+output2([Def|Tail],Win):- true |
+    Win = [putt(Def),nl | Wtail],
+    output2(Tail,Wtail).

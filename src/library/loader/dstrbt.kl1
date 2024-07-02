@@ -1,0 +1,834 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Loader>dstrbt.kl1.6, 17-Sep-92 21:08:39, Edit by hori
+
+:- module kl1_compiler_distributer.
+:- with_macro pimos.
+:- public open_and_compile/6.
+:- public compile/6.
+:- public translate/6.
+:- public outputKLB/6.
+:- public verify/6.
+
+open_and_compile(FileNames,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = [get_ext(EXTs),
+           get_processors(PEs),
+           get_parallel(PN)|VP1],
+    kl1_library_file_utility:open_files(FileNames,EXTs,VP1,VP2,FSs0,MESG0,MESG1,Status0),
+    control(Status1,FSs0,FSs1,PEs,PN,MESG1,MESG2,Status2),
+    VP2 = [do(VP3)|VP4],
+    distribute(FSs1,compile,4000,VP3,Status1),
+    and_status(Status0,Status2,Status3),
+    flush(Status3,MESG2,MESG,VP4,VP,Status).
+
+compile(FSs0,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = [get_processors(PEs),
+           get_parallel(PN),
+           do(VP1)|VP2],
+    control(Status1,FSs0,FSs1,PEs,PN,MESG0,MESG1,Status2),
+    distribute(FSs1,compile,4000,VP1,Status1),
+    flush(Status2,MESG1,MESG,VP2,VP,Status).
+
+translate(FileNames,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = [get_ext(EXTs),
+           get_processors(PEs),
+           get_parallel(PN),
+           do(VP1)|VP],
+    kl1_library_file_utility:open_files(FileNames,EXTs,VP1,VP2,FSs0,MESG0,MESG1,Status0),
+    control(Status1,FSs0,FSs1,PEs,PN,MESG1,MESG2,Status2),
+    distribute(FSs1,translate,4000,VP2,Status1),
+    MESG2 = [report_total_error(string#"Translation(s)")|MESG],
+    and_status(Status0,Status2,Status).
+
+outputKLB(FileNames,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = [get_ext(EXTs),
+           get_processors(PEs),
+           get_parallel(PN),
+           do(VP1)|VP],
+    kl1_library_file_utility:open_files(FileNames,EXTs,VP1,VP2,FSs0,MESG0,MESG1,Status0),
+    control(Status1,FSs0,FSs1,PEs,PN,MESG1,MESG2,Status2),
+    distribute(FSs1,outputKLB,4000,VP2,Status1),
+    MESG2 = [report_total_error(string#"KLB Compilation(s)")|MESG],
+    and_status(Status0,Status2,Status).
+
+verify(FileNames,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = [get_ext(EXTs),
+           get_processors(PEs),
+           get_parallel(PN),
+           do(VP1)|VP],
+    kl1_library_file_utility:open_files(FileNames,EXTs,VP1,VP2,FSs0,MESG0,MESG1,Status0),
+    control(Status1,FSs0,FSs1,PEs,PN,MESG1,MESG2,Status2),
+    compile_option_pool(VP2,VP3,MESG3),
+    distribute(FSs1,verify,4000,VP3,Status1),
+    append_message(MESG2,MESG3,MESG4),
+    MESG4 = [report_total_error(string#"Verification(s)")|MESG],
+    and_status(Status0,Status2,Status).
+
+control(Status0,FSs0,FSs1,PEs,PN,MESG0,MESG,Status) :- true |
+    merge(Status0,Status1),
+    assign_pe(PEs,PEs,PN,FSs0,FSs1,Status1,MESG0,MESG,Status).
+
+assign_pe([PE|PEs],PEs0,PN,[FS|FSs0],FSs1,Status0,MESG0,MESG,Status) :- PN > 0 |
+    FSs1 = [{FS,PE}|FSs2],
+    assign_pe(PEs,PEs0,PN,FSs0,FSs2,Status0,MESG0,MESG,Status).
+assign_pe([],PEs,PN,FSs0,FSs1,Status0,MESG0,MESG,Status) :- PN > 0 |
+    PN1 := PN - 1,
+    assign_pe(PEs,PEs,PN1,FSs0,FSs1,Status0,MESG0,MESG,Status).
+assign_pe(PEs,PEs0,0,FSs0,FSs1,Status0,MESG0,MESG,Status) :- true |
+    wait_done(Status0,FSs0,FSs1,MESG0,MESG,Status).
+otherwise.
+assign_pe(PEs,PEs0,PN,[],FSs1,Status0,MESG0,MESG,Status) :- true |
+    FSs1 = [],
+    check_status(Status0,MESG0,MESG,Status).
+
+wait_done([{normal,MESG1,PE}|Next],[FS|FSs0],FSs1,MESG0,MESG,Status) :- true |
+    FSs1 = [{FS,PE}|FSs2],
+    append_message(MESG0,MESG1,MESG2),
+    wait_done(Next,FSs0,FSs2,MESG2,MESG,Status).
+wait_done([{abnormal,MESG1,PE}|Next],[FS|FSs0],FSs1,MESG0,MESG,Status) :- true |
+    FSs1 = [{FS,PE}|FSs2],
+    append_message(MESG0,MESG1,MESG2),
+    Status = abnormal,
+    wait_done_0(Next,FSs0,FSs2,MESG2,MESG).
+wait_done(Status0,[],FSs1,MESG0,MESG,Status) :- true |
+    FSs1 = [],
+    check_status(Status0,MESG0,MESG,Status).
+
+wait_done_0([{_,MESG1,PE}|Next],[FS|FSs0],FSs1,MESG0,MESG) :- true |
+    FSs1 = [{FS,PE}|FSs2],
+    append_message(MESG0,MESG1,MESG2),
+    wait_done_0(Next,FSs0,FSs2,MESG2,MESG).
+wait_done_0(Status0,[],FSs1,MESG0,MESG) :- true |
+    FSs1 = [],
+    check_status(Status0,MESG0,MESG,_).
+
+check_status([{normal,MESG1,PE}|Next],MESG0,MESG,Status) :- true |
+    append_message(MESG0,MESG1,MESG2),
+    MESG2 = [flush|MESG3],
+    check_status(Next,MESG3,MESG,Status).
+check_status([{abnormal,MESG1,PE}|Next],MESG0,MESG,Status) :- true |
+    Status = abnormal,
+    append_message(MESG0,MESG1,MESG2),
+    MESG2 = [flush|MESG3],
+    check_status_0(Next,MESG3,MESG).
+check_status([],MESG0,MESG,Status) :- true |
+    MESG = MESG0,
+    Status = normal.
+
+check_status_0([{Status,MESG1,PE}|Next],MESG0,MESG) :- wait(Status) |
+    append_message(MESG0,MESG1,MESG2),
+    MESG2 = [flush|MESG3],
+    check_status_0(Next,MESG3,MESG).
+check_status_0([],MESG0,MESG) :- true |
+    MESG = MESG0.
+
+distribute([{FS0,PE}|FSs],Mode,Pri0,VP0,Status) :- true |
+    FS0 = [pathname(normal(FileName)),
+           attributes(normal(Owner,User,CDate,CTime,MDate,MTime,LC,FS,RS))|FS1],
+    kl1_library_file_utility:normalize_date_time(MDate,MTime,Date,Time),
+    VP0 = {VP1,VP2},
+    kl1_library_file_utility:file_extension(FileName,EXT),
+    kl1_library_string_utility:upper_to_lower(EXT,Ext),
+    assign_pre_proc_0(PE,Ext,Mode,FileName,Date,Time,FS1,VP1,Status0)@priority(*,Pri0),
+    Status = {Status0,Status1},
+    distribute(FSs,Mode,Pri0,VP2,Status1).
+distribute([],Mode,Pri,VP0,Status) :- true |
+    VP0 = [],
+    Status = [].
+
+assign_pre_proc_0(PE,Ext,Mode,FileName,Date,Time,FS1,VP1,Status0) :- true |
+    assign_pre_proc(Ext,Mode,FileName,Date,Time,FS1,VP1,Status0)@node(PE).
+
+assign_pre_proc(string#"sav",compile,FileName,Date,Time,FS0,VP0,Status) :- true |
+    load:load_file_stream(FS0,VP0,[],MESG0,[],Status0),
+    set_status(Status0,MESG0,Status).
+otherwise.
+assign_pre_proc(InLang,compile,FileName,Date,Time,FS0,VP0,Status) :- true |
+    MESG = [message(string#"Compile File : ~s",[FileName]),flush|MESG0],
+    VP0 = [get_message_mode(MM),
+           get_parser(InLang,Parser),
+           get_module_table(ModTbl0)|{VP1,VP2}],
+    file_option_pool(InLang,FileName,Date,Time,VP1,[do(FP0)|FP1]),
+    assign_parser(Parser,compile,FS0,PredList,InLang,OutLang,ModTbl0,FP0,Sort,PMod,MESG2,Status0),
+    cal(PredList,FP1,Sort,MESG3,Status0,Status1),
+    sorter:merge(MESG2,MESG3,Sort,MESG1),
+    verbose_message(MM,PMod,VP2,MESG1,MESG0),
+    set_status(Status1,MESG,Status).
+assign_pre_proc(InLang,outputKLB,FileName,Date,Time,FS0,VP0,Status) :- true |
+    MESG = [message(string#"Compile File : ~s",[FileName]),flush|MESG0],
+    VP0 = [get_message_mode(MM),
+           get_parser(InLang,Parser),
+           get_module_table(ModTbl0)|{VP1,VP2}],
+    file_option_pool(InLang,FileName,Date,Time,VP1,[do(FP0)|FP1]),
+    assign_parser(Parser,compile,FS0,PredList,InLang,OutLang,ModTbl0,FP0,Sort,PMod,MESG2,Status0),
+    outKLB(FileName,PredList,FP1,MESG3,Status0,Status1),
+    sorter:merge(MESG2,MESG3,Sort,MESG1),
+    verbose_message(MM,PMod,VP2,MESG1,MESG0),
+    set_status(Status1,MESG,Status).
+assign_pre_proc(InLang,translate,FileName,Date,Time,FS0,VP0,Status) :- true |
+    MESG = [message(string#"Translate File : ~s",[FileName]),flush|MESG0],
+    VP0 = [get_message_mode(MM),
+           get_parser(InLang,Parser),
+           get_module_table({ModTbl0,ModTbl1})|{VP1,VP2}],
+    file_option_pool(InLang,FileName,Date,Time,VP1,[do(FP0)|FP1]),
+    assign_parser(Parser,translate,FS0,PredList,InLang,OutLang,ModTbl0,FP0,Sort,PMod,MESG2,Status0),
+    output(FileName,OutLang,PredList,ModTbl1,FP1,Sort,MESG3,Status0,Status1),
+    sorter:merge(MESG2,MESG3,Sort,MESG1),
+    verbose_message(MM,PMod,VP2,MESG1,MESG0),
+    set_status(Status1,MESG,Status).
+assign_pre_proc(InLang,verify,FileName,Date,Time,FS0,VP0,Status) :- true |
+    MESG = [message(string#"Verify File : ~s",[FileName]),flush|MESG0],
+    VP0 = [get_message_mode(MM),
+           get_parser(InLang,Parser),
+           get_module_table(ModTbl0)|{VP1,VP2}],
+    file_option_pool(InLang,FileName,Date,Time,VP1,FP0),
+    assign_parser(Parser,verify,FS0,PredList,InLang,OutLang,ModTbl0,FP0,Sort,PMod,MESG1,Status0),
+    verbose_message(MM,PMod,VP2,MESG1,MESG0),
+    set_status(Status0,MESG,Status).
+
+set_status(Status0,MESG,Status) :- wait(Status0) |
+    current_node(PE,Max),
+    Status = [{Status0,MESG,PE}].
+
+assign_parser([],Mode,FS0,PredList,InLang,OutLang,ModTbl0,IP0,Sort,PMod,MESG0,Status) :- true |
+    IP0 = {IP1,IP2,IP3},
+    pp_pool(IP1,PPP),
+    kl1_standard_preprocessor:parse(FS0,PredList0,IP2,MESG1,Status0),
+    predicate_to_code(module#kl1_standard_preprocessor,sort,5,Sort),
+    assign_pps(InLang,OutLang,Mode,PredList0,PredList,ModTbl0,PPP,IP3,Sort,MESG2,Status1),
+    check_status(Status0,Status1,Status,Sort,MESG1,MESG2,MESG0),
+    PMod = module#kl1_standard_preprocessor.
+otherwise.
+assign_parser(Parser,Mode,FS0,PredList,InLang,OutLang,ModTbl0,IP0,Sort,PMod,MESG0,Status) :-
+    true |
+    IP0 = {IP1,IP2,IP3},
+    pp_pool(IP1,PPP),
+    ModTbl0 = [get_module(Parser,St)|ModTbl1],
+    apply_parser(St,Parser,FS0,PredList0,IP2,Sort,PMod,MESG1,Status0),
+    assign_pps(InLang,OutLang,Mode,PredList0,PredList,ModTbl1,PPP,IP3,Sort,MESG2,Status1),
+    check_status(Status0,Status1,Status,Sort,MESG1,MESG2,MESG0).
+
+assign_pps(InLang,OutLang,verify,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    IP0 = [get_verifier(InLang,Verifier)|IP1],
+    verify(Verifier,InLang,OutLang,PredList0,PredList,ModTbl0,PPP,IP1,Sort,MESG0,Status).
+assign_pps(InLang,OutLang,translate,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    IP0 = [get_unparser(InLang,Unparser)|IP1],
+    unparse(Unparser,InLang,OutLang,PredList0,PredList,ModTbl0,PPP,IP1,Sort,MESG0,Status).
+assign_pps(non_existent("pkl1"),OutLang,compile,PL0,PL,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    OutLang = string#"pkl1",
+    PL = PL0,
+    ModTbl0 = [],
+    PPP = [],
+    IP0 = [],
+    MESG0 = [],
+    Status = normal.
+otherwise.
+assign_pps(non_existent(InLang),OutLang,compile,PL0,PL,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    OutLang = string#"pkl1",
+    PL = PL0,
+    ModTbl0 = [],
+    PPP = [],
+    IP0 = [],
+    MESG0 = [warning("unknown language : ~s (""kl1"" assumed)",[InLang])],
+    Status = normal.
+otherwise.
+assign_pps(InLang,OutLang,Mode,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    assign_pps_0(InLang,OutLang,Mode,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status).
+
+unparse([],string#"pkl1",OutLang,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    OutLang = string#"pkl1",
+    PredList = PredList0,
+    ModTbl0 = [],
+    PPP = [],
+    IP0 = [],
+    MESG0 = [error(string#"unparser not found",[])],
+    Status = normal.
+otherwise.
+unparse([],InLang,OutLang,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    assign_pps_0(InLang,OutLang,translate,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status).
+otherwise.
+unparse(Unparser,InLang,OutLang,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    OutLang = InLang,
+    ModTbl0 = [],
+    PredList = PredList0,
+    PPP = [],
+    IP0 = [],
+    MESG0 = [],
+    Status = normal.
+
+verify([],string#"pkl1",OutLang,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    OutLang = string#"pkl1",
+    PredList = PredList0,
+    ModTbl0 = [],
+    PPP = [],
+    IP0 = [],
+    MESG0 = [error(string#"verifier not found",[])],
+    Status = normal.
+otherwise.
+verify([],InLang,OutLang,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    assign_pps_0(InLang,OutLang,verify,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status).
+otherwise.
+verify(Verifier,InLang,OutLang,PredList0,PredList,ModTbl0,PPP,IP0,Sort,MESG0,Status) :- true |
+    ModTbl0 = [get_module(Verifier,St)],
+    OutLang = InLang,
+    PredList = [],
+    PPP = [],
+    Status = normal,
+    apply_verifier(St,Verifier,PredList0,IP0,Sort,MESG0).
+
+apply_verifier(normal(Module),Verifier,PredList0,IP0,Sort,MESG0) :- true |
+    predicate_to_code(Module,verify,4,Code),
+    apply_verifier_0(Code,Module,Verifier,PredList0,IP0,Sort,MESG0).
+otherwise.
+apply_verifier(_,Verifier,PredList0,IP0,Sort,MESG0) :- true |
+    IP0 = [],
+    MESG0 = [error(string#"undefined verifier module : ~t",[Verifier])].
+
+apply_verifier_0(Code,Module,Verifier,PredList0,IP0,Sort,MESG0) :- code(Code,_,_,_) |
+    IP0 = {IP1,IP2},
+    sorter:sort(MESG1,Sort,MESG0),
+    apply(Code,{PredList0,IFCMessages,IP1,MESG1}),
+    predicate_to_code(Module,inter_file_verify,3,IFCCode),
+    verify_ifc_code(IFCCode,Verifier,IFCMessages,Sort,IP2).
+otherwise.
+apply_verifier_0(Code,Module,Verifier,PredList0,IP0,Sort,MESG0) :- true |
+    IP0 = [],
+    MESG0 = [error(string#"undefined verifier code : ~t:verify/4",[Verifier])].
+
+verify_ifc_code(Code,Verifier,Messages,Sort,IP0) :- code(Code,_,_,_), list(Messages) |
+    IP0 = [inter_file_verify(Verifier,Code,Messages,Sort)].
+otherwise.
+verify_ifc_code(Code,_,_,_,IP0) :- true | IP0 = [].
+
+assign_pps_0(string#"pkl1",OutLang,Mode,PredList0,PredList,ModTbl0,PPP0,IP0,Sort,MESG0,Status) :-
+    Mode \= verify |
+    OutLang = string#"pkl1",
+    PredList = PredList0,
+    ModTbl0 = [],
+    PPP0 = [],
+    IP0 = [],
+    MESG0 = [],
+    Status = normal.
+assign_pps_0(non_existent(InLang),OutLang,translate,PredList0,PredList,
+                                                ModTbl0,PPP0,IP0,Sort,MESG0,Status) :- true |
+    OutLang = InLang,
+    PredList = PredList0,
+    ModTbl0 = [],
+    PPP0 = [],
+    IP0 = [],
+    MESG0 = [],
+    Status = normal.
+otherwise.
+assign_pps_0(InLang,OutLang,Mode,PredList0,PredList,ModTbl0,PPP0,IP0,Sort,MESG,Status) :-
+    string(InLang,_,16) |
+    ModTbl0 = {ModTbl1,ModTbl2},
+    PPP0 = [get_pp(InLang,OutLang0,PPs)|PPP1],
+    IP0 = {IP1,IP2},
+    check_status(Status0,Status1,Status,Sort,MESG0,MESG1,MESG),
+    assign_pp(PPs,Mode,PredList0,PredList1,ModTbl1,IP1,Sort,MESG0,Status0),
+    assign_pps(OutLang0,OutLang,Mode,PredList1,PredList,ModTbl2,PPP1,IP2,Sort,MESG1,Status1).
+otherwise.
+assign_pps_0(non_existent(InLang),OutLang,Mode,PredList0,PredList,
+                                                    ModTbl0,PPP0,IP0,Sort,MESG,Status) :-
+    Mode \= translate |
+    MESG = [warning("unknown language : ~s (""kl1"" assumed)",[InLang])|MESG0],
+    ModTbl0 = {ModTbl1,ModTbl2},
+    PPP0 = [get_pp(string#"kl1",OutLang0,PPs)|PPP1],
+    IP0 = {IP1,IP2},
+    check_status(Status0,Status1,Status,Sort,MESG1,MESG2,MESG0),
+    assign_pp(PPs,Mode,PredList0,PredList1,ModTbl1,IP1,Sort,MESG1,Status0),
+    assign_pps(OutLang0,OutLang,Mode,PredList1,PredList,ModTbl2,PPP1,IP2,Sort,MESG2,Status1).
+
+assign_pp([PP|PPs],Mode,PredList0,PredList,ModTbl0,IP0,Sort,MESG,Status) :- true |
+    IP0 = {IP1,IP2},
+    ModTbl0 = [get_module(PP,St)|ModTbl1],
+    check_status(Status0,Status1,Status,Sort,MESG0,MESG1,MESG),
+    apply_preproc(St,PP,translate,PredList0,PredList1,IP1,Sort,MESG0,Status0),
+    assign_pp(PPs,Mode,PredList1,PredList,ModTbl1,IP2,Sort,MESG1,Status1).
+assign_pp([],Mode,PredList0,PredList,ModTbl0,IP0,Sort,MESG0,Status) :- true |
+    PredList0 = PredList,
+    ModTbl0 = [],
+    IP0 = [],
+    MESG0 = [],
+    Status = normal.
+
+apply_parser(normal(Module),ModName,In,Out,IP0,Sort,PMod,MESG0,Status) :- true |
+    PMod = Module,
+    predicate_to_code(Module,parse,5,ParseCode),
+    predicate_to_code(Module,sort,5,SortCode),
+    check_comparator(SortCode,Sort),
+    apply_code_0(ParseCode,ModName,Module,parse,In,Out,IP0,Sort,MESG0,Status).
+otherwise.
+apply_parser(_,ModName,In,Out,IP0,Sort,PMod,MESG0,Status) :- true |
+    In = [],
+    Out = [],
+    IP0 = [],
+    PMod = 0,
+    predicate_to_code(module#kl1_standard_preprocessor,sort,5,Sort),
+    MESG0 = [error(string#"undefined parser module : ~t",[ModName])],
+    Status = abnormal.
+
+check_comparator(Code,Sort) :- code(Code,_,_,_) |
+    Sort = Code.
+otherwise.
+check_comparator(_,Sort) :- true |
+    predicate_to_code(module#kl1_standard_preprocessor,sort,5,Sort).
+
+apply_preproc(normal(Module),ModName,Predicate,In,Out,IP0,Sort,MESG0,Status) :- true |
+    predicate_to_code(Module,Predicate,5,Code),
+    apply_code_0(Code,ModName,Module,Predicate,In,Out,IP0,Sort,MESG0,Status).
+otherwise.
+apply_preproc(_,ModName,Perdicate,In,Out,IP0,Sort,MESG0,Status) :- true |
+    Out = [],
+    IP0 = [],
+    MESG0 = [error(string#"undefined module : ~t",[ModName])],
+    Status = abnormal.
+
+apply_code_0(Code,_,_,_,In,Out,IP0,Sort,MESG0,Status) :- code(Code,_,_,_) |
+    sorter:sort(MESG1,Sort,MESG0),
+    apply(Code,{In,Out,IP0,MESG1,Status}).
+otherwise.
+apply_code_0(_,ModName,Module,Predicate,In,Out,IP0,Sort,MESG0,Status) :- true |
+    predicate_to_code(Module,Predicate,6,Code),
+    apply_code_1(Code,ModName,Predicate,In,Out,IP0,Sort,MESG0,Status).
+
+apply_code_1(Code,_,parse,In0,Out,IP0,Sort,MESG0,Status) :- code(Code,_,_,_) |
+    out_filter(Out0,Out,FileName),
+    In0 = [pathname(normal(FileName))|In],
+    apply(Code,{In,Out0,IP0,MESG0,[],Status}).
+apply_code_1(Code,_,translate,In,Out,IP0,Sort,MESG0,Status) :- code(Code,_,_,_) |
+    in_filter(In,In0,Car),
+    out_filter(Out0,Out,Car),
+    apply(Code,{In0,Out0,IP0,MESG0,[],Status}).
+apply_code_1(Code,_,unparse,In,Out,IP0,Sort,MESG0,Status) :- code(Code,_,_,_) |
+    in_filter(In,In0,Car),
+    apply(Code,{In0,Out,IP0,MESG0,[],Status}).
+otherwise.
+apply_code_1(_,ModName,parse,In,Out,IP0,Sort,MESG0,Status) :- true |
+    In = [],
+    Out = [],
+    IP0 = [],
+    MESG0 = [error(string#"undefined parser code : ~t:parse",[ModName])],
+    Status = abnormal.
+otherwise.
+apply_code_1(_,ModName,Pred,In,Out,IP0,Sort,MESG0,Status) :- true |
+    Out = [],
+    IP0 = [],
+    MESG0 = [error(string#"undefined code : ~t:~t",[ModName,Pred])],
+    Status = abnormal.
+
+in_filter(In,Out,Car) :- In = [Term-{[Car0|_],Info}|Rest] |
+    in_filter_0(In,Out),
+    Car = Car0.
+in_filter([],Out,Car) :- true | Out = [], Car = string#" ".
+otherwise.
+in_filter(In,Out,Car) :- true |
+    in_filter_0(In,Out),
+    Car = [].
+
+in_filter_0([Term-PosInfo|In1],Out0) :- true |
+    Out0 = [Term|Out1],
+    in_filter_0(In1,Out1).
+in_filter_0([],Out0) :- true | Out0 = [].
+
+out_filter([Term|In1],Out0,Car) :- Car \= [] |
+    Out0 = [(Term-{[Car],[]})|Out1],
+    out_filter(In1,Out1,Car).
+out_filter([Term|In1],Out0,[]) :- true |
+    Out0 = [(Term-[])|Out1],
+    out_filter(In1,Out1,Car).
+out_filter([],Out0,Car) :- true | Out0 = [].
+
+append_message(MESG0,[Message|MESG1],MESG) :- true |
+    MESG0 = [Message|Next],
+    append_message(Next,MESG1,MESG).
+append_message(MESG0,[],MESG) :- true |
+    MESG0 = MESG.
+
+verbose_message(Mode,PMod,IP,MESG0,MESG) :- module(PMod,_) |
+    predicate_to_code(PMod,message,4,PCode),
+    verbose(PCode,Mode,IP,MESG0,MESG).
+otherwise.
+verbose_message(Mode,PMod,IP,MESG0,MESG) :- true |
+    kl1_standard_preprocessor:message(Mode,MESG0,IP,MESG).
+
+verbose(Code,Mode,IP,MESG0,MESG) :- code(Code,_,_,_) |
+    apply(Code,{Mode,MESG0,IP,MESG}).
+otherwise.
+verbose(_,Mode,IP,MESG0,MESG) :- true |
+    kl1_standard_preprocessor:message(Mode,MESG0,IP,MESG).
+
+pp_pool(IP0,PPP) :- true |
+    IP0 = [get_pps(PPs)],
+    pool:keyed_set(PPP0,20),
+    init_ppp(PPs,PPP0,PPP).
+
+init_ppp([{InLang,PP}|Rest],PPP0,PPP) :- true |
+    PPP0 = [put(InLang,PP,_)|PPP1],
+    init_ppp(Rest,PPP1,PPP).
+init_ppp([],PPP0,PPP) :- true |
+    pp_pool_0(PPP,PPP0).
+
+pp_pool_0([get_pp(InLang,OutLang,PPs)|PPP],PPP0) :- true |
+    PPP0 = [get_if_any(InLang,Out)|PPP1],
+    pp_pool_1(Out,InLang,OutLang,PPs),
+    pp_pool_0(PPP,PPP1).
+pp_pool_0([],PPP0) :- true | PPP0 = [].
+
+pp_pool_1({{OutLang0,PPs0}},InLang,OutLang,PPs) :- true |
+    OutLang = OutLang0,
+    PPs0 = PPs.
+pp_pool_1({},InLang,OutLang,PPs) :- true |
+    OutLang = non_existent(InLang),
+    PPs = [].
+
+output(FullPathName,OutLang,PredList,ModTbl0,IP0,Sort,MESG0,normal,Status) :- true |
+    kl1_library_file_utility:decomp_filename(FullPathName,Node,Path,FileName,Extension,Version,DirStr),
+    builtin#append_string([Path,DirStr,FileName, string#".",OutLang],OutPathName),
+    IP0 = [get_file_request(FR0),get_unparser(OutLang,Unparser)|IP1],
+    FR0 = [open(OutPathName,write(St))],
+    output_0(St,OutPathName,Unparser,PredList,ModTbl0,IP1,Sort,MESG0,Status).
+otherwise.
+output(FullPathName,OutLang,PredList,ModTbl0,IP0,Sort,MESG0,Status0,Status) :- true |
+    ModTbl0 = [],
+    IP0 = [],
+    MESG0 = [],
+    Status = Status0.
+
+output_0(normal(FS0,_,_),OutPathName,Unparser,PredList,ModTbl0,IP0,Sort,MESG0,Status) :- true |
+    FS0 = [pathname(normal(SrcFile))|FS1],
+    MESG0 = [message(string#"Output File : ~s",[SrcFile])|MESG1],
+    assign_unparser(Unparser,FS1,PredList,ModTbl0,IP0,Sort,MESG1,Status).
+otherwise.
+output_0(_,OutPathName,Unparser,PredList,ModTbl0,IP0,Sort,MESG0,Status) :- true |
+    ModTbl0 = [],
+    IP0 = [],
+    MESG0 = [error(string#"unable to open file : ~s",[OutPathName])],
+    Status = abnormal.
+
+assign_unparser([],FS0,PredList,ModTbl0,IP0,Sort,MESG0,Status) :- true |
+    ModTbl0 = [],
+    kl1_standard_preprocessor:unparse(PredList,FS0,IP0,MESG0,Status).
+otherwise.
+assign_unparser(Unparser,FS0,PredList,ModTbl0,IP0,Sort,MESG0,Status) :- true |
+    ModTbl0 = [get_module(Unparser,St)],
+    apply_preproc(St,Unparser,unparse,PredList,FS0,IP0,Sort,MESG0,Status).
+
+check_status(normal,Status1,Status,Sort,MESG1,MESG2,MESG) :- true |
+    Status = Status1,
+    sorter:merge(MESG1,MESG2,Sort,MESG).
+otherwise.
+check_status(_,_,Status,Sort,MESG1,MESG2,MESG) :- true |
+    Status = abnormal,
+    MESG = MESG1.
+
+%%%%%%%%%%%%%%%%%
+%   COMPILE     %
+%%%%%%%%%%%%%%%%%
+
+cal(PredList,IP0,Sort,MESG,Status0,Status) :- true |
+    IP0 = [get_package(DP)|IP1],
+    module_0(PredList,ModuleList,DP,MESG1,[]),
+    out_message(Status0,Status1,MESG1,MESG),
+    cal_0(ModuleList,IP1,Sort,Status1,Status).
+
+out_message(normal,Status,MESG0,MESG) :- true | Status = normal, MESG = MESG0.
+otherwise.
+out_message(Status0,Status,MESG0,MESG) :- true | Status = Status0, MESG = [].
+
+cal_0([module(ReadStatus,Package,ModuleTerm,MESG0,MESG)|Rest],IP0,Sort,St0,St) :- true |
+    IP0 = {IP1,IP2},
+    append_message(MESG0,MESG2,MESG),
+    sorter:sort(MESG1,Sort,MESG2),
+    kl1_self_cal:cal(ModuleTerm,Package,IP1,MESG1,ReadStatus,Status),
+    and_status(St0,Status,St1),
+    cal_0(Rest,IP2,Sort,St1,St).
+cal_0([],IP0,Sort,St0,St) :- true |
+    IP0 = [],
+    St0 = St.
+
+module_0([(wrap#(:- module ModuleName))-PosInfo|PL],ML0,DP,MESG0,MESG) :- 
+    ModuleName = atom(ModName) |
+    MT0 = [(wrap#(:- module ModuleName))-PosInfo|MT1],
+    MESG0 = [message(string#"Compile Module : ~t",[ModName],PosInfo),flush|MESG1],
+    ML0 = [module(Status0,DP,MT0,MESG1,MESG2)|ML1],
+    module_2(PL,MT1,ML1,DP,Status0,MESG2,MESG).
+module_0([(wrap#(:- module PackageName:ModuleName))-PosInfo|PL],ML0,DP,MESG0,MESG) :- 
+    ModuleName = atom(ModName), PackageName = atom(PacName) |
+    MT0 = [(wrap#(:- module ModuleName))-PosInfo|MT1],
+    MESG0 = [message(string#"Compile Module : ~t",[ModName],PosInfo),flush|MESG1],
+    ML0 = [module(Status0,PacName,MT0,MESG1,MESG2)|ML1],
+    module_2(PL,MT1,ML1,PacName,Status0,MESG2,MESG).
+%%module_0([(wrap#(:- package(PackageName)))-PosInfo|PL],ML0,DP,MESG0,MESG) :- 
+%%    PackageName = atom(Package) |
+%%    module_0(PL,ML0,Package,MESG0,MESG).
+module_0([],ML0,DP,MESG0,MESG) :- true |
+    ML0 = [],
+    MESG0 = [error(string#"no module definition (empty file)",[])|MESG].
+otherwise.
+module_0([Clause-PosInfo|PL],ML0,DP,MESG0,MESG) :- true |
+    MESG0 = [error(string#"no module definition : ~w",[Clause],PosInfo)|MESG1],
+    module_1(PL,ML0,DP,MESG1,MESG).
+
+module_1([(wrap#(:- module ModuleName))-PosInfo|PL],ML0,DP,MESG0,MESG) :- 
+    ModuleName = atom(ModName) |
+    MT0 = [(wrap#(:- module ModuleName))-PosInfo|MT1],
+    MESG0 = [message(string#"~nCompile Module : ~t",[ModName],PosInfo),flush|MESG1],
+    ML0 = [module(Status0,DP,MT0,MESG1,MESG2)|ML1],
+    module_2(PL,MT1,ML1,DP,Status0,MESG2,MESG).
+module_1([(wrap#(:- module PackageName:ModuleName))-PosInfo|PL],ML0,DP,MESG0,MESG) :- 
+    ModuleName = atom(ModName), PackageName = atom(PacName) |
+    MT0 = [(wrap#(:- module ModuleName))-PosInfo|MT1],
+    MESG0 = [message(string#"~nCompile Module : ~t",[ModName],PosInfo),flush|MESG1],
+    ML0 = [module(Status0,PacName,MT0,MESG1,MESG2)|ML1],
+    module_2(PL,MT1,ML1,PacName,Status0,MESG2,MESG).
+%%module_1([(wrap#(:- package(PackageName)))-PosInfo|PL],ML0,DP,MESG0,MESG) :- 
+%%    PackageName = atom(Package) |
+%%    module_1(PL,ML0,Package,MESG0,MESG).
+module_1([],ML0,DP,MESG0,MESG) :- true |
+    ML0 = [],
+    MESG0 = MESG.
+otherwise.
+module_1([Clause|PL],ML0,DP,MESG0,MESG) :- true |
+    module_1(PL,ML0,DP,MESG0,MESG).
+
+module_2([(wrap#(:- module ModuleName))-PosInfo|PL],MT0,ML0,DP,Status0,MESG0,MESG) :-
+    ModuleName = atom(ModName) |
+    MT0 = [],
+    Status0 = normal,
+    MESG0 = [message(string#"Compile Module : ~t",[ModName],PosInfo),flush|MESG1],
+    ML0 = [module(Status1,DP,MT1,MESG1,MESG2)|ML1],
+    MT1 = [(wrap#(:- module ModuleName))-PosInfo|MT2],
+    module_2(PL,MT2,ML1,DP,Status1,MESG2,MESG).
+module_2([(wrap#(:- module PackageName:ModuleName))-PosInfo|PL],MT0,ML0,DP,Status0,MESG0,MESG) :-
+    ModuleName = atom(ModName), PackageName = atom(PacName) |
+    MT0 = [],
+    Status0 = normal,
+    MESG0 = [message(string#"Compile Module : ~t",[ModuleName],PosInfo),flush|MESG1],
+    ML0 = [module(Status1,PacName,MT1,MESG1,MESG2)|ML1],
+    MT1 = [(wrap#(:- module ModuleName))-PosInfo|MT2],
+    module_2(PL,MT2,ML1,DP,Status1,MESG2,MESG).
+%%module_2([(wrap#(:-package(PackageName)))-PosInfo|PL],MT0,ML0,DP,Status0,MESG0,MESG) :-
+%%    PackageName = atom(Package) |
+%%    module_2(PL,MT0,ML0,Package,Status0,MESG0,MESG).
+module_2([],MT0,ML0,DP,Status0,MESG0,MESG) :- true |
+    MT0 = [],
+    ML0 = [],
+    Status0 = normal,
+    MESG0 = MESG.
+otherwise.
+module_2([Clause|PL],MT0,ML0,DP,Status0,MESG0,MESG) :- true |
+    MT0 = [Clause|MT1],
+    module_2(PL,MT1,ML0,DP,Status0,MESG0,MESG).
+
+outKLB(FullPathName,PredList,IP0,MESG0,normal,Status) :- true |
+    IP0 = [get_file_request(FR0),
+           get_package(DP)|IP1],
+    module_0(PredList,ModuleList,DP,MESG0,MESG1),
+    kl1_library_file_utility:decomp_filename(FullPathName,Node,Path,FileName,Extension,Version,DirStr),
+    builtin#append_string([Path,DirStr,FileName,string#".klb"],OutPathName),
+    FR0 = [open(OutPathName,write(St))],
+    outKLB_0(St,OutPathName,ModuleList,IP1,MESG1,Status).
+otherwise.
+outKLB(FileName,ModuleList,IP0,MESG0,Status0,Status) :-
+    IP0 = [],
+    MESG0 = [],
+    Status0 = Status.
+
+outKLB_0(normal(FS0,_,_),FileName,ModuleList,IP0,MESG0,Status) :- true |
+    FS0 = [pathname(normal(SrcFile))|FS1],
+    MESG0 = [message(string#"Output File : ~s",[SrcFile])],
+    buffer:output_filter(Out0,FS1),
+    Out0 = [print_length(1000000),print_depth(1000000),
+            print_atom_length(1000),print_string_length(500000)|Out1],
+    outKLB_1(ModuleList,IP0,Out1,normal,Status).
+otherwise.
+outKLB_0(_,FileName,ModuleList,IP0,MESG0,Status) :- true |
+    IP0 = [],
+    MESG0 = [error(string#"unable to open file : ~s",[FileName])],
+    Status = abnormal.
+
+outKLB_1([module(ReadSt,Package,ModuleTerm0,MESG0,MESG)|Rest],IP0,Out0,St0,St) :- true |
+    IP0 = {IP1,IP2},
+    append_message(MESG0,MESG1,MESG),
+    kl1_self_cal:outKLB(ModuleTerm0,Out0,Out1,IP1,MESG1,ReadSt,St1),
+    and_status(St0,St1,St2),
+    outKLB_1(Rest,IP2,Out1,St2,St).
+outKLB_1([],IP0,Out0,St0,St) :- true |
+    IP0 = [],
+    Out0 = [],
+    St0 = St.
+
+and_status(normal,normal,Status):- true |
+    Status = normal.
+otherwise.
+and_status(_,_,Status):- true |
+    Status = abnormal.
+
+%%%%%%%%%%%%
+%%  LINK  %%
+%%%%%%%%%%%%
+
+flush(normal,MESG0,MESG,VP0,VP,Status) :- true |
+    VP0 = [get_loader_table(ModTbl0,ModTbl),
+           get_module_table(CT),
+           get_auto_link(AutoLink),
+           get_link_error(LinkError)|VP1],
+    flush_0(AutoLink,LinkError,CT,ModTbl0,ModTbl,MESG0,MESG,VP1,VP,Status).
+otherwise.
+flush(St,MESG0,MESG,VP0,VP,Status) :- true |
+    VP0 = VP,
+    MESG0 = [report_total_error(string#"Compilation(s)")|MESG],
+    St = Status.
+
+flush_0(on,LinkError,CT,ModTbl0,ModTbl,MESG0,MESG,VP0,VP,Status) :- true |
+    ModTbl0 = [flush(LinkError,CT,MESG0,MESG1,Status1)|ModTbl],
+    MESG1 = [report_total_error(string#"Compilation(s)"),flush(Done)|MESG2],
+    relink(Done,Status1,on,MESG2,MESG,VP0,VP,Status).
+flush_0(off,LinkError,CT,ModTbl0,ModTbl,MESG0,MESG,VP0,VP,Status) :- true |
+    CT = [],
+    ModTbl0 = ModTbl,
+    MESG0 = [report_total_error(string#"Compilation(s)"),flush(Done)|MESG1],
+    relink(Done,normal([]),off,MESG1,MESG,VP0,VP,Status).
+
+relink(Done,normal(GoalModules),AutoLink,MESG0,MESG,VP0,VP,Status) :-
+    wait(Done), list(GoalModules) |
+    VP0 = [get_top_modules(TopModules)|VP1],
+    relink:relink_with_pool(TopModules,GoalModules,VP1,VP2,MESG0,MESG,Status0),
+    relink_0(Status0,GoalModules,VP2,VP,Status).
+otherwise.
+relink(Done,Status0,_,MESG0,MESG,VP0,VP,Status) :- wait(Done) |
+    MESG0 = MESG,
+    VP0 = VP,
+    Status0 = Status.
+
+relink_0(normal(RelinkModules),GoalModules,VP0,VP,Status) :- true |
+    VP0 = [set_last_loaded_modules(LoadedModules,_)|VP],
+    pool:keyed_set(MP0),
+    all_modules(MP0,GoalModules,MP1),
+    all_modules(MP1,RelinkModules,MP2),
+    MP2 = [get_all(All)],
+    transform(All,LoadedModules),
+    Status = normal.
+relink_0(normal,GoalModules,VP0,VP,Status) :- true |
+    VP0 = [set_last_loaded_modules(GoalModules,_)|VP],
+    Status = normal.
+otherwise.
+relink_0(_,GoalModules,VP0,VP,Status) :- true |
+    VP0 = VP,
+    Status = abnormal.
+
+all_modules(MP0,[ModuleName|Rest],MP) :- true |
+    MP0 = [put(ModuleName,[],_)|MP1],
+    all_modules(MP1,Rest,MP).
+all_modules(MP0,[],MP) :- true | MP = MP0.
+
+transform([{ModuleName,[]}|Rest],LMods0) :- true |
+    LMods0 = [ModuleName|LMods1],
+    transform(Rest,LMods1).
+transform([],LMods0) :- true | LMods0 = [].
+
+%%%%%%%%%%%%%%%%%%%%
+%%  OPTION POOLS  %%
+%%%%%%%%%%%%%%%%%%%%
+
+compile_option_pool(VP,CO0,MESG) :- true |
+    pool:keyed_set(CP),
+    merge(CO0,CO1),
+    cop(CO1,VP,CP,MESG).
+
+cop([inter_file_verify(Verifier,Code,IFCMessages,Sorter)|CO0],VP,CP0,MESG) :- true |
+    CP0 = [get_if_any_and_put(Verifier,Old,New)|CP1],
+    ifc_0(Old,New,Code,{IFCMessages,Sorter}),
+    cop(CO0,VP,CP1,MESG).
+cop([],VP,CP0,MESG) :- true |
+    CP0 = [get_all(All)],
+    inter_file_verify(All,VP,MESG).
+otherwise.
+cop([Message|CO0],VP0,CP0,MESG) :- true |
+    VP0 = [Message|VP1],
+    cop(CO0,VP1,CP0,MESG).
+
+ifc_0({},New,Code,Messages) :- true |
+    New = {Code,[Messages]}.
+ifc_0({{Code,Messages1}},New,_,Messages0) :- true |
+    New = {Code,[Messages0|Messages1]}.
+
+file_option_pool(InLang,FileName,Date,Time,VP0,IP0) :- true |
+    pool:keyed_set(DP0),
+    merge(IP0,IP1),
+    fop(IP1,{InLang,FileName,Date,Time},VP0,DP0).
+
+fop([],FileInfo,VP0,DP0) :- true |
+    VP0 = [],
+    DP0 = [].
+otherwise.
+fop([Message|IP0],FileInfo,VP0,DP0) :- true |
+    fop_0(Message,FileInfo,VP0,VP1,DP0,DP1),
+    fop(IP0,FileInfo,VP1,DP1).
+
+fop_0(do(IP0),FileInfo,VP0,VP,DP0,DP) :- true |
+    merge(IP0,IP1),
+    fop_do(IP1,FileInfo,VP0,VP,DP0,DP).
+fop_0(source_file_info(FileInfo0),FileInfo,VP0,VP,DP0,DP) :- true |
+    FileInfo0 = FileInfo,
+    VP0 = VP,
+    DP0 = DP.
+fop_0(source_filename(FileName0),{InLang,FileName,Date,Time},VP0,VP,DP0,DP) :- true |
+    FileName0 = FileName,
+    VP0 = VP,
+    DP0 = DP.
+fop_0(input_language(InLang0),{InLang,FileName,Date,Time},VP0,VP,DP0,DP) :- true |
+    InLang0 = InLang,
+    VP0 = VP,
+    DP0 = DP.
+fop_0(add_dependency(FileName,DateTime),FileInfo,VP0,VP,DP0,DP) :- true |
+    VP0 = VP,
+    DP0 = [get_if_any_and_put(FileName,_,DateTime)|DP].
+fop_0(get_dependency(Depends),FileInfo,VP0,VP,DP0,DP) :- true |
+    VP0 = VP,
+    DP0 = [get_all(Depends)|DP].
+otherwise.
+fop_0(Message,FileInfo,VP0,VP,DP0,DP) :- true |
+    VP0 = [Message|VP],
+    DP0 = DP.
+
+fop_do([Message|IP],FileInfo,VP0,VP,DP0,DP) :- true |
+    fop_0(Message,FileInfo,VP0,VP1,DP0,DP1),
+    fop_do(IP,FileInfo,VP1,VP,DP1,DP).
+fop_do([],FileInfo,VP0,VP,DP0,DP) :- true |
+    VP0 = VP,
+    DP0 = DP.
+
+%%%%%%%%%%%%%%%%%%%%%%%
+%% INTER FILE VERIFY %%
+%%%%%%%%%%%%%%%%%%%%%%%
+
+inter_file_verify(IFC,VP0,MESG0) :- list(IFC) |
+    MESG0 = [info(string#"~n---- Inter File Verification ----",[])|MESG1],
+    inter_file_verify_0(IFC,VP0,MESG1).
+otherwise.
+inter_file_verify(IFC,VP0,MESG0) :- true |
+    VP0 = [],
+    MESG0 = [].
+
+inter_file_verify_0([{Verifier,{Code,Messages}}|Rest],VP0,MESG0) :- true |
+    VP0 = {VP1,VP2},
+    ifc(Code,Verifier,Messages,VP1,MESG1),
+    append_message(MESG0,MESG1,MESG2),
+    inter_file_verify_0(Rest,VP2,MESG2).
+inter_file_verify_0([],VP0,MESG) :- true |
+    VP0 = [],
+    MESG = [].
+
+ifc(Code,Verifier,Messages,VP0,MESG0) :- code(Code,_,_,_) |
+    apply(Code,{Messages,VP0,MESG0}).  % Messages = [{Msgs,Sorter}, .. ]
+otherwise.
+ifc(Code,Verifier,Messages,VP0,MESG0) :- true |
+    VP0 = [],
+    MESG0 = [].

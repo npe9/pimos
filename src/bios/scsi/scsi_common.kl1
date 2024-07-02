@@ -1,0 +1,357 @@
+% icpsi606::>sys>user>yashiro>V35>scsi>scsi_common.kl1.5, 06-Oct-92 16:57:14, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi523::>sys>user>pimos>RELEASE>src>bios>scsi>scsi_common.kl1.9, 13-Apr-92 22:27:57, Edit by yashiro
+:- module scsi_common.
+:- include("pimos.h").
+:- with_macro pimos.
+
+:- switch(fep_interface).
+:- case(kl1_network).
+:- public dummy/0.
+dummy :- true | true .
+:- default.
+:- public test_unit_ready/6, inquiry/6.
+:- public analyze_scsi_command_result/7.
+
+%  *********** Test Unit Ready Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |      Reserve      |
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+
+test_unit_ready(Type,Result,SCSI_OUT,SCSI_OUT2,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0"|
+        new_string(CDB,scsi#group_0_command_size,8),
+%        set_string_element(CDB,0,0,CDB1),
+        set_string_element(CDB,1,ELUN,CDB1),
+        new_string(Dummy,0,8),
+        SCSI_OUT=[command({Unit,LUN,CDB1,0,scsi#no_direction,Dummy,0},_,_,ID,Status)|SCSI_OUT1],
+        analyze_scsi_command_result(Status,Result,Type,Unit,LUN,SCSI_OUT1,SCSI_OUT2).
+
+
+%  *********** Inquiry Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 1 | 0 | 0 | 1 | 0 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |      Reserve      |
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |            Length             | 
+%     +---+---+---+---+---+---+---+---+
+%
+
+inquiry(Type,Status,SCSI_OUT,SCSI_OUT2,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0"|
+        new_string(CDB,scsi#group_0_command_size,8),
+        new_string(Data,scsi#inquiry_data_max,8),
+        set_string_element(CDB,0,scsi#inquiry_command,CDB1),
+        set_string_element(CDB1,1,ELUN,CDB15),
+        set_string_element(CDB15,4,scsi#inquiry_data_max,CDB2), % added
+        SCSI_OUT=[command({Unit,LUN,CDB2,scsi#inquiry_data_max,scsi#direction_in,Data,0},
+                                NData,Length1,ID,Status0)|SCSI_OUT1],
+        analyze_scsi_command_result(Status0,Status1,Type,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_inquiry_command(Status1,NData,Length1,Status).
+
+
+%
+%  *********** Inquiry Data Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  |        Device Code            |
+%     +---+---+---+---+---+---+---+---+
+%  1  |RMB|   Device Dependent Code   |
+%     +---+---+---+---+---+---+---+---+
+%  2  |  ISO  |    ECMA   |   ANSI    |
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  4  | Additional Length             | 
+%     +---+---+---+---+---+---+---+---+
+%  5~ |  VUParameters                 |
+%     +---+---+---+---+---+---+---+---+
+%
+check_inquiry_command(normal,Data,Length,Status) :-
+    string(Data,_,8), Length > 5 |
+        string_element(Data,0,DeviceType,Data1),
+        string_element(Data1,1,Removable0,Data2),
+        Removable := (Removable0 >> 7) /\ 1,
+        string_element(Data2,2,Standards,Data3),
+        string_element(Data3,4,AdditionalLength,Data4),  %%% revised 
+        builtin_utility:substring(Data4,5,AdditionalLength,VUParameters,_),
+        Status = normal(DeviceType,Removable,Standards,VUParameters).
+check_inquiry_command(normal,Data,Length,Status) :-
+    string(Data,_,8), Length =:= 5 |
+        string_element(Data,0,DeviceType,Data1),
+        string_element(Data1,1,Removable0,Data2),
+        Removable := (Removable0 >> 7) /\ 1,
+        string_element(Data2,2,Standards,Data3),
+        string_element(Data3,4,AdditionalLength,Data4),
+        Status = normal(DeviceType,Removable,Standards,string#"").
+check_inquiry_command(normal,Data,Length,Status) :-
+    string(Data,_,8), Length =< 4, Length >= 3 |
+        string_element(Data,0,DeviceType,Data1),
+        string_element(Data1,1,Removable0,Data2),
+        Removable := (Removable0 >> 7) /\ 1,
+        string_element(Data2,2,Standards,_),
+        Status = normal(DeviceType,Removable,Standards,string#"").
+check_inquiry_command(normal,Data,Length,Status) :-
+    string(Data,_,8), Length =:= 2 |
+        string_element(Data,0,DeviceType,Data1),
+        string_element(Data1,1,Removable0,_),
+        Removable := (Removable0 >> 7) /\ 1,
+        Status = normal(DeviceType,Removable,0,string#"").
+check_inquiry_command(normal,Data,Length,Status) :-
+    string(Data,_,8), Length =:= 1 |
+        string_element(Data,0,DeviceType,_),
+        Status = normal(DeviceType,0,0,string#"").
+otherwise.
+check_inquiry_command(abnormal(Reason),_,_,Status) :-
+    true |
+        Status = abnormal(Reason).
+otherwise.
+check_inquiry_command(_,_,_,Status) :-
+    true |
+        Status = abnormal(illegal_inquiry_data).
+
+%
+%  *********** Status Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%     | R | V | V |     Code      | V |
+%     +---+---+---+---+---+---+---+---+
+%       R : Reserved
+%       V : Vendor Unique
+%       Code :
+%             4   3   2   1  
+%           +---+---+---+---+
+%           | 0 | 0 | 0 | 0 |  Good
+%           | 0 | 0 | 0 | 1 |  Check Condition
+%           | 0 | 0 | 1 | 0 |  Condition Met/Good
+%           | 0 | 1 | 0 | 0 |  Busy
+%           | 1 | 0 | 0 | 0 |  Intermediate/Good
+%           | 1 | 0 | 1 | 0 |  Intermediate/Condition Met/Good
+%           | 1 | 1 | 0 | 0 |  Reservation Conflict/Good
+%           +---+---+---+---+
+
+analyze_scsi_command_result(Result,EResult,Type,Unit,LUN,SCSI,NSCSI) :-
+    StatusByte := Result /\ 16#"0000001E",
+    CompletionCode := (Result  >> 8) /\16#"000000FF",
+    Detail  := (Result>>16) /\ 16#"0000FFFF" |
+        analyze_scsi_command_result1(Result,StatusByte,CompletionCode,Detail,EResult,Type,Unit,LUN,SCSI,NSCSI).
+
+analyze_scsi_command_result1(Result,StatusByte,CompletionCode,Detail,EResult,Type,Unit,LUN,SCSI,NSCSI) :-
+    StatusByte =:= 0 |
+        SCSI=NSCSI,
+        check_completion_code(StatusByte,CompletionCode,Detail,EResult).
+analyze_scsi_command_result1(Result,StatusByte,CompletionCode,Detail,EResult,Type,Unit,LUN,SCSI,NSCSI) :-
+    StatusByte =:= 16#"02" |
+        check_condition(Type,Unit,LUN,SCSI,SenseData,NSCSI),
+        EResult = abnormal(check_condition(CompletionCode,Detail,SenseData)).
+
+analyze_scsi_command_result1(Result,StatusByte,CompletionCode,Detail,EResult,Type,Unit,LUN,SCSI,NSCSI) :-
+    StatusByte =:= 16#"04"|
+        SCSI=NSCSI,
+        EResult = abnormal(condition_met(CompletionCode,Detail)).
+analyze_scsi_command_result1(Result,StatusByte,CompletionCode,Detail,EResult,Type,Unit,LUN,SCSI,NSCSI) :-
+    StatusByte =:= 16#"08"|
+        SCSI=NSCSI,
+        EResult = abnormal(busy(CompletionCode,Detail)).
+analyze_scsi_command_result1(Result,StatusByte,CompletionCode,Detail,EResult,Type,Unit,LUN,SCSI,NSCSI) :-
+    StatusByte =:= 16#"10" |
+        SCSI=NSCSI,
+        EResult = abnormal(intermediate(CompletionCode,Detail)).
+analyze_scsi_command_result1(Result,StatusByte,CompletionCode,Detail,EResult,Type,Unit,LUN,SCSI,NSCSI) :-
+    StatusByte =:= 16#"14"|
+        SCSI=NSCSI,
+        EResult = abnormal(intermediate_and_condition_met(CompletionCode,Detail)).
+analyze_scsi_command_result1(Result,StatusByte,CompletionCode,Detail,EResult,Type,Unit,LUN,SCSI,NSCSI) :-
+    StatusByte =:= 16#"18"|
+        SCSI=NSCSI,
+        EResult = abnormal(reservation_conflict(CompletionCode,Detail)).
+otherwise.
+analyze_scsi_command_result1(Result,StatusByte,CompletionCode,Detail,EResult,Type,Unit,LUN,SCSI,NSCSI) :-
+     true|
+        SCSI=NSCSI,
+        EResult = abnormal(others(StatusByte,CompletionCode,Detail)).
+
+check_completion_code(_,CompletionCode,_,EResult) :-
+    CompletionCode =:= 0 |
+        EResult = normal.
+check_completion_code(_,CompletionCode,Detail,EResult) :-
+    16#"8" =:= CompletionCode /\ 16#"8" |
+        EResult = abnormal(no_status(CompletionCode,Detail)).
+otherwise.
+check_completion_code(StatusByte,CompletionCode,Detail,EResult) :-
+    true |
+        EResult = abnormal(others(StatusByte,CompletionCode,Detail)).
+
+%
+%  *********** Request Sense Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 1 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |      Reserve      |
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |            Length             | 
+%     +---+---+---+---+---+---+---+---+
+%
+
+check_condition(Type,Unit,LUN,SCSI,SenseData,NSCSI) :-
+    ELUN := (LUN << 5) /\16#"E0",
+    MaxSize := scsi#sense_data_max + 255 |
+        new_string(CDB,scsi#request_sense_cdb_size,8),
+        new_string(Data,0,8),
+        new_string(Sense,MaxSize,8),     % maximum length of sense data is 8 + 255bytes.
+        set_string_element(CDB,0,16#"03",CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,0,CDB3),
+        set_string_element(CDB3,3,0,CDB4),
+        set_string_element(CDB4,4,255,CDB5),
+        SCSI=[command({Unit,LUN,CDB5,MaxSize,scsi#direction_in,Sense,0},
+                        NSense,Length1,ID,Result)|SCSI1],
+        analyze_request_sense_command_status(Type,Result,NSense,Length1,Unit,LUN,SCSI1,SenseData,NSCSI).
+
+%  *********** Request Sense Data Format ***********
+%                 Standard                               Extension          
+%       7   6   5   4   3   2   1   0           7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+       +---+---+---+---+---+---+---+---+
+%  0  |AdV|  ErrClass |    ErrCode    |    0  |AdV| 1 | 1 | 1 | 0 | 0 | 0 | 0 | 
+%     +---+---+---+---+---+---+---+---+       +---+---+---+---+---+---+---+---+
+%  1  |  Reserve  |    LBA (Upper)    |    1  |          Segment NO.          |
+%     +---+---+---+---+---+---+---+---+       +---+---+---+---+---+---+---+---+
+%  2  |              LBA              |    2  |FM |EOM|ILI|Rsv|   Sense Key   |
+%     +---+---+---+---+---+---+---+---+       +---+---+---+---+---+---+---+---+
+%  3  |              LBA (Lower)      |    3  |    Information Byte (Upper)   | 
+%     +---+---+---+---+---+---+---+---+       +---+---+---+---+---+---+---+---+
+%  4  |            Length             |    4  |       Information Byte        | 
+%     +---+---+---+---+---+---+---+---+       +---+---+---+---+---+---+---+---+
+%                                          5  |       Information Byte        |
+%     ErrClass : 0-6 (Vendor Unique)          +---+---+---+---+---+---+---+---+
+%     ErrCode  : Vendor Unique             6  |    Information Byte (Lower)   |
+%     AdV      : if AdV = 1 then              +---+---+---+---+---+---+---+---+
+%                     LBA is valid.        7  |   Additional Sense Length (N) |
+%                                             +---+---+---+---+---+---+---+---+
+%                                          8- |   Additional Sense Byte       |
+%                                          N+7|                               |
+%                                             +---+---+---+---+---+---+---+---+
+%                                      AdV      : if AdV = 1 then
+%                                                 Information Byte is valid.
+%                                      Information Byte represents as follows;
+%                                        (1) direct access device
+%                                            write once multiple read device
+%                                            read only direct access device
+%                                             -> logical block address(unsigned integer).
+%                                        (2) sequential access device
+%                                            printer device
+%                                            processor device
+%                                             -> Required Bytes(Blocks) - Transferred Bytes(Blocks)
+%                                        (3) copy command
+%                                            compare command
+%                                            compare and verify command
+%                                             -> Required Blocks - copied or verified Blocks
+%                                        When this extend sense is response for the 
+%                                        copy/verify/copy_verify command, then Segment NO.
+%                                        represents current segment descriptor NO. (00 ~ FF)
+%                                      FM(File Mark): This bit shows that the device has been
+%                                         reached the file mark while this command execution. 
+%                                          (only sequential access device)
+%                                      EOM(End Of Mark): This bit shows that end of mark is found
+%                                         in sequential access device or printer device. Direct
+%                                         access device must not use this bit. (see sense data)
+%                                      ILI(Illegal Length Information): This bit shows that
+%                                         required length of logical block differs from the length
+%                                         for the real medium.
+%
+
+analyze_request_sense_command_status(Type,Result,Sense,Length,Unit,LUN,SCSI,SenseData,NSCSI) :- 
+    Status := Result /\ 16#"0000001E",
+    CompletionCode := (Result  >> 8) /\16#"000000FF",
+    Error  := (Result>>16) /\ 16#"0000FFFF" |
+        SCSI=NSCSI,
+        string_element(Sense,0,Header,Sense1),
+        analyze_request_sense_command_status1(Status,CompletionCode,Error,Header,Sense1,SenseData).
+
+analyze_request_sense_command_status1(Status,CompletionCode,Error,Header,Sense,SenseData) :-
+    Status =:= 0,
+    CompletionCode =:= 0,
+    ErrClass := (Header >> 4) /\ 16#"00000007",
+    ErrCode  := Header /\ 16#"0000000F",
+    Valid    := (Header >> 7) /\ 16#"00000001" |
+        check_extended_format(ErrClass,ErrCode,Valid,Sense,SenseData).
+otherwise.
+analyze_request_sense_command_status1(Status,CompletionCode,Error,_,Sense,SenseData) :-
+    true |
+        SenseData = error_in_request_sense(Status,CompletionCode,Error,Sense).
+
+check_extended_format(7,0,Valid,Sense,SenseData) :-
+    true |
+        analyze_extended_format(Valid,ErrClass,ErrCode,Sense,SenseData).
+otherwise.
+check_extended_format(ErrClass,ErrCode,Valid,Sense,SenseData) :-
+    true |
+        analyze_standard_format(Valid,ErrClass,ErrCode,Sense,SenseData).
+
+analyze_standard_format(Valid,ErrClass,ErrCode,Sense,SenseData) :-
+    Valid =:= 1 |
+        get_4_bytes(Sense,0,Block,_),
+        Block1 := 16#"1FF" /\ Block,
+        SenseData = nonextended(ErrorClass,ErrorCode,Block1).
+otherwise.
+analyze_standard_format(_,ErrClass,ErrCode,_,SenseData) :-
+    true |
+        SenseData = nonextended(ErrClass,ErrCode).
+        
+%%%% specification is not fixed !!!
+
+analyze_extended_format(Valid,ErrClass,ErrCode,Sense,SenseData) :-
+    Valid =:= 1 |
+        string_element(Sense,1,Segment,Sense1),
+        string_element(Sense1,2,Others,Sense2),
+        get_4_bytes(Sense2,3,Information,Sense3),
+        string_element(Sense3,7,Length,Sense4),
+        builtin_utility:substring(Sense4,8,Length,SenseBytes,_),
+%        SenseKey := 16#"0F" /\ Others,
+        SenseData = extended(Segment,Others,Information,SenseBytes).
+otherwise.
+analyze_extended_format(_,ErrClass,ErrCode,Sense,SenseData) :-
+    true |
+        string_element(Sense,1,Segment,Sense1),
+        string_element(Sense1,2,SenseKey,Sense3),
+%        string_element(Sense1,2,Others,Sense2),
+%        get_4_bytes(Sense2,3,Information,Sense3), % This data is invalid.
+        string_element(Sense3,7,Length,Sense4),
+        builtin_utility:substring(Sense4,8,Length,SenseBytes,_),
+%        SenseKey := 16#"0F" /\ Others,
+        SenseData = extended(Segment,SenseKey,SenseBytes).
+
+get_4_bytes(S,From,Int,NS) :-
+    true |
+        string_element(S,From,Elem,S1),
+        string_element(S1,~(From+1),Elem1,S2),
+        string_element(S2,~(From+2),Elem2,S3),
+        string_element(S3,~(From+3),Elem3,NS),
+        Int := ((((((Elem /\ 16#"000000FF") << 8) \/ (Elem1 /\ 16#"000000FF")) << 8) \/
+                 (Elem2 /\ 16#"000000FF")) << 8) \/ (Elem3 /\ 16#"000000FF").
+:-end_switch.

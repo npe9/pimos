@@ -1,0 +1,111 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module convert_macro.
+:- public go/2. 
+:- public translate/2.
+:- public translate/5.
+:- public oldToNew/2.
+:- public oldToNew/3.
+:- with_macro pimos.
+
+%%
+%% convert pimos.mac format
+%%
+
+go(In, Out) :- string(In, _, 16), string(Out, _, 16) |
+    shoen:raise(pimos_tag#task, general_request, [file(FS)]),
+    shoen:raise(pimos_tag#shell, get_std_mes, Mes0),
+    conv(Mes0, [], FS, In, Out).
+
+:- local_implicit mes:oldnew.
+conv(normal(FR0, _, _), In, Out) --> true |
+    FR0=[open(In, read(InFile)), open(Out, write(OutFile))],
+    openCheckAndConv(InFile, OutFile, In, Out).
+otherwise.
+conv(_, _, _) --> true |
+    &mes <<= [putf("can't get File Device by unknown reason.~n")].
+
+:- local_implicit mes:oldnew.
+openCheckAndConv(normal(InFile0, _, _), normal(OutFile0, _, _), _, _) --> true |
+  {{buffer:input_filter(InFile1, InFile0)}},
+  {{buffer:output_filter([print_length(1000), print_depth(1000), print_string_length(1000),
+                            print_atom_length(1000)|OutFile], OutFile0)}},
+    InFile1=[getwt(Term)|InFile],
+  {{readLoop(&mes, InFile, [], OldTerm, [], Term),
+    oldToNew(NewTerm, [], OldTerm),
+    writeLoop(OutFile, [], NewTerm)}}.
+openCheckAndConv(normal(InFile0, _, _), abnormal, _, Out) --> true |
+    &mes <<= [putf("can't open file ~t.~n", [Out])],
+    InFile0=[].
+openCheckAndConv(abnormal, normal(OutFile0, _, _), In, _) --> true |
+    &mes <<= [putf("can't open file ~t.~n", [In])],
+    OutFile0=[].
+openCheckAndConv(abnormal, abnormal, In, Out) --> true |
+    &mes <<= [putf("can't open file ~t and ~t.~n", [In, Out])].
+
+:- local_implicit mes:oldnew, in:oldnew, out:oldnew.
+readLoop(normal(end_of_file)) --> true | true.
+readLoop(normal(empty)) --> true |
+    &in <<= [getwt(Next)],
+    readLoop(Next).
+otherwise.
+readLoop(normal(Term)) --> true |
+    &out <<= [Term-[]],
+    &in <<= [getwt(Next)],
+    readLoop(Next).
+readLoop(abnormal(Info)) --> true |
+    &mes <<= [print_error(Info)],
+    &in <<= [getwt(Next)],
+    readLoop(Next).
+
+
+%
+% for compiler
+%
+translate(In, Out) :- true | In="omac", Out="mac".
+
+translate(In, Out, VP, Msg0, Stat) :- true |
+    oldToNew(Out, [], In),
+    VP=[],
+    Msg0=[], Stat=normal.
+
+oldToNew(Old, New) :- true | oldToNew(New, [], Old).
+
+:- local_implicit out:oldnew.
+oldToNew([wrap#(:- user_macro(Macro))-Info|Cdr]) --> true |
+    &out <<= [wrap#(:- macro_module(Macro))-Info],
+    outputWithAndInheritOrNot(Macro, Info),
+    oldToNew(Cdr).
+oldToNew([wrap#(Before0=>After0)-Info|Cdr]) --> true |
+  {{kl1cmp_wrap:wrap(Before0, Before),
+    kl1cmp_wrap:wrap(After0, After)}},
+    &out <<= [wrap#(Before=>After :- true | true)-Info],
+    oldToNew(Cdr).
+oldToNew([wrap#(Before0=>After0 :- true | true)-Info|Cdr]) --> true |
+  {{kl1cmp_wrap:wrap(Before0, Before),
+    kl1cmp_wrap:wrap(After0, After)}},
+    &out <<= [wrap#(Before=>After :- true | true)-Info],
+    oldToNew(Cdr).
+otherwise.
+oldToNew([Term-Info|Cdr]) --> true |
+    &out <<= [Term-Info],
+    oldToNew(Cdr).
+oldToNew([]) --> true | true.
+
+:- local_implicit out:oldnew.
+writeLoop([Term-_|Cdr]) --> true |
+    &out <<= [putf("~W.~n", [Term])],
+    writeLoop(Cdr).
+writeLoop([]) --> true | true.
+
+outputWithAndInheritOrNot(atom(pimos), Info) --> true |
+   &out <<= [wrap#(:- with_macro)-Info, wrap#(:- inherit_macro)-Info].
+otherwise.
+outputWithAndInheritOrNot(_, Info) --> true |
+   &out <<= [wrap#(:- with_macro(pimos))-Info, wrap#(:- inherit_macro(pimos))-Info].
+
+

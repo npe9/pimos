@@ -1,0 +1,74 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_wrap.
+:- public wrap/2, unwrap/2.
+:- with_macro pimos.
+:- include("pimos.h").
+
+wrap([Car|Cdr], WList) :- true |
+   wrap(Car, WCar),
+   wrap(Cdr, WCdr),
+   WList=list([WCar|WCdr]).
+wrap(variable(X), Var) :- true |
+   Var=variable(X).
+wrap(Int, WInt) :- integer(Int) | WInt=integer(Int). 
+wrap(Atom, WAtom) :- atom(Atom) | WAtom=atom(Atom).
+wrap(String, WString) :- string(String, _, _) | WString=string(String).
+:- if_equal(floating_point, yes).
+wrap(Float, WFloat) :- floating_point(Float) | WFloat=floating_point(Float).
+:- end_if.
+:- if_equal(extended_floating_point, yes).
+wrap(EFloat, WEFloat) :- extended_floating_point(EFloat,_) | WEFloat=extended_floating_point(EFloat).
+:- end_if.
+wrap(Code, WCode) :- code(Code, _, _, _) | WCode=code(Code).
+otherwise.
+wrap(Vect0, WVect) :- vector(Vect0, N) |
+   wrap(0, N, Vect0, Vect), WVect=vector(Vect).
+
+wrap(A, N, Vect0, Vect) :- A<N |
+   set_vector_element(Vect0, A, Ele, WEle, Vect1),
+   wrap(Ele, WEle),
+   A1 := A+1,
+   wrap(A1, N, Vect1, Vect).
+wrap(N, N, Vect0, Vect) :- true | Vect0=Vect.
+
+unwrap(list([WCar|WCdr]), List) :- true |
+   unwrap(WCar, Car),
+   unwrap(WCdr, Cdr),
+   List=[Car|Cdr].
+unwrap(vector(Vect0), Vect) :- vector(Vect0, N) |
+   unwrap(0, N, Vect0, Vect).
+unwrap(variable(Str), Arg) :- string(Str,_,_) | Arg=Str.
+unwrap(atom(Atom), Arg) :- atom(Atom) | Arg=Atom.
+unwrap(integer(Int), Arg) :- integer(Int) | Arg=Int.
+:- if_equal(floating_point, yes).
+unwrap(floating_point(Float), Arg) :- floating_point(Float) | Arg=Float.
+:- end_if.
+unwrap('$SCNST'(Str), Arg) :- true |
+   unwrap(Str, Arg).
+unwrap(string(Str), Arg) :- true | Arg=Str.
+:- if_equal(extended_floating_point, yes).
+unwrap(extended_floating_point(Efl), Arg) :- true | Arg=Efl.
+:- end_if.
+otherwise.  %% It seems unwrapped already.
+unwrap([Car|Cdr], Arg) :- true |
+   unwrap(Car, NewCar),
+   unwrap(Cdr, NewCdr),
+   Arg=[NewCar|NewCdr].
+unwrap(Vect0, Arg) :- vector(Vect0, N) |
+   unwrap(0, N, Vect0, Arg).
+otherwise.
+unwrap(Arg0,Arg) :- true | Arg0=Arg.
+
+unwrap(A, N, Vect0, Vect) :- A<N |
+   set_vector_element(Vect0, A, WEle, Ele, Vect1),
+   unwrap(WEle, Ele),
+   A1 := A+1,
+   unwrap(A1, N, Vect1, Vect).
+unwrap(N, N, Vect0, Vect) :- true | Vect0=Vect.
+
+

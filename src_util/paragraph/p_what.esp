@@ -1,0 +1,408 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%% What Manipulator
+%%% 1991.7.17
+
+%class testVS has
+%instance
+%attribute predMax,font;
+%:set_pred_num(VS,N):-
+%    VS!predMax:=N;
+%:get_font(VS,F):-
+%    F=VS!font;
+%:get_pred_num(VS,VS!predMax):-!;
+%end.
+
+%%% struct {Stinrg,reverse,ast,....}
+
+class what_manipulator has
+attribute c;
+:create(Class,VS,WM):-
+    :get_font(VS,Font),
+    :new(Class,WM),
+    Class!c:=WM,
+    :adjust_position(#screen_checker,what,APX,APY),
+    :create(#as_what_window,[size(540,470),
+            title(" What manipulator"),
+            %position(590,400),%%%%xxx
+            position(APX,APY),
+            permission(show),
+            border_flag(off),margin_flag(off)],W),
+    :set_out_font(W,Font),
+    :draw(W),
+    WM!window:=W,
+    :create(#percent_menu_window,[size(200,110),
+            title(" Set percent"),
+            border_flag(off),margin_flag(off)],PW),
+    :set_out_font(PW,Font),
+    :draw(PW),
+    :get_info(W,_,_,Wi,_,Max),
+    WM!psize:=Max,
+    WM!length:=Wi/11-1,
+    WM!p_window:=PW,
+    :create(#array_index_buffer,0,12,B), %% dummy%%0524
+    WM!buffer:=B,                       %%
+    TempX=APX-210,
+    (TempX>=0,!,APX1=TempX;
+     APX1=0),
+    :create(#what_manipulator_shell,APX1,APY+30,Font,WS),%%
+    WM!shell:=WS,
+    WM!selector:=VS;
+:create(Class,WM):-
+%    :create(#font,">sys>csp>FONT.DIR>test_11.font",F),
+    :create(#font,"font:test_11.font",F),
+%    :new(#testVS,VS),
+%    VS!font:=F,
+    :create(Class,VS,WM);
+:go(Class):-
+    :create(Class,Obj),
+    :create(#standard_io_window,[size(300,200),
+            position(500,0)],W),
+    :activate(W),
+    :activate(Obj),
+    repeat,
+    :read(Obj,Code),
+    :deactivate(Obj),
+    :putt(W,Code),
+    :putl(W),
+    Code==nil,!,
+    :kill(W);
+instance
+attribute   buffer,
+            window,
+            p_window,
+            selector,
+            shell,
+            total,
+            to,
+            psize,
+            ptop,
+            length,
+            bsize,
+            all_flag:=off;
+
+:read(W,Com):-
+    repeat,
+    :read(W!window,Code),
+    (Code==exit,!;
+     integer(Code),!,:select(W,Code);
+     Code==previous_page,!,:previous_page(W);
+     Code==previous_one,!,:previous_one(W);
+     Code==next_page,!,:next_page(W);
+     Code==next_one,!,:next_one(W);
+     Code==scroll_top,!,:top_page(W);
+     Code==scroll_bottom,!,:bottom_page(W);
+     Code==set_all,!,set_all(W),W!all_flag:=on;
+     Code==reset_all,!,reset_all(W),W!all_flag:=off;
+     %%Code==shell,!,shell(W);%%%
+     Code==set_percent,!,
+        % :percent_manipulator(W);
+        shell(W);
+        %W!all_flag:=off;
+     Code==set,!,set(W);
+     Code==reset,!,W!all_flag:=off,reset(W)),
+    Code==exit,
+    %:confirm(#messenger," accept exit  "),
+    (W!all_flag==on,!,
+        %:confirm(#messenger," flag on "),
+        Com=all,
+        :set_pred_num(W!selector,W!bsize);
+     W!bsize==0,!,
+        %:confirm(#messenger," flag bsize 0 "),
+        Com=nil,
+        :set_pred_num(W!selector,0);
+     get_all_ast(W!buffer,L,N),
+     %:confirm(#messenger," get all * "),
+       N=\=0,
+       %:confirm(#messenger," N=***=0 ok "),
+       (N==W!bsize,!,
+          %:confirm(#messenger," N==bsize ok "),
+          Com=all,
+          :set_pred_num(W!selector,N),W!all_flag:=on;
+        W!all_flag:=off,
+        %:confirm(#messenger," flag:=off ok "),
+          unconvert(L,Com),
+          %:confirm(#messenger," unconvert ok "),
+          count(L,0,N1),
+          %:confirm(#messenger," count ok "),
+          :set_pred_num(W!selector,N1))
+    ),
+    !;
+
+:add_items(Obj,L):-!,
+    %:activate(Obj!window),
+    (L==[],!,TP=0;TP=1),
+    Obj!ptop:=TP,
+    convert(L,L1,Obj!length,0,Num,0,Total),
+    Obj!total:=Total,
+    :create(#array_index_buffer,Num,12,Buf),%%0524
+    Obj!buffer:=Buf,
+    :put_contents_with_key(Obj!buffer,L1),
+    Obj!bsize:=Num,
+    Obj!all_flag:=off,
+    Obj!to:=0,
+    :set_pred_num(Obj!selector,Num),
+    get_top_page(Obj!buffer,Obj!psize,L2),
+    :redraw_inside(Obj!window,L2),
+    (L==[],!;                       %%%0717
+     :init_message(Obj!shell,Obj)); %%%0717
+    %:deactivate(Obj!window);
+
+:clear_items(Obj):-!,
+    :set_pred_num(Obj!selector,0),
+    Obj!ptop:=0,
+    Obj!total:=0,
+    :create(#array_index_buffer,0,12,B),%%0524
+    Obj!buffer:=B,
+    Obj!bsize:=0,
+    Obj!all_flag:=off,
+    Obj!to:=0,
+    :redraw_inside(Obj!window,[]);
+
+:activate(W):-
+    :activate(W!window);
+
+:deactivate(W):-
+    :deactivate(W!window);
+
+:kill(W):-
+    :kill(W!window),
+    :kill(W!p_window),
+    :kill(W!shell),
+    W!buffer:=0;
+
+:count(W,C):-
+    C=W!bsize;    
+
+:previous_page(W):-
+    (W!ptop==1,!;
+     W!ptop-W!psize<1,!,
+     W!ptop:=1,
+     :flash(W);
+     W!ptop:=W!ptop-W!psize,
+     :flash(W));
+:previous_one(W):-
+    (W!ptop==1,!;
+     W!ptop:=W!ptop-1,
+     :get_partial_contents(W!buffer,W!ptop-1,1,[SV]),
+     first(SV,S),
+     :down(W!window),
+     :top(W!window,S),
+     (vector_element(SV,2,0),!,
+      :draw_sp(W!window,1);
+      :draw_ast(W!window,1)),
+     (second(SV,0),!;
+      :reverse(W!window,1)));
+:next_page(W):-
+    (W!ptop+W!psize-1>=W!bsize,!;
+     W!ptop:=W!ptop+W!psize,
+     :flash(W));
+:next_one(W):-
+    B=W!bsize,
+    (W!ptop==B,!;
+     B>=W!ptop+W!psize,!,
+     W!ptop:=W!ptop+1,
+     :get_partial_contents(W!buffer,W!ptop+W!psize-2,1,[SV]),
+     first(SV,S),
+     :up(W!window),
+     :bottom(W!window,S),
+     Num=W!psize,
+     (vector_element(SV,2,0),!,
+      :draw_sp(W!window,Num);
+      :draw_ast(W!window,Num)),
+     (second(SV,0),!;
+      :reverse(W!window,Num));
+     B==W!ptop+W!psize-1,!,
+     W!ptop:=W!ptop+1,
+     :up(W!window),
+     :bottom(W!window);
+     W!ptop:=W!ptop+1,
+     :up(W!window));
+
+:top_page(W):-
+    (W!ptop=<1,!;
+     W!ptop:=1,
+     :flash(W));
+:bottom_page(W):-
+    Top0=W!bsize+1-W!psize,
+    (Top0<1,!,Top=1;Top=Top0),
+    W!ptop:=Top,
+    :flash(W);
+
+:flash(W):-!,
+    :get_partial_contents(W!buffer,W!ptop-1,W!psize,L),
+    :redraw_inside(W!window,L);
+
+:select(W,N):-!,
+    W!ptop+N-1=<W!bsize,
+    :reverse(W!window,N),
+    :invert(W!buffer,W!ptop+N-2,1);
+
+:reverse_clear(W):-!,
+    :get_partial_contents(W!buffer,W!ptop-1,W!psize,L),
+    :clear_reverse(W!window,L),!;
+:set_all_ast(W):-
+    :draw_all_ast(W!window);
+:reset_all_ast(W):-
+    :draw_all_sp(W!window);
+:set_asts(W):-
+    :get_partial_contents(W!buffer,W!ptop-1,W!psize,L),
+    :draw_asts(W!window,L);
+:reset_asts(W):-
+    :get_partial_contents(W!buffer,W!ptop-1,W!psize,L),
+    :clear_asts(W!window,L);
+
+:set_percent(W,N):-
+    set_percent(W,N);
+
+:percent_manipulator(W):-
+        :get_position(W!window,X0,Y0),
+        :get_size(W!window,W0,H0),
+        (Y0+H0+50>943,!,Y1=943-50;Y1=Y0+H0-50),
+        :set_position(W!p_window,X0+W0/2-100,Y1),
+        :activate(W!p_window),
+        :get(W!p_window,N),
+        :deactivate(W!p_window),
+        integer(N),!,
+        %:get_number_string(#symbolizer,N,Str),
+        %:confirm(#messenger,Str),
+        set_percent(W,N);
+
+local
+
+set(W):-!,
+    :reverse_clear(W),      %% displayed reverse clear
+    :set_asts(W),
+    :move_mark_with_set(W!buffer,1,2);
+
+reset(W):-!,
+    :reverse_clear(W),      %% displayed reverse clear
+    :reset_asts(W),
+    :move_mark_with_reset(W!buffer,1,2);
+
+set_all(W):-!,
+    :reverse_clear(W),      %% displayed reverse clear
+    (W!ptop+W!psize-1>W!bsize,!,
+     :draw_ast_and_sp(W!window,W!bsize-W!ptop+1);
+     :set_all_ast(W)),        %% display ast all
+    :set_all_at(W!buffer,2),        %% ast set all
+    :reset_all_at(W!buffer,1);      %% rev reset all
+
+reset_all(W):-!,
+    :reverse_clear(W),      %% displayed reverse clear
+    :reset_all_ast(W),      %% displayed ast clear
+    :reset_all_at(W!buffer,2),      %% ast set all
+    :reset_all_at(W!buffer,1);      %% rev reset all
+
+set_percent(Obj,0):-!,
+    reset_all(Obj);
+set_percent(Obj,N):-!,
+    integer_to_floating_point(Obj!total,FT),
+    integer_to_floating_point(N,FN),
+    floating_point_to_integer(FT*FN/100.0,V),
+    search(Obj!bsize,0,Obj!buffer,V,To),
+    %:get_number_string(#symbolizer,To,Str),
+    %:confirm(#messenger,Str),
+    Obj!to:=To,
+    :set_permission(Obj!window,out),%%% 5/30
+    :reverse_clear(Obj),
+    (Obj!ptop>To+1,!,
+     :reset_all_ast(Obj);
+     Obj!ptop+Obj!psize-1<To+1,!,
+     :set_all_ast(Obj);
+     :draw_ast_and_sp(Obj!window,To+1-Obj!ptop+1)),
+    :reset_all_at(Obj!buffer,1),    
+    :set_to(Obj!buffer,0,To,2),
+    :reset_to(Obj!buffer,To+1,Obj!bsize-1,2),
+    :set_permission(Obj!window,show);%%% 5/30
+
+search(N,_,_,_,_):-N<1,!,fail;
+search(1,P,B,V,P):-!;
+search(2,P,B,V,T):-!,
+    :get_at(B,P,9,E),
+    (V=<E,!,T=P;T=P+1);
+search(3,P,B,V,T):-!,
+    :get_at(B,P+1,3,S),
+    :get_at(B,P+1,9,E),
+    (V=<E-S,!,T=P;
+     V>E,!,T=P+2;
+     T=P+1);
+search(N,P,B,V,T):-
+    P0=P+N/2,
+    :get_at(B,P0,3,S),
+    :get_at(B,P0,9,E),
+    (V=<E-S,!,search(N/2,P,B,V,T);
+     V>E, !,search(N-N/2-1,P0+1,B,V,T);
+     T=P0);
+
+get_all_ast(B,L,Num):-!,
+    :get_contents_at(B,2,1,L),
+    count(L,0,Num);
+
+get_top_page(B,S,L):-!,
+    :get_partial_contents(B,0,S,L);
+
+convert([],[],Len,C,C,T,T):-!;
+convert([{P,M,Pr,A,R,S,Id}|L],[{St,0,1,R,S,P,M,Pr,A,W,Id,St0}|L1],Len,C,N,Sum,Total):-!,
+    W=Sum+R,
+    make_string(P,M,Pr,A,Len,St,St0),
+    convert(L,L1,Len,C+1,N,Sum+R,Total);
+convert([{P,M,Pr,R,S,Id}|L],[{St,0,1,R,S,P,M,Pr,*,W,Id,St0}|L1],Len,C,N,Sum,Total):-!,
+    W=Sum+R,
+    make_string(P,M,Pr,Len,St,St0),
+    convert(L,L1,Len,C+1,N,Sum+R,Total);
+convert([{Pr,R,S,Id}|L],[{St,0,1,R,S,*,*,Pr,*,W,Id,St0}|L1],Len,C,N,Sum,Total):-!,
+    W=Sum+R,
+    make_string(Pr,Len,St,St0),
+    convert(L,L1,Len,C+1,N,Sum+R,Total);
+
+make_string(P,M,Pr,A,Len,St,S0):-
+    :get_atom_string(#symbolizer,P,S1),
+    :get_atom_string(#symbolizer,M,S2),
+    :get_atom_string(#symbolizer,Pr,S3),
+    :get_number_string(#symbolizer,A,S4),
+    :append(#string,[S1,"::",S2,":",S3,"/",S4],S0),
+    new_string(St,Len,16),
+    string(S0,Len0,_),
+    (Len=<Len0,!,set_substring(St,0,Len,S0);
+     set_substring(St,0,Len0,S0),
+     sp(St,Len0,Len-Len0));
+make_string(P,M,Pr,Len,St,S0):-
+    :get_atom_string(#symbolizer,P,S1),
+    :get_atom_string(#symbolizer,M,S2),
+    :get_atom_string(#symbolizer,Pr,S3),
+    :append(#string,[S1,"::",S2,":",S3],S0),
+    new_string(St,Len,16),
+    string(S0,Len0,_),
+    (Len=<Len0,!,set_substring(St,0,Len,S0);
+     set_substring(St,0,Len0,S0),
+     sp(St,Len0,Len-Len0));
+make_string(Pr,Len,St,S0):-
+    :get_atom_string(#symbolizer,Pr,S0),
+    new_string(St,Len,16),
+    string(S0,Len0,_),
+    (Len=<Len0,!,set_substring(St,0,Len,S0);
+     set_substring(St,0,Len0,S0),
+     sp(St,Len0,Len-Len0));
+
+sp(S,_,0):-!;
+sp(S,C,N):-
+    set_string_element(S,C,#" "),
+    sp(S,C+1,N-1);
+
+count([_|L],C,N):-!,count(L,C+1,N);
+count([],N,N):-!;
+
+unconvert([],[]):-!;
+unconvert([{_,_,_,R,S,_,_,Pr,_,_,Id,_}|L],[Id|L1]):-!,
+    unconvert(L,L1);
+
+%%% 1991.5.30
+
+shell(Obj):-
+    :go(Obj!shell,Obj),
+    :get_all_flag_status(Obj!shell,Flag),
+    Obj!all_flag:=Flag,
+    :flash(Obj);
+
+end.

@@ -1,0 +1,1066 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% modefied by H.Sagi '90 12/5
+% corresponding to vector_element in guard
+% modefied by H.Sagi '90 12/26
+% corresponding to or-clause
+% icpsi277::>sys>user>pimos>V19E>src>shell>utils>varchk.kl1.6, 07-Jul-90 15:01:00, Edit by pimos
+% varchk leaf for PIMOS
+
+:- module varchk.
+:- public go/0, go/1, go/2, go/3, go/4, varchk/6.
+:- with_macro pimos.
+
+go :- true | 
+    shoen:raise(pimos_tag#shell,get_std_in,IN),
+    shoen:raise(pimos_tag#shell,get_std_mes,[print_depth(10000),print_length(10000)|OUT]),
+    OUT=[putf(string#"*** KL1 Variable Checker ***~n",[]),flush(Ready)|OUT1],
+    shoen:raise(pimos_tag#task,general_request,GR),
+    variable_check(Ready,IN,OUT1,GR,one,long,verbose,[]).
+
+go(FileName              ) :- true | go(FileName,one,long,verbose).
+go(FileName, Op          ) :- true | go(FileName,Op, long,verbose).
+go(FileName, Op,Form     ) :- true | go(FileName,Op, Form,verbose).
+go(FileName, Op,Form,VorT) :- string(FileName,_,_) | go([FileName],Op,Form,VorT).
+go(FileNames,Op,Form,VorT) :- list(FileNames) |
+    expandPathname(FileNames,FileNames1),
+    shoen:raise(pimos_tag#shell,get_std_mes,Window),
+    shoen:raise(pimos_tag#task,general_request,[file(normal(FR,_,_))]),
+    start(FileNames1,FR,[],Window1,[],Op,VorT),
+    output_form(Form,Window1,Window).
+
+output_form(_,   [], Window) :- true | Window=[].
+output_form(s,    [term(Term)|Cdr],Window) :- true | 
+    Window=[putwtq(Term,1000,1000)|Window1],
+    output_form(s,Cdr,Window1).
+output_form(short,[term(Term)|Cdr],Window) :- true |
+    Window=[putwtq(Term,1000,1000)|Window1],
+    output_form(short,Cdr,Window1).
+otherwise.
+output_form(_,    [term(Term)|Cdr],Window) :- true |
+    kl1_standard_preprocessor:pretty_print(Term,all,TermOut),
+    output_form_1(TermOut,Window,Window1),
+%    pretty_printer:pprinter(Window1,Window).
+    output_form(long, Cdr, Window1).
+otherwise.
+output_form(Mod, [Term|Cdr],Window):- true | 
+    Window=[Term|Window1],
+    output_form(Mod,Cdr,Window1).
+
+output_form_1([],Window,Window1):- true | Window1=Window.
+output_form_1([Mes|Cdr],Window,Window2):- true |
+    Window=[Mes|Window1],
+    output_form_1(Cdr,Window1,Window2).
+
+start([FileName|FNs],FR,FR3,OUTstream,OUTstreamL,Op,VorT):- string(FileName,_,_) |
+    FR=[open(FileName,read(Status))|FR1],
+    inputFile_status(Status,OUTstream,OUTstream1,Op,VorT,FileName,FR1,FR2),
+    start(FNs,FR2,FR3,OUTstream1,OUTstreamL,Op,VorT).
+start([],FR,FR1,OUTstream,OUTstreamL,_,_):- true |
+    FR1=FR, OUTstreamL=OUTstream.
+otherwise.
+start(_,FR,FR1,OUTstream,OUTstreamL,_,_):- true |
+    FR1=FR, OUTstreamL=OUTstream.
+
+inputFile_status(normal(File,_,_),OUTs,OUTsL,Op,VorT,_,FR,FR1) :- true |
+    FR1=FR,
+    File=[pathname(normal(Pathname))|File0],
+    OUTs=[putf(string#"*Variable Check: ~s~n",[Pathname]),flush(_)|OUTs1],
+    buffer:input_filter(File1,File0),
+    loop(File1,OUTs1,OUTsL,Op,VorT).
+otherwise.
+inputFile_status(_,               OUTs,OUTsL,Op,VorT,FileName,FR,FR1) :- true |
+    builtin#append_string(FileName,string#".kl1",NewFileName),
+    FR=[open(NewFileName,read(Status))|FR1],
+    expFile_status(Status,OUTs,OUTsL,Op,VorT,FileName).
+
+expFile_status(normal(File,_,_),OUTs,OUTsL,Op,VorT,_) :- true |
+    File=[pathname(normal(Pathname))|File0],
+    OUTs=[putf(string#"*Variable Check: ~s~n",[Pathname]),flush(_)|OUTs1],
+    buffer:input_filter(File1,File0),
+    loop(File1,OUTs1,OUTsL,Op,VorT).
+otherwise.
+expFile_status(_,               OUTs,OUTsL,_,_,FileName) :- true |
+    OUTs=[putf(string#"!ERROR! cannot open file: ~s~n",[FileName])|OUTsL].
+
+        
+loop(File,OutS,OutSL,Op,VorT):- true |
+    File=[getwt(Result)|FileL],
+    loop0(FileL,OutS,OutSL,Op,VorT,Result).
+
+loop0(File,OutS,OutSL,Op,VorT,abnormal(Error)):- true |
+    OutS=[nl,print_error(Error),nl|NOutS],
+    loop(File,NOutS,OutSL,Op,VorT).
+loop0(File,OutS,OutSL,_,_,normal(end_of_file)):- true |
+    File=[], OutS=[putf(string#"DONE.~2n",[])|OutSL].
+loop0(File,OutS,OutSL,Op,VorT,normal(empty)):- true |
+    loop(File,OutS,OutSL,Op,VorT).
+loop0(File,OutS,OutSL,Op,VorT,
+    normal(vector({atom((':-')),vector({atom(op),integer(P),atom(T),atom(O)})}))):-
+    P>=1, P=<1200 |
+    File = [add_op(P,T,O)|FileL],
+    OutS = [add_op(P,T,O)|NOutS],
+    loop(FileL,NOutS,OutSL,Op,VorT).
+otherwise.
+loop0(File,OutS,OutSL,Op,VorT,normal(WT)):- true |
+    varchk_(WT,Op,VorT,OutS,NOutS),
+    loop(File,NOutS,OutSL,Op,VorT).
+
+varchk_(Term,Op,VorT,Window,WindowL):- true |
+    make_tbl(Term,VarTbl),
+    varchk3a(VarTbl,VoidOrg,BlackOrg,Op,VorT),
+    compactVar(VoidOrg,Void,0,N1),
+    compactVar(BlackOrg,Black,N1,N2),    
+    varchk2(N2,Term,Window,Window2),
+    void(Void,Window2,Window3),
+    black(Black,Window3,WindowL).
+
+varchk(Term,Position,Op,VorT,Window,WindowL):- true |
+    make_tbl(Term,VarTbl),
+    varchk3a(VarTbl,VoidOrg,BlackOrg,Op,VorT),
+    compactVar(VoidOrg,Void,0,N1),
+    compactVar(BlackOrg,Black,N1,N2),    
+    varchk2(N2,Term,Void,Black,Position,Window,WindowL).
+
+varchk3a([],Void,Black,_,_):- true |
+    Void=[],
+    Black=[].
+varchk3a([Tbl|Cdr],Void,Black,Op,VorT):- true |
+    Tbl=[get_all(VarList)],
+    varchk3b(VarList,Void,Void1,Black,Black1,Op,VorT),
+    varchk3a(Cdr,Void1,Black1,Op,VorT).
+
+varchk3b([{Name,{G,B}}|VT],Void,Void2,Black,Black2,Op,VorT):- true |
+    check_(G,B,Op,S),
+    wait_check(Void,Void1,Black,Black1,S,Name,VorT),
+    varchk3b(VT,Void1,Void2,Black1,Black2,Op,VorT).
+varchk3b([],Void,Void1,Black,Black1,_,_):- true |
+    Void=Void1,
+    Black=Black1.
+
+compactVar([],OUT,N,NN):- true |
+    OUT=[],
+    NN=N.
+compactVar([Name|Cdr],OUT,N,NN):- true |
+    varFilter(Name,Cdr,Cdr1),
+    N1:=N+1,
+    OUT=[Name|NameCdr],
+    compactVar(Cdr1,NameCdr,N1,NN).
+varFilter(_,[],OUT):- true |
+    OUT=[].
+varFilter(Name,[Name|Cdr],OUT):-true |
+    varFilter(Name,Cdr,OUT).
+otherwise.
+varFilter(Name,[Var|Cdr],OUT):- true |
+    OUT=[Var|OUT1],
+    varFilter(Name,Cdr,OUT1).
+
+check_(G,B,Op,S):-
+     true|
+    check_tbl(G,B,S0),
+    check0(Op,S0,S).
+
+check_tbl(0,0,S):- true       | S = 0.
+check_tbl(0,1,S):- true       | S = 1.
+check_tbl(0,2,S):- true       | S = 0.
+check_tbl(0,B,S):- B > 2      | S = 2.
+check_tbl(1,0,S):- true       | S = 1.
+check_tbl(1,1,S):- true       | S = 0.
+check_tbl(1,2,S):- true       | S = 2.
+check_tbl(1,B,S):- B > 2      | S = 2.
+check_tbl(G,0,S):- G > 1      | S = 0.
+check_tbl(G,1,S):- G > 1      | S = 0.
+check_tbl(G,2,S):- G > 1      | S = 2.
+check_tbl(G,B,S):- G > 1,B > 2| S = 2.
+    
+check0(o  ,1 ,S):- true    | S = 1.
+check0(one,1 ,S):- true    | S = 1.
+check0(m  ,2 ,S):- true    | S = 2.
+check0(mrb,2 ,S):- true    | S = 2.
+check0(a  ,S0,S):- S0 \= 0 | S = S0.
+check0(all,S0,S):- S0 \= 0 | S = S0.
+otherwise.
+check0(_,  _, S):- true    | S = off.
+
+wait_check(Void,Void1,Black,Black1,1,Name,terse):- string_element(Name,0,#"_") |
+    Void1=Void,
+    Black1=Black.
+wait_check(Void,Void1,Black,Black1,1,Name,t):- string_element(Name,0,#"_") |
+    Void1=Void,
+    Black1=Black.
+otherwise.
+wait_check(Void,Void1,Black,Black1,1,Name,_):- true|
+    Void=[Name|Void1],
+    Black1=Black.
+wait_check(Void,Void1,Black,Black1,2,Name,_):- true|
+    Black=[Name|Black1],
+    Void1=Void.
+otherwise.
+wait_check(Void,Void1,Black,Black1,_,_,_):- true|
+    Void1=Void,
+    Black1=Black.
+
+varchk2(0,_,Window,WindowL):- true |
+    Window=WindowL.
+varchk2(N,Term,Window,WindowL):- N>0 |
+    Window=[nl,
+                putb(string#"***********************************************"), nl,term(Term),nl,nl|WindowL].
+
+
+varchk2(0,_,_,_,_,Window,WindowL):- true |
+    Window=WindowL.
+varchk2(N,Term,[],BlackVars,Pos,Window,WindowL):- N>0, list(BlackVars) |
+    Window=[stdout([putb("Black : ")|OUT],Pos)|WindowL],
+    list_to_comma(BlackVars,OUT,[]).
+varchk2(N,Term,VoidVars,[],Pos,Window,WindowL):- N>0, list(VoidVars) |
+    Window=[stdout([putb("Void : ")|OUT],Pos)|WindowL],
+    list_to_comma(VoidVars,OUT,[]).
+otherwise.
+varchk2(N,Term,VoidVars,BlackVars,Pos,Window,WindowL):- N>0 |
+    Window=[stdout([putb("Void : ")|OUT0],Pos)|WindowL],
+    list_to_comma(VoidVars,OUT0,OUT1),
+    OUT1 = [putb("  Black : ")|OUT2],
+    list_to_comma(BlackVars,OUT2,[]).
+
+list_to_comma([Var],OUT0,OUT) :- true | OUT0 = [putb(Var)|OUT].
+list_to_comma([Var|Rest],OUT0,OUT) :- list(Rest) |
+    OUT0 = [putb(Var),putb(", ")|OUT1],
+    list_to_comma(Rest,OUT1,OUT).
+
+make_tbl(Term,VarTbl):- true |
+    pool:keyed_set(Tbl,50),
+    pool:keyed_set(TblVec,50),
+    TblList = [{Tbl,TblVec,[]}|[]],
+    count_var(TblList,VarTbl,Term).
+
+count_var(TblList,NewTbl,vector({atom((':-')),B})):- true |
+    % --> B
+    count(TblList,NewTblList,B,b,norm),
+    set_general(NewTblList,NewTbl).
+count_var(TblList,NewTbl,vector({atom((':-')),H,vector({atom(('|')),G,B})})):-
+    true |     % --> H|G|B
+    count(TblList,TblList1,H,g,norm),
+    count(TblList1,TblList2,G,g,norm),
+    count(TblList2,TblList3,B,b,norm),
+    set_general(TblList3,NewTbl).
+otherwise.
+count_var(TblList,NewTbl,vector({atom((':-')),H,B})):- true | % --> H|B
+    count(TblList,TblList1,H,g,norm),
+    count(TblList1,TblList2,B,b,norm),
+    set_general(TblList2,NewTbl).
+count_var(TblList,NewTbl,vector({atom(('-->')),B})):- true |
+    % --> B
+    count(TblList,NewTblList,B,b,norm),
+    set_general(NewTblList,NewTbl).
+count_var(TblList,NewTbl,vector({atom(('-->')),H,vector({atom(('|')),G,B})})):-
+    true |     % --> H|G|B
+    count(TblList,TblList1,H,g,norm),
+    count(TblList1,TblList2,G,g,norm),
+    count(TblList2,TblList3,B,b,norm),
+    set_general(TblList3,NewTbl).
+otherwise.
+count_var(TblList,NewTbl,vector({atom(('-->')),H,B})):- true | % --> H|B
+    count(TblList,TblList1,H,g,norm),
+    count(TblList1,TblList2,B,b,norm),
+    set_general(TblList2,NewTbl).
+otherwise.
+count_var(TblList,NewTbl,H):- true |
+    count(TblList,TblList1,H,g,norm),
+    set_general(TblList1,NewTbl).
+
+count([{Var,Vec,Child}|Cdr],OutTbl,vector({atom(->),G,B}),b,or):- true |
+    pool:keyed_set(NewVar),
+    pool:keyed_set(NewVec),
+    add_to_tail_of_list([{Var,Vec,Child}|Cdr],Children,OutTbl),
+    count([{NewVar,NewVec,[]}],Children,vector({atom(->),G,B}),b,norm).
+count(InTbl,OutTbl,vector({atom(->),G,B}),b,norm):- true |
+    count(InTbl,OutTbl1,G,g,norm),
+    count(OutTbl1,OutTbl,B,b,norm).
+count(InTbl,OutTbl,vector({atom(','),Goal1,Goal2},_),GB,_):- true |
+    count(InTbl,OutTbl1,Goal1,GB,norm),
+    count(OutTbl1,OutTbl,Goal2,GB,norm).
+count([{Var,Vec,[]}|Cdr],OutTbl,vector({atom(';'),Goal1,Goal2}),GB,norm):- true |
+    new_vector(Child,1),
+    set_vector_element(Child,0,_,Children1,Child1),
+    pool:keyed_set(NewVar),
+    pool:keyed_set(NewVec),
+    OutTbl=[{Var,Vec,Child1}|Cdr],
+    count([{NewVar,NewVec,[]}],Children,Goal1,GB,norm),
+    count(Children,Children1,Goal2,GB,or).
+count([{Var,Vec,Child}|Cdr],OutTbl,vector({atom(';'),Goal1,Goal2}),GB,norm):- vector(Child,Size)|
+    Size1 := Size + 1,
+    new_vector(Child1,Size1),
+    copy_vector_element(Child,Size,0,Child1,Child2),
+    set_vector_element(Child2,Size,_,Children1,Child3),
+    pool:keyed_set(NewVar),
+    pool:keyed_set(NewVec),
+    OutTbl=[{Var,Vec,Child3}|Cdr],
+    count([{NewVar,NewVec,[]}],Children,Goal1,GB,norm),
+    count(Children,Children1,Goal2,GB,or).
+count(InTbl,OutTbl,vector({atom(';'),atom(otherwise),Goal}),GB,Mod):- true |
+    count(InTbl,OutTbl,Goal,GB,or).
+otherwise.       
+count([{Var,Vec,Child}|Cdr],OutTbl,vector({atom(';'),Goal1,Goal2}),GB,or):- true|
+    pool:keyed_set(NewVar),
+    pool:keyed_set(NewVec),
+    add_to_tail_of_list([{Var,Vec,Child}|Cdr],Children1,OutTbl),
+    count([{NewVar,NewVec,[]}],Children,Goal1,GB,norm),
+    count(Children,Children1,Goal2,GB,or).
+count(InTbl,OutTbl,vector({atom(vector_element),A1,A2,variable(Name)}),g,_) :- true |
+    count(InTbl,OutTbl1,A1,g,norm),
+    count(OutTbl1,OutTbl2,A2,g,norm),
+    special_count_g(OutTbl2,OutTbl,Name,A1).
+count(InTbl,OutTbl,vector({atom(vector_element),A1,A2,variable(Name),A4}),b,_) :- true |
+    count(InTbl,OutTbl1,A1,b,norm),
+    count(OutTbl1,OutTbl2,A2,b,norm),
+    special_count(OutTbl2,OutTbl,Name,A4).
+otherwise.
+count(InTbl,OutTbl,variable(string#"_"),_,_):- true |
+    OutTbl = InTbl.
+count(InTbl,OutTbl,list([H|L]),GB,_):- true |
+    count(InTbl,OutTbl1,H,GB,norm),
+    count(OutTbl1,OutTbl,L,GB,norm).
+count(InTbl,OutTbl,[H|L],GB,_):- true |
+    count(InTbl,OutTbl1,H,GB,norm),
+    count(OutTbl1,OutTbl,L,GB,norm).
+count(InTbl,OutTbl,vector(X),GB,_):- vector(X,L) |
+    count_vector(InTbl,OutTbl,X,GB,0,L).
+otherwise.
+count([{Tbl,TblVec,Child}|Cdr],OutTbl,variable(Str),GB,_):- true |
+    OutTbl = [{Tbl1,TblVec,Child}|Cdr],
+    Tbl=[put(Str,New,Old)|Tbl1],
+    count_up(GB,1,New,Old).
+otherwise.
+count(InTbl,OutTbl,_,_,_):- true | 
+    OutTbl = InTbl.
+
+
+%%%count_all_tbl([],OutTbl,_,_,_):- true |
+%%%    OutTbl = [].
+%%%count_all_tbl([{Tbl,TblVec}|Cdr],OutTbl,Str,GB,N):- true |
+%%%    OutTbl = [{Tbl1,TblVec}|OutCdr],
+%%%    Tbl = [put(Str,New,Old)|Tbl1],
+%%%    count_up(GB,N,New,Old),
+%%%    count_all_tbl(Cdr,OutCdr,Str,GB,N).
+%%%count_all_tbl_sp([],OutTbl,_,_,_):- true |
+%%%    OutTbl = [].
+%%%count_all_tbl_sp([{Tbl,TblVec}|Cdr],OutTbl,Name,Name1,GB):- true |
+%%%    OutTbl = [{Tbl1,TblVec}|OutCdr],
+%%%    Tbl = [put(Name,New,Old),put(Name1,New1,Old1)|Tbl1],
+%%%    count_up(GB,3,New,Old),
+%%%    count_up(GB,1,New1,Old1),
+%%%    count_all_tbl_sp(Cdr,OutCdr,Name,Name1,GB).
+%%%count_all_tbl_spg([],OutTbl,_,_,_):- true |
+%%%    OutTbl = [].
+%%%count_all_tbl_spg([{Tbl,TblVec}|Cdr],OutTbl,Name,Name1,GB):- true |
+%%%    OutTbl = [{Tbl1,TblVec1}|OutCdr],
+%%%    Tbl = [put(Name,New,Old),put(Name1,New1,Old1)|Tbl1],
+%%%    count_up(GB,2,New,Old),
+%%%    count_up(GB,1,New1,Old1),
+%%%    TblVec = [put(Name,New2,Old2)|TblVec1],
+%%%    set_Parent(Name1,New2,Old2),
+%%%    count_all_tbl_spg(Cdr,OutCdr,Name,Name1,GB).
+
+count_vector(InTbl,OutTbl,X,GB,P,L):- P<L |
+    set_vector_element(X,P,E,0,NX), % vector_element(X,P,E,NX)
+    count(InTbl,OutTbl1,E,GB,norm),
+    PP := P+1,
+    count_vector(OutTbl1,OutTbl,NX,GB,PP,L).
+count_vector(InTbl,OutTbl,_,_,P,L):- P>=L |
+    OutTbl = InTbl.
+
+count_up(g,C,New,{{G,B}}) :- true | GG := G+C, New={GG,B}.
+count_up(b,C,New,{{G,B}}) :- true | BB := B+C, New={G,BB}.
+otherwise.
+count_up(g,C,New,{}) :- true | New={C,0}.
+count_up(b,C,New,{}) :- true | New={0,C}.
+
+special_count_g(InTbl,OutTbl,string#"_",A1):- true |
+    count(InTbl,OutTbl,A1,g,norm).
+otherwise.
+special_count_g(InTbl,OutTbl,Name,variable(string#"_")):- true |
+    count(InTbl,OutTbl,Name,g,norm).
+otherwise.
+special_count_g([{Tbl,TblVec,Child}|Cdr],OutTbl,Name,variable(Name1)):- true |
+    OutTbl = [{Tbl1,TblVec1,Child}|Cdr],
+    Tbl = [put(Name,New,Old),put(Name1,New1,Old1)|Tbl1],
+    count_up(g,2,New,Old),
+    count_up(g,1,New1,Old1),
+    TblVec = [put(Name,New2,Old2)|TblVec1],
+    set_Parent(Name1,New2,Old2).
+%%    count_all_tbl_spg(Cdr,OutCdr,Name,Name1,g).
+otherwise.
+special_count_g([{Tbl,TblVec,Child}|Cdr],OutTbl,Name,A1):- true |
+    Tbl = [put(Name,New,Old)|Tbl1],
+    count_up(g,2,New,Old),
+%%    count_all_tbl(Cdr,CdrOut,Name,g,2),
+    OutTbl1 = [{Tbl1,TblVec,Child}|Cdr],
+    count(OutTbl1,OutTbl,A1,g,norm).
+special_count(InTbl,OutTbl,string#"_",A4):- true |
+    count(InTbl,OutTbl,A4,b,norm).
+otherwise.
+special_count([{Tbl,TblVec,Child}|Cdr],OutTbl,Name,variable(string#"_")):- true |
+    OutTbl = [{Tbl1,TblVec,Child}|Cdr],
+    Tbl=[put(Name,New,Old)|Tbl1],
+    count_up(b,2,New,Old).
+%%    count_all_tbl(Cdr,CdrOut,Name,b,2).
+otherwise.
+special_count([{Tbl,TblVec,Child}|Cdr],OutTbl,Name,variable(Name4)):- true |
+    OutTbl = [{Tbl1,TblVec,Child}|Cdr],
+    Tbl=[put(Name,New,Old), put(Name4,New4,Old4)|Tbl1],
+    count_up(b,3,New,Old),
+    count_up(b,1,New4,Old4).
+%%    count_all_tbl_sp(Cdr,OutCdr,Name,Name4,b).
+otherwise.
+special_count([{Tbl,TblVec,Child}|Cdr],OutTbl,Name,A4):- true |
+    OutTbl1 = [{Tbl1,TblVec,Child}|Cdr],
+    Tbl=[put(Name,New,Old)|Tbl1],
+    count_up(b,2,New,Old),
+%%    count_all_tbl(Cdr,OutCdr,Name,b,2),
+    count(OutTbl1,OutTbl,A4,b,norm).
+
+set_Parent(Name,New,{}) :- true |  New=[Name].
+otherwise.
+set_Parent(Name,New,{Old}):- true | 
+    New=NewC,
+    compact([Name|Old],NewC).
+
+set_general(IN,OUT):- true |
+    arg_update_root(IN,OUT0),
+    set_general_start(OUT0,OUT).
+
+set_general_start([],NewTblList):- true |
+    NewTblList=[].
+set_general_start([{Tbl,TblVec}|Cdr],NewTblList):- true |
+    pool:keyed_set(NewTbl),
+    pool:keyed_set(TblPTA),
+    Tbl = [get_all(VarTbl)],
+    NewTblList = [NewTbl2|CdrNewTbl],
+    TblPTA1 = [get_all(VecPTA)],
+    set_general_0(VarTbl,NewTbl,NewTbl1,TblVec,[],TblPTA,TblPTA1),
+    vector_Expchk(NewTbl1,NewTbl2,VecPTA),
+    set_general_start(Cdr,CdrNewTbl).
+set_general_0([],Tbl,Tbl1,TblVec,TblVec1,TblPTA,TblPTA1):- true |
+    Tbl1=Tbl,
+    TblVec1=TblVec,
+    TblPTA1 = TblPTA.
+otherwise.
+set_general_0([{Child,GB}|Ps],Tbl,Tbl2,TblVec,TblVec3,TblPTA,TblPTA2):- true |
+    Tbl=[put(Child,GB,_)|Tbl1],
+    TblVec=[empty(Child,YorN)|TblVec1],
+    set_general_1(YorN,Child,TblVec1,TblVec2,TblPTA,TblPTA1),
+    set_general_0(Ps,Tbl1,Tbl2,TblVec2,TblVec3,TblPTA1,TblPTA2).
+
+set_general_1(yes,_,TblVec,TblVec1,TblPTA,TblPTA1):- true |
+    TblVec1=TblVec,
+    TblPTA1=TblPTA.
+otherwise.
+set_general_1(no,Child,TblVec,TblVec2,TblPTA,TblPTA1):- true |
+    TblVec=[get_and_put(Child,PTA,PTA)|TblVec1],
+    set_general_2(Child,PTA,TblVec1,TblVec2,TblPTA,TblPTA1).
+
+set_general_2(_,[],TblVec,TblVec1,TblPTA,TblPTA1):- true |
+    TblVec1=TblVec,
+    TblPTA1=TblPTA.
+otherwise.    
+set_general_2(Child,PTA,TblVec,TblVec1,TblPTA,TblPTA1):- true |
+    TblPTA=[put(Child,GnPTA1,_)|TblPTA1],
+    compact(GnPTA,GnPTA1),
+    quest_more_PTA(PTA,GnPTA,TblVec,TblVec1).
+
+quest_more_PTA([PTA|Ps],OUT,TblVec,TblVec3):- true |
+    OUT=[PTA|Names],
+    TblVec=[empty(PTA,YorN)|TblVec1],
+    merge({Names1,Names2},Names),
+    quest_more_PTA(Ps,Names1,TblVec1,TblVec2),
+    quest_root(PTA,YorN,Names2,TblVec2,TblVec3).
+otherwise.
+quest_more_PTA([],OUT,TblVec,TblVec1):- true | 
+    OUT=[],    
+    TblVec1=TblVec.
+
+quest_root(_,yes,OUT,TblVec,TblVec1):- true |
+    OUT=[],
+    TblVec=TblVec1.
+quest_root(PTA,no,OUT,TblVec,TblVec2):- true |
+    OUT=[PTA|Names],
+    TblVec=[get_and_put(PTA,OldPTA,OldPTA)|TblVec1],
+    quest_more_PTA(OldPTA,Names,TblVec1,TblVec2).
+
+vector_Expchk(Tbl,Tbl4,[{Name,PS}|VT]):- true |
+    Tbl = [get(Name,Old)|Tbl1],
+    check_Child(Old,New,PS,Tbl1,Tbl2),
+    Tbl2 = [put(Name,New,_)|Tbl3],
+    vector_Expchk(Tbl3,Tbl4,VT).
+otherwise.
+vector_Expchk(Tbl,Tbl1,[]):- true |
+    Tbl1 = Tbl.
+
+
+check_Child({G,B},New,Ps,Tbl,Tbl1):- B =:= 1 |
+    compact(Ps,Ps1),
+    check_Parent(Ps1,Tbl,Tbl1,B,BB),
+    New = {G,BB}.
+otherwise.
+    check_Child(Old,New,_,Tbl,Tbl1):- true |
+    Tbl1 = Tbl,
+    New = Old.
+
+compact([],OUT):- true |
+    OUT=[].
+otherwise.
+compact([IN|Cdr],OUT):- true |
+    OUT=[IN|OUT2],
+    compact_filter(IN,Cdr,OUT1),
+    compact(OUT1,OUT2).
+
+compact_filter(_,[],OUT):- true |
+    OUT=[].
+otherwise.
+compact_filter(Mask,[IN|Cdr],OUT):- IN=Mask | compact_filter(Mask,Cdr,OUT).
+otherwise.
+compact_filter(Mask,[IN|Cdr],OUT):- true |
+    OUT=[IN|OUT1],
+    compact_filter(Mask,Cdr,OUT1).
+
+check_Parent([Name|Ps],Tbl,Tbl3,B,BB):- true |
+    Tbl = [get(Name,PTbl)|Tbl1],
+    check_Parent1(PTbl,Tbl1,Tbl2,B,BB,Ps),
+    Tbl2 = [put(Name,PTbl,_)|Tbl3].
+otherwise.
+check_Parent([],Tbl,Tbl1,B,BB):- true |
+    Tbl1 = Tbl,
+    BB = B.
+
+
+check_Parent1({_,B},Tbl,Tbl1,BC,BBC,_):- B > 0 |
+    BBC := BC + 1,
+    Tbl1 = Tbl.
+otherwise.
+check_Parent1(_,Tbl,Tbl1,BC,BBC,Ps):- true |
+    check_Parent(Ps,Tbl,Tbl1,BC,BBC).
+
+void([],W,W1) :- true | W1=W.
+otherwise.
+void(Void,W,W2) :- true | 
+    W=[putb(string#"ONE::: ")|W1], print_var(Void,W1,W2).
+black([],W,W1) :- true | W1=W.
+otherwise.
+black(Black,W,W2) :- true | 
+    W=[putb(string#"MRB::: ")|W1], print_var(Black,W1,W2).
+
+print_var([Name|VAR],W,W2) :- true |
+    W=[putb(Name),tab(1)|W1],
+    print_var(VAR,W1,W2).
+print_var([],W,W1) :- true | W=[nl|W1].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   Interface for go/0   %
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+variable_check(Ready,IN,OUT,GR,Op,Form,VorT,Prev) :- wait(Ready) |
+        read_command(IN,IN1,Op,Form,VorT,Com),
+        do_command(Com,IN1,OUT,GR,Op,Form,VorT,Prev).
+
+read_command(IN,IN2,Op,Form,VorT,Com) :- true |
+    status_prompt(Op,Form,VorT,Status),
+    builtin#append_string(string#"VARCHK",Status,Prompt),
+    IN=[prompt(Prompt),getl(Line)|IN1],
+    check_input(Line,IN1,IN2,Com).
+
+status_prompt(one,long, verbose,P) :- true | P=string#"[o,l,v] ".
+status_prompt(one,short,verbose,P) :- true | P=string#"[o,s,v] ".
+status_prompt(mrb,long, verbose,P) :- true | P=string#"[m,l,v] ".
+status_prompt(mrb,short,verbose,P) :- true | P=string#"[m,s,v] ".
+status_prompt(all,long, verbose,P) :- true | P=string#"[a,l,v] ".
+status_prompt(all,short,verbose,P) :- true | P=string#"[a,s,v] ".
+status_prompt(one,long, terse,  P) :- true | P=string#"[o,l,t] ".
+status_prompt(one,short,terse,  P) :- true | P=string#"[o,s,t] ".
+status_prompt(mrb,long, terse,  P) :- true | P=string#"[m,l,t] ".
+status_prompt(mrb,short,terse,  P) :- true | P=string#"[m,s,t] ".
+status_prompt(all,long, terse,  P) :- true | P=string#"[a,l,t] ".
+status_prompt(all,short,terse,  P) :- true | P=string#"[a,s,t] ".
+
+check_input(string#""      ,IN,IN1,Com) :- true | IN1=IN, Com=message.
+check_input(-1             ,IN,IN1,Com) :- true | IN1=IN, Com=exit.
+otherwise.
+check_input(Line           ,IN,IN1,Com) :- string(Line,Length,16) |
+    decomp_line(0,Length,Line,Tokens,Status),
+    check_more_input(Status,Tokens,IN,IN1,Com).
+check_input(Line           ,IN,IN1,Com) :- integer(Line) | IN1=IN, Com=abort. % aborted 
+
+check_more_input(end,Tokens,IN,IN1,Com) :- true |
+    analyze_input(Tokens,IN,IN1,Com).
+check_more_input(continue,FileNames1,IN,IN2,FileNames) :- true |
+    IN = [prompt(string#"              "),getl(Line)|IN1],
+    string(Line,Length,_,NewLine),
+    decomp_line(0,Length,NewLine,FileNames2,Status),
+    append(FileNames1,FileNames2,FileNames3),
+    check_more_input(Status,FileNames3,IN1,IN2,FileNames).
+
+analyze_input([string#"?"],  IN,IN1,Com) :- IN1=IN, Com=help.
+analyze_input([string#"."],  IN,IN1,Com) :- IN1=IN, Com=one.
+analyze_input([string#".."], IN,IN1,Com) :- IN1=IN, Com=mrb.
+analyze_input([string#"..."],IN,IN1,Com) :- IN1=IN, Com=all.
+analyze_input([string#"/"],  IN,IN1,Com) :- IN1=IN, Com=short.
+analyze_input([string#"//"], IN,IN1,Com) :- IN1=IN, Com=long.
+analyze_input([string#"+"],  IN,IN1,Com) :- IN1=IN, Com=verbose.
+analyze_input([string#"-"],  IN,IN1,Com) :- IN1=IN, Com=terse.
+analyze_input([string#"="],  IN,IN1,Com) :- IN1=IN, Com=reCheck.
+analyze_input([C|Args]      ,IN,IN1,Com) :- 
+    string_element(C,0,#"!") | 
+    IN1=IN,
+    varchk_command(C,Args,Com).
+otherwise.
+analyze_input(Tokens         ,IN,IN1,Com) :- IN1=IN, Com=Tokens.
+
+varchk_command(string#"!!",   _,   Com) :- Com=print_files.
+varchk_command(string#"!exit",_,   Com) :- Com=exit.
+varchk_command(string#"!help",_,   Com) :- Com=help.
+varchk_command(string#"!cd", [],   Com) :- Com=cd(string#"~").
+varchk_command(string#"!cd", [Dir],Com) :- Com=cd(Dir).
+varchk_command(string#"!con",[Atm],Com) :- Com=con(Atm).
+varchk_command(string#"!pwd", _,   Com) :- Com=pwd.
+varchk_command(string#"!pl", [New],Com) :- Com=pl(New).
+varchk_command(string#"!pd", [New],Com) :- Com=pd(New).
+varchk_command(string#"!psl",[New],Com) :- Com=psl(New).
+varchk_command(string#"!pal",[New],Com) :- Com=pal(New).
+otherwise.
+varchk_command(C,             _,   Com) :- Com=unknown(C).
+
+append([A|X], Y, Z) :- true | Z=[A|Z1], append(X, Y, Z1).
+append([], Y, Z) :- true | Y=Z.
+
+decomp_line(P,Length,_Line,FileNames,Status) :- P =:= Length |
+    FileNames = [],
+    Status = end.
+decomp_line(P,Length,Line,FileNames,Status) :- string_element(Line,P,Char) |
+    decomp_line(Char,P,Length,Line,FileNames,Status).
+
+decomp_line(Char,P,Length,Line,FileNames,Status) :- Char = #" " |
+    P1 := P + 1,
+    decomp_line(P1,Length,Line,FileNames,Status).
+decomp_line(Char,P,Length,Line,FileNames,Status) :- Char = #"," |
+    P1 := P + 1,
+    decomp_line_1(P1,Length,Line,FileNames,Status).
+otherwise.
+decomp_line(_Char,P,Length,Line,FileNames,Status):- true |
+    P1 := P + 1,
+    filename(P1,P,Length,Line,FileNames,Status).
+
+decomp_line_1(P,Length,_Line,FileNames,Status) :- P =:= Length |
+    FileNames = [],
+    Status = continue.
+decomp_line_1(P,Length,Line,FileNames,Status) :- string_element(Line,P,Char) |
+    decomp_line(Char,P,Length,Line,FileNames,Status).
+
+filename(P,Q,Length,Line,FileNames,Status) :- P =:= Length |
+    Len := P - Q,
+    builtin#substring(Line,Q,Len,FileName,_),
+    FileNames = [FileName],
+    Status = end.
+filename(P,Q,Length,Line,FileNames,Status) :- string_element(Line,P,Char) |
+    filename(Char,P,Q,Length,Line,FileNames,Status).
+
+filename(Char,P,Q,Length,Line,FileNames,Status) :- Char =:= #" " |
+    Len := P - Q,
+    builtin#substring(Line,Q,Len,FileName,Line1),
+    FileNames = [FileName|FileNames1],
+    P1 := P + 1,
+    decomp_line(P1,Length,Line1,FileNames1,Status).
+filename(Char,P,Q,Length,Line,FileNames,Status) :- Char =:= #"," |
+    Len := P - Q,
+    builtin#substring(Line,Q,Len,FileName,Line1),
+    FileNames = [FileName|FileNames1],
+    P1 := P + 1,
+    decomp_line_1(P1,Length,Line1,FileNames1,Status).
+otherwise.
+filename(_Char,P,Q,Length,Line,FileNames,Status) :- true |
+    P1 := P + 1,
+    filename(P1,Q,Length,Line,FileNames,Status).
+
+
+
+do_command(message,IN,OUT,GR,Op,Form,VorT,Prev) :- true |
+    OUT = [putf(string#" Please input filename(s). [? for help]~n",[]),flush(Ready)|OUT1],
+    variable_check(Ready,IN,OUT1,GR,Op,Form,VorT,Prev).
+do_command(help,IN,OUT,GR,Op,Form,VorT,Prev) :- true |
+    OUT = [nl,
+           putb(string#" Input format is as follows."),nl,nl,
+           putb(string#"   FileName1 [,FileName2 ... ]"),nl,nl,
+           putb(string#"    - Filenames are separated by comma(,) or space(s)."),nl,
+           putb(string#"    - Double quote("") is needless."),nl,nl,
+           putb(string#" =       - ReCheck last checked file(s)."),nl,
+           putb(string#" !!      - Print last checked file(s)."),nl,
+           putb(string#" !cd     - Change working directory to home."),nl,
+           putb(string#" !cd Dir - Change working directory to Dir."),nl,
+           putb(string#" !pwd    - Print working directory."),nl,
+           putb(string#" !exit   - Terminate variable checker."),nl,
+           putb(string#" .       - Change check mode to ""one[o]""."),nl,
+           putb(string#" ..      - Change check mode to ""mrb[m]""."), nl,
+           putb(string#" ...     - Change check mode to ""all[a]""."),nl,
+           putb(string#" /       - Change print form to ""short[s]""."),nl,
+           putb(string#" //      - Change print form to ""long[l]""."),nl,
+           putb(string#" +       - Set ""verbose[v]"" mode."),nl,
+           putb(string#" -       - Set ""terse[t]"" mode."),nl,nl,
+           flush(Ready)|OUT1],
+    variable_check(Ready,IN,OUT1,GR,Op,Form,VorT,Prev).
+
+do_command(one,IN,OUT,GR,_,Form,VorT,Prev) :- true |
+    variable_check(ready,IN,OUT,GR,one,Form,VorT,Prev).
+do_command(mrb,IN,OUT,GR,_,Form,VorT,Prev) :- true |
+    variable_check(ready,IN,OUT,GR,mrb,Form,VorT,Prev).
+do_command(all,IN,OUT,GR,_,Form,VorT,Prev) :- true |
+    variable_check(ready,IN,OUT,GR,all,Form,VorT,Prev).
+
+do_command(short,IN,OUT,GR,Op,_,VorT,Prev) :- true |
+    variable_check(ready,IN,OUT,GR,Op,short,VorT,Prev).
+do_command(long,IN,OUT,GR,Op,_,VorT,Prev) :- true |
+    variable_check(ready,IN,OUT,GR,Op,long,VorT,Prev).
+
+do_command(verbose,IN,OUT,GR,Op,Form,_,Prev) :- true |
+    variable_check(ready,IN,OUT,GR,Op,Form,verbose,Prev).
+do_command(terse,IN,OUT,GR,Op,Form,_,Prev) :- true |
+    variable_check(ready,IN,OUT,GR,Op,Form,terse,Prev).
+
+do_command(reCheck,IN,OUT,GR,Op,Form,VorT,Prev) :- true |
+    do_command(Prev,IN,OUT,GR,Op,Form,VorT,_).
+do_command(print_files,IN,OUT,GR,Op,Form,VorT,Prev) :- true |
+    status_prompt(Op,Form,VorT,Status),
+    builtin#append_string(string#"VARCHK",Status,Prompt),
+    insert_space(Prev,Files),
+    builtin#append_string(Files,Names),
+    IN=[prompt(Prompt),
+        ungetb(Names,_),
+        getl(Line)|IN1],
+    check_input(Line,IN1,IN2,Com),
+    do_command(Com,IN2,OUT,GR,Op,Form,VorT,Prev).
+
+do_command(exit,IN,OUT,GR,_,_,_,_) :- true |
+    IN=[], OUT=[], GR=[].
+do_command(abort,IN,OUT,GR,_,_,_,_) :- true |
+    IN=[], OUT=[putf(string#" Input Device Aborted.~n",[])], GR=[].
+do_command(unknown(C),IN,OUT,GR,Op,Form,VorT,Prev) :- true |
+    OUT=[putf(string#" ~s: Unknown command.~n",[C]),flush(Ready)|OUT1],
+    variable_check(Ready,IN,OUT1,GR,Op,Form,VorT,Prev).
+
+do_command(cd(Dir),IN,OUT,GR,Op,Form,VorT,Prev) :-
+    change_directory(Dir,GR,GR1,OUT,OUT1,Ready),
+    variable_check(Ready,IN,OUT1,GR1,Op,Form,VorT,Prev).
+do_command(con(AtomName),IN,OUT,GR,Op,Form,VorT,Prev) :-
+    GR=[getenv(shell:logical_pathname,Status)|GR1],
+    con(Status,AtomName,GR1,GR2,OUT,OUT1,Ready),
+    variable_check(Ready,IN,OUT1,GR2,Op,Form,VorT,Prev).
+do_command(pwd,IN,OUT,GR,Op,Form,VorT,Prev) :-
+    GR=[getenv(task:directory,Status)|GR1],
+    pwd(Status,OUT,OUT1,Ready),
+    variable_check(Ready,IN,OUT1,GR1,Op,Form,VorT,Prev).
+
+do_command(pl(New),IN,OUT,GR,Op,Form,VorT,Prev) :- true |
+    mklib:string_to_integer(New,10,Status),
+    set_parameter(Status,print_length,OUT,OUT1,Ready),
+    variable_check(Ready,IN,OUT1,GR,Op,Form,VorT,Prev).
+do_command(pd(New),IN,OUT,GR,Op,Form,VorT,Prev) :- true |
+    mklib:string_to_integer(New,10,Status),
+    set_parameter(Status,print_depth,OUT,OUT1,Ready),
+    variable_check(Ready,IN,OUT1,GR,Op,Form,VorT,Prev).
+do_command(psl(New),IN,OUT,GR,Op,Form,VorT,Prev) :- true |
+    mklib:string_to_integer(New,10,Status),
+    set_parameter(Status,print_string_length,OUT,OUT1,Ready),
+    variable_check(Ready,IN,OUT1,GR,Op,Form,VorT,Prev).
+do_command(pal(New),IN,OUT,GR,Op,Form,VorT,Prev) :- true |
+    mklib:string_to_integer(New,10,Status),
+    set_parameter(Status,print_atom_length,OUT,OUT1,Ready),
+    variable_check(Ready,IN,OUT1,GR,Op,Form,VorT,Prev).
+
+otherwise.
+do_command(Files,IN,OUT,GR,Op,Form,VorT,_) :- true |
+    OUT=[do(NewOUT1)|OUT1],
+    GR=[file(normal(FR,_,_))|GR1],
+    expandPathname(Files,Files1),
+    start(Files1,FR,[],NewOUT,[flush(Ready)],Op,VorT),
+    output_form(Form,NewOUT,NewOUT1),
+    variable_check(Ready,IN,OUT1,GR1,Op,Form,VorT,Files).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Change Working Directory %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+change_directory(Dir,GR,GR1,MESG0,MESG,Ready) :- string_element(Dir,0,#">") |
+    check_directory(Dir,GR,GR1,MESG0,MESG,Ready).
+change_directory(Dir,GR,GR2,MESG0,MESG,Ready) :- string_element(Dir,0,#"~") |
+    GR=[getenv(task:home,Home)|GR1],
+    home_relative_directory(Home,Dir,GR1,GR2,MESG0,MESG,Ready).
+otherwise.
+change_directory(Dir,GR,GR2,MESG0,MESG,Ready) :- true |
+    GR=[getenv(task:directory,CWD)|GR1],
+    relative_directory(CWD,Dir,GR1,GR2,MESG0,MESG,Ready).
+
+home_relative_directory(normal(Home),string#"~",GR,GR1,MESG0,MESG,Ready) :- true |
+    check_directory(Home,GR,GR1,MESG0,MESG,Ready).
+otherwise.
+home_relative_directory(normal(Home),Path,GR,GR1,MESG0,MESG,Ready) :- 
+  string(Path,L,_),
+  string_element(Path,1,#">") |
+    L1 := L - 1,
+    builtin#substring(Path,1,L1,Path1,_),
+    builtin#append_string([Home,Path1],NewPath),
+    check_directory(NewPath,GR,GR1,MESG0,MESG,Ready).
+otherwise.
+home_relative_directory(normal(Home),Path,GR,GR1,MESG0,MESG,Ready) :- string(Path,L,_) |
+    L1 := L - 1,
+    builtin#substring(Path,1,L1,Path1,_),
+    builtin#append_string([Home,string#">",Path1],NewPath),
+    check_directory(NewPath,GR,GR1,MESG0,MESG,Ready).
+otherwise.
+home_relative_directory(_,_Path,GR,GR1,MESG0,MESG,Ready) :-
+    GR1=GR,
+    MESG0 = [putf(string#"!ERROR! unable to change directory.~n",[]),flush(Ready)|MESG].
+
+relative_directory(normal(CWD),Path,GR,GR1,MESG0,MESG,Ready) :- true |
+    builtin#append_string([CWD,string#">",Path],NewPath),
+    check_directory(NewPath,GR,GR1,MESG0,MESG,Ready).
+otherwise.
+relative_directory(_,_,GR,GR1,MESG0,MESG,Ready) :-
+    GR1=GR,
+    MESG0 = [putf(string#"!ERROR! unable to change directory.~n",[]),flush(Ready)|MESG].
+
+check_directory(Path,GR,GR2,MESG0,MESG,Ready) :-
+    GR=[file(normal(FR,_,_))|GR1],
+    FR=[directory(Path,Status)],
+    set_cd(Status,Path,GR1,GR2,MESG0,MESG,Ready).
+
+set_cd(normal(Dir,_,_),_,GR,GR1,MESG0,MESG,Ready) :- true |
+    Dir = [pathname(normal(PathName))],
+    extract_real_pathname(PathName,RealPath),
+    GR=[setenv(task:directory,RealPath,Status)|GR1],
+    set_cd_0(Status,RealPath,MESG0,MESG,Ready).
+otherwise.
+set_cd(_,_,GR,GR1,MESG0,MESG,Ready) :-
+    GR1=GR,
+    MESG0 = [putf(string#"!ERROR! unable to change directory.~n",[]),flush(Ready)|MESG].
+
+set_cd_0(normal,PathName,MESG0,MESG,Ready) :- true |
+    MESG0 = [putf(string#" ~s~n",[PathName]),flush(Ready)|MESG].
+otherwise.
+set_cd_0(_,_,MESG0,MESG,Ready) :- true |
+    MESG0 = [putf(string#"!ERROR! unable to change directory.~n",[]),flush(Ready)|MESG].
+
+extract_real_pathname(Path,RealPath) :- string(Path,L,_) |
+    L1 := L - 2,
+    search_colon_colon(0,L1,Path,P),
+    M := L - P,
+    builtin#substring(Path,P,M,RealPath,_).
+
+search_colon_colon(I,L,_Path,P) :- I >= L |  % If "::" is not found, then entire string is assumed.
+    P = 0.
+search_colon_colon(I,_L,Path,P) :- 
+    string_element(Path,I,#":"), I1 := I + 1, string_element(Path,I1,#":") |
+    P := I1 + 1.
+otherwise.
+search_colon_colon(I,L,Path,P) :- 
+    I1 := I + 1,
+    search_colon_colon(I1,L,Path,P).
+
+
+%%%%%%%
+% PWD %
+%%%%%%%
+pwd(normal(PathName),OUT,OUT1,Ready) :-
+    OUT=[putf(string#" ~s~n",[PathName]),flush(Ready)|OUT1].
+otherwise.
+pwd(_,               OUT,OUT1,Ready) :-
+    OUT=[putf(string#"!ERROR! task:directory is abnormal.~n",[]),flush(Ready)|OUT1].
+
+expandPathname([F|Fs],FILE) :- string(F,S,_) |
+    wildcard_check(F,0,S,FILE,FILE1),
+    expandPathname(Fs,FILE1).
+expandPathname([],FILE) :- FILE=[].
+
+wildcard_check(F,S,S,L,L1) :- L=[F|L1].
+wildcard_check(F,N,S,L,L1) :- N=\=S, string_element(F,N,#"*") |
+    pathname:expandPathname(F,Fs),
+    files(Fs,L,L1).
+otherwise.
+wildcard_check(F,N,S,L,L1) :- N=\=S | wildcard_check(F,~(N+1),S,L,L1).
+
+files([file(F)|Fs],FILE,FILE2) :-
+    FILE=[F|FILE1],
+    files(Fs,FILE1,FILE2).
+files([],F,F1) :- F1=F.
+otherwise.
+files([_|Fs],FILE,FILE1) :- files(Fs,FILE,FILE1).
+
+insert_space([], Files) :- Files=[].
+insert_space([F],Files) :- Files=[F].
+otherwise.
+insert_space([F|Fs],Files) :-
+    Files=[F,string#" "|Files1],
+    insert_space(Fs,Files1).
+
+set_parameter(normal(P),Msg,OUT,OUT1,Ready) :- P>=0 | OUT=[{Msg,Ready,P}|OUT1].
+otherwise.
+set_parameter(_Status, _Msg,OUT,OUT1,Ready) :- OUT1=OUT, Ready=ready.
+
+
+con(normal(List),AtomName,GR,GR1,OUT,OUT1,Ready) :- list(List) |
+    atom_table:intern(AtomName,normal(Atom)),
+    search_pathname(List,Atom,GR,GR1,OUT,OUT1,Ready).
+con(abnormal,_AtomName,GR,GR1,OUT,OUT1,Ready) :-
+    GR1=GR,
+    OUT=[putf(string#"!ERROR! unknown atom.~n",[]),flush(Ready)|OUT1].
+
+search_pathname([{Atom,Path}|_],Atom,GR,GR1,OUT,OUT1,Ready) :-
+    change_directory(Path,GR,GR1,OUT,OUT1,Ready).
+otherwise.
+search_pathname([_|L],Atom,GR,GR1,OUT,OUT1,Ready) :-
+     search_pathname(L,Atom,GR,GR1,OUT,OUT1,Ready).
+otherwise.
+search_pathname(_,_,GR,GR1,OUT,OUT1,Ready) :-
+    GR1=GR,
+    OUT=[putf(string#"!ERROR! unknown atom.~n",[]),flush(Ready)|OUT1].
+
+
+%%%%%%% added by H.SAGI 1992.3.11
+add_to_tail_of_list([],[],Out):- true | Out=[].
+add_to_tail_of_list([],[Term|Cdr],Out):- true |
+    Out=[Term|Cdr].
+add_to_tail_of_list([Term|Cdr],List,Out):- true |
+    Out=[Term|OutCdr],
+    add_to_tail_of_list(Cdr,List,OutCdr).
+
+copy_vector_element(_,Size,Size,Vec2,OutVec):- true |
+    OutVec=Vec2.
+otherwise.
+copy_vector_element(Vec1,Size,Pos,Vec2,OutVec):- true |
+    set_vector_element(Vec1,Pos,Org,0,Vec11),
+    set_vector_element(Vec2,Pos,_,Org,Vec22),
+    PosPos := Pos + 1,
+    copy_vector_element(Vec11,Size,PosPos,Vec22,OutVec).
+
+
+arg_update_root([{Var,Vec,[]}|_],Out):- true |
+    Out=[{Var,Vec}].
+arg_update_root([{Var,Vec,Child}|_],Out):- vector(Child,Size) |
+    pool:keyed_set(AddVar),
+    manage_arg_update(AddVar,[get_all(VarList)],Var,Var1,Msg),
+    arg_update_root_1(Child,Size,0,Child1,Msg),
+    add_var_to_tbl(VarList,Var1,Var2),
+    var_vector_to_list(Out,[],[{Var2,Vec,Child1}]).
+
+arg_update_root_1(Child,Size,Size,ChildOut,Msg):- true |
+    ChildOut=Child,
+    Msg=[].
+arg_update_root_1(Child,Size,Pos,ChildOut,Msg):- Pos<Size |
+    set_vector_element(Child,Pos,Elm,NewElm,Child1),
+    arg_update_child(Msg1,[],Elm,NewElm),
+    PosPos := Pos + 1,
+    merge({Msg1,Msg2},Msg),
+    arg_update_root_1(Child1,Size,PosPos,ChildOut,Msg2).
+
+:- local_implicit msg:oldnew.
+arg_update_child([],Out)--> true | Out=[].
+arg_update_child([{Var,Vec,[]}|Cdr],Out)--> true |
+  {{Var=[get_all(VarList)|Var1],
+    Out=[{Var2,Vec,[]}|OutCdr]}},
+    raise_msg(Var1,Var2,VarList),
+    arg_update_child(Cdr,OutCdr).
+arg_update_child([{Var,Vec,Child}|Cdr],Out)--> vector(Child,Size) |
+  {{pool:keyed_set(AddVar),
+    manage_arg_update_child(&msg,AddVar,[get_all(VarList)],Var,Var1,ChiMsg),
+    arg_update_child_1(Child,Size,0,Child1,ChiMsg),
+    add_var_to_tbl(VarList,Var1,[get_all(VarListSelf)|Var2]),
+    Out=[{Var3,Vec,Child1}|OutCdr]}},
+    raise_msg(Var2,Var3,VarListSelf),
+    arg_update_child(Cdr,OutCdr).    
+
+arg_update_child_1(Child,Size,Size,ChildOut,Msg):- true |
+    ChildOut=Child,
+    Msg=[].
+otherwise.
+arg_update_child_1(Child,Size,Pos,ChildOut,Msg):- true |
+    set_vector_element(Child,Pos,Elm,NewElm,Child1),
+    arg_update_child(Msg1,[],Elm,NewElm),
+    PosPos := Pos + 1,
+    merge({Msg1,Msg2},Msg),
+    arg_update_child_1(Child1,Size,PosPos,ChildOut,Msg2).
+
+raise_msg(Var,Var1,[])--> true |
+    Var1=Var.
+raise_msg(Var,Var3,[{VarName,Value}|Cdr])--> true |
+  {{&msg <<= [add_ok(VarName,YorN)],
+    Var=[put(VarName,Value,_)|Var1],
+    reply_check_and_add(Var1,Var2,VarName,YorN)}},
+    raise_msg(Var2,Var3,Cdr).
+
+:- local_implicit addvar:oldnew, var:oldnew.
+manage_arg_update([])--> true | true.
+manage_arg_update([add_ok(VarName,YorN)|Cdr])--> true |
+    &addvar <<= [empty(VarName,YorN1)],
+    update_check(VarName,YorN1,YorN),
+    manage_arg_update(Cdr).
+
+update_check(_,no,YorN)--> true | YorN=yes.
+update_check(VarName,yes,YorN)--> true |
+    &var <<= [empty(VarName,YorN1)],
+    update_check_1(VarName,YorN1,YorN).
+
+update_check_1(_,yes,YorN)--> true | YorN=no.
+update_check_1(VarName,no,YorN)--> true |
+    &addvar <<= [put(VarName,[],_)],
+    YorN=yes.
+
+:- local_implicit msg:oldnew, addvar:oldnew, var:oldnew.
+manage_arg_update_child([])--> true | true.
+manage_arg_update_child([add_ok(Var,YorN)|Cdr])--> true |
+    &addvar <<= [empty(Var,YorN1)],
+    update_check_child(Var,YorN1,YorN),
+    manage_arg_update_child(Cdr).
+
+update_check_child(_,no,YorN)--> true | YorN=yes.
+update_check_child(Var,yes,YorN)--> true |
+    &var <<= [empty(Var,YorN1)],
+    update_check_child_1(Var,YorN1,YorN).
+
+update_check_child_1(Var,no,YorN)--> true |
+    &addvar <<= [put(Var,[],_)],
+    YorN=yes.
+update_check_child_1(Var,yes,YorN)--> true |
+    &msg <<= [add_ok(Var,YorN1)],
+    reply_check(Var,YorN1,YorN).
+
+reply_check(_,no,YorN)--> true | YorN=no.
+reply_check(Var,yes,YorN)--> true |
+    &addvar <<= [put(Var,[],_)],
+    YorN=yes.
+
+add_var_to_tbl([],Var,Var1):- true | Var1=Var.
+add_var_to_tbl([{VarName,_}|Cdr],Var,Var2):- true |
+    Var=[put(VarName,New,Old)|Var1],
+    count_up(b,1,New,Old),
+    add_var_to_tbl(Cdr,Var1,Var2).
+
+:- local_implicit out:oldnew.
+var_vector_to_list([])--> true | true.
+var_vector_to_list([{Var,Vec,[]}|Cdr])--> true |
+    &out <<= [{Var,Vec}],
+    var_vector_to_list(Cdr).
+var_vector_to_list([{Var,Vec,Child}|Cdr])--> vector(Child,Size) |
+  {{&out <<= [{Var,Vec}]}},
+    var_vector_to_list_1(Child,Size,0),
+    var_vector_to_list(Cdr).
+var_vector_to_list_1(_,Size,Size)--> true | true.
+var_vector_to_list_1(Child,Size,Pos)--> Pos < Size |
+  {{set_vector_element(Child,Pos,Elm,0,Child1),
+    PosPos := Pos + 1}},
+    var_vector_to_list(Elm),
+    var_vector_to_list_1(Child1,Size,PosPos).
+
+reply_check_and_add(Var,Var1,VarName,yes):- true |
+    Var=[put(VarName,New,Old)|Var1],
+    count_up(g,1,New,Old).
+reply_check_and_add(Var,Var1,_,no):- true |
+    Var1=Var.

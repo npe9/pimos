@@ -1,0 +1,294 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Stdio-handler %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module stdio_hndl.
+:- public create/7.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Create Stdio I/O Handler  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%create(NCnt,Rpt,CShut,Dev,NStream,HINT) :- true | Snd=Rcv,
+%    merge(NStream,Stream), merge(NCnt, Cnt),
+create(NCnt,Rpt,CShut,Dev,Stream,Stat,HINT) :- true | Snd=Rcv,
+    merge(NCnt, Cnt),
+
+%    ioHandler([create(0,Stream,CShut,Stat),attach(0,_,_)|Cnt],
+%                                               Rpt,Snd,Rcv,Dev,HINT).
+
+%    ioHandler([create(0,Stream,CShut,Stat)|Cnt],Rpt,Snd,Rcv,Dev,HINT).
+
+    Dev={Stream,NDev},Stat=normal,ioHandler(Cnt,Rpt,Snd,Rcv,NDev,HINT).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Stdio I/O Handler  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ioHandler([], Rpt, Snd, Rcv, Dev, HINT) :- true |
+    Snd = [], Dev = [], ioHandler(_, Rpt, _, Rcv, _, HINT).
+ioHandler(_, Rpt, _, [], _, HINT) :- true | Rpt = [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Controlng message to ioHandler %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%ioHandler([M | Cnt], Rpt, Snd, Rcv, Dev, HINT) :- atom(M) |
+%    ioHandler(Cnt, Rpt, Snd, Rcv, Dev, HINT).
+ioHandler([Mes | Cnt], Rpt, Snd, Rcv, Dev, HINT) :- vector(Mes, _) |
+%%%%% if (job is terminated) then (End will be instanciated [end])
+%%%%% IoCont is control-stream of stdio_filter
+    (Mes = create(JobNo, NStream, End, Stat, PorB) -> Dev = {Dev0, NDev},
+        merge(NStream,Stream), %%%%%
+        stdio_switch:create(Dev0, Stream, IoCont, End, HINT, PorB),
+        create_monitor(MntCnt, MntRpt, IoCont, JobNo, End, HINT),
+        MntRpt = Snd, MntCnt = NSnd, NCnt = Cnt, Stat = normal ;
+     Mes = kill(JobId, Stat), JobId \= 0, JobId \= all -> NDev=Dev,
+        waitStatus(HINT, Stat, Cnt, NCnt), Snd = [kill(JobId, Stat) | NSnd] ;
+     Mes = kill(all, Stat) -> NDev=Dev,
+        waitStatus(HINT, Stat, Cnt, NCnt), Snd = [kill(all, Stat) | NSnd] ;
+     Mes = kill(0, Stat) -> Stat=abnormal, NDev=Dev, NCnt=Cnt, NSnd=Snd ;
+     Mes = kill(Stat) -> NDev=Dev,
+        waitStatus(HINT, Stat, Cnt, NCnt), Snd = [kill(Stat) | NSnd] ;
+%%%%% if (Terget job is fore) then (it must be CHANGE into back)
+%%%%%                         else nothing to do
+     Mes = detach(Stat) -> NCnt=Cnt, NDev=Dev, Snd=[disconnect(Stat)|NSnd] ;
+     Mes = detach(Terget,Stat) ->
+        NCnt=Cnt, NDev=Dev, Snd=[change(Terget,Stat)|NSnd] ;
+     Mes = attach(JobId, Status, DTCT) -> NCnt = Cnt, NDev=Dev,
+        Snd = [disconnect(Stat) | NSnd1],
+        waitStatus(HINT, Stat, NSnd1, NSnd2),
+        NSnd2 = [connect(JobId, Status, DTCT) | NSnd] ;
+     Mes = attach(Status, DTCT) -> NCnt = Cnt, NDev=Dev,
+        Snd = [disconnect(Stat) | NSnd1],
+        waitStatus(HINT, Stat, NSnd1, NSnd2),
+        NSnd2 = [connect(Status, DTCT) | NSnd] ;
+     Mes = pass_to_block(Status) -> NDev=Dev,
+        waitStatus(HINT, Status, Cnt, NCnt),
+        Snd = [pass_to_block(Status) | NSnd] ;
+    otherwise;
+     true -> NCnt = Cnt, NSnd = Snd, NDev = Dev),
+    ioHandler(NCnt, Rpt, NSnd, Rcv, NDev, HINT).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Reporting message from ioHandler %%%
+%%%    export message is [] only     %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%ioHandler(Cnt, Rpt, Snd, [M | Rcv], Dev, HINT) :- atom(M) |
+%    ioHandler(Cnt, Rpt, Snd, Rcv, Dev, HINT).
+ioHandler(Cnt, Rpt, Snd, [Mes | Rcv], Dev, HINT) :- vector(Mes, _) |
+    (Mes = connect(JobNo, Stat, DTCT) ->
+        Stat=non_existent, DTCT=non_existent, NCnt=Cnt, NRpt=Rpt, NSnd=Snd ;
+%        NCnt = [fore(0, Stat) | Cnt], NRpt = Rpt, NSnd = Snd ;
+     Mes = connect(Stat, DTCT) ->
+        Stat=non_existent, DTCT=non_existent, NCnt=Cnt, NRpt=Rpt, NSnd=Snd ;
+%        NCnt = [fore(0, Stat) | Cnt], NRpt = Rpt, NSnd = Snd ;
+%     Mes = detect(JobId) -> NCnt = Cnt, Rpt = [jobAttentioned(JobId) | NRpt],
+%     Mes = detect(JobId) -> NCnt = Cnt, NRpt = Rpt,
+%        Snd = [disconnect(Stat1) | NSnd1],
+%        waitStatus(HINT, Stat1, NSnd1, NSnd2),
+%        NSnd2 = [connect(0, Stat2) | NSnd3],
+%        waitStatus(HINT, Stat2, NSnd3, NSnd) ;
+%     Mes = closed(JobId), JobId \= 0 -> NCnt = Cnt, NRpt = Rpt,
+%        Snd = [disconnect(Stat1) | NSnd1],
+%        waitStatus(HINT, Stat1, NSnd1, NSnd2),
+%        NSnd2 = [connect(0, Stat2) | NSnd3],
+%        waitStatus(HINT, Stat2, NSnd3, NSnd) ;
+%     Mes = closed(0) -> NCnt = Cnt, NRpt = Rpt, NSnd = Snd ;
+     Mes = disconnect(Stat) -> Stat=normal, NCnt=Cnt, NRpt=Rpt, NSnd=Snd ;
+     Mes = kill(all, Stat) -> Stat=normal, NCnt=Cnt, NRpt=Rpt, NSnd=Snd ;
+     Mes = kill(JobNo, Stat), JobNo \= all ->
+        Stat=non_existent, NCnt=Cnt, NRpt=Rpt, NSnd=Snd ;
+     Mes = kill(Stat) -> Stat=non_existent, NCnt=Cnt, NRpt=Rpt, NSnd=Snd ;
+     Mes = change(_, Stat) -> Stat = non_existent,
+        NCnt = Cnt, NRpt = Rpt, NSnd = Snd ;
+     Mes = pass_to_block(Stat) -> Stat=normal, NCnt=Cnt, NRpt=Rpt, NSnd=Snd ;
+    otherwise;
+     true -> NCnt = Cnt, NRpt = Rpt, NSnd = Snd ),
+    ioHandler(NCnt, NRpt, NSnd, Rcv, Dev, HINT).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    from Previous    %%%%%%%%%%%%%%%%%  to Next
+%             ------> %   ioMonitor   % ------>
+%       'ioMonitor'   %%%%%%%%%%%%%%%%%    'ioMonitor'
+%                             |   to
+%                            \|/   STD_IO_FILTER
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Create Stdio I/O Monitor  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create_monitor(C, R, IoControl, JobNo, End, HINT) :- true |
+    ioMonitorBg(C, R, IoControl, JobNo, End, HINT).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Stdio I/O Monitor (Back Ground State)  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ioMonitorBg(C, R, IoCont, JobNo, End, HINT) :- wait(End) | R = C,
+    ( JobNo = 0 -> IoCont = [forced_desert(_)] ;
+     otherwise ;
+      true -> IoCont = [desert(_)] ).
+ioMonitorBg([], R, IoCont, JobNo, _, HINT) :- true | R = [],
+    ( JobNo = 0 -> IoCont = [forced_desert(_)] ;
+     otherwise ;
+      true -> IoCont = [desert(_)] ).
+
+%ioMonitorBg([M | C], R, IoCont, JobNo, End, HINT) :- atom(M), M \= nop |
+%    R = [M|NR], ioMonitorBg(C, NR, IoCont, JobNo, End, HINT).
+%ioMonitorBg([M | C], R, IoCont, JobNo, End, HINT) :- atom(M), M = nop |
+%    ioMonitorBg(C, R, IoCont, JobNo, End, HINT).
+
+ioMonitorBg([Mes | C], R, IoCont, JobNo, End, HINT) :-
+        vector_element(Mes, 0, kill) |
+    (Mes = kill(Terget, Status), Terget = JobNo, JobNo = 0 ->
+        IoCont = [forced_desert(Status)], C = R ;
+     Mes = kill(Terget, Status), Terget = JobNo, JobNo \= 0 ->
+        IoCont = [desert(Status)], C = R ;
+     Mes = kill(Terget, Status), Terget \= JobNo, Terget \= all ->
+        R = [kill(Terget, Status) | NR],
+        ioMonitorBg(C, NR, IoCont, JobNo, End, HINT) ;
+     Mes = kill(all, Status), JobNo \= 0 -> IoCont = [desert(Stat)],
+        waitStatus(HINT, End, Stat, R, [kill(all, Status) | C]) ;
+     Mes = kill(all, Status), JobNo = 0 -> R = [kill(all, Status) | NR],
+        ioMonitorBg(C, NR, IoCont, JobNo, End, HINT) ;
+     Mes = kill(Status), JobNo \= 0 -> IoCont = [desert(Status)], C = R ;
+     Mes = kill(Status), JobNo = 0 -> Status = non_existent,
+        ioMonitorBg(C, R, IoCont, JobNo, End, HINT) ).
+ioMonitorBg([M | C], R, IoCont, JobNo, End, HINT) :-
+        vector_element(M, 0, connect) |
+    (M = connect(Status, DTCT) -> DTCT = Detect,
+        IoCont = [connect(resend, Detect, Status) | NIoCont],
+%        waitDetect(HINT, Detect, D), merge({C, D}, NC),
+        ioMonitorFg(C, R, NIoCont, JobNo, End, HINT) ;
+     M = connect(Terget, Status, DTCT), Terget = JobNo -> DTCT = Detect,
+        IoCont = [connect(resend, Detect, Status) | NIoCont],
+%        waitDetect(HINT, Detect, D), merge({C, D}, NC),
+        ioMonitorFg(C, R, NIoCont, JobNo, End, HINT) ;
+     M = connect(Terget, Status, DTCT), Terget \= JobNo ->
+        R = [connect(Terget, Status, DTCT) | NR],
+        ioMonitorBg(C, NR, IoCont, JobNo, End, HINT) ).
+ioMonitorBg([pass_to_block(Status)|C],R,IoCont,JobNo,End,HINT) :- true |
+    IoCont = [pass_to_block(Stat)|NIoCont],
+    waitStatus(HINT, End, Stat, R, [pass_to_block(Status)|NR]),
+    ioMonitorBg(C,NR,NIoCont,JobNo,End,HINT).
+ioMonitorBg([Mes|C],R,IoCont,JobNo,End,HINT) :- vector_element(Mes,0,V0),
+        V0 \= kill, V0 \= connect, V0 \= pass_to_block |
+%    (Mes = detect(J) -> R = [detect(J) | NR] ;
+%     Mes = closed(J) -> R = [closed(J) | NR] ;
+    ( Mes = disconnect(Status) -> R = [disconnect(Status) | NR] ;
+      Mes = change(Terget, Status), Terget \= JobNo ->
+        R = [change(Terget, Status) | NR] ;
+      Mes = change(Terget, Status), Terget = JobNo -> Status=non_execute,NR=R ;
+     otherwise;
+      true -> R = [Mes | NR] ),
+    ioMonitorBg(C, NR, IoCont, JobNo, End, HINT).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Stdio I/O Monitor (Fore Ground State)  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%ioMonitorFgToBg(_, C, R, IoCont, JobNo, End, HINT) :- wait(End) | %%
+%    R = [closed(JobNo) | C],
+%    ( JobNo = 0 -> IoCont = [forced_desert(_)] ;
+%     otherwise ;
+%      true -> IoCont = [desert(_)] ).
+%ioMonitorFgToBg(Status, C, R, IoCont, JobNo, End, HINT) :- wait(Status) |
+%    R = [detect(JobNo) | NR],
+%    ioMonitorBg(C, NR, IoCont, JobNo, End, HINT).
+
+ioMonitorFg(C, R, IoCont, JobNo, End, HINT) :- wait(End) | %%
+%    R = [closed(JobNo) | C],
+    R=C,
+    ( JobNo = 0 -> IoCont = [forced_desert(_)] ;
+     otherwise ;
+      true -> IoCont = [desert(_)] ).
+ioMonitorFg([], R, IoCont, JobNo, _, HINT) :- true | R = [],
+    ( JobNo = 0 -> IoCont = [forced_desert(_)] ;
+     otherwise ;
+      true -> IoCont = [desert(_)] ).
+
+%ioMonitorFg([M | C], R, IoCont, JobNo, End, HINT) :-
+%%        atom(M), M \= detect, M \= closed, M \= nop | R = [M | NR],
+%        atom(M) | R = [M | NR],
+%    ioMonitorFg(C, NR, IoCont, JobNo, End, HINT).
+%ioMonitorFg([nop | C], R, IoCont, JobNo, End, HINT) :- true |
+%    ioMonitorFg(C, R, IoCont, JobNo, End, HINT).
+%ioMonitorFg([closed | C], R, IoCont, JobNo, _, HINT) :- true | %%
+%    R = [closed(JobNo) | C],
+%    ( JobNo = 0 -> IoCont = [forced_desert(_)] ;
+%     otherwise ;
+%      true -> IoCont = [desert(_)] ).
+%ioMonitorFg([detect | C], R, IoCont, JobNo, End, HINT) :- JobNo \= 0 |
+%    IoCont = [disconnect(Status) | NewIoCont],
+%    ioMonitorFgToBg(Status, C, R, NewIoCont, JobNo, End, HINT).
+%ioMonitorFg([detect | C], R, IoCont, JobNo, End, HINT) :- JobNo = 0 |
+%    IoCont = [reconnect(Status) | NewIoCont],
+%    waitStatus(HINT, Status, C, NC),
+%    ioMonitorFg(NC, R, NewIoCont, JobNo, End, HINT).
+
+ioMonitorFg([Mes | C], R, IoCont, JobNo, End, HINT) :-
+        vector_element(Mes, 0, kill) |
+    (Mes = kill(Terget, Status), Terget = JobNo, JobNo = 0 ->
+        IoCont = [forced_desert(Status)],
+        waitStatus(HINT, End, Status, R, [closed(JobNo) | C]) ;
+     Mes = kill(Terget, Status), Terget = JobNo, JobNo \= 0 ->
+        IoCont = [desert(Status)],
+        waitStatus(HINT, End, Status, R, [closed(JobNo) | C]) ;
+     Mes = kill(Terget, Status), Terget \= JobNo, Terget \= all ->
+        R = [kill(Terget, Status) | NR],
+        ioMonitorFg(C, NR, IoCont, JobNo, End, HINT) ;
+     Mes = kill(all, Status), JobNo \= 0 -> IoCont = [desert(Stat)],
+        waitStatus(HINT, End, Stat, R, [kill(all, Status) | C]) ;
+     Mes = kill(all, Status), JobNo = 0 -> R = [kill(all, Status) | NR],
+        ioMonitorFg(C, NR, IoCont, JobNo, End, HINT) ;
+     Mes = kill(Status), JobNo \= 0 -> IoCont = [desert(Status)],
+        waitStatus(HINT, End, Status, R, [closed(JobNo) | C]) ;
+     Mes = kill(Status), JobNo = 0 -> Status = normal,
+        ioMonitorFg(C, R, IoCont, JobNo, End, HINT) ).
+ioMonitorFg([M | C], R, IoCont, JobNo, End, HINT) :-
+        vector_element(M, 0, connect) |
+    (M = connect(_, Status, DTCT) -> Status = abnormal, DTCT = error ;
+     M = connect(Status, DTCT) -> Status = abnormal, DTCT = error ),
+    error_raise(M, string#"ioMonitorFg: ~w~n"),
+    ioMonitorFg(C, R, IoCont, JobNo, End, HINT).
+ioMonitorFg([Mes | C], R, IoCont, JobNo, End, HINT) :-
+        vector_element(Mes, 0, V0), V0 \= kill, V0 \= connect |
+    (Mes = disconnect(Status) ->
+        IoCont = [disconnect(Stat) | NewIoCont],
+        waitStatus(HINT, End, Stat, R, [disconnect(Status) | NR]),
+        ioMonitorBg(C, NR, NewIoCont, JobNo, End, HINT) ;
+     Mes = change(Terget, Status), Terget = JobNo ->
+        IoCont = [disconnect(Status) | NewIoCont],
+%        waitStatus(HINT, Stat, R, [connect(0, Status) | NR]),
+        waitStatus(HINT, End, Status, R, NR),
+        ioMonitorBg(C, R, NewIoCont, JobNo, End, HINT) ;
+     Mes = change(Terget, Status), Terget \= JobNo ->
+        R = [change(Terget, Status) | NR],
+        ioMonitorFg(C, NR, IoCont, JobNo, End, HINT) ;
+    otherwise;
+     true -> R = [Mes | NR], ioMonitorFg(C, NR, IoCont, JobNo, End, HINT) ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Wait for ABORT key detect.  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%waitDetect(HINT, Detect, D) :- wait(Detect) | D = [Detect].
+waitStatus(HINT, Stat, Old, New) :- wait(Stat) | Old = New.
+
+waitStatus(HINT, CShut, Stat, Old, New) :- wait(Stat) | Old = New.
+waitStatus(HINT, CShut, Stat, Old, New) :- wait(CShut) | Old = New.
+
+error_raise(Data, FString) :- true |
+    Type = illegal_message_to_stdio_handler,
+    variable:wrap(Data, {_, WData}, 100, 100),
+    shoen:raise(pimos_tag#error, '$PIMOS$'(Type, FString), WData).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% End %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,0 +1,877 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ :- module scsi_request_filter .
+ :- public scsi_request_filter /2 .
+:- with_macro pimos.
+
+scsi_request_filter(User,OS) :-true|
+        scsi_request_filter(User,OS,_,[]) .
+scsi_request_filter([User|U2],OS,_,Error) :-true|
+        '+scsi_request_command'(User,OS1,Flag,[scsi_request]),
+        'scsi_request_filter$wait'(U2,OS,OS1,Flag,Error) .
+scsi_request_filter([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+scsi_request_filter(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        OS =[],
+        raise_error(Error,User) .
+'scsi_request_filter$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        scsi_request_filter(U2,OS2,_,Error) .
+'scsi_request_filter$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+scsi_request_command'(direct_access(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+scsi_request_command$wait'(direct_access(__1,__2,__3,_4),OS,Flag,Error),
+        '+scsi_descriptor'(_1,__1,Flag,Error),
+        '+scsi_id'(_2,__2,Flag,Error),
+        '+lun'(_3,__3,Flag,Error) .
+'+scsi_request_command'(processor(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+scsi_request_command$wait'(processor(__1,__2,__3,_4),OS,Flag,Error),
+        '+scsi_descriptor'(_1,__1,Flag,Error),
+        '+scsi_id'(_2,__2,Flag,Error),
+        '+lun'(_3,__3,Flag,Error) .
+'+scsi_request_command'(sequential_access(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+scsi_request_command$wait'(sequential_access(__1,__2,__3,_4),OS,Flag,Error),
+        '+scsi_descriptor'(_1,__1,Flag,Error),
+        '+scsi_id'(_2,__2,Flag,Error),
+        '+lun'(_3,__3,Flag,Error) .
+'+scsi_request_command'(get_info(_1),OS,_,Error) :-true|
+        get_info(__1) =OS,
+        '-scsi_information'(_1,__1,Flag,Error) .
+'+scsi_request_command'(configuration(_1),OS,_,Error) :-true|
+        configuration(__1) =OS,
+        '-scsi_configuration'(_1,__1,Flag,Error) .
+otherwise .
+'+scsi_request_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+scsi_request_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+scsi_request_command$wait'(direct_access(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        direct_access(__1,__2,__3,__4) =OS,
+        '-direct_access$$$enu$1'(_4,__4,Flag,[scsi_direct_access]) .
+'+scsi_request_command$wait'(processor(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        processor(__1,__2,__3,__4) =OS,
+        '-processor$$$enu$1'(_4,__4,Flag,[scsi_processor]) .
+'+scsi_request_command$wait'(sequential_access(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        sequential_access(__1,__2,__3,__4) =OS,
+        '-sequential_access$$$enu$1'(_4,__4,Flag,[scsi_sequential_access]) .
+'+scsi_id'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+scsi_id'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+lun'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+lun'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-direct_access$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '+normal$$$stream$1'(_1,__1,Flag,Error) .
+'-direct_access$$$enu$1'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'-processor$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '+normal$$$stream$2'(_1,__1,Flag,Error) .
+'-processor$$$enu$1'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'-sequential_access$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '+normal$$$stream$3'(_1,__1,Flag,Error) .
+'-sequential_access$$$enu$1'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'+scsi_descriptor'({_1,_2,_3},OS,_,Error) :-true|
+        '+scsi_descriptor$wait'({__1,__2,__3},OS,Flag,Error),
+        '+node'(_1,__1,Flag,Error),
+        '+pe'(_2,__2,Flag,Error),
+        '+port'(_3,__3,Flag,Error) .
+otherwise .
+'+scsi_descriptor'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+scsi_descriptor$wait'({__1,__2,__3},OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        {__1,__2,__3} =OS .
+'+scsi_descriptor$wait'(User,OS,fail,Error) :-true|
+        true .
+'+normal$$$stream$1'([User|U2],OS,_,Error) :-true|
+        '+scsi_direct_access_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$1$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$1'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$1$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$1'(U2,OS2,_,Error) .
+'+normal$$$stream$1$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'-scsi_information'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'-scsi_configuration'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'+normal$$$stream$2'([User|U2],OS,_,Error) :-true|
+        '+scsi_processor_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$2$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$2'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$2$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$2'(U2,OS2,_,Error) .
+'+normal$$$stream$2$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+normal$$$stream$3'([User|U2],OS,_,Error) :-true|
+        '+scsi_sequential_access_command'(User,OS1,Flag,Error),
+        '+normal$$$stream$3$wait'(U2,OS,OS1,Flag,Error) .
+'+normal$$$stream$3'([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+'+normal$$$stream$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+normal$$$stream$3$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        '+normal$$$stream$3'(U2,OS2,_,Error) .
+'+normal$$$stream$3$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'-error_reason'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'+node'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+node'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+pe'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+pe'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+port'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+port'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+scsi_direct_access_command'(send_diagnostic(_1,_2,_3,_4,_5),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(send_diagnostic(__1,__2,__3,__4,_5),OS,Flag,Error),
+        '+send_diagnostic$integer$1'(_1,__1,Flag,['send_diagnostic /5'|Error]),
+        '+send_diagnostic$integer$2'(_2,__2,Flag,['send_diagnostic /5'|Error]),
+        '+send_diagnostic$integer$3'(_3,__3,Flag,['send_diagnostic /5'|Error]),
+        '+send_diagnostic$string$1'(_4,__4,Flag,['send_diagnostic /5'|Error]) .
+'+scsi_direct_access_command'(receive_diagnostic_results(_1),OS,_,Error) :-true|
+        receive_diagnostic_results(__1) =OS,
+        '-diagnostic_result'(_1,__1,Flag,['receive_diagnostic_results /1'|Error]) .
+'+scsi_direct_access_command'(format_unit(_1,_2,_3,_4,_5,_6),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(format_unit(__1,__2,__3,__4,__5,_6),OS,Flag,Error),
+        '+format_unit$$$list$1'(_1,__1,Flag,['format_unit /6'|Error]),
+        '+format_unit$integer$1'(_2,__2,Flag,['format_unit /6'|Error]),
+        '+format_unit$integer$2'(_3,__3,Flag,['format_unit /6'|Error]),
+        '+format_unit$integer$3'(_4,__4,Flag,['format_unit /6'|Error]),
+        '+format_unit$integer$4'(_5,__5,Flag,['format_unit /6'|Error]) .
+'+scsi_direct_access_command'(read(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(read(__1,__2,__3,_4),OS,Flag,Error),
+        '+read$integer$1'(_1,__1,Flag,['read /4'|Error]),
+        '+read$integer$2'(_2,__2,Flag,['read /4'|Error]),
+        '+read$string$1'(_3,__3,Flag,['read /4'|Error]) .
+'+scsi_direct_access_command'(write(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(write(__1,__2,__3,_4),OS,Flag,Error),
+        '+write$integer$1'(_1,__1,Flag,['write /4'|Error]),
+        '+write$integer$2'(_2,__2,Flag,['write /4'|Error]),
+        '+write$string$1'(_3,__3,Flag,['write /4'|Error]) .
+'+scsi_direct_access_command'(mode_select(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(mode_select(__1,__2,__3,_4),OS,Flag,Error),
+        '+mode_select$integer$1'(_1,__1,Flag,['mode_select /4'|Error]),
+        '+mode_select$ground$1'(_2,__2,Flag,['mode_select /4'|Error]),
+        '+mode_select$string$1'(_3,__3,Flag,['mode_select /4'|Error]) .
+'+scsi_direct_access_command'(mode_sense(_1),OS,_,Error) :-true|
+        mode_sense(__1) =OS,
+        '-mode_sense_status'(_1,__1,Flag,['mode_sense /1'|Error]) .
+'+scsi_direct_access_command'(reassign_blocks(_1,_2),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(reassign_blocks(__1,_2),OS,Flag,Error),
+        '+reassign_blocks$$$list$1'(_1,__1,Flag,['reassign_blocks /2'|Error]) .
+'+scsi_direct_access_command'(start_stop_unit(_1,_2,_3),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(start_stop_unit(__1,__2,_3),OS,Flag,Error),
+        '+start_stop_unit$integer$1'(_1,__1,Flag,['start_stop_unit /3'|Error]),
+        '+start_stop_unit$integer$2'(_2,__2,Flag,['start_stop_unit /3'|Error]) .
+'+scsi_direct_access_command'(prevent_allow_medium_removal(_1,_2),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(prevent_allow_medium_removal(__1,_2),OS,Flag,Error),
+        '+prevent_allow_medium_removal$integer$1'(_1,__1,Flag,['prevent_allow_medium_removal /2'|Error]) .
+'+scsi_direct_access_command'(read_capacity(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(read_capacity(__1,__2,__3,_4),OS,Flag,Error),
+        '+read_capacity$integer$1'(_1,__1,Flag,['read_capacity /4'|Error]),
+        '+read_capacity$integer$2'(_2,__2,Flag,['read_capacity /4'|Error]),
+        '+read_capacity$integer$3'(_3,__3,Flag,['read_capacity /4'|Error]) .
+'+scsi_direct_access_command'(write_and_verify(_1,_2,_3,_4,_5),OS,_,Error) :-true|
+        '+scsi_direct_access_command$wait'(write_and_verify(__1,__2,__3,__4,_5),OS,Flag,Error),
+        '+write_and_verify$integer$1'(_1,__1,Flag,['write_and_verify /5'|Error]),
+        '+write_and_verify$integer$2'(_2,__2,Flag,['write_and_verify /5'|Error]),
+        '+write_and_verify$string$1'(_3,__3,Flag,['write_and_verify /5'|Error]),
+        '+write_and_verify$integer$3'(_4,__4,Flag,['write_and_verify /5'|Error]) .
+otherwise .
+'+scsi_direct_access_command'(User,OS,Flag,Error) :-true|
+        '+scsi_common_command'(User,OS,Flag,Error) .
+'+scsi_direct_access_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+scsi_direct_access_command$wait'(send_diagnostic(__1,__2,__3,__4,_5),OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4)|
+        send_diagnostic(__1,__2,__3,__4,__5) =OS,
+        '-simple_status'(_5,__5,Flag,['send_diagnostic /5'|Error]) .
+'+scsi_direct_access_command$wait'(format_unit(__1,__2,__3,__4,__5,_6),OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4),wait(__5)|
+        format_unit(__1,__2,__3,__4,__5,__6) =OS,
+        '-simple_status'(_6,__6,Flag,['format_unit /6'|Error]) .
+'+scsi_direct_access_command$wait'(read(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        read(__1,__2,__3,__4) =OS,
+        '-read_write_status'(_4,__4,Flag,['read /4'|Error]) .
+'+scsi_direct_access_command$wait'(write(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        write(__1,__2,__3,__4) =OS,
+        '-read_write_status'(_4,__4,Flag,['write /4'|Error]) .
+'+scsi_direct_access_command$wait'(mode_select(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        mode_select(__1,__2,__3,__4) =OS,
+        '-simple_status'(_4,__4,Flag,['mode_select /4'|Error]) .
+'+scsi_direct_access_command$wait'(reassign_blocks(__1,_2),OS,_,Error) :-wait(__1)|
+        reassign_blocks(__1,__2) =OS,
+        '-simple_status'(_2,__2,Flag,['reassign_blocks /2'|Error]) .
+'+scsi_direct_access_command$wait'(start_stop_unit(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        start_stop_unit(__1,__2,__3) =OS,
+        '-simple_status'(_3,__3,Flag,['start_stop_unit /3'|Error]) .
+'+scsi_direct_access_command$wait'(prevent_allow_medium_removal(__1,_2),OS,_,Error) :-wait(__1)|
+        prevent_allow_medium_removal(__1,__2) =OS,
+        '-simple_status'(_2,__2,Flag,['prevent_allow_medium_removal /2'|Error]) .
+'+scsi_direct_access_command$wait'(read_capacity(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        read_capacity(__1,__2,__3,__4) =OS,
+        '-read_capacity_status'(_4,__4,Flag,['read_capacity /4'|Error]) .
+'+scsi_direct_access_command$wait'(write_and_verify(__1,__2,__3,__4,_5),OS,_,Error) :-wait(__1),wait(__2),wait(__3),wait(__4)|
+        write_and_verify(__1,__2,__3,__4,__5) =OS,
+        '-read_write_status'(_5,__5,Flag,['write_and_verify /5'|Error]) .
+'+send_diagnostic$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+send_diagnostic$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+send_diagnostic$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+send_diagnostic$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+send_diagnostic$integer$3'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+send_diagnostic$integer$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+send_diagnostic$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+send_diagnostic$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+format_unit$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+format_unit$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+format_unit$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+format_unit$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+format_unit$integer$3'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+format_unit$integer$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+format_unit$integer$4'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+format_unit$integer$4'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+read$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+read$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+read$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+read$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+read$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+read$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+write$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+write$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+write$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+mode_select$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+mode_select$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+mode_select$ground$1'(User,OS,_,Error) :-true|
+        '+ground'(User,User2),
+        '+mode_select$ground$1$wait'(User2,OS,Flag,Error) .
+'+mode_select$ground$1$wait'(User2,OS,_,Error) :-wait(User2)|
+        User2 =OS .
+'+mode_select$ground$1$wait'(User2,OS,fail,Error) :-true|
+        true .
+'+mode_select$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+mode_select$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+start_stop_unit$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+start_stop_unit$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+start_stop_unit$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+start_stop_unit$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+prevent_allow_medium_removal$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+prevent_allow_medium_removal$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+read_capacity$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+read_capacity$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+read_capacity$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+read_capacity$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+read_capacity$integer$3'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+read_capacity$integer$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write_and_verify$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+write_and_verify$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write_and_verify$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+write_and_verify$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write_and_verify$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+write_and_verify$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write_and_verify$integer$3'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+write_and_verify$integer$3'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+scsi_processor_command'(send(_1,_2,_3),OS,_,Error) :-true|
+        '+scsi_processor_command$wait'(send(__1,__2,_3),OS,Flag,Error),
+        '+send$string$1'(_1,__1,Flag,['send /3'|Error]),
+        '+send$integer$1'(_2,__2,Flag,['send /3'|Error]) .
+'+scsi_processor_command'(receive(_1,_2,_3),OS,_,Error) :-true|
+        '+scsi_processor_command$wait'(receive(__1,__2,_3),OS,Flag,Error),
+        '+receive$string$1'(_1,__1,Flag,['receive /3'|Error]),
+        '+receive$integer$1'(_2,__2,Flag,['receive /3'|Error]) .
+otherwise .
+'+scsi_processor_command'(User,OS,Flag,Error) :-true|
+        '+scsi_common_command'(User,OS,Flag,Error) .
+'+scsi_processor_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+scsi_processor_command$wait'(send(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        send(__1,__2,__3) =OS,
+        '-send_receive_status'(_3,__3,Flag,['send /3'|Error]) .
+'+scsi_processor_command$wait'(receive(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        receive(__1,__2,__3) =OS,
+        '-send_receive_status'(_3,__3,Flag,['receive /3'|Error]) .
+'+send$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+send$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+send$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+send$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+receive$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+receive$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+receive$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+receive$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+scsi_sequential_access_command'(rewind(_1,_2),OS,_,Error) :-true|
+        '+scsi_sequential_access_command$wait'(rewind(__1,_2),OS,Flag,Error),
+        '+rewind_timing'(_1,__1,Flag,['rewind /2'|Error]) .
+'+scsi_sequential_access_command'(read_block_limits(_1),OS,_,Error) :-true|
+        read_block_limits(__1) =OS,
+        '-read_block_limits_status'(_1,__1,Flag,['read_block_limits /1'|Error]) .
+'+scsi_sequential_access_command'(read(_1,_2,_3),OS,_,Error) :-true|
+        '+scsi_sequential_access_command$wait'(read(__1,__2,_3),OS,Flag,Error),
+        '+read$string$2'(_1,__1,Flag,['read /3'|Error]),
+        '+moded_size'(_2,__2,Flag,['read /3'|Error]) .
+'+scsi_sequential_access_command'(write(_1,_2,_3),OS,_,Error) :-true|
+        '+scsi_sequential_access_command$wait'(write(__1,__2,_3),OS,Flag,Error),
+        '+write$string$2'(_1,__1,Flag,['write /3'|Error]),
+        '+moded_size'(_2,__2,Flag,['write /3'|Error]) .
+'+scsi_sequential_access_command'(write_filemarks(_1,_2),OS,_,Error) :-true|
+        '+scsi_sequential_access_command$wait'(write_filemarks(__1,_2),OS,Flag,Error),
+        '+write_filemarks$integer$1'(_1,__1,Flag,['write_filemarks /2'|Error]) .
+'+scsi_sequential_access_command'(space(_1,_2),OS,_,Error) :-true|
+        '+scsi_sequential_access_command$wait'(space(__1,_2),OS,Flag,Error),
+        '+space_size'(_1,__1,Flag,['space /2'|Error]) .
+'+scsi_sequential_access_command'(mode_select(_1,_2,_3,_4),OS,_,Error) :-true|
+        '+scsi_sequential_access_command$wait'(mode_select(__1,__2,__3,_4),OS,Flag,Error),
+        '+mode_select$integer$2'(_1,__1,Flag,['mode_select /4'|Error]),
+        '+mode_select$ground$2'(_2,__2,Flag,['mode_select /4'|Error]),
+        '+mode_select$string$2'(_3,__3,Flag,['mode_select /4'|Error]) .
+'+scsi_sequential_access_command'(mode_sense(_1),OS,_,Error) :-true|
+        mode_sense(__1) =OS,
+        '-mode_sense_status'(_1,__1,Flag,['mode_sense /1'|Error]) .
+otherwise .
+'+scsi_sequential_access_command'(User,OS,Flag,Error) :-true|
+        '+scsi_common_command'(User,OS,Flag,Error) .
+'+scsi_sequential_access_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+scsi_sequential_access_command$wait'(rewind(__1,_2),OS,_,Error) :-wait(__1)|
+        rewind(__1,__2) =OS,
+        '-simple_status'(_2,__2,Flag,['rewind /2'|Error]) .
+'+scsi_sequential_access_command$wait'(read(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        read(__1,__2,__3) =OS,
+        '-send_receive_status'(_3,__3,Flag,['read /3'|Error]) .
+'+scsi_sequential_access_command$wait'(write(__1,__2,_3),OS,_,Error) :-wait(__1),wait(__2)|
+        write(__1,__2,__3) =OS,
+        '-send_receive_status'(_3,__3,Flag,['write /3'|Error]) .
+'+scsi_sequential_access_command$wait'(write_filemarks(__1,_2),OS,_,Error) :-wait(__1)|
+        write_filemarks(__1,__2) =OS,
+        '-simple_status'(_2,__2,Flag,['write_filemarks /2'|Error]) .
+'+scsi_sequential_access_command$wait'(space(__1,_2),OS,_,Error) :-wait(__1)|
+        space(__1,__2) =OS,
+        '-simple_status'(_2,__2,Flag,['space /2'|Error]) .
+'+scsi_sequential_access_command$wait'(mode_select(__1,__2,__3,_4),OS,_,Error) :-wait(__1),wait(__2),wait(__3)|
+        mode_select(__1,__2,__3,__4) =OS,
+        '-simple_status'(_4,__4,Flag,['mode_select /4'|Error]) .
+'+read$string$2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+read$string$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write$string$2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+write$string$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+write_filemarks$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+write_filemarks$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+mode_select$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+mode_select$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+mode_select$ground$2'(User,OS,_,Error) :-true|
+        '+ground'(User,User2),
+        '+mode_select$ground$2$wait'(User2,OS,Flag,Error) .
+'+mode_select$ground$2$wait'(User2,OS,_,Error) :-wait(User2)|
+        User2 =OS .
+'+mode_select$ground$2$wait'(User2,OS,fail,Error) :-true|
+        true .
+'+mode_select$string$2'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+mode_select$string$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-simple_status'(User,normal,_,Error) :-true|
+        User =normal .
+'-simple_status'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'-diagnostic_result'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$1'(_1,__1,Flag,Error) .
+'-diagnostic_result'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'-normal$string$1'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'+format_unit$$$list$1'([In1|In2],Out,Flag,Error) :-true|
+        '+format_unit$ground$1'(In1,In11,Flag,['format_unit /6'|Error]),
+        '+format_unit$$$list$1$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+format_unit$$$list$1'([],Out,Flag,Error) :-true|
+        [] =Out .
+'+format_unit$$$list$1$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+format_unit$$$list$1$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+format_unit$$$list$1$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+format_unit$$$list$1$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+format_unit$$$list$1$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+format_unit$ground$1'(In1,In11,Flag,Error),
+        '+format_unit$$$list$1$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'+format_unit$ground$1'(User,OS,_,Error) :-true|
+        '+ground'(User,User2),
+        '+format_unit$ground$1$wait'(User2,OS,Flag,Error) .
+'+format_unit$ground$1$wait'(User2,OS,_,Error) :-wait(User2)|
+        User2 =OS .
+'+format_unit$ground$1$wait'(User2,OS,fail,Error) :-true|
+        true .
+'-read_write_status'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-normal$integer$1'(_1,__1,Flag,Error),
+        '-normal$string$2'(_2,__2,Flag,Error) .
+'-read_write_status'(User,abnormal(__1,__2,__3),_,Error) :-true|
+        User =abnormal(_1,_2,_3),
+        '-error_reason'(_1,__1,Flag,Error),
+        '-abnormal$integer$1'(_2,__2,Flag,Error),
+        '-abnormal$string$1'(_3,__3,Flag,Error) .
+'-read_write_status'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'-normal$integer$1'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-normal$string$2'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-abnormal$integer$1'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-abnormal$string$1'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-mode_sense_status'(User,normal(__1,__2,__3,__4),_,Error) :-true|
+        User =normal(_1,_2,_3,_4),
+        '-normal$integer$2'(_1,__1,Flag,Error),
+        '-normal$integer$3'(_2,__2,Flag,Error),
+        '-normal$ground$1'(_3,__3,Flag,Error),
+        '-normal$string$3'(_4,__4,Flag,Error) .
+'-mode_sense_status'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'-normal$integer$2'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-normal$integer$3'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-normal$ground$1'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'-normal$string$3'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'+reassign_blocks$$$list$1'([In1|In2],Out,Flag,Error) :-true|
+        '+reassign_blocks$integer$1'(In1,In11,Flag,['reassign_blocks /2'|Error]),
+        '+reassign_blocks$$$list$1$list0'(In11,In2,Top,Top,Out,Flag,Error) .
+'+reassign_blocks$$$list$1'([],Out,Flag,Error) :-true|
+        [] =Out .
+'+reassign_blocks$$$list$1$list0'(In11,In2,Top,Tail,Out,Flag,Error) :-wait(In11)|
+        '+reassign_blocks$$$list$1$list1'(In2,Top,Tail2,Out,Flag,Error),
+        Tail =[In11|Tail2] .
+'+reassign_blocks$$$list$1$list0'(In11,In2,Top,Tail,Out,fail,Error) :-true|
+        true .
+'+reassign_blocks$$$list$1$list1'([],Top,Tail,Out,Flag,Error) :-true|
+        Tail =[],
+        Out =Top .
+'+reassign_blocks$$$list$1$list1'([In1|In2],Top,Tail,Out,Flag,Error) :-true|
+        '+reassign_blocks$integer$1'(In1,In11,Flag,Error),
+        '+reassign_blocks$$$list$1$list0'(In11,In2,Top,Tail,Out,Flag,Error) .
+'+reassign_blocks$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+reassign_blocks$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-read_capacity_status'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-normal$integer$4'(_1,__1,Flag,Error),
+        '-normal$integer$5'(_2,__2,Flag,Error) .
+'-read_capacity_status'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'-normal$integer$4'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-normal$integer$5'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'+scsi_common_command'(current_procesor(_1),OS,_,Error) :-true|
+        current_procesor(__1) =OS,
+        '-current_processor_status'(_1,__1,Flag,[current_processor_status,'current_procesor /1'|Error]) .
+'+scsi_common_command'(inquiry(_1),OS,_,Error) :-true|
+        inquiry(__1) =OS,
+        '-inquiry_status'(_1,__1,Flag,[inquiry_status,'inquiry /1'|Error]) .
+'+scsi_common_command'(test_unit_ready(_1),OS,_,Error) :-true|
+        test_unit_ready(__1) =OS,
+        '-simple_status'(_1,__1,Flag,[simple_status,'test_unit_ready /1'|Error]) .
+otherwise .
+'+scsi_common_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-send_receive_status'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-normal$integer$6'(_1,__1,Flag,Error),
+        '-normal$string$4'(_2,__2,Flag,Error) .
+'-send_receive_status'(User,abnormal(__1,__2,__3),_,Error) :-true|
+        User =abnormal(_1,_2,_3),
+        '-error_reason'(_1,__1,Flag,Error),
+        '-abnormal$integer$2'(_2,__2,Flag,Error),
+        '-abnormal$string$2'(_3,__3,Flag,Error) .
+'-normal$integer$6'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-normal$string$4'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-abnormal$integer$2'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-abnormal$string$2'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'+rewind_timing'(on_at,OS,_,Error) :-true|
+        on_at =OS .
+'+rewind_timing'(on_after,OS,_,Error) :-true|
+        on_after =OS .
+otherwise .
+'+rewind_timing'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-read_block_limits_status'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$5'(_1,__1,Flag,Error) .
+'-read_block_limits_status'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'-normal$string$5'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'+moded_size'(block(_1),OS,_,Error) :-true|
+        '+moded_size$wait'(block(__1),OS,Flag,Error),
+        '+block$integer$1'(_1,__1,Flag,Error) .
+'+moded_size'(byte(_1),OS,_,Error) :-true|
+        '+moded_size$wait'(byte(__1),OS,Flag,Error),
+        '+byte$integer$1'(_1,__1,Flag,Error) .
+otherwise .
+'+moded_size'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+moded_size$wait'(User,OS,fail,Error) :-true|
+        true .
+'+moded_size$wait'(block(__1),OS,_,Error) :-wait(__1)|
+        block(__1) =OS .
+'+moded_size$wait'(byte(__1),OS,_,Error) :-wait(__1)|
+        byte(__1) =OS .
+'+block$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+block$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+byte$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+byte$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+space_size'(block(_1),OS,_,Error) :-true|
+        '+space_size$wait'(block(__1),OS,Flag,Error),
+        '+block$integer$2'(_1,__1,Flag,Error) .
+'+space_size'(filemark(_1),OS,_,Error) :-true|
+        '+space_size$wait'(filemark(__1),OS,Flag,Error),
+        '+filemark$integer$1'(_1,__1,Flag,Error) .
+'+space_size'(filemarks(_1),OS,_,Error) :-true|
+        '+space_size$wait'(filemarks(__1),OS,Flag,Error),
+        '+filemarks$integer$1'(_1,__1,Flag,Error) .
+'+space_size'(end_of_data,OS,_,Error) :-true|
+        end_of_data =OS .
+otherwise .
+'+space_size'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+space_size$wait'(User,OS,fail,Error) :-true|
+        true .
+'+space_size$wait'(block(__1),OS,_,Error) :-wait(__1)|
+        block(__1) =OS .
+'+space_size$wait'(filemark(__1),OS,_,Error) :-wait(__1)|
+        filemark(__1) =OS .
+'+space_size$wait'(filemarks(__1),OS,_,Error) :-wait(__1)|
+        filemarks(__1) =OS .
+'+block$integer$2'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+block$integer$2'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+filemark$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+filemark$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+filemarks$integer$1'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+filemarks$integer$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-inquiry_status'(User,normal(__1,__2,__3,__4),_,Error) :-true|
+        User =normal(_1,_2,_3,_4),
+        '-normal$integer$7'(_1,__1,Flag,Error),
+        '-normal$integer$8'(_2,__2,Flag,Error),
+        '-normal$integer$9'(_3,__3,Flag,Error),
+        '-normal$string$6'(_4,__4,Flag,Error) .
+'-inquiry_status'(User,abnormal(__1),_,Error) :-true|
+        User =abnormal(_1),
+        '-error_reason'(_1,__1,Flag,Error) .
+'-normal$integer$7'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-normal$integer$8'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-normal$integer$9'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-normal$string$6'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-current_processor_status'(User,{__1,__2},_,Error) :-true|
+        User ={_1,_2},
+        '-node'(_1,__1,Flag,Error),
+        '-pe'(_2,__2,Flag,Error) .
+'-node'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-pe'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+%%%%% system defined protocols %%%%%%%%%%
+'+ground'(X, Y) :- list(X) | '$$groundl'(X, Y).
+'+ground'(X, Y) :- vector(X,Size),Size \= 0 | 
+        '$$groundv'(X, 0, Size, X2),
+        '$$groundv2'(X2, Y).
+otherwise.
+'+ground'(X, Y) :- wait(X) | Y = X.
+'-ground'(X, Y) :- list(Y) | '$$groundl'(Y, X).
+'-ground'(X, Y) :- vector(Y,Size), Size \= 0 | 
+        '$$groundv'(Y, 0, Size, Y2),
+        '$$groundv2'(Y2, X).
+otherwise.
+'-ground'(X, Y) :- wait(Y) | Y = X.
+'$$groundl'([X1|X2], Y) :- true | '+ground'(X1,X11),
+        '$$groundl2'(X11, X2, Y).
+'$$groundl'([], Y) :- true | Y = [].
+'$$groundl2'(X11, X2, Y) :- wait(X11) |
+        '$$groundl31'(X2, [X11|Tail], Tail, Y).
+'$$groundl31'([X1|X2], Top, Tail, Y) :- true |
+        '+ground'(X1,X11),
+        '$$groundl32'(X11, X2, Top, Tail, Y).
+'$$groundl31'([], Top, Tail, Y) :- true |
+        Tail = [],
+        Top = Y.
+'$$groundl32'(X11, X2, Top, Tail, Y) :- wait(X11), X2 \= [] |
+        Tail = [X11|Tail2],
+        '$$groundl31'(X2, Top, Tail2, Y).
+'$$groundl32'(X11, [], Top, Tail, Y) :- wait(X11) |
+        Tail = [X11],
+        Y = Top.
+'$$groundv2'(X2, Y) :- wait(X2) | X2 = Y.
+'$$groundv'(X, Pos, Size, X2) :- Pos \= Size |
+        vector_element(X, Pos, Elm, NX),
+        '+ground'(Elm,Elm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Elm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Pos, Size, X2) :- wait(Elm), Pos \= Size |
+        vector_element(X, Pos, Nelm, NX),
+        '+ground'(Nelm, Nelm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Nelm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Size, Size, X2) :- wait(Elm) |
+        X = X2. 
+%%%%% to raise error %%%%%%%%%%
+raise_error(Info,Msg):- true |
+        atom_table:cache_table(Atom),
+        formatInfo(Info,[],Fstring,Atom),
+        shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_message_to_PIMOS,Fstring),Msg).
+formatInfo([Infoatom | Info], StringList,Fstring,Atom):- 
+        atom(Infoatom) |
+        Atom = [get_atom_name(Infoatom,normal(InfoString)) | Atail],
+        NSlist = [InfoString | StringList],
+        formatInfo(Info, NSlist, Fstring, Atail).
+formatInfo([], Slist, Fstring, Atom):- true |
+        Atom = [],
+        new_string(New,1,16),
+        set_string_element(New,0,key#lf,NL),
+        format(1,Slist,StringList,NL),
+        builtin#append_string([""|StringList], Fstring).
+format(1,[Info|Tail],StringList,NL):- true |
+        StringList = ["Device : ",Info |Stail2],
+        format(2,Tail,Stail2,NL).
+format(2,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,"Message : ",Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(3,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(_,[],StringList,_):- true |
+        StringList = [].

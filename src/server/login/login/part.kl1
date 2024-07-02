@@ -1,0 +1,677 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module login_partition.
+:- with_macro pimos.
+:- public go/9, get_code/4, get_dir/5, get_pe/2, get_node_string/2,
+          wait_log/6 ,wait_end_log/6, wait_chpasswd/3.
+
+%   partition handling
+%   go(Procs,TR,Login,Atom,Module,PART,LOG,User,FR),
+
+go(Procs,TR,Login,Atom,Mod,PART,LOG,User,FR):-
+   true|
+   TR = [create(Timer)],
+   wait_go(Timer,Procs,Login,Atom,Mod,PART,LOG,User,FR).
+
+wait_go(normal(Timer,_,_),Procs,Login,Atom,Mod,PART,LOG,User,FR):-
+   true|
+   merge(Timer1,Timer),
+   make_part(Procs,Part,Login,LOG,Timer1,User,FR),
+   wait_login(PART,Part,Atom,Mod).
+otherwise.
+wait_go(_,Login,Procs,Atom,Mod,PART,LOG,User,FR):-
+   true|
+   login_error:e(part,wait_go,1),
+   pseudo_timer(Timer),
+   make_part(Procs,Part,Login,LOG,Timer,User,FR),
+   wait_login(PART,Part,Atom,Mod).
+
+make_part([simple(Procs)|_],Part,Login,LOG,Timer,User,FR):-
+   true|
+   Part = simple(Procs,Handler),
+   login_simple:handler(Handler,Login,LOG,Timer,User,FR).
+otherwise.
+make_part(List,Part,Login,LOG,Timer,User,FR):-
+   true|
+   make_part(List,[],Part,0,0,Login,LOG,Timer,User,FR).
+
+make_part([],Pool,Part,N,_,Login,LOG,Timer,US,FR):-
+   true|
+   LOG = [],
+   Timer = [],
+   Login = [],
+   US = [], FR = [],
+   new_vector(Part0,N),
+   set_part(Pool,Part0,N,Part).
+make_part([{Procs,Parts,Mode,FepList}|Next],Pool,Part,N,S,Login,LOG,Timer,US,FR):-
+   true|
+   Login = {L1,L2},
+   LOG = {LOG1,LOG2},
+   Timer = {Timer1,Timer2},
+   US = {US1,US2}, FR = {FR1,FR2},
+   make_part1(Parts,Procs,Mode,FepList,N,N1,Pool,Pool1,S,S1,L1,LOG1,Timer1,US2,FR2),
+   make_part(Next,Pool1,Part,N1,S1,L2,LOG2,Timer2,US1,FR1).
+
+make_part1(0,_,_,_,N,N1,Pool,Pool1,S,S1,Login,LOG,Timer,US,FR):-
+   true|
+   Login = [],
+   LOG = [],
+   Timer = [],
+   US = [], FR = [],
+   N = N1, S = S1, Pool = Pool1.
+otherwise.
+make_part1(M,Procs,Mode,FepList,N,N1,Pool,Pool1,S,S1,Login,LOG,Timer,US,FR):-
+   M0 := M - 1,
+   N0 := N + 1,
+   S0 := S + Procs|
+   copy:copy(FepList,FL1,FL2),
+   Login = {L1,L2},
+   LOG = {LOG1,LOG2},
+   Timer = {Timer1,Timer2},
+   US = {US1,US2},
+   FR = {FR1,FR2},
+   handler(Handler,Mode,N,L1,LOG1,Timer1,US1,FR1),
+   make_part1(M0,Procs,Mode,FL2,N0,N1,
+              [{N,S,Procs,Mode,FL1,Handler}|Pool],Pool1,S0,S1,L2,LOG2,Timer2,US2,FR2).
+
+set_part([],Part0,_,Part):-
+   true|
+   partitions(Part0) = Part.
+set_part([E|Next],Part0,N,Part):-
+   N1:= N - 1|
+   set_vector_element(Part0,N1,_,E,Part1),
+   set_part(Next,Part1,N1,Part).
+
+wait_login(PART,simple(Procs,Handler),Atom,Mod):-
+   true|
+   login_simple:login(PART,Procs,Atom,Mod,Handler).
+otherwise.
+wait_login(PART,partitions(Parts),Atom,Mod):-
+   true|
+   login(PART,Parts,Atom,Mod).
+
+login([],Part,Atom,Mod):-
+   true|
+   part_close(Part),
+   Atom = [], Mod = [].
+login([who(NInfo,Info)|Next],Part,Atom,Mod):-
+% {{single,Number,From,To,user([User])},Entry_List,NInfo}
+   true|
+   set_vector_element(NInfo,1,Fep,Fep,NInfo1),
+   make_part_info(Part,PartN,Fep,Info,NInfo1),
+   login(Next,PartN,Atom,Mod).
+login([kill_task(UID,P,Lid,U,Status)|Next],Part,Atom,Mod):-
+   true|
+   kill(UID,P,Lid,U,Status,Part,PartN),
+   login(Next,PartN,Atom,Mod).
+login([log(Str)|Next],Part,Atom,Mod):-
+   true|
+   log_if_exist(Part,Str,PartN),
+   login(Next,PartN,Atom,Mod).
+login([login(Ent,{UID,Info},NInfo,NGR,Status)|Next],
+      Part,Atom,Mod):-
+   set_vector_element(Info,4,EP,Prog,InfoN0),
+   set_vector_element(InfoN0,0,UN,UN2,InfoN1),
+   copy:copy(UN,UN1,UN2),
+   Atom = [intern(UN1,AA)|AtomN],
+   get_atom(AA,Uname),
+   set_vector_element(InfoN1,5,_,Uname,InfoN),
+   get_code(EP,Mod,ModN,Stat),
+   wait_login_login(Stat,Ent,UID,Prog,InfoN,NInfo,NGR,
+                    Status,Next,Part,AtomN,ModN).
+
+wait_login_login(normal(Code,Arg),Ent,UID,Prog,Info,NInfo,NGR,
+                 Status,Next,Part,Atom,Mod):-
+   true|
+   Prog = {Code,Arg},
+   set_vector_element(Part,Ent,Procs,Procs1,PartN),
+   login_login(Procs,Procs1,Info,NInfo,NGR,UID,Status),
+   login(Next,PartN,Atom,Mod).
+otherwise.
+wait_login_login(_,Ent,UID,Prog,Info,NInfo,NGR,
+                 Status,Next,Part,Atom,Mod):-
+   true|
+   login_error:m(part,wait_login_login,1,Mes0),
+   Status = error(Mes0),
+   NGR = [],
+   login(Next,Part,Atom,Mod).
+
+%  lock process
+login_login({N,S,Proc,Mode,FL,Hand},Procs1,Info,NInfo,NGR,UID,Status):-
+   true|
+   Hand = [start(Info,NInfo,NGR,[],UID,S,Proc,Start)|Hand1],
+   Procs1 = {N,S,Proc,Mode,FL,Hand1},
+   wait_single_login(Start,Status).
+
+wait_single_login(normal(A,B,C,D,E,F),Status):-
+   true|
+   Status = normal(A,B,C,D,E,F).
+wait_single_login(normal(LID),Status):-
+   true|
+   Status = normal(LID).
+otherwise.
+wait_single_login(_,Status):-
+   true|
+   login_error:m(part,wait_login_login,1,Mes0),
+   Status = error(Mes0).
+
+handler(Handler,Mode,PartNo,Login,LOG,Timer,US,FR):-
+   lhandler(Handler,Login,LOG,Timer,Mode,PartNo,[],empty,US,FR).
+
+lhandler([start(Info,NInfo,NGR,NGRN,UID,S,Proc,Status)|Next],
+                     Login,LOG,Timer,single,P,UList,empty,US,FR):-
+   true|
+%  Info = {UName,Prio,Dir,PE,EP,UNameAtom}
+   set_vector_element(Info,2,Dir,NDir,Info20),
+   set_vector_element(Info20,3,PE,NPE,Info2),
+   copy:copy(NInfo,NInfo1,NInfo2),
+   get_dir(Dir,NGR,NGR2,NDir,NInfo1),
+   get_pe(PE,NPE),
+   merge({Next,HIn2},HIn1),
+   LOG = {LOG1,LOG2},
+   Timer = {Tim1,Tim2},
+   login_task:go(Info2,NInfo2,NGR2,NGRN,UID,P,S,Proc,Status,Login,LoginN,LOG2,Tim2,HIn2),
+   lhandler(HIn1,LoginN,LOG1,Tim1,single,P,UList,occupied,US,FR).
+lhandler([start(Info,NInfo,NGR,NGRN,UID,S,Proc,Status)|Next],
+                     Login,LOG,Timer,multiple,P,UList,Mode2,US,FR):-
+   true|
+%  Info = {UName,Prio,Dir,PE,EP,UNameAtom}
+   set_vector_element(Info,2,Dir,NDir,Info20),
+   set_vector_element(Info20,3,PE,NPE,Info2),
+   copy:copy(NInfo,NInfo1,NInfo2),
+   get_dir(Dir,NGR,NGR2,NDir,NInfo1),
+   get_pe(PE,NPE),
+   merge({Next,HIn2},HIn1),
+   LOG = {LOG1,LOG2},
+   Timer = {Tim1,Tim2},
+   login_task:go(Info2,NInfo1,NGR2,NGRN,UID,P,S,Proc,Status,Login,LoginN,LOG2,Tim2,HIn2),
+   lhandler(HIn1,LoginN,LOG1,Tim1,multiple,P,UList,Mode2,US,FR).
+lhandler([start(Info,NInfo,NGR,NGRN,UID,S,Proc,Status)|Next],
+                Login,LOG,Timer,single,P,UL,occupied,US,FR):-
+   true|
+   Status = abnormal,
+   NGR = NGRN,
+   lhandler(Next,Login,LOG,Timer,single,P,UL,occupied,US,FR).
+lhandler([user(Users)|Next],Login,LOG,Timer,Mode1,P,UList,Mode2,US,FR):-
+  true|
+  get_user_info(UList,Users,UList2),
+  lhandler(Next,Login,LOG,Timer,Mode1,P,UList2,Mode2,US,FR).
+lhandler([log(Str)|Next],Login,LOG,Timer,Mode1,P,UList,Mode2,US,FR):-
+  true|
+  LOG = [log(Str)|LOGN],
+  lhandler(Next,Login,LOGN,Timer,Mode1,P,UList,Mode2,US,FR).
+lhandler([kill(Lid,UID,U,Status)|Next],Login,LOG,Timer,Mode1,P,UList,Mode2,US,FR):-
+  true|
+  kill_task(UList,Lid,LOG,LOGN,P,UL2,UID,U,Status),
+  lhandler(Next,Login,LOGN,Timer,Mode1,P,UL2,Mode2,US,FR).
+lhandler([login(LID,PARTNO,NInfo,Abort)|Next],Login,LOG,Timer,Mode1,P,UL2,Mode2,US,FR):-
+   true|
+   LOG = {LOG1,LOG2},
+   login_int:int2string(1,LID,Lid),
+   login_int:int2string(1,PARTNO,PartNo),
+   set_vector_element(NInfo,1,FEP,FEP,NInfo0),
+   set_vector_element(NInfo0,3,UN,UN2,NInfo1),
+   copy:copy(UN,UN1,UN2),
+   login_int:int2string(1,FEP,Fep),
+   Timer = [get_date_time(Result)|TimerN],
+   lhandler(Next,Login,LOG1,TimerN,Mode1,P,[{LID,{PARTNO,UN1},Abort}|UL2],Mode2,US,FR),
+   wait_log(Result,PartNo,Lid,Fep,NInfo1,LOG2).
+lhandler([logout(Lid,Info)|Next],Login,LOG,Timer,Mode1,P,UL,Mode2,US,FR):-
+   true|
+   wait_lhandler(normal,Next,{Lid,Info},Login,LOG,Timer,Mode1,P,UL,Mode2,US,FR).
+lhandler([],Login,LOG,Timer,Mode1,P,UList,Mode2,US,FR):-
+  true|
+  Login = [], LOG = [], Timer = [], US = [], FR = [].
+
+wait_lhandler(normal,Next,{Lid,{PNo,User}},Login,LOG,Timer,Mode1,P,UL,Mode2,US,FR):-
+   true|
+   US = {US1,US2}, FR = {FR1,FR2},
+   erase_user(UL,UL2,Lid,Mode1,Mode2,Mode11,Mode22,US1,FR1),
+   Timer = [get_date_time(Result)|TimerN],
+   wait_end_log(Result,PNo,User,LOG,LOGN,Lid),
+   lhandler(Next,Login,LOGN,TimerN,Mode11,P,UL2,Mode22,US2,FR2).
+otherwise.
+wait_lhandler(_,Next,_,Login,LOG,Timer,Mode1,P,UL,Mode2,US,FR):-
+   true|
+   login_error:e(part,wait_lhandler,1),
+   lhandler(Next,Login,LOG,Timer,Mode1,P,UL,Mode2,US,FR).
+
+erase_user(UL,UL2,Lid,Mode1,Mode2,Mode11,Mode22,US,FR):-
+   true|
+   erase_user(UL,UL2,Lid,{Mode1,Mode2,Mode11,Mode22},US,FR).
+erase_user([],UL2,Lid,{Mode1,Mode2,Mode11,Mode22},US,FR):-
+   true|
+   UL2 = [],
+   US = [], FR = [],
+   Mode1 = Mode11, Mode2 = Mode22.
+erase_user([{Lid,{_,UN},_}|Rest],UL2,Lid,{Mode1,Mode2,Mode11,Mode22},US,FR):-
+   true|
+   UL2 = Rest,
+   US = [get_uid(UN,St)|USN],
+   wait_chpasswd(St,USN,FR),
+   erase_user0(Mode1,Mode2,Mode11,Mode22).
+otherwise.
+erase_user([E|Rest],UL2,Lid,Info,US,FR):-
+   true|
+   UL2 = [E|UL2N],
+   erase_user(Rest,UL2N,Lid,Info,US,FR).
+erase_user0(single,Mode2,Mode11,Mode22):-
+   true|
+   Mode11 = single,
+   Mode22 = empty.
+otherwise.
+erase_user0(Mode1,Mode2,Mode11,Mode22):-
+   true|
+   Mode1 = Mode11,
+   Mode2 = Mode22.
+
+%%%%%%%%%%%
+wait_chpasswd(normal(UID),US,FR):-
+   true|
+   US = [status(UID,St)|USN],
+   wait_chpasswd2(St,USN,FR).
+otherwise.
+wait_chpasswd(_,US,FR):-
+   true|
+   US = [], FR = [].
+wait_chpasswd2(normal(0),US,FR):-
+   true|
+   US = [], FR = [].
+otherwise.
+wait_chpasswd2(normal(_),US,FR):-
+   true|
+   US = [get_all_info(Status)],
+   FR = [open(string#"pimos:pimos.logins",write(Status2))],
+   wait_other_status(Status,Status2).
+otherwise.
+wait_chpasswd2(_,US,FR):-
+   true|
+   US = [], FR = [].
+
+wait_other_status(normal(Info),normal(File,_,_)):-
+   true|
+    buffer:output_filter(FileIn0,File),
+    FileIn0 = [print_string_length(2000),
+               print_atom_length(100)|FileIn],
+    sort_info(Info,Info1),
+    write_out_info(Info1,FileIn).
+otherwise.
+wait_other_status(_,normal(F,_,_)):-
+    display_console(ascii#"USER DEVICE WAS DESTROYED")|
+    F = [].
+otherwise.
+wait_other_status(_,_):-
+    display_console(ascii#"USER FILE CANNOT BE COPIED")|
+    true.
+
+sort_info(Info,Info1) :-
+    true |
+    make_index(Info,Tmp),
+    sorter:key_sort(Tmp,Tmp1),
+    remove_index(Tmp1,Info1).
+
+make_index([],Info1) :-
+    true|
+    Info1=[].
+make_index([A|Tail],Info1) :-
+    true|
+    set_vector_element(A,2,UID,UID,A1),
+    Info1=[{UID,A1}|Tail1],
+    make_index(Tail,Tail1).
+
+remove_index([],Info1) :-
+    true|
+    Info1=[].
+remove_index([{UID,A}|Tail],Info1) :-
+    true|
+    Info1=[A|Tail1],
+    remove_index(Tail,Tail1).
+
+write_out_info([],File):-
+    true|
+    File = [].
+otherwise.
+write_out_info([Term|Next],File):-
+    File = [putt(Term),
+            putl(string#".")|FNext],
+    write_out_info(Next,FNext).
+
+%%%%%%%%%%%
+get_user_info([],Users,UList):-
+   true|
+   UList = [],
+   Users = no_users.
+otherwise.
+get_user_info(U,Users,UList):-
+   true|
+   get_user_info0(U,Users,UList).
+
+get_user_info0([{Lid,U,Abort}|Next],Users,UL):-
+   true|
+   copy:copy(U,U1,U2),
+   Users = [{Lid,U1}|UNext],
+   UL = [{Lid,U2,Abort}|UL2],
+   get_user_info0(Next,UNext,UL2).
+get_user_info0([],Users,UL):-
+   true|
+   UL = [],
+   Users = [].
+
+wait_end_log(normal(Date,Time),PNo,User,LOG,LOGN,Lid):-
+   true|
+   login_int:int2string(1,PNo,PNO),
+   login_int:int2string(1,Lid,LID),
+   timer_utility:get_date_string(Date,DATE),
+   timer_utility:get_time_string(Time,TIME),
+   builtin#append_string([string#"Part ",PNO,
+                          string#" Logout : User=",User,
+                          string#" LID=",LID,
+                          string#" End Date=",DATE,
+                          string#" Time=",TIME],LogStr),
+   LOG = [log(LogStr)|LOGN].
+otherwise.
+wait_end_log(_,PNo,User,LOG,LOGN,Lid):-
+   true|
+   login_int:int2string(1,PNo,PNO),
+   login_int:int2string(1,Lid,LID),
+   builtin#append_string([string#"Part ",PNO,
+                          string#" Logout : User=",User,
+                          string#" LID=",LID,
+                          string#" End Date=(???)",
+                          string#" Time=(???)"],LogStr),
+   LOG = [log(LogStr)|LOGN].
+
+wait_log(normal(Date,Time),PNo,Lid,Fep,NInfo,LOG):-
+   true|
+   timer_utility:get_date_string(Date,DStr),
+   timer_utility:get_time_string(Time,TStr),
+   set_vector_element(NInfo,2,Node0,0,NInfo2),
+   get_node_string(Node0,Node),
+   set_vector_element(NInfo2,4,RU,0,NInfo3),
+   set_vector_element(NInfo3,6,LAN,0,NInfo4),
+   set_vector_element(NInfo4,3,User,0,_),
+   builtin#append_string([string#"Part ",PNo,
+                           string#" Login : User=",User,
+                           string#" LID=",Lid,
+                           string#" Start Date=",DStr,
+                           string#" Start Time=",TStr,
+                           string#" (Remote: Node=",Node,
+                           string#",Fep=",Fep,
+                           string#",User=",RU,
+                           string#",LAN=",LAN,string#")"],LogStr),
+   LOG = [log(LogStr)].
+otherwise.
+wait_log(_,PNo,Lid,Fep,NInfo,LOG):-
+   true|
+   set_vector_element(NInfo,2,Node0,0,NInfo2),
+   get_node_string(Node0,Node),
+   set_vector_element(NInfo2,4,RU,0,NInfo3),
+   set_vector_element(NInfo3,6,LAN,0,NInfo4),
+   set_vector_element(NInfo4,3,User,0,_),
+   builtin#append_string([string#"Part ",PNo,
+                           string#" Login : User=",User,
+                           string#" LID=",Lid,
+                           string#" Start Date=(???)",
+                           string#" Start Time=(???)",
+                           string#" (Remote: Node=",Node,
+                           string#",=",Node,
+                           string#",User=",RU,
+                           string#",LAN=",LAN,string#")"],LogStr),
+   LOG = [log(LogStr)].
+
+% {{single,Number,From,To,user([User])},Entry_List,NInfo}
+% make_part1(M0,Procs,Mode,FL2,N0,N1,
+%     [{N,S,Procs,Mode,FL1,Handler}|Pool],Pool1,S0,S1,L2,LOG2,Timer2).
+make_part_info(Part,PartN,Fep,Info,NInfo):-
+   vector(Part,N)|
+   make_part_info(Part,PartN,0,N,Tail,Tail,Ent,Ent,Fep,Info,NInfo).
+
+make_part_info(Part0,Part,N,N,Tail,Head,ETail,EHead,Fep,Info,NInfo):-
+   true|
+   Part = Part0, Tail = [], ETail = [],
+   Info = normal({Head,EHead,NInfo}).
+otherwise.
+make_part_info(Part,PartN,MM,NN,
+               Tail,Head,ETail,EHead,Fep,Info,NInfo):-
+   MM1 := MM + 1|
+   E := S + Procs - 1,
+   Tail = [{Mode,N,S,E,Us2}|TailN],
+   set_vector_element(Part,MM,{N,S,Procs,Mode,FL,H},
+                             {N,S,Procs,Mode,FLN,HN},PartNN),
+   make_entry(Mode,Us,Us2,FL,Fep,N,FLN,ETail,ETailN),
+   H = [user(Us)|HN],
+   make_part_info(PartNN,PartN,MM1,NN,TailN,Head,ETailN,EHead,Fep,Info,NInfo).
+
+make_entry(single,List,Us2,FL,Fep,N,FLN,ETail,ETailN):-
+   list(List)|
+   FL = FLN,
+   ETail = ETailN,
+   Us2 = List.
+otherwise.
+make_entry(_,Us,Us2,FL,Fep,N,FLN,ETail,ETailN):-
+   true|
+   Us = Us2,
+   make_entry(FL,Fep,N,FLN,ETail,ETailN).
+
+make_entry([Fep|Rest],Fep,N,FLN,ETail,ETailN):-
+   true|
+   FLN = [Fep|Rest],
+   ETail = [N|ETailN].
+make_entry([],Fep,N,FLN,ETail,ETailN):-
+   true|
+   FLN = [], ETail = ETailN.
+otherwise.
+make_entry([Fep0|Rest],Fep,N,FLN,ETail,ETailN):-
+   true|
+   FLN = [Fep0|FLNN],
+   make_entry(Rest,Fep,N,FLNN,ETail,ETailN).
+
+pseudo_timer([]):- true| true.
+pseudo_timer([get_date_time(Result)|Next]):-
+   true|
+   Result = normal(0,0),
+   pseudo_timer(Next).
+
+part_close(V):- vector(V,N)|
+   part_close(V,N).
+part_close(V,0):- true| true.
+otherwise.
+part_close(V,M):-
+   M1 := M - 1|
+   set_vector_element(V,M1,{N,S,Procs,Mode,FL1,Handler},0,NV),
+   Handler = [],
+   part_close(NV,M1).
+
+log_if_exist(Part,Str,PartN):-
+   vector(Part,N),
+   N =\= 0|
+   set_vector_element(Part,0,One,One1,PartN),
+   set_vector_element(One,5,H,H1,One1),
+   H = [log(Str)|H1].
+otherwise.
+log_if_exist(Part,Str,PartN):-
+   true|
+   Part = PartN.
+
+%Part_element = {N,S,Proc,Mode,FL,Hand}
+kill(UID,P,Lid,U,Status,Part,PartN):-
+   vector(Part,M),M > P|
+   set_vector_element(Part,P,E,E2,PartN),
+   set_vector_element(E,5,H,H2,E2),
+   H = [kill(Lid,UID,U,Status)|H2].
+otherwise.
+kill(UID,P,Lid,U,Status,Part,PartN):-
+   true|
+   Status = abnormal,
+   U = [],
+   Part = PartN.
+
+kill_task([{Lid,Info,Abort}|Next],Lid,LOG,LOGN,P,UL2,UID,User,Status):-
+   true|
+   set_vector_element(Info,1,U,U2,InfoN),
+   copy:copy(U,U1,U2),
+   User = [get_uid(U1,St)],
+   wait_uid(St,UID,Lid,InfoN,Abort,Next,LOG,LOGN,P,UL2,Status).
+kill_task([],Lid,LOG,LOGN,P,UL2,UID,User,Status):-
+   true|
+   LOG = LOGN,
+   UL2 = [],
+   User = [],
+   Status = abnormal.
+otherwise.
+kill_task([E|Next],Lid,LOG,LOGN,P,UL2,UID,User,Status):-
+   true|
+   UL2 = [E|UL2N],
+   kill_task(Next,Lid,LOG,LOGN,P,UL2N,UID,User,Status).
+
+
+wait_uid(normal(UID),UID,Lid,Info,Abort,Next,LOG,LOGN,P,UL2,Status):-
+   true|
+   Abort = abort,
+   Status = normal,
+   UL2 = [{Lid,Info,_}|Next],
+   LOG = LOGN.
+otherwise.
+wait_uid(normal(_),0,Lid,Info,Abort,Next,LOG,LOGN,P,UL2,Status):-
+   true|
+   Abort = abort,
+   Status = normal,
+   UL2 = [{Lid,Info,_}|Next],
+   LOG = LOGN.
+otherwise.
+wait_uid(_,UID,Lid,Info,Abort,Next,LOG,LOGN,P,UL2,Status):-
+   UID =\= 0|
+   Status = abnormal,
+   UL2 = [{Lid,Info,Abort}|Next],
+   LOG = LOGN.
+
+
+%%%%%%%%%%%%%%%
+get_code(Pack::Mod:Pred,ModIn,ModOut,Stat):-
+   true|
+   get_code_pred(Pred,Pred1,Arity,Args),
+   ModIn = [get_code(Pack,Mod,Pred1,Arity,Status)|ModOut],
+   wait_get_code(Status,Args,Stat).
+otherwise.
+get_code(Mod:Pred,ModIn,ModOut,Stat):-
+   true|
+   get_code_pred(Pred,Pred1,Arity,Args),
+   ModIn = [get_code(pimos,Mod,Pred1,Arity,Status)|ModOut],
+   wait_get_code(Status,Args,Stat).
+
+get_code_pred(Pred,Pred1,Arity,Args):-
+   vector(Pred,N),
+   N > 1,
+   N1 := N - 1|
+   Arity = N1,
+   new_vector(NVEC,N1),
+   set_vector_element(Pred,0,Pred1,0,PredN),
+   get_args(N1,PredN,NVEC,Args).
+get_code_pred(Pred,Pred1,Arity,Args):-
+   atom(Pred)|
+   Pred1 = Pred,
+   Arity = 0,
+   new_vector(Args,0).
+
+get_args(0,_,NVEC,Args):-
+   true|
+   NVEC = Args.
+otherwise.
+get_args(N,Pred,NVEC,Args):-
+   N1 := N - 1|
+   set_vector_element(Pred,N,E,0,PredN),
+   set_vector_element(NVEC,N1,_,E,NVECN),
+   get_args(N1,PredN,NVECN,Args).
+
+wait_get_code(normal(Code),Args,Stat):-
+   true|
+   Stat = normal(Code,Args).
+otherwise.
+wait_get_code(_,Args,Stat):-
+   true|
+   Stat = abnormal.
+
+
+get_dir(Dir,NGR,NGRN,DirN,NInfo):-
+   string(Dir,_,_)|
+   NGR = NGRN,
+   Dir = DirN.
+otherwise.
+get_dir(_,NGR,NGRN,Dir,NInfo):-
+   true|
+   NGR = [string_io(Stat)|NGRN],
+   get_dir(Stat,Dir,NInfo).
+
+get_dir(normal(STR,_,_),Dir,NInfo):-
+   true|
+   STR = [create("simpos_user_device",Stat)],
+   get_dir0(Stat,Dir,NInfo).
+otherwise.
+get_dir(_,Dir,_):-
+   true|
+%   Dir = string#">sys>user>me".
+   new_string(Dir,0,16).
+
+get_dir0(normal(S,_,_),Dir,NInfo):-
+   true|
+   set_vector_element(NInfo,4,RN,0,NInfo2),
+   set_vector_element(NInfo2,5,RP,0,_),
+   make_rpass(RN,RP,RNP),
+   S = [io(0,RNP,Stat)],
+   get_dir00(Stat,Dir).
+otherwise.
+get_dir0(_,Dir,_):-
+   true|
+%   Dir = string#">sys>user>me".
+   new_string(Dir,0,16).
+
+get_dir00(normal(Dir),NDir):-
+   true|
+   Dir = NDir.
+otherwise.
+get_dir00(_,NDir):-
+   true|
+%   NDir = string#">sys>user>me".
+    new_string(NDir,0,16).
+
+make_rpass(RN,RP,RNP):-
+    string(RN,L0,_),
+    string(RP,L1,_),
+    S1 := L0 + 2, 
+    L := L1 + S1|
+    new_string(RNP0,L,16),
+    set_string_element(RNP0,0,L0,RNP1),
+    set_string_element(RNP1,1,L1,RNP2),
+    copy_str2(RN,0,L0,2,RNP2,RNP3),
+    copy_str2(RP,0,L1,S1,RNP3,RNP).
+
+copy_str2(_,N,N,_,RNP,RNP1):-
+    true|
+    RNP = RNP1.
+otherwise.
+copy_str2(RN,M,N,L,RNP,RNP1):-
+    string_element(RN,M,E),
+    M1 := M + 1,
+    L1 := L + 1|
+    set_string_element(RNP,L,E,RNP0),
+    copy_str2(RN,M1,N,L1,RNP0,RNP1).
+
+get_atom(normal(AA),Uname):-
+   true| AA = Uname.
+otherwise.
+get_atom(_,Uname):-
+   true| new_atom(Uname).
+
+get_pe(PE,NPE):- integer(PE)| NPE = PE.
+otherwise.
+get_pe(_,NPE):- true| NPE = 0.
+
+get_node_string(Node0,Node):- string(Node0,_,_)|
+   Node0 = Node.
+get_node_string(Node0,Node):- integer(Node0)|
+   login_int:int2string(1,Node0,Node).
+

@@ -1,0 +1,238 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is 'exception' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module exception.
+:- public go/0,go/1,
+    normal_test/0, d_code_test/0, spy_test/0, d_code_and_apy_test/0,
+    merge_test/0,
+    suspend_test1/0, suspend_test2/0, suspend_test3/0,
+    suspend_test4/0, suspend_test5/0, suspend_spy_test/2,
+    hook_hook_unify/0, hook_mghook_unify/0, mghook_hook_unify/0,
+    mghook_mghook_unify/0, dhook_dhook_unify/0, dhook_hook_unify/0,
+    dhook_mghook_unify/0, unify_spy_test/2.
+
+go :- true |
+    shoen:raise(pimos_tag#shell, get_std_in, StdIn),
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    StdOut = [putl(string#"Which kind of exception, do you want ?"), nl,
+              putl(string#"  1. illegal_input"),
+              putl(string#"  2. range_overflow"),
+              putl(string#"  3. out_of_bounds"),
+              putl(string#"  4. integer_overflow"),
+              putl(string#"  5. integer_zero_division"),
+              putl(string#"  6. invalid_floating_point_operation"),
+              putl(string#"  7. arity_mismatch"),
+              putl(string#"  8. illegal_merger_input"),
+              putl(string#"  9. reduction_failure"),
+              putl(string#"  10. unification_failure"),
+              putl(string#"  11. deadlock"),
+              putl(string#"  12. deadlock"),
+              putl(string#"  13. merger_deadlock"),
+              putl(string#"  14. trace"),
+              putl(string#"  15. trace"),
+              putl(string#"  16. raised"),
+              putl(string#"  17. collect_value"),
+              putl(string#"  18. suspend"),
+              putl(string#"  19. unify"),
+              putl(string#"  20. error"),
+              putl(string#"  21. error(illegal_situation)"),
+              flush(S1) | StdOut1],
+    waitStat(S1, StdIn, StdIn1),
+    StdIn1 = [prompt(string#"Number, please. >> "), getl(LNo) | StdIn2],
+    buffer:character_pool([putf(string#"~s . ~n",[LNo]),flush(_),gett(No)|IO]),
+    check(No, StdIn2, StdOut1, IO).
+
+go(No) :- true |
+    shoen:raise(pimos_tag#shell, get_std_in, StdIn),
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    buffer:character_pool(IO),
+    check(No, StdIn, StdOut, IO).
+
+check(exit, StdIn, StdOut, IO) :- true | StdIn = [], StdOut = [], IO = [].
+check(No, StdIn, StdOut, IO) :- integer(No), No > 0, No < 22 |
+    applyGoal(No, StdIn, StdOut, IO).
+otherwise.
+check(_, StdIn, StdOut, IO) :- true |
+    StdOut = [putf(string#"*** Illegal Number ***~n", []), flush(S1) | StdOut1],
+    waitStat(S1, StdIn, StdIn1),
+    StdIn1 = [prompt(string#"Number, please. >> "), getl(LNo) | StdIn2],
+    IO = [abandon_pool,putf(string#"~s . ~n",[LNo]),flush(_),gett(No) | NIO],
+    check(No, StdIn2, StdOut1, NIO).
+
+waitStat(Stat, In, Out) :- wait(Stat) | In = Out.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%  Main Routine  %%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%  Illegal input  %%%%%
+applyGoal(1,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[], my_add(a,0,_).
+
+%%%%%  Range overflow  %%%%%
+applyGoal(2,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    new_vector(_, 1000000000).
+
+%%%%%  Out of bounds  %%%%%
+applyGoal(3,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    vector_element({1, 2}, 3, _, _).
+
+%%%%%  Integer overflow  %%%%%
+applyGoal(4,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    X=1000000000, add(X, X, Y), my_add(Y,Y,_).
+
+%%%%%  Integer zero division  %%%%%
+applyGoal(5,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    my_divide(1,0,_).
+
+%%%%%  Invalid floating point operation  %%%%%
+applyGoal(6,StdIn,StdOut,IO) :- true |
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    divide(0.0, 0.0, _),    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    StdOut = [putf(string#"***  Not supported  ***~n", []),flush(S1)|StdOut1],
+    waitStat(S1, StdIn, StdIn1),
+    check(0, StdIn1, StdOut1, IO).
+
+%%%%%  Arity mismatch  %%%%%
+applyGoal(7,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    predicate_to_code(module#exception, go, 0, Code), apply(Code, {1,2}).
+
+%%%%%  Illegal merger input  %%%%%
+applyGoal(8,StdIn,StdOut,IO) :- true |
+%%%%%%%%%%%%%%%%%%%%%%%
+%    merger(a, _).    %
+%%%%%%%%%%%%%%%%%%%%%%%
+    StdOut = [putf(string#"***  Not supported  ***~n", []),flush(S1)|StdOut1],
+    waitStat(S1, StdIn, StdIn1),
+    check(0, StdIn1, StdOut1, IO).
+
+%%%%%  Reduction failure  %%%%%
+applyGoal(9,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    reductionFailure(b).
+
+%%%%%  Unification failure  %%%%%
+applyGoal(10,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    unfication_failure(fail).
+
+%%%%%  Deadlock  %%%%%
+applyGoal(11,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[], deadlock1(_).
+
+%%%%%  Deadlock  %%%%%
+applyGoal(12,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[], deadlock2(_).
+
+%%%%%  Merger deadlock  %%%%%
+applyGoal(13,StdIn,StdOut,IO) :- true | StdIn=[], StdOut=[],IO=[],
+    merger_deadlock(_).
+
+%%%%%  Trace  %%%%%
+applyGoal(14,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    predicate_to_code(module#exception,go,0,Code), apply_tracing(Code,{},0).
+
+%%%%%  Spy  %%%%%
+applyGoal(15,StdIn,StdOut,IO) :- true |
+    StdOut = [putf(string#"***  Not supported  ***~n", []),flush(S1)|StdOut1],
+    waitStat(S1, StdIn, StdIn1),
+    check(0, StdIn1, StdOut1, IO).
+
+%%%%%  Raised  %%%%%
+applyGoal(16,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    shoen:raise(pimos_tag#shell, exception_test, 0).
+
+%%%%%  Collect_value  %%%%%
+applyGoal(17,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    normal_test, d_code_test, spy_test, d_code_and_apy_test, merge_test.
+
+%%%%%  Suspend  %%%%%
+applyGoal(18,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    suspend_test1, suspend_test2, suspend_test3,
+    suspend_test4, suspend_test5,
+    suspend_spy_test(suspend_test1, id10),
+    suspend_spy_test(suspend_test2, id11),
+    suspend_spy_test(suspend_test3, id12),
+    suspend_spy_test(suspend_test4, id13),
+    suspend_spy_test(suspend_test5, id14).
+
+%%%%%  Unify  %%%%%
+applyGoal(19,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    hook_hook_unify, hook_mghook_unify, mghook_hook_unify,
+    mghook_mghook_unify, dhook_dhook_unify, dhook_hook_unify,
+    dhook_mghook_unify,
+    unify_spy_test(hook_hook_unify, id20),
+    unify_spy_test(hook_mghook_unify, id21),
+    unify_spy_test(mghook_hook_unify, id22),
+    unify_spy_test(mghook_mghook_unify, id23),
+    unify_spy_test(dhook_dhook_unify, id24),
+    unify_spy_test(dhook_hook_unify, id25),
+    unify_spy_test(dhook_mghook_unify, id26).
+
+%%%%%  Error  %%%%%
+applyGoal(20,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    shoen:raise(pimos_tag#error, '$PIMOS$'(id, "This is a TEST"), {test,_,_}).
+
+%%%%%  Error  %%%%%
+applyGoal(21,StdIn,StdOut,IO) :- true | StdIn=[],StdOut=[],IO=[],
+    shoen:raise(pimos_tag#error, '$PIMOS$'(id, must_be_string), {test,_,_}).
+otherwise.
+applyGoal(_, StdIn, StdOut, IO) :- true | check(0, StdIn, StdOut, IO).
+
+my_add(X,Y,Z) :- true | add(X,Y,Z).
+my_divide(X,Y,Z) :- true | divide(X,Y,Z).
+reductionFailure(a) :- true | true .
+unfication_failure(X) :- true | X = true.
+deadlock1(X) :- wait(X) | true.
+deadlock2(1) :- true | true.
+merger_deadlock(X) :- true | merge({_, _, [a, b]}, X).
+
+normal_test :- true | c1(X), c2(X).
+d_code_test :- true | Y := X + 1, c2(X).
+spy_test :- true |
+    predicate_to_code(module#exception, normal_test, 0, Code),
+    apply_spying(Code, {}, {}, id0).
+d_code_and_apy_test :- true |
+    predicate_to_code(module#exception, d_code_test, 0, Code),
+    apply_spying(Code, {}, {}, id1).
+merge_test :- true | merge({X}, Y), c2(X).
+c1(_) :- true | true.
+c2(_) :- true | true.
+
+suspend_test1 :- true | s1(X), s2(X).
+suspend_test2 :- true | merge({X}, Y), s2(X).
+suspend_test3 :- true | Y := X + 1, s2(X).
+suspend_test4 :- true | Y := X + 1, Z := X + 2.
+suspend_test5 :- true | merge({X}, Y), Z := X + 1.
+suspend_spy_test(P, ID) :- true |
+    predicate_to_code(module#exception, P, 0, Code),
+    apply_spying(Code, {}, {}, ID).
+s1(0) :- true | true.
+s2(1) :- true | true.
+
+hook_hook_unify :- true | u1(X), u2(Y), u0(X, Y).
+hook_mghook_unify :- true | u1(X), u3(Y), u0(X, Y).
+mghook_hook_unify :- true | merge({X}, Y), u1(Z), u0(X, Z).
+mghook_mghook_unify :- true | merge({X0}, Y0), merge({X1}, Y1), u0(X0, X1).
+dhook_dhook_unify :- true | _ := X + 1, _ := Y + 1, u0(X, Y).
+dhook_hook_unify :- true | _ := X + 1, u1(Y), u0(X, Y).
+dhook_mghook_unify :- true | _ := X + 1, merge({Y}, _), u0(X, Y).
+unify_spy_test(P, ID) :- true |
+    predicate_to_code(module#exception, P, 0, Code),
+    apply_spying(Code, {}, {}, ID).
+u0(X, Y) :- true | X = Y.
+u1(0) :- true | true.
+u2(1) :- true | true.
+u3(X) :- true | merge({X}, Y).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                                   %%%%%
+%%%%%  End of 'exception' module.       %%%%%
+%%%%%                                   %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

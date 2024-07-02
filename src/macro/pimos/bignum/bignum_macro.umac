@@ -1,0 +1,91 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%
+%%%%%%  Mcro Module :: bignum_macro
+%%%%%%  File Name   :: bignum_macro.mac
+%%%%%%
+%%%%%%  Macro definitions when both double word arithmetics and bignum add/subtraction
+%%%%%%  are supported.
+%%%%%%
+
+%:- user_macro    bignum_macro.
+:- if_not_defined(included).
+:- macro_module  bignum_macro.
+:- with_macro    pimos.
+:- inherit_macro pimos.
+:- end_if.
+
+%%%%%
+%%%%%  Definitions of data structure and its handling to keep data abstruction
+%%%%%
+%%%%%
+%%%%%   bignum#compose(SX,Xstr,^Out)     Construct a bignum data structure from sign and numeral data
+%%%%%        SX (sign part)  ::=  0 (+) | 1 (-)       Xstr (Numeral part)  ::= 32bit string
+%%%%%
+%%%%%   bignum#bignum(Xin)               Check "Xin" is a bignum or not
+%%%%%   bignum#wrapped(Xin)              Check "Xin" is a wrapped bignum or not
+%%%%%
+%%%%%   bignum#bignum(Xin,SX,Xstr)       Check "Xin" is a bignum and extract its components
+%%%%%   bignum#bignum(Xin,SX,XL,Xstr)
+%%%%%   bignum#numer(Xin,Xstr)
+%%%%%   bignum#numer(Xin,XL,Xstr)
+%%%%%   bignum#sign(Xin,SX)
+%%%%%        SX      (sign part)     ::=  0 (+) | 1 (-) 
+%%%%%        Xstr,XL (numeral part)  ::= 32bit string and its length
+%%%%%
+%%%%%
+%%%%%
+%%%%%   rational#compose(Real,Image,^Complex)     Construct a complex data from real and imaginary part
+%%%%%   rational#complex(Xin)                     Check "Xin" is a complex or not
+%%%%%   rational#complex(Xin,Real,Image)          Check and extarct real and imaginary parts
+%%%%%   rational#real(Xin,Real)  
+%%%%%   rational#image(Xin,Image)
+%%%%%        Real, Image  ::= rational or bignum 
+%%%%%
+%%%%%
+%%%%%   rational#compose(Sign,Numer,Denom,Rational) Construct a rational data from its components
+%%%%%   rational#rational(Xin)                      Check "Xin" is a rational or not
+%%%%%   rational#rational(Xin,Sign,Numer,Denom)     Check and extract its components
+%%%%%   rational#sign(Xin,Sign)                   
+%%%%%   rational#numer_denom(Xin,Numer,Denom)
+%%%%%   rational#numer(Xin,Numer)
+%%%%%   rational#denom(Xin,Denom)
+%%%%%        Sign  (Sign part)        ::=  0 (+) | 1 (-)       
+%%%%%        Numer (Numeral part)     ::= positive integer | 32bit string
+%%%%%        Denom (Denomirator part) ::= positive integer | 32bit string
+%%%%%
+wrap#( bignum#compose(SX,Xstr,Out) ) => wrap#( Out= '$bignum'(SX,Xstr) ).
+wrap#( bignum#bignum(Xin)          ) => wrap#( Xin= '$bignum'(SX,Xstr), integer(SX), string(Xstr,_,32) ).
+wrap#( bignum#bignum(Xin,SX,Xstr)  ) => wrap#( Xin= '$bignum'(S,Xstr), SX := S/\1, string(Xstr,_,32) ).
+wrap#( bignum#bignum(Xin,SX,XL,Xstr) ) => wrap#( Xin= '$bignum'(S,Xstr), SX := S/\1, string(Xstr,XL,32) ).
+wrap#( bignum#numer(Xin,Xstr)      ) => wrap#( Xin= '$bignum'(SX,Xstr), integer(SX), string(Xstr,_, 32) ).
+wrap#( bignum#numer(Xin,XL,Xstr)   ) => wrap#( Xin= '$bignum'(SX,Xstr), integer(SX), string(Xstr,XL,32) ).
+wrap#( bignum#sign(Xin,SX)         ) => wrap#( Xin= '$bignum'(S,Xstr), SX := S/\1, string(Xstr,_, 32) ).
+wrap#( bignum#wrapped(Xin)         ) => 
+    wrap#( Xin= vector({atom('$bignum'),integer(SX),string(Xstr)}), string(Xstr,_,32) ).
+
+
+
+wrap#( rational#compose(Real,Image,Out)     ) => wrap#( Out= complex(Real,Image) ).
+
+wrap#( rational#complex(Xin)                ) => wrap#( Xin= complex(_,_)  ) .
+wrap#( rational#complex(Xin,Real,Image)     ) => wrap#( Xin= complex(Real,Image)  ) .
+wrap#( rational#real(Xin,Real)              ) => wrap#( Xin= complex(Real,_)  ) .
+wrap#( rational#image(Xin,Image)            ) => wrap#( Xin= complex(_,Image)  ) .
+
+
+wrap#( rational#compose(S,Numer,Denom,Out) ) => wrap#( Out= real(S,Numer,Denom) ).
+
+wrap#( rational#rational(Xin)                  ) => wrap#( Xin= real(_,_,_) ) .
+wrap#( rational#rational(Xin,S,Numer,Denom)    ) => wrap#( Xin= real(S1,Numer,Denom), S := S1/\1 ) .
+wrap#( rational#numer_denom(Xin,Numer,Denom)   ) => wrap#( Xin= real(_,Numer,Denom) ) .
+wrap#( rational#sign(Xin,S)                    ) => wrap#( Xin= real(S1,_,_), S := S1/\1 ) .
+wrap#( rational#numer(Xin,Numer)               ) => wrap#( Xin= real(_,Numer,_) ) .
+wrap#( rational#denom(Xin,Denom)               ) => wrap#( Xin= real(_,_,Denom) ) .
+
+
+

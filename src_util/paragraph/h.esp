@@ -1,0 +1,254 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class h has
+ nature bar_layout;
+
+  :create(Class,Obj,Win,Attribute):-
+    :new(Class,Obj),
+    set_attribute(Obj,Attribute),
+    :init(Obj,Win);
+
+ instance
+   attribute height := 500,
+             w_min := 10,
+             x_name := nil,
+             y_name := nil;
+ 
+
+  :layout(Obj,GList):-
+     Obj!h > 165, Obj!w > 165,!,
+     total_x_max(GList,0,Total),
+     W0 = Obj!w - ( Obj!num - 1 )*Obj!x_space - 2*Obj!x_start - Obj!num * Obj!w_min,
+     integer_to_floating_point(Total,FTotal),
+     integer_to_floating_point(W0,FW0),
+     integer_to_floating_point(Obj!w_min,FW_Min),
+     FV = FTotal * FW_Min/FW0,
+     floating_point_to_integer(FV,V),
+     ( Obj!h-Obj!y_start-30 > Obj!height ,!, H = Obj!height ;
+       H = Obj!h - Obj!y_start - 30 ),
+     ( W0 =< 10,!,
+       invisible_graph(GList);
+       H =< 10,!,
+       invisible_graph(GList);
+       W = W0,
+       set_x_unit(GList,X_Unit),
+       integer_to_floating_point(W,FW),
+       layout(Obj!x+Obj!x_start,Obj!y+Obj!y_start,GList,FTotal,FW,H,Obj!x_space,Obj!w_min,V,X_Unit) ),
+     :regist(Obj,GList);
+  :layout(Obj,GList):-
+    :regist(Obj,GList);
+ 
+  :draw(Obj):-
+     Obj!h > 230, Obj!w > 165,!,
+     vector_element(Obj!graph_list,0,G),
+     G!draw_flag \== invisible,!,
+     ( Obj!h - 50 > Obj!height ,!, H = Obj!height ;
+       H = Obj!h - 50 ),
+     init_graph(Obj!graph_list,0,Obj!num,Obj!window),
+    ( Obj!x_name = nil, Obj!y_name = nil,!;
+      X = Obj!x,
+      Y = Obj!y,
+      Win = Obj!window,
+      draw_string(Obj!x_name,X+Obj!w-Obj!x_start,Y,List,List2,Win),
+      draw_string(Obj!y_name,X+Obj!x_start-10,Y+H+Obj!y_start,List2,[],Win),
+      :draw(Win,List) );
+  :draw(Obj):-
+      invisible_graph(Obj!graph_list,0,Num);
+
+ local
+
+   layout(X,Y,[],_,_,_,_,_,_,_):-!;
+   layout(X,Y,[G|R],FTotal,FW,H,Sp,Min,V,X_Unit):-
+     :get_max_value(G,X_Max),
+     integer_to_floating_point(X_Max,FX_Max),
+     FGW=FW*FX_Max/FTotal,
+     floating_point_to_integer(FGW,GW),
+     G!x_unit1:=X_Unit,
+     G!x_size := GW + Min,
+     ( X_Max =< V,!,
+       G!scale_max := V ; true ),
+     G!y_size := H,
+     :set_position(G,X,Y),
+     layout(X+GW+Min+Sp,Y,R,FTotal,FW,H,Sp,Min,V,X_Unit);
+
+  set_x_unit([G|R],X_Unit):-
+      :get_max_value(G,X_Max),
+      set_x_unit0(X_Max,X_Unit);
+
+    set_x_unit0(X_Max,X_Unit):-
+      0=<X_Max,
+      100>=X_Max,!,
+      X_Unit=10;
+  
+    set_x_unit0(X_Max,X_Unit):-
+      100<X_Max,
+      200>=X_Max,!,
+      X_Unit=20;
+
+    set_x_unit0(X_Max,X_Unit):-
+      200<X_Max,
+      500>=X_Max,!,
+      X_Unit=50;
+ 
+    set_x_unit0(X_Max,X_Unit):-
+      500<X_Max,
+      1000>=X_Max,!,
+      X_Unit=100;
+  
+    set_x_unit0(X_Max,X_Unit):-
+      1000<X_Max,
+      2000>=X_Max,!,
+      X_Unit=200;
+
+    set_x_unit0(X_Max,X_Unit):-
+      2000<X_Max,
+      5000>=X_Max,!,
+      X_Unit=500;
+
+    set_x_unit0(X_Max,X_Unit):-
+      5000<X_Max,
+      10000>=X_Max,!,
+      X_Unit=1000;
+ 
+    set_x_unit0(X_Max,X_Unit):-
+      10000<X_Max,
+      20000>=X_Max,!,
+      X_Unit=2000;
+
+    set_x_unit0(X_Max,X_Unit):-
+      20000<X_Max,
+      50000>=X_Max,!,
+      X_Unit=5000;
+ 
+    set_x_unit0(X_Max,X_Unit):-
+      50000<X_Max,
+      100000>=X_Max,!,
+      X_Unit=10000;
+  
+    set_x_unit0(X_Max,X_Unit):-
+      100000<X_Max,
+      200000>=X_Max,!,
+      X_Unit=20000;
+
+    set_x_unit0(X_Max,X_Unit):-
+      200000<X_Max,
+      500000>=X_Max,!,
+      X_Unit=50000;
+
+    set_x_unit0(X_Max,X_Unit):-
+      500000<X_Max,
+      1000000>=X_Max,!,
+      X_Unit=100000;
+
+    set_x_unit0(X_Max,X_Unit):-
+      1000000<X_Max,
+      2000000>=X_Max,!,
+      X_Unit=200000;
+
+    set_x_unit0(X_Max,X_Unit):-
+      2000000<X_Max,
+      5000000>=X_Max,!,
+      X_Unit=500000;
+
+    set_x_unit0(X_Max,X_Unit):-
+      5000000<X_Max,
+      10000000>=X_Max,!,
+      X_Unit=1000000;
+ 
+    set_x_unit0(X_Max,X_Unit):-
+      10000000<X_Max,
+      20000000>=X_Max,!,
+      X_Unit=2000000;
+
+    set_x_unit0(X_Max,X_Unit):-
+      20000000<X_Max,
+      50000000>=X_Max,!,
+      X_Unit=5000000;
+
+    set_x_unit0(X_Max,X_Unit):-
+      50000000<X_Max,
+      X_Unit=10000000;
+  
+
+
+   init_graph(GL,Num,Num,_):-!;
+   init_graph(GL,Count,Num,Win):-
+     vector_element(GL,Count,G),
+     :draw(G,Win),
+     init_graph(GL,Count+1,Num,Win);
+
+   total_x_max([],T,Total):-!,
+    ( T = 0,!,
+      Total = 1;
+      Total = T );
+   total_x_max([G|R],Width,T):-
+     :get_max_value(G,X_Max),
+     Width2 = Width + X_Max,
+     total_x_max(R,Width2,T);
+
+   draw_string(nil,X,Y,List,List,Win):-!;
+   draw_string(S,X,Y,List,List2,Win):-
+     type_check(S,S1),!,
+     Font = Win!font,
+     List = [{draw_string,{X,Y,S1,Font,set}}|List2];
+   
+   type_check(S,S1):-
+     string(S,_,_),!,
+     S1 = S;
+   type_check(S,S1):-
+     atom(S),!,
+     :get_atom_string(#symbolizer,S,S1);
+   type_check(S,S1):-
+     integer(S),!,
+     :get_number_string(#symbolizer,S,S1);
+
+    count([],Ans,Ans):- !;
+    count([H|T],C,Ans):- !,
+        count(T,C+1,Ans);
+
+   invisible_graph(GL,Num,Num):-!;
+   invisible_graph(GL,Count,Num):-
+      vector_element(GL,Count,G),
+      G!draw_flag:=invisible,
+      invisible_graph(GL,Count+1,Num);
+
+   set_attribute(Obj,[]):-!;
+   set_attribute(Obj,[num(Num)|R]):-!,
+     Obj!num := Num,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[space(X)|R]):-!,
+     Obj!x_space := X,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[start(X,Y)|R]):-!,
+     Obj!x_start := X,
+     Obj!y_start := Y,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[position(X,Y)|R]):-!,
+     Obj!x := X,
+     Obj!y := Y,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[area(W,H)|R]):-!,
+     Obj!w := W,
+     Obj!h := H,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[name(X,Y)|R]):-!,
+     Obj!x_name := X,
+     Obj!y_name := Y,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[height(H)|R]):-!,
+     Obj!height := H,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[min(W)|R]):-!,
+     Obj!w_min := W,
+     set_attribute(Obj,R);
+   set_attribute(Obj,[H|T]):-
+     set_attribute(Obj,T);
+ 
+   invisible_graph([]):-!;
+   invisible_graph([G|R]):-
+      G!draw_flag:=invisible,
+      invisible_graph(R);
+
+end.
+
+

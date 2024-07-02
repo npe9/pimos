@@ -1,0 +1,316 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% builtin
+%%
+:- module kl1cmp_guard.
+:- public make_builtin_node/13.
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 var:stream.
+make_builtin_node(Susp0, Instr, Args, Clause, Table0, ACK, Msg) -->
+        true |
+      {{builtin_node(&var, Success, [], Fail, [], 
+                 [intern_clause([Instr|Args],
+                                Clause, Table0, ACK)|Msg])}},
+      make_success_node(Lsusp1, [], Success),
+      make_fail_node(Susp0, Lsusp1, Fail).
+
+%%
+%% This node works for label generation only.
+%%
+
+%%
+%% success node
+%%
+make_success_node(Susp0, Susp, Msg) --> true |
+    {{kl1cmp_index:pipe(Susp0, Susp1, Lsusp),
+      merge(Lsusp0, Lsusp)}},
+    kl1cmp_index:make_node(Lsusp0, Stream),
+    {{success_node(&var, Susp1, Susp, Stream, [], Msg)}}.
+
+:- local_implicit
+                 var:stream,
+                 label:oldnew,
+                 str:oldnew.
+success_node([make_code(Code0-Code, Collect0,
+                        builtin(PosBlt), builtin(Blt))|Msg]) --> true |
+    &label <<= [get_label(Label)],
+    {{output_collect(PosBlt, _, Collect0, Collect)}}, 
+    Code0=[try_me_else(Label), Blt|Code1],
+    &str <<= [make_code(Code1-Code, Collect)],
+    success_node(Msg).
+success_node([make_code(Code0-Code, Collect, unify(PosX, PosY),
+                        unify(X,Y))|Msg]) --> true |
+    &label <<= [get_label(Label)],
+    Code0=[try_me_else(Label), unify(X,Y)|Code1],
+    &str <<= [make_code(Code1-Code,
+                        [collect_value(PosX), collect_value(PosY)|Collect])],
+%                        Collect)],
+    success_node(Msg).
+success_node([make_code(Code0-Code, Collect, _, put(X,Y))|Msg]) --> true |
+    {{dispatch_on_type(X, Y, Code0, Code1)}},
+    &str <<= [make_code(Code1-Code, Collect)],
+    success_node(Msg).
+otherwise.
+success_node([Msg|Cdr]) --> true |
+    &str <<= [Msg],
+    success_node(Cdr).
+success_node([]) --> true | true.
+
+output_collect(Blt0, Blt, Collect0, Collect) :- vector(Blt0, N) |
+    output_collect(N, Blt0, Blt, Collect0, Collect).
+otherwise.
+output_collect(Blt0, Blt, Collect0, Collect) :- true |
+    Blt0=Blt, Collect0=Collect.
+
+output_collect(N, Blt0, Blt, Collect0, Collect) :- N>1 |
+    N1 := N-1,
+    set_vector_element(Blt0, N1, Arg, Arg, Blt1),
+    output_collect(N1, Blt1, Blt, [collect_value(Arg)|Collect0], Collect).
+output_collect(1, Blt0, Blt, Collect0, Collect) :- true |
+    Blt0=Blt, Collect0=Collect.
+    
+
+dispatch_on_type(atom([]), Y, Code0, Code) :- true |
+    Code0=[put_nil(Y)|Code].
+dispatch_on_type(integer(Int), Y, Code0, Code) :- true |
+    Code0=[put_constant(Y, Int)|Code].
+dispatch_on_type(floating_point(Float), Y, Code0, Code) :- true |
+    Code0=[put_constant(Y, Float)|Code].
+dispatch_on_type(string(WStr), Y, Code0, Code) :- true |
+    kl1cmp_wrap:unwrap(WStr, Str),
+    Code0=[put_structured_constant(Y, '$SCNST'(Str))|Code].
+otherwise.
+dispatch_on_type(atom(Atom), Y, Code0, Code) :- true |
+    Code0=[put_atom(Y, Atom)|Code].
+
+
+
+%%
+%% fail node
+%%
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 var:stream.
+make_fail_node(Susp0, Susp, Msg) --> true |
+    {{kl1cmp_index:pipe(Susp0, Susp1, Lsusp),
+      merge(Lsusp0, Lsusp)}},
+    kl1cmp_index:make_node(Lsusp0, Stream),
+    {{fail_node(&var, Susp1, Susp, Stream, [], [], no, Msg)}}.
+
+:- local_implicit
+                 var:stream.
+
+fail_node(Susp0, Susp, Stream0, Stream, [], yes,
+              [make_code(Code0-Code, Collect)|Msg]) --> true |
+    &var <<= [new_label(Label)],
+    Code0=[label(Label)|Code1],
+    Stream0=[make_code(Code1-Code, Collect)|Stream1],
+    fail_node(Susp0, Susp, Stream1, Stream, label(Label), yes, Msg).
+fail_node(Susp0, Susp, Stream0, Stream, label(Label), yes,
+              [make_code(Code0-Code, Collect)|Msg]) --> true |
+    Code0=[label(Label)|Code1],
+    Stream0=[make_code(Code1-Code, Collect)|Stream1],
+    fail_node(Susp0, Susp, Stream1, Stream, label(Label), yes, Msg).
+fail_node(Susp0, Susp, Stream0, Stream, Label, no,
+          [make_code(Code0-Code, _)|Msg]) --> true |
+    Code0=Code,
+    fail_node(Susp0, Susp, Stream0, Stream, Label, no, Msg).
+fail_node(Susp0, [get_label(Label)|Susp],
+              Stream0, Stream, Lab, no, Msg) --> true |
+    Susp0=[get_label(Label)|Susp1],
+    fail_node(Susp1, Susp, Stream0, Stream, Lab, no, Msg).
+fail_node(Susp0, [get_label(Label)|Susp],
+              Stream0, Stream, [], yes, Msg) --> true |
+    &var <<= [new_label(Label)],
+    fail_node(Susp0, Susp, Stream0, Stream, label(Label), yes, Msg).
+fail_node(Susp0, [get_label(Label)|Susp],
+              Stream0, Stream, label(Lab), Flag, Msg) --> true |
+    Label=Lab,
+    fail_node(Susp0, Susp, Stream0, Stream, label(Lab), Flag, Msg).
+fail_node(Susp0, Susp, Stream0, Stream, Label, _,
+          [intern_clause(Args, Clause, Table, ACK)|Msg]) --> true |
+    Stream0=[intern_clause(Args, Clause, Table, ACK)|Stream1],
+    fail_node(Susp0, Susp, Stream1, Stream, Label, yes, Msg).
+%% `otherwise' can't be used
+%%otherwise.
+%%fail_node(Susp0, Susp, Stream0, Stream, Label, yes,
+%%              [Msg|Cdr]) --> true |
+%%    Stream0=[Msg|Stream1],
+%%    fail_node(Susp0, Susp, Stream1, Stream, Label, yes, Cdr).
+%%fail_node(Susp0, Susp, Stream0, Stream, Label, no,
+%%              [_|Cdr]) --> true |
+%%    fail_node(Susp0, Susp, Stream0, Stream, Label, no, Cdr).
+fail_node(Susp0, Susp, Stream0, Stream, Label, yes,
+              [end_mark|Cdr]) --> true |
+    Stream0=[end_mark|Stream1],
+    fail_node(Susp0, Susp, Stream1, Stream, Label, yes, Cdr).
+fail_node(Susp0, Susp, Stream0, Stream, Label, no,
+              [end_mark|Cdr]) --> true |
+    fail_node(Susp0, Susp, Stream0, Stream, Label, no, Cdr).
+fail_node(Susp0, Susp, Stream0, Stream, _, no, []) --> true |
+    Susp0=Susp, Stream0=Stream.
+fail_node(Susp0, Susp, Stream0, Stream, Label, yes, []) --> true |
+    Stream0=Stream,
+    label_generator(Susp0, Susp, Label).
+
+label_generator(Susp0, [get_label(Label)|Susp], label(LAB)) --> true |
+    Label=LAB,
+    label_generator(Susp0, Susp, label(LAB)).
+label_generator(Susp0, [get_label(Label)|Susp], []) --> true |
+    &var <<= [new_label(Label)],
+    label_generator(Susp0, Susp, label(Label)).
+label_generator(Susp0, [], _) --> true |
+    Susp0=[].
+
+:- local_implicit
+                 var:stream,
+                 success:oldnew,
+                 fail:oldnew.
+builtin_node([intern_clause([builtin(Blt0)|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    {{alloc_register(&var, Blt0, Blt, Table0, Table)}},
+    &success <<= [intern_clause(Args, Clause, Table, ACK)],
+    builtin_node(builtin(Blt0), builtin(Blt), Msg).
+builtin_node([intern_clause([unify(X0,Y0)|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    {{alloc_register_one_arg(&var, X0, X, Table0, Table1),
+      alloc_register_one_arg(&var, Y0, Y, Table1, Table),
+      &success <<= [intern_clause(Args, Clause, Table, ACK)]}},
+    builtin_node(unify(X0, Y0), unify(X, Y), Msg).
+builtin_node([intern_clause([put(Src,Dest0)|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    {{alloc_register_one_arg(&var, Dest0, Dest, Table0, Table)}},
+    &success <<= [intern_clause(Args, Clause, Table, ACK)],
+    builtin_node(put(Src,Dest0), put(Src,Dest), Msg).
+builtin_node([intern_clause([failed(builtin(Blt0))|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    {{alloc_register(&var, Blt0, Blt, Table0, Table)}},
+    &success <<= [intern_clause(Args, Clause, Table, ACK)],
+    builtin_node(builtin(Blt0), builtin(Blt), Msg).
+builtin_node([intern_clause([failed(put(Src,Dest0))|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    {{alloc_register_one_arg(&var, Dest0, Dest, Table0, Table)}},
+    &success <<= [intern_clause(Args, Clause, Table, ACK)],
+    builtin_node(put(Src,Dest0), put(Src,Dest), Msg).
+builtin_node([intern_clause([failed(unify(X0, Y0))|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    {{alloc_register_one_arg(&var, X0, X, Table0, Table1),
+      alloc_register_one_arg(&var, Y0, Y, Table1, Table)}},
+    &success <<= [intern_clause(Args, Clause, Table, ACK)],
+    builtin_node(unify(X0,Y0), unify(X,Y), Msg).
+otherwise.
+builtin_node([intern_clause([failed(Code)|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    &fail <<= [intern_clause([Code|Args], Clause, Table0, ACK)],
+    builtin_node(Msg).
+otherwise.
+builtin_node([Msg|Cdr]) --> true |
+    &success <<= [Msg],
+    &fail <<= [Msg],
+    builtin_node(Cdr).
+builtin_node([]) --> true | true.
+
+builtin_node(builtin(Blt0), BLT,
+             [intern_clause([builtin(Blt0)|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+        &success <<= [intern_clause(Args, Clause, Table0, ACK)],
+    builtin_node(builtin(Blt0), BLT, Msg).
+builtin_node(unify(X0,Y0), UNIFY,
+             [intern_clause([unify(X0, Y0)|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    &success <<= [intern_clause(Args, Clause, Table0, ACK)],
+    builtin_node(unify(X0, Y0), UNIFY, Msg).
+builtin_node(unify(X0, Y0), UNIFY,
+                [intern_clause([unify(Y0, X0)|Args],
+                                Clause, Table0, ACK)|Msg]) --> true |
+        &success <<= [intern_clause(Args, Clause, Table0, ACK)],
+    builtin_node(unify(X0, Y0), UNIFY, Msg).
+builtin_node(put(Src,Dest0), PUT,
+             [intern_clause([put(Src,Dest0)|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+        &success <<= [intern_clause(Args, Clause, Table0, ACK)],
+    builtin_node(put(Src,Dest0), PUT, Msg).
+builtin_node(unify(X0,Y0), UNIFY,
+             [intern_clause([failed(unify(X0, Y0))|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    &success <<= [intern_clause(Args, Clause, Table0, ACK)],
+    builtin_node(unify(X0, Y0), UNIFY, Msg).
+builtin_node(unify(X0,Y0), UNIFY,
+             [intern_clause([failed(unify(Y0, X0))|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+    &success <<= [intern_clause(Args, Clause, Table0, ACK)],
+    builtin_node(unify(X0, Y0), UNIFY, Msg).
+builtin_node(put(X0,Y0), PUT,
+             [intern_clause([failed(put(X0, Y0))|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+        &success <<= [intern_clause(Args, Clause, Table0, ACK)],
+    builtin_node(put(X0,Y0), PUT, Msg).
+builtin_node(builtin(Builtin), BLT,
+             [intern_clause([failed(builtin(Builtin))|Args],
+                            Clause, Table0, ACK)|Msg]) --> true |
+        &success <<= [intern_clause(Args, Clause, Table0, ACK)],
+    builtin_node(builtin(Builtin), BLT, Msg).
+builtin_node(Blt, BLT, [get_tree(Tree)|Msg]) --> true |
+    Tree=blt(Blt, Success, Fail),
+    &success <<= [get_tree(Success)],
+    &fail <<= [get_tree(Fail)],
+    builtin_node(Blt, BLT, Msg).
+builtin_node(Blt, BLT, [end_mark|Msg]) --> true |
+    &success <<= [end_mark],
+    &fail <<= [end_mark],
+    builtin_node(Blt, BLT, Msg).
+builtin_node(Blt, BLT , [make_code(Code0-Code, Collect)|Cdr]) --> true |
+    &success <<= [make_code(Code0-Code1, Collect, Blt, BLT)],
+    &fail <<= [make_code(Code1-Code, Collect)],
+    builtin_node(Blt, BLT, Cdr).
+otherwise.
+builtin_node(Blt, BLT, [intern_clause([failed(Other)|Args],
+                                      Clause, Table, ACK)|Msg]) --> true |
+    &fail <<= [intern_clause([failed(Other)|Args], Clause, Table, ACK)],
+    builtin_node(Blt, BLT, Msg).
+otherwise.
+builtin_node(Blt, BLT, [intern_clause([OtherMsg|Args],
+                            Clause, Table, ACK)|Msg]) --> true |
+    &fail <<= [intern_clause([failed(OtherMsg)|Args], Clause, Table, ACK)],
+    builtin_node(Blt, BLT, Msg).
+builtin_node(Blt, BLT, [intern_clause([], Clause, Table, ACK)|Msg]) --> true |
+    %  non-exclusive guard. This clause is assumed to commit when fails
+    %  on this node.
+    &fail <<= [intern_clause([], Clause, Table, ACK)],
+    builtin_node(Blt, BLT, Msg).
+builtin_node(_, _, []) --> true | true.
+
+:- local_implicit var:stream.
+
+alloc_register(Blt0, Blt, Table0, Table) --> vector(Blt0, N) |
+    alloc_register_arg(1, N, Blt0, Blt, Table0, Table).
+alloc_register(Blt0, Blt, Table0, Table) --> atom(Blt0) |
+    Blt0=Blt, Table0=Table.
+
+alloc_register_arg(A, N, Blt0, Blt, Tbl0, Tbl) --> A<N |
+    {{set_vector_element(Blt0, A, Arg0, Arg, Blt1)}},
+    alloc_register_one_arg(Arg0, Arg, Tbl0, Tbl1),
+    A1 := A+1,
+    alloc_register_arg(A1, N, Blt1, Blt, Tbl1, Tbl).
+alloc_register_arg(N, N, Blt0, Blt, Tbl0, Tbl) --> true |
+    Blt0=Blt, Tbl0=Tbl.
+
+alloc_register_one_arg(arg(N), Arg, Tbl0, Tbl) --> true |
+    Arg:=N-1,
+    Tbl0=Tbl.
+otherwise.
+alloc_register_one_arg(Arg0, Arg, Tbl0, Tbl) --> true |
+    {{kl1cmp_index:convert_if_variable(Arg0, Arg1, Tbl0, Tbl)}},
+    &var <<= [new_register(Arg1, Arg)].

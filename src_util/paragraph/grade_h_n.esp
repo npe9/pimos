@@ -1,0 +1,274 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class grade_h has
+  :create(Class,Obj,Attribute):-
+      :new(Class,Obj),
+      set_attribute(Attribute,Obj),
+      new_heap_vector(Array,Obj!number*2),
+      Obj!ge_position:=Array;
+
+  instance
+      attribute  x:=0,
+                 y:=0,
+                 x_size:=40,
+                 x_name,
+                 x_max,
+                 first_unit,
+                 y_size:=200,
+                 y_max,
+                 y_unit,
+                 y_name,
+                 unit_width,
+                 unit_height,
+                 title,
+                 number,
+                 ge_position,
+                 ge_position2,
+                 window,
+                 frame:=off,
+                 scale_max,
+                 ge,
+                 draw_flag,
+                 div_num:=10,
+                 set_max :=nil,
+                 from,     %%%% To draw from PE(Obj!from) in draw method
+                 end,
+                 drawing:=all; 
+
+  :set_position(Obj,X,Y):-!,
+    set_attribute([position(X,Y)],Obj);
+  
+  :get_max_value(Obj,Max):-!,
+      Max = Obj!x_max;
+
+  :draw(Obj,G_Win,GE):-
+      Obj!draw_flag\==invisible,!,
+      :init(Obj,G_Win,GE),
+      :draw(Obj);
+  :draw(Obj,G_Win,GE):-!;
+
+  :init(Obj,G_Win,GE):-
+      Obj!draw_flag=\=invisible,!,  
+      UnitX=Obj!x_size,
+      UnitY=Obj!y_size*Obj!y_unit/Obj!y_max,
+      (UnitX=0,!,
+       NewUnitX=1;
+       NewUnitX=UnitX),
+      Obj!unit_width:=NewUnitX,
+      (UnitY=0,!,
+       NewUnitY=1;
+       NewUnitY=UnitY),
+      Obj!unit_height:=NewUnitY,
+      W=NewUnitX,
+      H=NewUnitY*Obj!y_max/Obj!y_unit,
+      Obj!x_size:=W,
+      Obj!y_size:=H,
+      Win=G_Win!window,
+      Obj!window:=Win,
+      Obj!x=X,
+      Obj!y=Y,
+      G_Win!font=Font_7,
+      (Obj!frame = on,!,
+      (atom(Obj!x_name),!,
+       :get_atom_string(#symbolizer,Obj!x_name,X_String);
+       integer(Obj!x_name),
+       :get_number_string(#symbolizer,Obj!x_name,X_String)),
+      (atom(Obj!y_name),!,
+       :get_atom_string(#symbolizer,Obj!y_name,Y_String);
+       integer(Obj!y_name),
+       :get_number_string(#symbolizer,Obj!y_name,Y_String)),
+      List=[{draw_line,{X,Y+H,X,Y,1,solid,set}},
+            {draw_line,{X,Y,X+W,Y,1,solid,set}},
+            {draw_string,{X-7,Y+H-1,Y_String,Font_7,set}},
+            {draw_string,{X+W+2,Y-10,X_String,Font_7,set}}|RList1],
+      draw_y_unit_scale(Win,Obj,X,Y,Y+H,1,RList1,RList2);
+      List = RList2),
+%      draw_title(Obj,X,Y,W,Font_7,RList2),
+      RList2 = [],
+      Obj!ge:=GE,
+       :execute_graphics_command(Win,List);
+   :init(Obj,_,_):-!;
+
+   :set_all(Obj,List):-
+       set_all(List,Obj,0);
+
+%%%%%%% draw_method  
+   :draw(Obj):-  
+        Obj!draw_flag\==invisible,!,  
+        draw(Obj!y_unit,Obj!y_max,List,[],Obj);
+   :draw(Obj):-!;
+        
+
+  local
+      set_all([],_,_):-!;
+      set_all([{N,[{Name,Count}]}|R],Obj,C):-
+        set_vector_element(Obj!ge_position,C,Count),
+        set_ge_position0(Count,NH,Obj),
+        set_vector_element(Obj!ge_position,C+1,NH),
+        set_all(R,Obj,C+2);
+
+      draw_y_unit_scale(Win,Obj,X,Y,MaxSize,C,R,R):-
+        Y+Obj!unit_height>MaxSize,!;
+      draw_y_unit_scale(Win,Obj,X,Y,MaxSize,C,List,RList):-
+        UnitHeight=Obj!unit_height,
+        List=[{draw_line,
+              {X-1,Y+UnitHeight,X-3,Y+UnitHeight,1,solid,exclusive_or}}|R],
+        draw_y_unit_scale(Win,Obj,X,Y+UnitHeight,MaxSize,C+1,R,RList);
+
+%%%%15    New Draw Method    Draw from NODE(From) to NODE(End)
+
+      draw(Unit,Max,R,RList,Obj):-
+          Unit>Max,!,
+          R=RList;
+      draw(Unit,Max,List,RList,Obj):-!,
+          UnitHeight=Obj!unit_height,
+          PositionX=Obj!x,
+          PositionY=Obj!y+Unit*UnitHeight/Obj!y_unit-UnitHeight,
+          N=Unit/Obj!y_unit-1,
+         ( Obj!drawing = all,!,
+          draw_element_all(N,Obj!number,PositionX,PositionY,Obj,List,RL);
+          draw_element(Obj!from,Obj!end,PositionX,PositionY,Obj,List,RL)),
+          :execute_graphics_command(Obj!window,List);
+
+      draw_element_all(N,Num,_,_,_,DR,RList):-
+          N>=Num*2-1,!,
+          DR=RList;
+   
+      draw_element_all(N,Num,X,Y,Obj,List,RList):-
+          vector_element(Obj!ge_position,N+1,NH),
+          W=Obj!unit_width,
+          H=Obj!unit_height,
+          GEX=Obj!ge!x,
+          GEY=Obj!ge!y,
+          List=[{transfer,{GEX,GEY+NH*H,X,Y,W,H,copy}}|DR],
+          draw_element_all(N+2,Num,X,Y+H,Obj,DR,RList);
+
+      draw_element(N,End,_,_,_,DR,RList):-
+          N > End,!,   %%15  PE(From) ga PE(End) wo koetara owari
+          DR=RList;
+   
+      draw_element(N,End,X,Y,Obj,List,RList):-
+          vector_element(Obj!ge_position,2*N+1,NH), %%15
+          W=Obj!unit_width,
+          H=Obj!unit_height,
+          GEX=Obj!ge!x,
+          GEY=Obj!ge!y,
+          List=[{transfer,{GEX,GEY+NH*H,X,Y,W,H,copy}}|DR],
+          draw_element(N+1,End,X,Y+H,Obj,DR,RList);
+
+ 
+    set_ge_position0(Count,NH,Obj):-
+          Max=Obj!x_max,
+       (  Max < 10,!,
+          Max1 = 10;
+          Max1 = Max),
+          DNum = Obj!div_num,
+          set_ge_position1(Count,NH,Max1,DNum,0);
+
+       set_ge_position1(0,NH,10,10,0):-!,
+          NH=9;
+      set_ge_position1(1,NH,10,10,0):-!,
+          NH=8;
+      set_ge_position1(2,NH,10,10,0):-!,
+          NH=7;
+      set_ge_position1(3,NH,10,10,0):-!,
+          NH=6;
+      set_ge_position1(4,NH,10,10,0):-!,
+          NH=5;
+      set_ge_position1(5,NH,10,10,0):-!,
+          NH=4;
+      set_ge_position1(6,NH,10,10,0):-!,
+          NH=3;
+      set_ge_position1(7,NH,10,10,0):-!,
+          NH=2;
+      set_ge_position1(8,NH,10,10,0):-!,
+          NH=1;
+      set_ge_position1(Count,NH,10,10,0):-!,
+          Count>=9,!,
+          NH=0;
+   
+      set_ge_position1(Count,NH,Max,DNum,C):-
+          change_data(Count,Max,DNum,C,CountF,MaxF,DNumF,CF),
+          MaxF*(DNumF-1.0)/DNumF =< CountF,!,
+          NH=0;
+
+      set_ge_position1(Count,NH,Max,DNum,C):-
+          change_data(Count,Max,DNum,C,CountF,MaxF,DNumF,CF),
+        (  MaxF*(DNumF-CF-1.0)/DNumF =< CountF ,
+          CountF < MaxF*(DNumF-CF)/DNumF,!,
+          NH=C;
+          set_ge_position1(Count,NH,Max,DNum,C+1));
+    
+      set_attribute([],Obj):-!;
+      set_attribute([x(Name,Max)|R],Obj):-!,
+          Obj!x_name:=Name,
+        ( Obj!set_max = nil,!,          
+          Obj!x_max:=Max;
+          Obj!x_max:=Obj!set_max),
+          set_attribute(R,Obj);
+      set_attribute([set_max(Max)|R],Obj):-!,
+          Obj!set_max := Max,
+          set_attribute(R,Obj);
+      set_attribute([y(Name,Max)|R],Obj):-!,
+          Obj!y_name:=Name,
+          Obj!y_max:=Max,
+          Obj!y_unit:=1,
+          Obj!first_unit:=1,
+          Num=Obj!y_max/Obj!y_unit,
+          Obj!number:=Num,
+          set_attribute(R,Obj);
+      set_attribute([y(Name,Max,Unit)|R],Obj):-!,
+          Obj!y_name:=Name,
+          Obj!y_max:=Max,
+          Obj!y_unit:=Unit,
+          Obj!first_unit:=1,
+          Num=Obj!y_max/Obj!y_unit,
+          Obj!number:=Num,
+          set_attribute(R,Obj);
+      set_attribute([size(X,Y)|R],Obj):-!,
+          Obj!x_size:=X,
+          Obj!y_size:=Y,
+          set_attribute(R,Obj);
+      set_attribute([title(Title)|R],Obj):-!,
+          Obj!title:=Title,
+          set_attribute(R,Obj);
+      set_attribute([position(X,Y)|R],Obj):-!,
+          Obj!x:=X,
+          Obj!y:=Y,
+          set_attribute(R,Obj);
+      set_attribute([frame(Vis)|R],Obj):-!,
+          Obj!frame:=Vis,
+          set_attribute(R,Obj);
+      set_attribute([scale_max(Max)|R],Obj):-!,
+          Obj!scale_max:=Max,
+          set_attribute(R,Obj);
+      set_attribute([div_num(DNum)|R],Obj):-!,
+          Obj!div_num:=DNum,
+          set_attribute(R,Obj);
+      set_attribute([H|R],Obj):-
+          set_attribute(R,Obj); 
+
+     draw_title(Obj,X,Y,W,Font_7,RList2):-
+          W < 21,!,
+         :get_number(#symbolizer,Tit,Obj!title),
+         ( Tit mod 5 = 0,!,
+           string(Obj!title,L,B),
+           RList2=[{draw_string,{X+W/2-L*7/2,Y-15,Obj!title,Font_7,set}}];
+           RList2=[]);
+     draw_title(Obj,X,Y,W,Font_7,RList2):-
+          TN=W/10,
+         (string(Obj!title,L,B),!,
+          (TN>=L,!,
+           TN1=L;
+           TN1=TN),
+          substring(Obj!title,L-TN1,TN1,Title),
+          RList2=[{draw_string,{X+W/2-TN1*7/2,Y-15,Title,Font_7,set}}];
+          RList2=[]);
+    
+   change_data(Count,Max,DNum,C,CountF,MaxF,DNumF,CF):-
+          integer_to_floating_point(Count,CountF),
+          integer_to_floating_point(Max,MaxF),
+          integer_to_floating_point(DNum,DNumF),
+          integer_to_floating_point(C,CF);
+
+end.

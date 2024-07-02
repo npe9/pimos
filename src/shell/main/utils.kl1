@@ -1,0 +1,467 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi329::>sys>user>yashiro>PIMOS>v15b>shell>main>utils.kl1.2, 31-Oct-89 21:12:36, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a SHELL 'utils' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module shellUtils.
+:- public suspender/2, seqNoGen/1, member/3, terminate/0, valve/3,
+    detecter/3, displayer/1, append/3, finiteQueue/1, reverse/2,
+    expand_pathname/2, expand_pathname/4, expand_pathname/6,
+    expand_pathname/3, expand_pathname/5, expand_pathname/7,
+    append_extention/3, append_extention/5, insert_delimiter/2,
+    get_pathname/2, get_pathname/3,
+    divide_dir_and_file/3, divide_dir_and_file/4, divide_file_and_extnt/3,
+    convert_string_to_list/2, convert_list_to_string/2,
+    posCheck/2, sizeCheck/2, error_raise/2,
+    file_type/1, file_type/2, file_type/3.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  This is a Dummy Goal for Exception-handling.  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+suspender(A, B) :- wait(A) | true.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  This process is a sequence number generator.  %%%
+%%%                                                %%%
+%%%     =====  Message protocols  =====            %%%
+%%%             getNo(^No)                         %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+seqNoGen(S) :- true | seqNoGen(S, 0).
+
+seqNoGen([], _) :- true | true.
+seqNoGen([getNo(NewNo) | Remain], OldNo) :- true |
+        add(OldNo, 1, NewNo),
+        seqNoGen(Remain, NewNo).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  This is a member checking process.  %%%
+%%%                                      %%%
+%%%     [ex.]  member(a, [b, c], Result) %%%
+%%%             Result = true / false    %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+member(Item, [Checker | List], Result) :- Item \= Checker |
+        member(Item, List, Result).
+member(_, [], Result) :- true | Result = false.
+otherwise.
+member(_, _, Result) :- true | Result = true.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Dummy Invoke Goal  (for NewGoal)  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+terminate :- true | true.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is Valve Process  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+valve(In, Out, Shut) :- wait(Shut), Shut = shut | Out = In.
+valve(In, Out, Shut) :- wait(Shut), Shut \= shut | Out = [].
+valve([], Out, Shut) :- true | Out = [].
+%otherwise.
+valve([Mes | In], Out, Shut) :- true |
+    Out = [Mes | NewOut], valve(In, NewOut, Shut).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Stream closed detecter  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+detecter([], Out, Detect) :- true | Out = [], Detect = end.
+otherwise.
+detecter([Mes | In], Out, Detect) :- true |
+        Out = [Mes | NewOut], detecter(In, NewOut, Detect).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Dummy Invoke Goal with Information Raise.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+displayer(Info) :- true | shoen:raise(pimos_tag#tos, Info, _).
+
+%%%%%%%%%%%%%%%%%%%%%%
+% append(+X, +Y, -Z) %
+%%%%%%%%%%%%%%%%%%%%%%
+append([A | X1], Y, Z) :- true | Z = [A | Z1], append(X1, Y, Z1).
+append([], Y, Z) :- true | Z = Y.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Finited queue  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+finiteQueue(S) :- true | queue(S, SS, 1, 0, 0, no) , pool:keyed_sorted_set(SS).
+
+%% queue(StreamFromUser, StreamToPool, From, Counter, Length, PutBackBuffer) %%
+
+queue([], Out, _, _, _, _) :- true | Out = [].
+%% special messages
+
+queue([putBack | In], Out, From, C, L, PB) :- true |
+    (From =< 1 -> NFrom = From, NNC = NC, NPB = PB,
+        Out = [get(Key, _) | NOut] ;
+     From > 1, PB = no -> NFrom = From, NNC = NC, NPB = PB,
+        Out = [get(Key, _) | NOut] ;
+     From > 1, PB \= no -> NFrom := From - 1, NNC = C, NPB = no,
+            Out = [put(NFrom, PB, _), get(Key, _) | NOut] ),
+    NC := C - 1, Key := From + NC,
+    queue(In, NOut, NFrom, NNC, L, NPB).
+queue([getNext(Next) | In], Out, From, C, L, PB) :- true |
+        add(From, C, Next), queue(In, Out, From, C, L, PB).
+queue([getStart(Start) | In], Out, From, C, L, PB) :- true |
+        Start = From, queue(In, Out, From, C, L, PB).
+queue([getSize(Size) | In], Out, From, C, L, PB) :- true |
+        Size = L, queue(In, Out, From, C, L, PB).
+queue([getCount(Count) | In], Out, From, C, L, PB) :- true |
+        Count = C, queue(In, Out, From, C, L, PB).
+queue([changeSize(NL) | In], Out, From, C, L, PB) :- true |
+    (integer(L), integer(NL), NL >= 0, NL >= C ->
+        NOut = Out, NFrom = From, NC = C, NPB = PB ;
+     integer(L), integer(NL), NL >= 0, NL < C ->
+        NC = NL, NPB = no, RS := C - NL,
+        removeData(Out, NOut, From, NFrom, RS) ;
+     L = infinite, integer(NL), NL >= 0, NL < C ->
+        NC = NL, NPB = no, RS := C - NL,
+        removeData(Out, NOut, From, NFrom, RS) ;
+     L = infinite, integer(NL), NL >= 0, NL >= C ->
+        NOut = Out, NFrom = From, NC = C, NPB = PB ;
+     NL = infinite ->
+    NOut = Out, NFrom = From, NC = C, NPB = PB ),
+    queue(In, NOut, NFrom, NC, NL, NPB).
+%% normal messages
+
+queue([put(Data) | In], Out, From, C, L, _) :- integer(L), C < L |
+    add(From, C, Pos), add(C, 1, NC),
+    Out = [put(Pos, Data, _) | NOut],
+    queue(In, NOut, From, NC, L, no).
+queue([put(Data) | In], Out, From, C, L, _) :- integer(L), C = L |
+    add(From, C, Pos), add(From, 1, NFrom),
+    Out = [put(Pos, Data, _), get(From, PB) | NOut],
+    queue(In, NOut, NFrom, C, L, PB).
+queue([put(Data) | In], Out, From, C, infinite, _) :- true |
+    add(From, C, Pos), add(C, 1, NC),
+    Out = [put(Pos, Data, _) | NOut],
+    queue(In, NOut, From, NC, infinite, no).
+
+%    queue(In, NOut, NFrom, NC, NL, NPB).
+
+queue([get(Pos, Line) | In], Out, From, C, L, PB) :-
+    integer(Pos), Pos >= From, N := From + C, Pos < N |
+    Out = [put(Pos, Line, Data) | NOut],
+    getString(Data, Line), queue(In, NOut, From, C, L, PB).
+queue([get_all(Data) | In], Out, From, C, L, PB) :- true |
+    Out = [get_all(All) | Out1], copyData(Out1, NOut, All, Data),
+    queue(In, NOut, From, C, L, PB).
+otherwise.
+queue([get(Pos, Data) | In], Out, From, C, L, PB) :- true |
+    Data = "", queue(In, Out, From, C, L, PB).
+otherwise.
+queue([_ | In], Out, From, C, L, PB) :- true | queue(In, Out, From, C, L, PB).
+
+copyData(S, SS, [], OutData) :- true | OutData = [], S = SS.
+copyData(S, SS, [{Key, Value} | InData], OutData) :- true |
+        S = [put(Key, Value, _) | NS],
+        OutData = [{Key, Value} | NOutData],
+        copyData(NS, SS, InData, NOutData).
+
+removeData(S, SS, From, NFrom, C) :- C = 0 | From = NFrom, S = SS.
+otherwise.
+removeData(S, SS, From, NFrom, C) :- true | NC := C - 1, From1 := From + 1,
+        S = [get(From, _) | NS], removeData(NS, SS, From1, NFrom, NC).
+
+getString({}, String) :- true | String = "" .
+otherwise.
+getString({Value}, String) :- true | String = Value.
+%%%%%
+reverse(X,Y) :- reverse(X,[],Y).
+
+reverse([],Y,Z) :- true | Z = Y.
+reverse([X|NX],Y,Z) :- true | reverse(NX,[X|Y],Z).
+%%%%%
+expand_pathname(Vct, Str) :- true |
+    expand_pathname(Vct, Str, {simpos, ">", #">", ('>')}).
+expand_pathname(Vct, Str, DLM) :- true |
+    shoen:raise(pimos_tag#task, general_request,
+        [getenv(task:directory, CWD), getenv(task:home, HOME)]),
+    atom_table:cache_table(Atom),
+    absolute_or_relative(Vct,Str,Atom,NAtom,CWD,HOME,DLM), NAtom = [].
+
+expand_pathname(Vct, Str, Atom, NAtom) :- true |
+    expand_pathname(Vct, Str, Atom, NAtom, {simpos, ">", #">", ('>')}).
+expand_pathname(Vct, Str, Atom, NAtom, DLM) :- true |
+    shoen:raise(pimos_tag#task, general_request,
+        [getenv(task:directory, CWD), getenv(task:home, HOME)]),
+    absolute_or_relative(Vct, Str, Atom, NAtom, CWD, HOME, DLM).
+
+expand_pathname(Vct,Str,Atom,NAtom,CWD,HOME) :- true |
+    expand_pathname(Vct,Str,Atom,NAtom,CWD,HOME,{simpos,">",#">",('>')}).
+expand_pathname(Vct, Str, Atom, NAtom, CWD, HOME,DLM) :- true |
+    absolute_or_relative(Vct, Str, Atom, NAtom, CWD, HOME, DLM).
+
+%%% ABSOLUTE %%%
+absolute_or_relative(DATA,Rest,A,NA,_,_,DLM) :-
+        vector_element(DLM,3,D_atom), DATA=D_atom |
+    set_vector_element(DLM,1,D_str,D_str,_),
+    Rest = D_str, NA=A.
+%absolute_or_relative(('/'),Rest,A,NA,_,_) :- true |
+%    Rest = string#">", NA=A.
+absolute_or_relative({FIRST, Vct}, Rest, A, NA, CWD, HOME, DLM) :-
+        vector_element(DLM,3,D_atom), FIRST = D_atom |
+    set_vector_element(DLM,1,D_str,D_str,_),
+    expand_pathname(Vct,string#"",Rest,A,NA,CWD,HOME,D_str,D_atom).
+%absolute_or_relative({('/'), Vct}, Rest, A, NA, CWD, HOME) :- true |
+%    expand_pathname(Vct, string#"", Rest, A, NA, CWD, HOME).
+otherwise.
+%%% RELATIVE %%%
+absolute_or_relative(Vct, Rest, A, NA, CWD, HOME, DLM) :- true |
+    set_vector_element(DLM,1,D_str,D_str,DLM1),
+    set_vector_element(DLM1,3,D_atom,D_atom,_),
+    expandEnv(CWD, NCWD, string#"", STR),
+    expand_pathname(Vct, STR, Rest, A, NA, NCWD, HOME, D_str, D_atom).
+
+expandEnv(normal(DIR), NDIR, _, NStr) :- string(DIR,_,_) |
+    NStr = DIR, NDIR = normal(DIR).
+otherwise.
+expandEnv(DIR, NDIR, Str, NStr) :- true | NStr = Str, NDIR = DIR.
+    
+expand_pathname({Delim,DIR,Rem},Str,Rest,A,NA,CWD,HOME,D_str,D_atom) :-
+        atom(DIR), Delim = D_atom |
+    ( DIR = '~' -> NA0 = A, expandEnv(HOME, NHOME, Str, NStr) ;
+    otherwise ;
+      true -> NHOME = HOME, A = [get_atom_name(DIR, normal(StrDIR)) | NA0],
+        builtin#append_string([Str, D_str, StrDIR], NStr) ),
+    expand_pathname(Rem, NStr, Rest, NA0, NA, CWD, NHOME, D_str, D_atom).
+%expand_pathname({('/'), DIR, Rem}, Str, Rest, A, NA, CWD, HOME) :- atom(DIR) |
+%    ( DIR = '~' -> NA0 = A, expandEnv(HOME, NHOME, Str, NStr) ;
+%    otherwise ;
+%      true -> NHOME = HOME, A = [get_atom_name(DIR, normal(StrDIR)) | NA0],
+%        builtin#append_string([Str, string#">", StrDIR], NStr) ),
+%    expand_pathname(Rem, NStr, Rest, NA0, NA, CWD, NHOME).
+expand_pathname(DIR, Str, Rest, A, NA, _, HOME, D_str, D_atom) :- atom(DIR) |
+    ( DIR = '~' -> NA = A, expandEnv(HOME, _, Str, Rest) ;
+    otherwise ;
+      true -> A = [get_atom_name(DIR, normal(StrDIR)) | NA],
+        builtin#append_string([Str, D_str, StrDIR], Rest) ).
+otherwise.
+expand_pathname(_, Str, Rest, A, NA, _, _, _, _) :- true | Rest = Str, NA = A.
+%%%%%
+append_extention(Path, Extnt, NFile) :- true |
+    append_extention(Path, Extnt, NFile, ">", #">").
+
+append_extention(Path, Extnt, NFile, D_str, D_char) :- 
+        string(Path,L1,_), string(Extnt,L2,_) |
+    divide_dir_and_file(Path, Dir, F0, D_char),
+    divide_file_and_extnt(F0, F1, F2),
+    appendDirectory(Dir, F1, F3, D_str),
+    appendExtention(F3, F2, Extnt, NFile).
+
+%%%%%
+appendDirectory(Dir, F1, F3, D_str) :- string(D_str,_,_) |
+    (Dir = string#"" -> F3 = F1 ;
+    otherwise;
+     true -> builtin#append_string([Dir, D_str, F1], F3) ).
+%%%%%
+appendExtention(F1, F2, Extnt, NFile) :- true |
+    (F2 = string#"" -> builtin#append_string([F1, string#".", Extnt], NFile) ;
+    otherwise;
+     true -> builtin#append_string([F1, string#".", F2], NFile) ).
+%%%%%
+divide_dir_and_file(In, Dir, File) :- true |
+    divide_dir_and_file(In, Dir, File, #">").
+
+divide_dir_and_file(In, Dir, File, D_char) :- string(In,L,_), L1 := L - 1 |
+    searchBackward(D_char, In, L1, L1, Dir, File).
+%%%%%
+divide_file_and_extnt(In, File, Extnt) :- string(In,L,_) |
+    searchForward(#".", In, 0, L, File, Extnt).
+%%%%%  searchForward(#".", "STRING", 0, L, X, Y)
+searchForward(Char, In, CP, L, File, Extnt) :- CP = L |         %% ZZZ %%
+        File = In, Extnt = string#"".
+searchForward(Char, In, CP, L, File, Extnt) :-                  %% .ZZZ %%
+        CP = 0 ,string_element(In, CP, Elmnt), Elmnt = Char |
+     File = string#"", builtin#substring(In, 1, ~(L - 1), Extnt, _).
+searchForward(Char, In, CP, L, File, Extnt) :-                  %% ZZZ. %%
+        L1 := L - 1, CP = L1, string_element(In, CP, Elmnt), Elmnt = Char |
+    Extnt = string#"", builtin#substring(In, 0, L1, File, _).
+otherwise.
+searchForward(Char, In, CP, L, File, Extnt) :- true |
+    ( string_element(In, CP, Elmnt), Elmnt = Char -> CP1 := CP + 1,
+        builtin#substring(In, 0, CP, File, NIn),
+        builtin#substring(NIn, CP1, ~(L - CP1), Extnt, _) ;
+    otherwise ;
+      true ->  searchForward(Char, In, ~(CP + 1), L, File, Extnt) ).
+%%%%%  searchBackward(#">", "STRING", L-1, L-1, X, Y)
+searchBackward(Char, In, CP, L, File, Extnt) :- CP = 0 |
+    ( string_element(In, CP, Elmnt), Elmnt = Char ->        %% >ZZZ %%
+         File = string#"", builtin#substring(In, 1, L, Extnt, _) ;
+      string_element(In, CP, Elmnt), Elmnt \= Char ->       %% ZZZ %%
+         File = string#"", Extnt = In).
+searchBackward(Char, In, CP, L, File, Extnt) :-             %% ZZZ> %%
+        CP = L, string_element(In, CP, Elmnt), Elmnt = Char |
+    Extnt = string#"", builtin#substring(In, 0, L, File, _).
+otherwise.
+searchBackward(Char, In, CP, L, File, Extnt) :- true |
+    ( string_element(In, CP, Elmnt), Elmnt = Char ->
+        builtin#substring(In, 0, CP, File, NIn),
+        builtin#substring(NIn, ~(CP + 1), ~(L - CP), Extnt, _) ;
+    otherwise ;
+      true ->  searchBackward(Char, In, ~(CP - 1), L, File, Extnt) ).
+%%%%%
+get_pathname(Type, In, Out) :- true |
+    ( Type = simpos -> get_simpos_pathname(In, Out) ;
+     otherwise;
+      true -> get_unix_pathname(In, Out) ).
+
+get_pathname(In, Out) :- true | get_simpos_pathname(In, Out).
+
+get_unix_pathname(In, Out) :- string(In,L,_) | L1 := L - 1,
+    searchColon(In, 0, L1, Out).
+
+get_simpos_pathname(In, Out) :- string(In,L,_) | L1 := L - 1,
+    searchColonColon(In, 0, L1, Out).
+
+searchColon(In, CP, L, Out) :- CP >= L | Out = In.
+searchColon(In, CP, L, Out) :- CP < L | NCP := CP + 1,
+    ( string_element(In, CP, Elmnt), Elmnt = #":" -> 
+%%      string_element(In, NCP, Elmnt2), Elmnt2 = #":" ->
+        Pos = NCP,
+        builtin#substring(In, Pos, ~(L - Pos + 1), Out, _) ;
+    otherwise ;
+      true -> searchColon(In, NCP, L, Out) ).
+
+searchColonColon(In, CP, L, Out) :- CP >= L | Out = In.
+searchColonColon(In, CP, L, Out) :- CP < L | NCP := CP + 1,
+    ( string_element(In, CP, Elmnt1), Elmnt1 = #":",
+      string_element(In, NCP, Elmnt2), Elmnt2 = #":" ->
+        Pos := NCP + 1,
+        builtin#substring(In, Pos, ~(L - Pos + 1), Out, _) ;
+    otherwise ;
+      true -> searchColonColon(In, NCP, L, Out) ).
+
+%%%%%
+convert_string_to_list(String, List) :- string(String, Size, _) |
+    NSize := Size - 1,
+    convert_string_to_list(String, NSize, [], List).
+
+convert_string_to_list(_, Pos, SubList, List) :- Pos < 0 |
+    List = SubList.
+convert_string_to_list(String, Pos, SubList, List) :- Pos >= 0 |
+    NPos := Pos - 1, string_element(String, Pos, Elmnt, NString),
+    convert_string_to_list(NString, NPos, [Elmnt | SubList], List).
+%%%%%
+convert_list_to_string(List, String) :- true |
+    list_length(List, NList, Length),
+    make_new_string(string#"", NString, Length),
+    convert_list_to_string(NList, NString, String).
+
+list_length(List, NList, Length) :- true |
+    list_length(List, NList, 0, Length).
+
+list_length([], NList, Cnt, Length) :- true |
+    NList = [], Length = Cnt.
+list_length([Elmnt | Rem], NList, Cnt, Length) :- true |
+    NCnt := Cnt + 1, NList = [Elmnt | NNList],
+    list_length(Rem, NNList, NCnt, Length).
+
+make_new_string(Example, NString, Length) :- string(Example, _, ElmntSize) |
+    new_string(NString, Length, ElmntSize).
+
+convert_list_to_string(List, OldString, NewString) :- true |
+    convert_list_to_string(List, 0, OldString, NewString).
+
+convert_list_to_string([], _, OString, NString) :- true | NString = OString.
+convert_list_to_string([Elmnt | List], Pos, OldString, NewString) :- true |
+    set_string_element(OldString, Pos, Elmnt, TmpString),
+    NPos := Pos + 1,
+    convert_list_to_string(List, NPos, TmpString, NewString).
+%%%%%
+insert_delimiter(In, Out) :- string(In,_,_) |
+    convert_string_to_list(In, InList),
+    insertSpace(string#"", InList, OutList),
+    convert_list_to_string(OutList, Out).
+
+insertSpace(_, [], OutList) :- true | OutList = [].
+insertSpace(Bef, [In | InList], OutList) :- In = #">" |
+    ( Bef = #"." -> OutList = [ #" ", #">" | NOutList] ;
+      Bef = #"~" -> OutList = [ #" ", #">" | NOutList] ;
+    otherwise ;
+      true -> OutList = [#">" | NOutList] ),
+    insertSpace(In, InList, NOutList).
+insertSpace(Bef, [In | InList], OutList) :- In = #"/" |
+    ( Bef = #"." -> OutList = [ #" ", #"/" | NOutList] ;
+      Bef = #"~" -> OutList = [ #" ", #"/" | NOutList] ;
+    otherwise ;
+      true -> OutList = [#"/" | NOutList] ),
+    insertSpace(In, InList, NOutList).
+insertSpace(Bef, [In | InList], OutList) :- In = #"." |
+    ( Bef = #">" -> OutList = [ #" ", #"." | NOutList] ;
+      Bef = #"/" -> OutList = [ #" ", #"." | NOutList] ;
+    otherwise ;
+      true -> OutList = [#"." | NOutList] ),
+    insertSpace(In, InList, NOutList).
+insertSpace(Bef, [In | InList], OutList) :- In = #"~" |
+    ( Bef = #">" -> OutList = [ #" ", #"~" | NOutList] ;
+      Bef = #"/" -> OutList = [ #" ", #"~" | NOutList] ;
+    otherwise ;
+      true -> OutList = [#"~" | NOutList] ),
+    insertSpace(In, InList, NOutList).
+otherwise.
+insertSpace(Bef, [In | InList], OutList) :- true |
+    OutList = [In | NOutList],
+    insertSpace(In, InList, NOutList).
+
+%%%%%  Check window parameter  %%%%%
+posCheck(at(X,Y), Pos) :- integer(X),integer(Y),X>=0,Y>=0 | Pos = at(X,Y).
+otherwise.
+posCheck(_, Pos) :- true | Pos = mouse.
+
+sizeCheck(char(X,Y),Size) :- integer(X),integer(Y),X>=0,Y>0 | Size=char(X,Y).
+otherwise.
+sizeCheck(_, Size) :- true | Size = mouse.
+
+error_raise(Data, FString) :- true |
+    Type = illegal_message_detected_in_shell,
+    variable:wrap(Data, {_, WData}, 100, 100),
+    shoen:raise(pimos_tag#error, '$PIMOS$'(Type, FString), WData).
+
+%%%%%  Examine type of the FEP-file  %%%%%
+% DLM = { Type, D_string, D_char, D_atom }
+%  Type     = simpos | unix ( It indicates the delimiter "::" | ":" )
+%  D_string = ">"  | "/"
+%  D_char   = #">" | #"/"
+%  D_atom   = '>'  | '/'
+
+file_type(DLM) :- true | 
+    shoen:raise(pimos_tag#task,general_request,GR), file_type(DLM,GR,[]).
+
+file_type(DLM,GR) :- true | file_type(DLM,GR,[]).
+
+file_type(DLM,GR,NGR) :- true |
+%    GR=NGR, DLM = {simpos, ">", #">", ('>')}. % Dummy
+%    GR=NGR,  DLM = {unix, "/", #"/", ('/')}. % Dummy
+
+    GR = [fep_attributes(AT)|NGR],
+    DLM = { Type, D_string, D_char, D_atom },
+    check_attribute(AT, Type, D_string, D_char, D_atom).
+
+check_attribute(normal(_,_,_,_,D,_,_),Type,D_string,D_char,D_atom) :- true |
+    ( D=">" -> T=simpos ;
+      D="/" -> T=unix ;
+     otherwise ;
+      true ->  T=simpos ),
+    atom_table:intern(D, Atom),
+    check_atom(Atom,T,D,Type,D_string,D_char,D_atom).
+otherwise.
+check_attribute(_,Type,D_string,D_char,D_atom) :- true |
+    Type = simpos, D_string = ">", D_char = #">", D_atom = ('>') .
+
+check_atom(normal(Atom),T,D,Type,D_string,D_char,D_atom) :- true |
+    Type=T, string_element(D,0,D_char,D_string), D_atom=Atom.
+otherwise.
+check_atom(_,_,_,Type,D_string,D_char,D_atom) :- true |
+    Type = simpos, D_string = ">", D_char = #">", D_atom = ('>') .
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of SHELL 'utils' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

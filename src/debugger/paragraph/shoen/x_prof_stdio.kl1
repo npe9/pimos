@@ -1,0 +1,197 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module x_profile_stdio.
+:- public go/2.
+
+    go(InTerm,File):- true |
+        buffer:output_filter(OutFile,File),
+        OutFile=[print_length(1000),
+                 print_string_length(10000),
+                 print_atom_length(1000)|OutFile1],
+        buffer:character_pool(In),
+        In=[putc(9),getb(1,Tab),nl,getb(1,Nl)],
+        out(InTerm,Tab,Nl,OutFile1)@relative_priority(-100).
+
+
+    out(goal(Int,ExecTime,PeNum,0,Max,What,Ph),Tab,Nl,File):- true |
+        remove_blank(Int,NewInt),
+% 9 --> tab code
+        File=[putb("Type"),putc(9),putb("profile"),nl,putb("Goal"),
+              putc(9),puttq(NewInt),nl,putb("Execution_time"),
+              putc(9),putt(ExecTime),nl,putb("Nodes"),putc(9),
+              putt(PeNum),nl,putb("Cycles"),putc(9),putt(Max),
+              nl,nl,putb("Name"),putc(9),putb("Id"),putc(9),
+              putb("Reductions"),putc(9),putb("Suspensions"),
+              nl,flush(S1)|OutFile],
+        write_sync(S1,npe,What,Tab,Nl,OutFile,OutFile1),
+        OutFile1=[nl,putb(string#"Cycles"),putc(9),
+              putb("Node"),putc(9),putb("Id"),putc(9),
+              putb("Reductions"),putc(9),putb("Suspensions"),
+              nl,flush(S2)|OutFile2],
+        write_sync(S2,npe,Ph,Tab,Nl,OutFile2,OutFile3),
+        OutFile3=[flush(_)].
+
+    out(msg(Int,ExecTime,PeNum,0,Max,What,Ph),Tab,Nl,File):- true |
+        remove_blank(Int,NewInt),
+        File=[putb(string#"Type"),putc(9),
+              putb(string#"profile_msg"),nl,
+              putb(string#"Goal"),putc(9),puttq(NewInt),nl,
+              putb(string#"Execution_time"),putc(9),
+              puttq(ExecTime),nl,putb(string#"Nodes"),putc(9),
+              putt(PeNum),nl,putb(string#"Cycles"),putc(9),
+              putt(Max),nl,nl,putb(string#"Name"),putc(9),
+              putb(string#"Id"),putc(9),
+              putb(string#"Receive"),putc(9),
+              putb(string#"Send"),nl,flush(S1)|OutFile],
+        write_sync(S1,npe,What,Tab,Nl,OutFile,OutFile1),
+        OutFile1=[nl,putb(string#"Cycles"),putc(9),
+              putb(string#"Node"),putc(9),
+              putb(string#"Id"),putc(9),
+              putb(string#"Receive"),putc(9),
+              putb(string#"Send"),nl,flush(S2)|OutFile2],
+        write_sync(S2,npe,Ph,Tab,Nl,OutFile2,OutFile3),
+        OutFile3=[flush(_)].
+
+    out(pe(Int,ExecTime,PeNum,0,Max,What,Ph),Tab,Nl,File):- true |
+        remove_blank(Int,NewInt),
+        File=[putb(string#"Type"),putc(9),
+              putb(string#"profile_node"),nl,
+              putb(string#"Goal"),putc(9),puttq(NewInt),nl,
+              putb(string#"Execution_time"),putc(9),
+              puttq(ExecTime),nl,putb(string#"Nodes"),putc(9),
+              putt(PeNum),nl,putb(string#"Cycles"),putc(9),
+              putt(Max),nl,nl,putb(string#"Name"),putc(9),
+              putb(string#"Id"),putc(9),
+              putb(string#"Average"),nl,flush(S1)|OutFile],
+        write_sync(S1,pe,What,Tab,Nl,OutFile,OutFile1),
+        OutFile1=[nl,putb(string#"Cycles"),putc(9),
+              putb(string#"Node"),putc(9),
+              putb(string#"Id"),putc(9),
+              putb(string#"Average"),nl,flush(S2)|OutFile2],
+        write_sync(S2,pe,Ph,Tab,Nl,OutFile2,OutFile3),
+        OutFile3=[flush(_)].
+
+    write_sync(Status,Type,Data,Tab,Nl,File,OutFile):- wait(Status) |
+        write(Type,Data,Tab,Nl,File,OutFile).
+
+    write(Type,[],_,_,File,OutFile):- true | File=OutFile.
+
+%% npe --> profile, profile_msg %%
+%% Pack::Mod::Pred/Arity Red Susp NameId
+    write(npe,[{Pack,Mod,Pred,Arity,Red,Susp,NameId}|Rest],Tab,Nl,File,OutFile1):- true |
+        File=[puttq(Pack),putb(string#"::"),puttq(Mod),
+              putb(string#":"),puttq(Pred),putb(string#"/"),
+              puttq(Arity),putc(9),putt(NameId),
+              putc(9),putt(Red),putc(9),putt(Susp),nl|OutFile],
+        write(npe,Rest,Tab,Nl,OutFile,OutFile1).
+
+%% Pack::Mod::Pred Red Susp NameId
+    write(npe,[{Pack,Mod,Pred,Red,Susp,NameId}|Rest],Tab,Nl,File,OutFile1):- true |
+        File=[puttq(Pack),putb(string#"::"),puttq(Mod),
+              putb(string#":"),puttq(Pred),
+              putc(9),putt(NameId),
+              putc(9),putt(Red),putc(9),putt(Susp),nl|OutFile],
+        write(npe,Rest,Tab,Nl,OutFile,OutFile1).
+
+%% BltName Red Susp NameId
+    write(npe,[{BltName,Red,Susp,NameId}|Rest],Tab,Nl,File,OutFile1):- true |
+        File=[puttq(BltName),putc(9),putt(NameId),
+              putc(9),putt(Red),putc(9),putt(Susp),nl|OutFile],
+        write(npe,Rest,Tab,Nl,OutFile,OutFile1).
+
+%% pe --> profile_node %%
+%% BltName Ave _ NameId
+    write(pe,[{BltName,Ave,_,NameId}|Rest],Tab,Nl,File,OutFile1):- true |
+        File=[puttq(BltName),putc(9),putt(NameId),
+              putc(9),putt(Ave),nl|OutFile],
+        write(pe,Rest,Tab,Nl,OutFile,OutFile1).
+
+    write(Type,[profile(Cycle,PeData)|Rest],Tab,Nl,File,OutFile2):- true |
+        in_to_str(Cycle,Cs),
+        write1(Type,PeData,Cs,Tab,Nl,File,OutFile),
+        OutFile=[flush(S1)|OutFile1],
+%        write(Type,Rest,OutFile1,OutFile2).
+        write_sync(S1,Type,Rest,Tab,Nl,OutFile1,OutFile2).
+
+    write1(Type,[],Cycle,_,_,File,OutFile):- true | File=OutFile.
+
+    write1(Type,[pe(PE,PredData)|Rest],Cycle,Tab,Nl,File,OutFile1):- true |
+        in_to_str(PE,Ps),
+        write2(Type,PredData,Cycle,Ps,Tab,Nl,File,OutFile),
+        write1(Type,Rest,Cycle,Tab,Nl,OutFile,OutFile1).
+
+    write2(Type,[],Cycle,PE,_,_,File,OutFile):- true | File=OutFile.
+
+    write2(npe,[{NameId,Red,Susp}|Rest],Cycle,PE,Tab,Nl,File,OutFile1):- true |
+        in_to_str(NameId,Ns),
+        in_to_str(Red,Rs),in_to_str(Susp,Ss),
+        builtin#append_string([Cycle,Tab,PE,Tab,Ns,Tab,Rs,Tab,Ss,Nl],Data),
+        File=[putb(Data)|OutFile],
+        write2(npe,Rest,Cycle,PE,Tab,Nl,OutFile,OutFile1).
+
+    write2(pe,[{NameId,Ave,_}|Rest],Cycle,PE,Tab,Nl,File,OutFile1):- true |
+        in_to_str(NameId,Ns),in_to_str(Ave,As),
+        builtin#append_string([Cycle,Tab,PE,Tab,Ns,Tab,As,Nl],Data),
+        File=[putb(Data)|OutFile],
+        write2(pe,Rest,Cycle,PE,Tab,Nl,OutFile,OutFile1).
+
+%% remove blank from String     %%
+%% remove_blank(String,String') %%
+
+    remove_blank(String,NewString):- string(String,Size,ElementSize) |
+        new_string(NewString1,Size,ElementSize),
+        remove_blank1(String,0,Size,NewString1,NS2,0,Blank),
+        NewSize:=Size-Blank,
+        builtin#substring(NS2,0,NewSize,NewString,_).
+
+    remove_blank1(String,Pos,Max,NewString,AnsString,Num,Blank):-
+        Pos < Max,
+        string_element(String,Pos,Char), Char = #" " |
+        Num1 := Num + 1,
+        Pos1 := Pos + 1,
+        remove_blank1(String,Pos1,Max,NewString,AnsString,Num1,Blank).
+
+    remove_blank1(String,Pos,Max,NewString,AnsString,Num,Blank):-
+        Pos = Max |
+        AnsString = NewString, Blank = Num.
+
+otherwise.
+    remove_blank1(String,Pos,Max,NewString,AnsString,Num,Blank):- 
+        string_element(String,Pos,Char) |
+        Pos1 := Pos + 1,
+        NewPos := Pos - Num,
+        set_string_element(NewString,NewPos,Char,NewString1),
+        remove_blank1(String,Pos1,Max,NewString1,AnsString,Num,Blank).
+
+%% Integer to String         %%
+%% in_to_str(Integer,String) %%
+
+    in_to_str(In,Str):- integer(In) |
+        make_string(In,H,[]),
+        builtin#append_string(H,Str).
+
+    make_string(In,H,T):- In >= 10,
+        Simo := (In mod 10), Kami := In / 10 |
+        make_string(Kami,H,T1),
+        str(Simo,Str),
+        T1=[Str|T].
+    make_string(In,H,T) :- In < 10|
+        str(In,Str),
+        H=[Str|T].
+
+    str(1,Str):- true | Str="1".
+    str(2,Str):- true | Str="2".
+    str(3,Str):- true | Str="3".
+    str(4,Str):- true | Str="4".
+    str(5,Str):- true | Str="5".
+    str(6,Str):- true | Str="6".
+    str(7,Str):- true | Str="7".
+    str(8,Str):- true | Str="8".
+    str(9,Str):- true | Str="9".
+    str(0,Str):- true | Str="0".

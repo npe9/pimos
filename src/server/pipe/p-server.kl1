@@ -1,0 +1,194 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% pipe server %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- module pipe_server.
+:- public go/3, test/3.
+
+go(_, Out, Abort) :- wait(Abort) | Out = ok.
+alternatively.
+go(In, Out, Abort) :- wait(In) |
+    shoen:raise(pimos_tag#task, general_request, Gen),
+    stdio_server:go(Gen, NGen),
+    NGen = [register(pipe_request, {0, 0, 7}, Result)],
+    check_entry(Result, Out, Abort).
+
+test(_, Out, Abort) :- wait(Abort) | Out = ok.
+alternatively.
+test(In, Out, Abort) :- wait(In) |
+    shoen:raise(pimos_tag#task, general_request, Gen),
+    Gen = [register(pipe_request, {0, 0, 7}, Result)],
+    check_entry(Result, Out, Abort).
+
+check_entry(_, Out, Abort) :- wait(Abort) | Out = ok.
+alternatively.
+check_entry(Result, Out, Abort) :- wait(Result) | Out = ok,
+    ( Result = normal(Req, Abt, Att) -> send_request(Att, Abt, Req, Abort) ;
+      Result = abnormal -> true ;
+      Result = aborted -> true ;
+     otherwise ;
+      true -> error_raise(Result, string#"check_entry : ~w~n") ).
+
+send_request(Att, Abt, Req, Abort) :- true |
+    predicate_to_code(module#pipe_filter, go, 3, Code),
+    pipe_pool(PP),
+    Req = [get_request(Code, "pipe", Result) | NReq],
+    wait_request(Result, NReq, Att, Abt, Code, PP, Abort).
+
+wait_request(Result, Req, Att, Abt, Code, PP, Abort) :- wait(Abort) |
+    Req = [], Abt = abort, PP = [].
+wait_request(Result, Req, Att, Abt, Code, PP, Abort) :- Att = [] |
+    Req = [], Abt = abort, wait_result(Result, Abort), PP = [].
+wait_request(Result, Req, Att, Abt, Code, PP, Abort) :- Att = attention(NAtt) |
+    wait_request(Result, Req, NAtt, Abt, Code, PP, Abort).
+alternatively.
+wait_request(Msg, Req, Att, Abt, Code, PP, Abort) :- wait(Msg) |
+    ( vector_element(Msg, 0, general_request) ->
+        PP = {PP1, PP2},
+        Req = [get_request(Code, "pipe", NResult) | NReq],
+        wait_request(NResult, NReq, Att, Abt, Code, PP1, Abort),
+        create_pipe_request(Msg, PP2);
+     otherwise ;
+      true -> Req = [], Abt = abort, PP = [],
+        error_raise(Msg, string#"wait_request : ~w~n") ).
+
+wait_result(_, Abort) :- wait(Abort) | true.
+alternatively.
+wait_result(Msg, Abort) :- wait(Msg) |
+    ( Msg = general_request(SCont,Abt,CShut,Info,FInfo,Comm) ->
+        SCont=[],Abt=abort,FInfo=abort,wait_comm(CShut,Info,Comm,Abort) ;
+     otherwise ;
+      true -> true ).
+
+wait_comm(_,_,_,Abort) :- wait(Abort) | true.
+wait_comm(CShut,_,_,_) :- wait(CShut) | true.
+alternatively.
+wait_comm(_,_,[],_) :- true | true.
+wait_comm(CShut,Info,[Mes|Comm],Abort) :- true |
+    wait_comm(CShut,Info,Comm,Abort).
+
+create_pipe_request(Msg, PP) :- true |
+    ( Msg = general_request(SCont, Abt, CShut, Info, FInfo, Comm) ->
+        FInfo = pipe_request, Comm = normal(Comm0),
+        valve({pipe_request,Info}, Comm0, NComm, CShut),
+        pipe_request(CShut, Info, SCont, Abt, NComm, PP) ;
+     otherwise ;
+      true -> PP=[], error_raise(Msg, string#"create_pipe_request : ~w~n") ).
+
+%%%%%  pipe request device  %%%%%
+
+pipe_request(CShut, _, SCont, Abt, _, PP) :- wait(CShut) |
+    SCont = [], Abt = abort, PP = [].
+alternatively.
+pipe_request(_, _, SCont, _, [], PP) :- true | SCont = [], PP = [].
+pipe_request(CShut, Info, SCont, Abt, [Msg | Comm], PP) :- true |
+    ( Msg = make(Result) -> Result = normal(NCnt), new_atom(Atom),
+        pipecnt:go(Cnt, In, Out, Atom),
+        valve({pipe_control,Info}, NCnt, Cnt, CShut),
+        valve({pipe_in,Info}, NIn, In, CShut),
+        valve({pipe_out,Info}, NOut, Out, CShut),
+        merge(NNIn, NIn), merge(NNOut, NOut),
+        PP = [entry(Atom, NNIn, NNOut, CShut) | NPP],
+        SCont = [add_resource(pipe, "pipe", Stat) | NSCont],
+        wait_cshut(CShut, Stat),
+        pipe_request(CShut, Info, NSCont, Abt, Comm, NPP) ;
+      Msg = create(IDWithMode, Result) ->
+        PP = [get(IDWithMode, Result) | NPP],
+        pipe_request(CShut, Info, SCont, Abt, Comm, NPP) ;
+      Msg = release(IDorMode, Status) ->
+        PP = [release(IDorMode, Status) | NPP],
+        pipe_request(CShut, Info, SCont, Abt, Comm, NPP) ;
+      Msg = reset(Result) -> Result = normal(_, Attention, 0),
+        dummy_attention(CShut, Attention),
+        pipe_request(CShut, Info, SCont, Abt, Comm, PP) ;
+      Msg = next_attention(Result) -> Result = normal(Attention),
+        dummy_attention(CShut, Attention),
+        pipe_request(CShut, Info, SCont, Abt, Comm, PP) ;
+      Msg = resend(_, Result) -> Result = normal,
+        pipe_request(CShut, Info, SCont, Abt, Comm, PP) ;
+      Msg = cancel(_, Result) -> Result = normal,
+        pipe_request(CShut, Info, SCont, Abt, Comm, PP) ;
+     otherwise ;
+      true -> SCont=[], PP=[],
+        error_raise(Msg, string#"pipe_request : ~w~t") ).
+
+%%%%%  utility  %%%%%
+
+dummy_attention(CShut, Att) :- wait(CShut) | Attention = [].
+
+pipe_pool(PP) :- true | merge(PP,NPP), pool:keyed_set(POOL), merge(NPOOL,POOL),
+    pipe_pool1(NPP, NPOOL).
+
+pipe_pool1([], POOL) :- true | POOL = [get_all(PIPES)],
+    terminate_all_pipe(PIPES).
+pipe_pool1([entry(Atom, In, Out, CShut) | PP], POOL) :- wait(Atom) |
+    POOL=[do([put(Atom,{In,Out},_),empty(Atom,CHK)])|NPOOL],
+    NPOOL={POOL1,POOL2},
+    check_cshut(CShut, Atom, POOL1),
+    pipe_pool2(CHK, PP, POOL2).
+pipe_pool1([get({Mode, ID}, Result) | PP], POOL) :- true |
+    POOL = [get_and_put_if_any(ID, X1, X2, X3) | NPOOL],
+    get_check(Mode, X1, X2, X3, Result),
+    pipe_pool1(PP, NPOOL).
+pipe_pool1([release(ID, Status) | PP], POOL) :- atom(ID) |
+    POOL = [get_if_any(ID, X)|NPOOL],
+    release_check(X,Status),
+    pipe_pool1(PP, NPOOL).
+pipe_pool1([release({Mode, ID}, Status) | PP], POOL) :- true |
+    POOL = [get_and_put_if_any(ID, X1, X2, X3)|NPOOL],
+    release_check(Mode, X1, X2, X3, Status),
+    pipe_pool1(PP, NPOOL).
+
+pipe_pool2(no, PP, POOL) :- true | pipe_pool1(PP, POOL).
+
+release_check({},Status) :- true | Status = normal.
+release_check({{S1,S2}},Status) :- true | S1=[], S2=[], Status = normal.
+
+release_check(Mode,{},X2,_,Status) :- true | X2=[], Status=abnormal.
+release_check(Mode,{{In,Out}},X2,_,Status) :- true |
+    ( Mode = in -> In = [], X2 = {_, Out}, Status = normal ;
+      Mode = out -> Out = [], X2 = {In, _}, Status = normal ;
+     otherwise ;
+      true -> X2 = {In, Out}, Status = abnormal ).
+
+get_check(Mode, {},X2,_,Result) :- true | X2=[], Result=abnormal.
+get_check(Mode,{{In, Out}},X2,_,Result) :- true |
+    ( Mode = in -> In={In1,In2}, X2={In1,Out}, Result=normal(In2) ;
+      Mode = out -> Out={Out1,Out2}, X2={In,Out1}, Result=normal(Out2) ;
+     otherwise ;
+      true -> X2={In,Out}, Result=abnormal ).
+
+terminate_all_pipe([]) :- true | true.
+terminate_all_pipe([{_, {S1,S2}}|REM]) :- true | S1 = [], S2 = [],
+    terminate_all_pipe(REM).
+
+check_cshut(CShut, Atom, POOL) :- wait(CShut) |
+    POOL = [get_if_any(Atom, X)],
+    check_cshut1(X).
+
+check_cshut1({}) :- true | true.
+check_cshut1({{In,Out}}) :- true | In = [], Out = [].
+
+wait_cshut(CShut,normal(SCont,Abt)) :- true | wait_cshut0(CShut,SCont,Abt).
+otherwise.
+wait_cshut(_, _) :- true | true.
+
+wait_cshut0(CShut, SCont, Abt) :- wait(CShut) | SCont = [], Abt = abort.
+
+error_raise(Data, FString) :- true |
+    Type = illegal_message_to_pipe_server,
+    variable:wrap(Data, {_, WData}, 100, 100),
+    shoen:raise(pimos_tag#error, '$PIMOS$'(Type, FString), WData).
+
+valve(HINT, In, Out, Shut) :- wait(Shut), Shut = shut | Out = In.
+valve(HINT, In, Out, Shut) :- wait(Shut), Shut \= shut | Out = [].
+valve(HINT, [], Out, Shut) :- true | Out = [].
+%otherwise.
+valve(HINT, [Mes | In], Out, Shut) :- true |
+    Out = [Mes | NewOut], valve(HINT, In, NewOut, Shut).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  End  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

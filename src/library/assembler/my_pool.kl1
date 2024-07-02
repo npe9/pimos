@@ -1,0 +1,181 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_my_pool.
+:- public keyed_bag/1.
+
+hash_table_size(Size) :- true | Size =256.
+
+keyed_bag(Str) :- true |
+    hash_table_size(Size),
+    new_vector(Tbl0, Size),
+    Mask := Size - 1,
+    keyed_bag(Mask, Tbl0, _, Str).
+
+:- local_implicit size:shared.
+keyed_bag(Tbl0, Tbl, [empty(YorN)|Str]) --> true |
+    Size= &size+1,
+    {{find_all(0, Size, YorN, Tbl0, Tbl1)}},
+    keyed_bag(Tbl1, Tbl, Str).
+keyed_bag(Tbl0, Tbl, [empty(Key0, YorN)|Str]) --> true |
+    my_hash(Key0, Val, Key),
+    {{set_vector_element(Tbl0, Val, Old, New, Tbl1),
+      find(YorN, Key, Old, New)}},
+    keyed_bag(Tbl1, Tbl, Str).
+keyed_bag(Tbl0, Tbl, [put(Key0,Cont)|Str]) --> true |
+    my_hash(Key0, Val, Key),
+    {{set_vector_element(Tbl0, Val, Old, New, Tbl1),
+      intern(Old, {Key, Cont}, New)}},
+    keyed_bag(Tbl1, Tbl, Str).
+keyed_bag(Tbl0, Tbl, [get(Key0,Cont)|Str]) --> true |
+    my_hash(Key0, Val, Key),
+    {{set_vector_element(Tbl0, Val, Old, New, Tbl1),
+      find_cont(Old, Key, Cont, New)}},
+    keyed_bag(Tbl1, Tbl, Str).
+keyed_bag(Tbl0, Tbl, [get_all(Cont)|Str]) --> true |
+    Size := &size + 1,
+    {{get_all(Cont, [], 0, Size, Tbl0, Tbl1)}},
+    keyed_bag(Tbl1, Tbl, Str).
+keyed_bag(Tbl0, Tbl, [get_all(Key0,Cont)|Str]) --> true |
+    my_hash(Key0, Val, Key),
+    {{set_vector_element(Tbl0, Val, Old, New, Tbl1),
+      get_all_with_key(Cont, [], New, [], Key, Old)}},
+    keyed_bag(Tbl1, Tbl, Str).
+keyed_bag(Tbl0, Tbl, [get_and_put(Key0, OldCont, NewCont)|Str]) --> true |
+    my_hash(Key0, Val, Key),
+    {{set_vector_element(Tbl0, Val, Old, New, Tbl1),
+      get_and_put(Key, Old, New, OldCont, NewCont)}},
+    keyed_bag(Tbl1, Tbl, Str).
+keyed_bag(Tbl0, Tbl, []) --> true | Tbl0=Tbl.
+
+find_all(A, N, Ans, Tbl0, Tbl) :- A<N |
+    set_vector_element(Tbl0, A, Old, New, Tbl1),
+    find_all_if_not(A, N, Old, New, Ans, Tbl1, Tbl).
+find_all(N, N, Ans, Tbl0, Tbl) :- true |
+    Ans=yes, Tbl0=Tbl.
+
+find_all_if_not(A, N, [], New, Ans, Tbl0, Tbl) :- true |
+    A1 := A+1, New=[],
+    find_all(A1, N, Ans, Tbl0, Tbl).
+find_all_if_not(A, N, 0, New, Ans, Tbl0, Tbl) :- true |
+    A1 := A+1, New=[],
+    find_all(A1, N, Ans, Tbl0, Tbl).
+otherwise.
+find_all_if_not(_, _, Old, New, Ans, Tbl0, Tbl) :- true |
+    Old=New, Ans=no, Tbl0=Tbl.
+
+%%
+%% This predicate search the 'Key' and return the 'key' was find or not.
+%% 
+
+find(Ans, Key0, [{InKey0, Cont}|Old], New) :- true |
+    compare(Key0, Key, InKey0, InKey, yes, YorN),
+    try_or_not(YorN, Ans, Key, InKey, Cont, Old, New).
+find(Ans, _, [], New) :- true |
+    Ans=yes, New=[].
+find(Ans, _, 0, New) :- true |
+    Ans=yes, New=[].
+
+try_or_not(yes, Ans, _, InKey, Cont, Old, New) :- true |
+    Ans=no, New=[{InKey,Cont}|Old].
+try_or_not(no, Ans, Key, InKey, Cont, Old, New) :- true |
+    New=[{InKey,Cont}|New0],
+    find(Ans, Key, Old, New0).
+    
+
+intern(0, Cont, New) :- true | New=[Cont].
+intern([], Cont, New) :- true | New=[Cont].
+intern(Old, Cont, New) :- list(Old) | New=[Cont|Old].
+
+%% 
+%% This find returns the CONT by searching KEY. If there is no KEY, fails.
+%%
+
+%% if the hash entry is 0 or [], then fails.
+find_cont([{InKey0, Cont0}|Cdr], Key0, Cont, New) :- true |
+    compare(InKey0, InKey, Key0, Key, yes, YorN),
+    try_again_if_not(YorN, Cdr, InKey, Key, Cont0, Cont, New).
+
+try_again_if_not(yes, Cdr, _, _, Cont0, Cont, New) :- true |
+    New=Cdr, Cont0=Cont.
+try_again_if_not(no, Cdr, InKey, Key, Cont0, Cont, New) :- true |
+    New=[{InKey,Cont0}|New0],
+    find_cont(Cdr, Key, Cont, New0).
+
+:- local_implicit cont:oldnew.
+get_all(A, N, Tbl0, Tbl) --> A<N |
+    {{set_vector_element(Tbl0, A, Elm, [], Tbl1)}},
+    out_to_stream(Elm),
+    A1 := A+1,
+    get_all(A1, N, Tbl1, Tbl).
+get_all(N, N, Tbl0, Tbl) --> true | Tbl0=Tbl.
+
+out_to_stream([Car|Cdr]) --> true | &cont <<= [Car], out_to_stream(Cdr).
+out_to_stream([]) --> true | true.
+out_to_stream(0) --> true | true.
+
+:- local_implicit cont:oldnew, new:oldnew.
+get_all_with_key(Key0, [{InKey0, Cont}|Cdr]) --> true |
+    {{compare(Key0, Key, InKey0, InKey, yes, YorN)}},
+    out_to_stream_if(YorN, Key, InKey, Cont, Cdr).
+get_all_with_key(_, []) --> true | true.
+get_all_with_key(_, 0) --> true | true.
+
+out_to_stream_if(yes, Key, _, Cont, Cdr) --> true |
+    &cont <<= [Cont],
+    get_all_with_key(Key, Cdr).
+out_to_stream_if(no, Key, InKey0, Cont, Cdr) --> true |
+    &new <<= [{InKey0, Cont}],
+    get_all_with_key(Key, Cdr).
+
+get_and_put(Key0, [{InKey0, Cont}|Cdr], New, OldCont, NewCont) :- true |
+    compare(Key0, Key, InKey0, InKey, yes, YorN),
+    get_and_put_if_not(YorN, Key, InKey, Cont, Cdr, New, OldCont, NewCont).
+
+get_and_put_if_not(yes, _, InKey, Cont, Cdr, New, OldCont, NewCont) :- true |
+    Cont=OldCont, New=[{InKey, NewCont}|Cdr].
+get_and_put_if_not(no, Key, InKey, Cont, Cdr, New, OldCont, NewCont) :- true |
+    New=[{InKey, Cont}|New0],
+    get_and_put(Key, Cdr, New0, OldCont, NewCont).
+%%
+%% compare 
+%%
+
+compare(Key0, Key, InKey0, InKey, yes, YorN) :- Key0=InKey0 |
+    Key0=Key, InKey0=InKey, YorN=yes.
+otherwise.
+compare(Key0, Key, InKey0, InKey, yes, YorN) :- vector(Key0, N), vector(InKey0, N) |
+    compare(0, N, Key0, Key, InKey0, InKey, yes, YorN).
+compare([Car0|Cdr0], Key, [InCar0|InCdr0], InKey, yes, YorN) :- true |
+    compare(Car0, Car, InCar0, InCar, yes, YorN0),
+    compare(Cdr0, Cdr, InCdr0, InCdr, YorN0, YorN),
+    Key=[Car|Cdr], InKey=[InCar|InCdr].
+otherwise.
+%% the input 'YorN' is 'no' or Key \= Key0.
+compare(Key0, Key, InKey0, InKey, _, YorN) :- true |
+    Key0=Key, InKey0=InKey, YorN=no.
+
+compare(A, N, Key0, Key, InKey0, InKey, yes, YorN) :- A<N |
+    set_vector_element(Key0, A, Ele0, Ele, Key1),
+    set_vector_element(InKey0, A, InEle0, InEle, InKey1),
+    A1 := A+1,
+    compare(Ele0, Ele, InEle0, InEle, yes, YorN0), 
+    compare(A1, N, Key1, Key, InKey1, InKey, YorN0, YorN).
+compare(N, N, Key0, Key, InKey0, InKey, yes, YorN) :- true |
+    Key0=Key, InKey0=InKey, YorN=yes.
+otherwise.
+compare(_, _, Key0, Key, InKey0, InKey, _, YorN) :- true |
+    Key0=Key, InKey0=InKey, YorN=no.
+
+%%
+%% hash function
+%% 
+:- local_implicit size:shared.
+my_hash(Key0, Val, Key) --> true |
+    {{hasher:hash(Key0, Val0, Key)}},
+    Val := Val0 /\ &size.
+%my_hash(Key0, Val, Key) --> true | Key=Key0, Val=0.
+

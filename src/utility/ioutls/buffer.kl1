@@ -1,0 +1,115 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module(buffer).
+:- with_macro pimos.
+:- public input_filter/2, input_filter/3, output_filter/2, output_filter/3,
+    input_output/1, character_pool/1, character_pool/2,
+    interaction_filter/2,interaction_filter/3.
+:- public usage/1.
+
+usage(L) :- true | ioutls_usage:buffer(L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% input_filter(+InStream, -OutStream)
+%% input_filter(+InitMessageOrSize, +InStream, -OutStream)
+
+input_filter(In, Out) :- true |
+        input_filter([],In,Out).
+
+input_filter(Init, In, Out) :- true |
+        get_init_param(Init,N,OpPool,AtomDvc,_),
+        input_filter:init(In,Out,N,OpPool,AtomDvc).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% output_filter(+InStream, -OutStream)
+%% output_filter(+InitMessageOrSize, +InStream, -OutStream)
+
+output_filter(In, Out) :- true |
+        output_filter([],In,Out).
+
+output_filter(Init, In, Out) :- true |
+        get_init_param(Init,N,OpPool,AtomDvc,Ptry),
+        output_filter:init(In,Out,N,OpPool,AtomDvc,Ptry).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% get_init_param
+
+get_init_param(Init,N,Op,At,Ptry) :- Init>0 |
+        Init=N,
+        Ptry=default,
+        merge(At,At1),
+        operator:pool(Op),
+        atom_table:cache_table(At1).
+get_init_param([],N,Op,At,Ptry) :- true |
+        N=490,
+        Ptry=default,
+        merge(At,At1),
+        operator:pool(Op),
+        atom_table:cache_table(At1).
+otherwise.
+get_init_param(Init,N,Op,At,Ptry) :- true |
+        list_init_param(Init,N,Op,At,Ptry,490,default,default,default).
+
+list_init_param([size(M)|Init],N,Op,At,Ptry,_,O,A,P) :- M>0 |
+        list_init_param(Init,N,Op,At,Ptry,M,O,A,P).
+list_init_param([Param|Init],N,Op,At,Ptry,M,_,A,P) :- Param=operator_pool(OpPool) |
+        list_init_param(Init,N,Op,At,Ptry,M,Param,A,P).
+list_init_param([Param|Init],N,Op,At,Ptry,M,O,_,P) :- Param=atom_table(AtomDvc) |
+        list_init_param(Init,N,Op,At,Ptry,M,O,Param,P).
+list_init_param([Param|Init],N,Op,At,Ptry,M,O,A,_) :- Param=portray(Ptry0) |
+        list_init_param(Init,N,Op,At,Ptry,M,O,A,Ptry0).
+list_init_param([],N,Op,At,Ptry,M,O,A,P) :- true |
+        N=M,
+        P=Ptry,
+        init_op_pool(O,Op),
+        init_atom_table(A,At).
+otherwise.
+list_init_param(Init,N,Op,At,Ptry,M,O,A,P) :- true |
+        N=M,
+        P=Ptry,
+        init_op_pool(O,Op),
+        init_atom_table(A,At),
+        Info="illegal_initiation_parameter",
+        (Init=[Param|_] -> raise_error(Info,Param) ;
+        otherwise ;
+        true -> raise_error(Info,Init)).
+
+init_op_pool(default,OpPool) :- true | operator:pool(OpPool).
+init_op_pool(operator_pool(OpPool),OpPool1) :- true | OpPool=OpPool1.
+
+init_atom_table(default,AtomDvc) :- true | 
+        merge(AtomDvc,AtomDvc1),
+        atom_table:cache_table(AtomDvc1).
+init_atom_table(atom_table(AtomDvc),AtomDvc1) :- true | AtomDvc=AtomDvc1.
+
+raise_error(Info,Data) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(buffer,Info),Data).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% character_pool(+In)
+%% character_pool(+InitMessage, In)
+%% input_output(+In)
+
+character_pool(In) :- true | character_pool([], In).
+
+input_output(In) :- true | character_pool([], In).
+
+character_pool(Init, In) :- true |
+        get_init_param(Init,N,OpPool,AtomDvc,Ptry),
+        character_pool:init(In,N,OpPool,AtomDvc,Ptry).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% interaction_filter(+InStream, -OutStream)
+%% interaction_filter(+InitMessage, +InStream, - OutStream)
+
+interaction_filter(In, Out) :- true | interaction_filter([], In, Out).
+
+interaction_filter(Init,In,Out) :- true |
+        get_init_param(Init,N,OpPool,AtomDvc,Ptry),
+        interaction_filter:init(In,Out,N,OpPool,AtomDvc,Ptry).

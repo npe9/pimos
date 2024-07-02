@@ -1,0 +1,144 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_cmd_utility.
+:- public do_command/1.
+:- with_macro pimos.
+
+do_command(calculator) :- true | calculator.
+do_command(number(N)) :- integer(N) |
+    listener_utility:out(OUT),
+    number(N,OUT,[]).
+do_command(number(N,Radix)) :- integer(N), 2=<Radix, Radix=<36 |
+    mklib:integer_to_stringC(N,Radix,normal(RadixN)),
+    listener_utility:out(
+        [putf(" ~t : ~s~n",[Radix,RadixN])]).
+
+do_command(in(W)) :- true | listener_utility:in(W).
+do_command(out(W)) :- true | listener_utility:out(W).
+do_command(mes(W)) :- true | listener_utility:mes(W).
+do_command(inter(W)) :- true | listener_utility:inter(W).
+
+otherwise.
+do_command(Goal) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(macro#module_name,"Illegal argument"),Goal).
+
+
+number(N,OUT,OUT1) :- N>=0 |
+    mklib:integer_to_stringC(N,2, normal(Bina)),
+    mklib:integer_to_stringC(N,8, normal(Octa)),
+    mklib:integer_to_stringC(N,16,normal(Hexa)),
+    OUT=[putf(" Binary  : ~s~n Octa    : ~s~n Decimal : ~t~n Hexa    : ~s~n",
+            [Bina,Octa,N,Hexa])|OUT1].
+number(N,OUT,OUT8) :- N<0 |
+    number(32,N,1,1,[],BL),
+    number(11,N,7,3,[],OL),
+    double_num:xtod(0,N,DL),
+    number(8,N,16#"F",4,[],HL),
+    OUT =[putb(" Binary  : ")|OUT1],
+    OUT2=[putb(" Octa    : ")|OUT3],
+    OUT4=[putb(" Decimal : ")|OUT5],
+    OUT6=[putb(" Hexa    : ")|OUT7],
+    print(BL,0,OUT1,OUT2),
+    print(OL,0,OUT3,OUT4),
+    d_pri(DL,0,OUT5,[putf(" (~t)~n",[N])|OUT6]),
+    print(HL,0,OUT7,OUT8).
+
+number(0,_,_,_,L,HL) :- 
+    trans(L,HL).
+number(C,N,Msk,Sft,L,HL) :- C =\= 0,
+  E  := N /\ Msk,
+  N1 := N >> Sft |
+    number(~(C-1),N1,Msk,Sft,[E|L],HL).
+
+trans([E|Es],L) :-
+    table(E,E1),
+    L=[E1|L1],
+    trans(Es,L1).
+trans([],L) :- L=[].
+
+table(10,N) :- N='A'.
+table(11,N) :- N='B'.
+table(12,N) :- N='C'.
+table(13,N) :- N='D'.
+table(14,N) :- N='E'.
+table(15,N) :- N='F'.
+otherwise.
+table(E, N) :- N=E.
+
+print([0|L],0,OUT,OUT1) :- print(L,0,OUT,OUT1).
+otherwise.
+print([E|L],_,OUT,OUT2) :-
+    OUT=[putt(E)|OUT1],
+    print(L,1,OUT1,OUT2).
+print([],_,OUT,OUT1) :- OUT=[nl|OUT1].
+
+d_pri([0|L],0,OUT,OUT1) :- d_pri(L,0,OUT,OUT1).
+d_pri([N|L],1,OUT,OUT2) :- N>=0, N<10 |
+    OUT=[putf("000~t",[N])|OUT1],
+    d_pri(L,1,OUT1,OUT2).
+d_pri([N|L],1,OUT,OUT2) :- N>9, N<100 |
+    OUT=[putf("00~t",[N])|OUT1],
+    d_pri(L,1,OUT1,OUT2).
+d_pri([N|L],1,OUT,OUT2) :- N>99, N<1000 |
+    OUT=[putf("0~t",[N])|OUT1],
+    d_pri(L,1,OUT1,OUT2).
+otherwise.
+d_pri([N|L],_,OUT,OUT2) :-
+    OUT=[putt(N)|OUT1],
+    d_pri(L,1,OUT1,OUT2).
+d_pri([],_,OUT,OUT1) :- OUT1=OUT.
+
+
+calculator :- true |
+    listener_utility:inter(
+       [putf(">Hexa Calculator(? for help)~n",[])|IN1]),
+    buffer:character_pool(IO),
+    macro_expander:macro_process(_,_,MCR),
+    cal(IN1,IO,MCR).
+
+cal(IN,IO,MCR) :- true |
+    IN=[prompt("! "), getl(Line)|IN1],
+    IO=[putb(Line),putb(" . "),getwt(T),abandon_pool|IO1],
+    cal1(T,IN1,IO1,MCR).
+
+cal1(normal(end_of_file),IN,IO,MCR) :- true | IN=[], IO=[], MCR=[].
+cal1(normal(empty),IN,IO,MCR) :- true | IN=[], IO=[], MCR=[].
+cal1(normal(atom('?')),IN,IO,MCR) :- true | help(IN,IN1), cal(IN1,IO,MCR).
+cal1(normal(atom(h)),IN,IO,MCR) :- true | help(IN,IN1), cal(IN1,IO,MCR).
+cal1(normal(atom(he)),IN,IO,MCR) :- true | help(IN,IN1), cal(IN1,IO,MCR).
+cal1(normal(atom(help)),IN,IO,MCR) :- true | help(IN,IN1), cal(IN1,IO,MCR).
+cal1(abnormal(Error),IN,IO,MCR) :- true |
+    IN=[print_error(Error)|IN1],
+    cal(IN1,IO,MCR).
+otherwise.
+cal1(normal(T),IN,IO,MCR) :- true |
+    MCR=[get_macro(T,ET)|MCR1],
+    cal2(ET,IN,IO,MCR1).
+
+cal2(normal(T),IN,IO,MCR) :- true |
+    NT = vector({atom(:=),variable("Ans"),T}),
+    MCR=[get_macro(NT,ET)|MCR1],
+    cal3(ET,IN,IO,MCR1).
+otherwise.
+cal2(_,IN,IO,MCR) :- true |
+    IN=[putf(">Illegal input!!~n",[])|IN1],
+    cal(IN1,IO,MCR).
+
+cal3(normal(wrap#(true,_ = NUM)),IN,IO,MCR) :- NUM=integer(Num) |
+    number(Num,IN,IN1),
+    cal(IN1,IO,MCR).
+otherwise.
+cal3(_,IN,IO,MCR) :- true |
+    IN=[putf(">Illegal input!!~n",[])|IN1],
+    cal(IN1,IO,MCR).
+
+help(IN,IN1) :- true |
+    IN=[putf(" Enter mathematical expression.~n",[]),
+        putf(" Ex. (10+2'100)+16'FF/3>>8'7~n",[]),
+        putf(" Type <CR> to exit.~n",[])|IN1]. 

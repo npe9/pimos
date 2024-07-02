@@ -1,0 +1,446 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+
+:- with_macro pimos.
+
+:- switch(user_defined_macro).
+:- case(yes).
+:- macro_module pimos_utility.
+:- end_switch.
+
+:- inherit_macro pimos.
+:- public append_goal/3.
+
+begin => [] :- true |
+        KindList=[comparator,hasher],
+        &stream <<= [put(user_definitions,KindList),
+            put(defining,no),put(here,no),put(call_count,0),
+            put(atom_table,A)],
+        {{merge(A,A1)}},
+        {{atom_table:cache_table(A1)}},
+        {{init_def_pools(&stream,KindList)}}.
+
+end => [] :- true |
+        {{terminate(&stream)}}.
+
+wrap#({#,comparator,Head} :- Guard | Body) => []
+    :- as_a_clause,
+    Head=wrap#({Name0,X,Y,Sml,Lag,YorN}),
+    Name0=atom(Name) |
+        register(Name,Head,Guard,Body,comparator).
+wrap#({#,comparator,Head} :- Guard | Body) => []
+    :- as_a_clause,
+    (Head=wrap#otherwise ; Head=wrap#alternatively),
+    Guard=wrap#true,Body=wrap#true |
+        register_otherwise(Head,comparator).
+
+wrap#({#,hasher,Head} :- Guard | Body) => []
+    :- as_a_clause,
+    Head=wrap#({Name0,X,H,Y}),
+    Name0=atom(Name) |
+        register(Name,Head,Guard,Body,hasher).
+wrap#({#,hasher,Head} :- Guard | Body) => []
+    :- as_a_clause,
+    (Head=wrap#otherwise ; Head=wrap#alternatively),
+    Guard=wrap#true,Body=wrap#true |
+        register_otherwise(Head,hasher).
+
+wrap#({#,pimos_utility,here} :- true | true) => Z
+    :- as_a_clause |
+        {{expand_codes(&stream,Z)}}.
+
+/*
+wrap#({#,Util0,{Name0,Arg}}) => wrap#({Pred,Arg})
+    :- as_a_goal,in_the_body,
+    Util0=atom(U),
+    (U=sorted_bag ;     U=sorted_bag_debug ;
+     U=keyed_bag ;      U=keyed_bag_debug ;
+     U=keyed_set ;      U=keyed_set_debug ;
+     U=keyed_sorted_bag ; U=keyed_sorted_bag_debug ;
+     U=keyed_sorted_set ; U=keyed_sorted_set_debug) |
+        {{get_util_name(U,Util,Kind,Db)}},
+        called(Util,Kind,Name0,Db,Pred).
+
+wrap#({#,Util0,{Name0,Arg1,Arg2}}) => wrap#({Pred,Arg1,Arg2})
+    :- as_a_goal,in_the_body,
+    Util0=atom(U),
+    (U=keyed_bag ;      U=keyed_bag_debug ;
+     U=keyed_set ;      U=keyed_set_debug) |
+        {{get_util_name(U,Util,Kind,Db)}},
+        called(Util,Kind,Name0,Db,Pred).
+*/
+
+wrap#({#,sort,{Name0,In,Out}}) => wrap#({Pred,In,Out})
+    :- as_a_goal,in_the_body |
+        called(sort,comparator,Name0,0,Pred),
+        called(merge,comparator,Name0,0,_).
+wrap#({#,sort_debug,{Name0,In,Out}}) => wrap#({Pred,In,Out})
+    :- as_a_goal,in_the_body |
+        called(sort,comparator,Name0,1,Pred),
+        called(merge,comparator,Name0,1,_).
+
+wrap#({#,key_sort,{Name0,In,Out}}) => wrap#({Pred,In,Out})
+    :- as_a_goal,in_the_body |
+        called(key_sort,comparator,Name0,0,Pred),
+        called(key_merge,comparator,Name0,0,_).
+wrap#({#,key_sort_debug,{Name0,In,Out}}) => wrap#({Pred,In,Out})
+    :- as_a_goal,in_the_body |
+        called(key_sort,comparator,Name0,1,Pred),
+        called(key_merge,comparator,Name0,1,_).
+
+wrap#({#,Util0,{Name0,Arg1,Arg2,Arg3}}) => wrap#({Pred,Arg1,Arg2,Arg3})
+    :- as_a_goal,in_the_body,
+    Util0=atom(U),
+    (U=merge ;          U=merge_debug ;
+     U=key_merge ;      U=key_merge_debug) |
+        {{get_util_name(U,Util,Kind,Db)}},
+        called(Util,Kind,Name0,Db,Pred).
+
+
+:- local_implicit stream:oldnew.
+
+init_def_pools([Kind|L]) --> true |
+        &stream <<= [put(Kind,P)],
+        {{pool:keyed_bag(P)}},
+        init_def_pools(L).
+init_def_pools([]) --> true | true.
+
+terminate --> true |
+        &stream <<= [get(here,Here),get(call_count,Cnt),
+            get(atom_table,[]),
+            get(user_definitions,KindList)],
+        terminate_def_pools(KindList,Err),
+        (Here=no,Cnt=0 ->
+            Err=warning ;
+         Here=no,Cnt>0 ->
+            &stream <<= [error("~s~n",["undefined pimos_utility# here"])],
+            Err=ok ;
+         Here=yes,Cnt=0 ->
+            &stream <<= [warning("~s~n",["unused pimos_utility# here, ignored"])],
+            Err=ok ;
+         Here=yes,Cnt>0 ->
+            Err=error_defs_after_here).
+
+terminate_def_pools([Kind|L],Err) --> true |
+        &stream <<= [get(Kind,[get_all(A)])],
+        terminate_def_pool(A,Kind,Err),
+        terminate_def_pools(L,Err).
+terminate_def_pools([],_) --> true | true.
+
+terminate_def_pool([],_,_) --> true | true.
+terminate_def_pool(A,Kind,Err) --> list(A) |
+        (Err=error_defs_after_here ->
+            &stream <<= [error("~s~n",
+                ["definition(s) or utility_call(s) found after pimos_utility# here"])],
+            Err1=ok ;
+         otherwise;
+         true -> Err=Err1),
+        terminate_dp(A,Kind,Err1).
+
+terminate_dp([{Name,{Df,_,L,_,_,_,CP}}|A],Kind,Err) --> true |
+        L=[],
+        {{terminate_call_pool(CP)}},
+        warning_unused_defs(Err,Df,Kind,Name),
+        terminate_dp(A,Kind,Err).
+terminate_dp([],_,_) --> true | true.
+
+warning_unused_defs(ok,_,_,_) --> true | true.
+warning_unused_defs(warning,0,_,_) --> true | true.
+warning_unused_defs(warning,Df,Kind,Name) --> Df>0 |
+        &stream <<= [warning("~s~t~s~t~n",["unused ",Kind," definition: ",Name])].
+
+terminate_call_pool(CP) :- true |
+        CP=[get_all(A)],
+        terminate_cp(A).
+
+terminate_cp([{_,{C,DbC}}|A]) :- true |
+        terminate_predicate_name_pool(C),
+        terminate_predicate_name_pool(DbC),
+        terminate_cp(A).
+terminate_cp([]) :- true | true.
+
+terminate_predicate_name_pool(0) :- true | true.
+terminate_predicate_name_pool({PP}) :- true | PP=[].
+
+append_goal(wrap#({',',G,Next}),Goals,Last) :- true |
+        Goals=wrap#({',',G,Next1}),
+        append_goal(Next,Next1,Last).
+otherwise.
+append_goal(G,Goals,Last) :- true | Goals=wrap#({',',G,Last}).
+
+
+:- local_implicit info:shared,stream:oldnew.
+
+called(Util,Kind,atom(Name),Db,Pred) --> true |
+        &stream <<= [get_and_put(Kind,P,P1),
+            get_and_put(call_count,Cnt,~(Cnt+1))],
+        P=[get_if_any_and_put(Name,Old,New)|P1],
+        called1(Util,Kind,Name,Db,Pred,Old,New).
+
+called1(Util,Kind,Name,Db,Pred,{},New) --> true |
+        New0={0,L,L,no,0,0,CP1},
+        {{set_vector_element(New0,~(4+Db),Cnt,Cnt1,New)}},
+        Cnt1:=Cnt+1,
+        CP=[put(Util,CPNew)|CP1],
+        update_call_info(Util,Kind,Name,Db,Pred,{},CPNew),
+        {{pool:keyed_bag(CP)}}.
+called1(Util,Kind,Name,Db,Pred,{{Df,L,L1,NFg,C,DbC,CP}},New) --> true |
+        New0={Df,L,L1,NFg,C,DbC,CP1},
+        {{set_vector_element(New0,~(4+Db),Cnt,Cnt1,New)}},
+        Cnt1:=Cnt+1,
+        CP=[get_if_any_and_put(Util,CPOld,CPNew)|CP1],
+        update_call_info(Util,Kind,Name,Db,Pred,CPOld,CPNew).
+
+update_call_info(Util,Kind,Name,Db,Pred,{},New) --> true |
+        {{new_vector(V,2)}},
+        {{set_vector_element(V,Db,_,Info,New)}},
+        update_call_info1(Util,Kind,Name,Db,Pred,0,Info).
+update_call_info(Util,Kind,Name,Db,Pred,{V},New) --> true |
+        {{set_vector_element(V,Db,OInfo,NInfo,New)}},
+        update_call_info1(Util,Kind,Name,Db,Pred,OInfo,NInfo).
+
+update_call_info1(Util,Kind,Name,Db,Pred,0,New) --> true |
+        New={PP1},
+        PP=[atom('',Pred)|PP1],
+        &stream <<= [get_and_put(atom_table,{A,A1},A1)],
+        {{pimos_util_predname_pool:create(A,Db,Util,Kind,Name,PP)}}.
+update_call_info1(_,_,_,_,Pred,{PP},New) --> true |
+        New={PP1},
+        PP=[atom('',Pred)|PP1].
+
+
+:- local_implicit info:shared,stream:oldnew.
+
+register(Name,Head,Guard,Body,Kind) --> true |
+        &stream <<= [get_and_put(defining,F,F1)],
+        change_flag(Name,Head,Guard,Body,Kind,F,F1).
+
+change_flag(Name,Head,Guard,Body,Kind,F,F1) -->
+    (F=yes(_) ; F=no ; F=after_otherwise(Name,Kind,_)) |
+        F1=yes(Name),
+        &stream <<= [get_and_put(Kind,P,P1)],
+        P=[get_if_any_and_put(Name,Old,New)|P1],
+        {{register_def0(Old,New,Head,Guard,Body,Kind)}}.
+change_flag(Name,Head,Guard,Body,Kind,F,F1) -->
+    F=after_otherwise(OName,OKind,Other),
+    (OName\=Name ; OKind\=Kind) |
+        F1=no,
+        WKind=atom(Kind),
+        WOKind=atom(OKind),
+        &stream <<= [error("~s~t~s~w~s~w~n",
+            ["no ",OKind," definition found after ",wrap#({#,WOKind,Other})," => ",
+                wrap#({#,WKind,Head} :- Guard | Body)])].
+
+register_def0(Old,New,Head,Guard,Body,comparator) :-
+    Head=wrap#({_,X,Y,Sml,Lag,YorN}) |
+        Def={X,Y,Sml,Lag,YorN1,Guard,Body1,NFg},
+        get_swapped_info(Body,Body1,YorN,YorN1,NFg),
+        register_def(Old,New,Def,NFg).
+register_def0(Old,New,Head,Guard,Body,hasher) :-
+    Head=wrap#({_,X,H,Y}) |
+        Def={X,H,Y,Guard,Body},
+        register_def(Old,New,Def,no).
+
+register_def({},New,Def,NFg) :- true |
+        New={1,[Def|L],L,NFg,0,0,CP},
+        {{pool:keyed_bag(CP)}}.
+register_def({{Df,L,L1,NFg,C,DbC,CP}},New,Def,NFg0) :- true |
+        New={~(Df+1),L,L2,NFg1,C,DbC,CP},
+        L1=[Def|L2],
+        (NFg0=nil -> NFg1=nil ;
+         NFg0\=nil -> NFg1=NFg).
+
+register_otherwise(Head,Kind) --> true |
+        &stream <<= [get_and_put(defining,F,F1)],
+        get_def_name(Head,Kind,F,F1).
+
+get_def_name(Head,Kind,F,F1) --> F=yes(Name) |
+        F1=after_otherwise(Name,Kind,Head),
+        &stream <<= [get_and_put(Kind,P,P1)],
+        P=[get_if_any_and_put(Name,Old,New)|P1],
+        {{register_def(Old,New,Head,no)}}.
+get_def_name(Head,Kind,F,F1) --> F=no |
+        F=F1,
+        WKind=atom(Kind),
+        &stream <<= [error("~w~s~t~s~n",[wrap#({#,WKind,Head}),
+            " appears at the top of ",Kind," definition"])].
+get_def_name(Head,Kind,F,F1) --> F=after_otherwise(_,OKind,OHead) |
+        F1=no,
+        WKind=atom(Kind),
+        WOKind=atom(OKind),
+        &stream <<= [error("~s~t~s~w~s~w~n",
+            ["no ",OKind," definition found after ",wrap#({#,WOKind,OHead})," => ",
+                wrap#({#,WKind,Head})])].
+
+get_swapped_info(Body,Body1,YorN,YorN1,NFg) :- Body=wrap#({',',Goal,_}),
+    (Goal=wrap#(YorN=R) ; Goal=wrap#(R=YorN)),
+    R=atom(R0),(R0=yes ; R0=no) |
+        Body=Body1,YorN=YorN1,NFg=R0.
+get_swapped_info(Goal,Goal1,YorN,YorN1,NFg) :-
+    (Goal=wrap#(YorN=R) ; Goal=wrap#(R=YorN)),
+    R=atom(R0),(R0=yes ; R0=no) |
+        Goal=Goal1,YorN=YorN1,NFg=R0.
+otherwise.
+get_swapped_info(Body,Body1,YorN,YorN1,NFg) :- Body=wrap#({',',Goal,Next}) |
+        Body1=wrap#({',',Goal,Next1}),
+        get_swapped_info(Next,Next1,YorN,YorN1,NFg).
+otherwise.
+get_swapped_info(Body,Body1,YorN,YorN1,NFg) :- true |
+        Body=Body1,YorN=YorN1,NFg=nil.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% expand_codes
+
+:- local_implicit stream:oldnew.
+
+expand_codes(Z) -->
+        &stream <<= [get_and_put(defining,F,no),get_and_put(here,H,yes),
+            get_and_put(call_count,Cnt,Cnt),
+            get_and_put(user_definitions,Kinds,Kinds1)],
+        expand_codes1(Z,F,Kinds,Kinds1,H,Cnt).
+
+expand_codes1(Z,F,Kinds,Kinds1,no,Cnt) -->
+    (F=no ; F=yes(_)) |
+        expand_error_code(Z,Z1,Cnt),
+        expand_codes2(Z1,[],Kinds,Kinds1).
+otherwise.
+expand_codes1(Z,F,Kinds,Kinds1,H,_) --> true |
+        Z=[],
+        error_after_otherwise(F),
+        warning_doubly_defined_here(H),
+        clear_def_pools(Kinds,Kinds1).
+
+error_after_otherwise(F) --> F=after_otherwise(_,OKind,OHead) |
+        WKind=atom(OKind),
+        &stream <<= [error("~s~t~s~w~n",
+            ["no ",OKind," definition found after ",wrap#({#,WKind,OHead})])].
+otherwise.
+error_after_otherwise(_) --> true | true.
+
+warning_doubly_defined_here(no) --> true | true.
+warning_doubly_defined_here(yes) --> true |
+        &stream <<= [warning("~s~n",["doubly-defined pimos_utility# here, ignored"])].
+
+clear_def_pools([Kind|L],L1) --> true |
+        &stream <<= [get_and_put(Kind,P,P1)],
+        P=[get_all(A)|P1],
+        L1=[Kind|L2],
+        terminate_def_pool(A,Kind,ok),
+        clear_def_pools(L,L2).
+clear_def_pools([],L) --> true | L=[].
+
+:- local_implicit stream:oldnew,clause:oldnew.
+
+expand_error_code(0) --> true | true.
+expand_error_code(Cnt) --> Cnt>0 |
+        &clause <<= [C],
+        C=wrap#(error(Util,Info,Data) :- true |
+                        shoen:raise(pimos_tag#error,'$PIMOS$'(Util,Info),Data)),
+        &stream <<= [new_variable(Util),new_variable(Info),new_variable(Data)].
+
+expand_codes2([Kind|L],L1) --> true |
+        &stream <<= [get_and_put(Kind,P,P1)],
+        P=[get_all(A)|P1],
+        L1=[Kind|L2],
+        expand0(A,Kind),
+        expand_codes2(L,L2).
+expand_codes2([],L) --> true | L=[].
+
+expand0([Def|A],Kind) --> true |
+        expand1(Def,Kind),
+        expand0(A,Kind).
+expand0([],_) --> true | true.
+
+expand1({Name,{Df,L,L1,NFg,C,DbC,CP}},_) --> Df>0,C+DbC>0 |
+        L1=[],
+        CP=[get_all(CallA)],
+        expand_db_predicates(atom(Name),L,L0,DbC),
+        expand_utilities(L0,NFg,CallA).
+expand1({Name,{Df,_,L,_,C,DbC,CP}},Kind) --> Df>0,C+DbC=:=0 |
+        L=[],
+        &stream <<= [warning("~s~t~s~t~n",["unused ",Kind," definition: ",Name])],
+        {{terminate_call_pool(CP)}}.
+expand1({Name,{Df,_,L,_,C,DbC,CP}},Kind) --> Df=0,C+DbC>0 |
+        L=[],
+        &stream <<= [error("~s~t~s~t~n",["undefined ",Kind," definition: ",Name])],
+        {{terminate_call_pool(CP)}}.
+
+expand_db_predicates(_,L,L1,0) --> true | L=L1.
+expand_db_predicates(Name,L,L1,DbC) --> DbC>0 |
+        exp_db_preds(Name,L,L1).
+
+exp_db_preds(WName,[{X,A,Sml,Lag,YorN,Guard,Body,NFg}|L],L1) --> true |
+        L1=[{X,A,Sml,Lag,YorN,Guard,Body,NFg}|L2],
+        &clause <<= [C],
+        C=wrap#({WName,X,A,Sml,Lag,YorN} :- Guard | Body),
+        exp_db_preds(WName,L,L2).
+exp_db_preds(WName,[Other|L],L1) -->
+    (Other=wrap#(otherwise) ; Other=wrap#(alternatively)) |
+        L1=[Other|L2],
+        &clause <<= [Other],
+        exp_db_preds(WName,L,L2).
+exp_db_preds(_,[],L) --> true | L=[].
+
+expand_utilities(L,NFg,[{Util,{Call,DbCall}}|A]) --> true |
+        exp_utils(Call,L,L1,NFg,Util),
+        exp_db_utils(DbCall,Util),
+        expand_utilities(L1,NFg,A).
+expand_utilities(_,_,[]) --> true | true.
+
+exp_utils(0,L,L1,_,_) --> true | L=L1.
+exp_utils({PP},L,L1,NFg,Util) --> true |
+        {{get_code(Util,0,Cod)}},
+        {{expand_util(Cod,{&stream,&clause,PP,L,L1,NFg})}}.
+
+exp_db_utils(0,_) --> true | true.
+exp_db_utils({PP},Util) --> true |
+        {{get_code(Util,1,Cod)}},
+        {{expand_util(Cod,{&stream,&clause,PP})}}.
+
+expand_util(Cod,Argv) :- wait(Cod) |
+        apply(Cod,Argv).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Utility information tables
+
+get_code(sort,0,Cod) :- true |
+        predicate_to_code(module#pimos_util_mac_exp_sorter,sort,8,Cod).
+get_code(sort,1,Cod) :- true |
+        predicate_to_code(module#pimos_util_mac_exp_sorter,sort_db,5,Cod).
+get_code(key_sort,0,Cod) :- true |
+        predicate_to_code(module#pimos_util_mac_exp_sorter,key_sort,8,Cod).
+get_code(key_sort,1,Cod) :- true |
+        predicate_to_code(module#pimos_util_mac_exp_sorter,key_sort_db,5,Cod).
+get_code(merge,0,Cod) :- true |
+        predicate_to_code(module#pimos_util_mac_exp_sorter,merge,8,Cod).
+get_code(merge,1,Cod) :- true |
+        predicate_to_code(module#pimos_util_mac_exp_sorter,merge_db,5,Cod).
+get_code(key_merge,0,Cod) :- true |
+        predicate_to_code(module#pimos_util_mac_exp_sorter,key_merge,8,Cod).
+get_code(key_merge,1,Cod) :- true |
+        predicate_to_code(module#pimos_util_mac_exp_sorter,key_merge_db,5,Cod).
+
+get_util_name(U,U1,Kind,Db) :-
+    (U=sorted_bag ;
+     U=keyed_sorted_bag ; U=keyed_sorted_set ;
+     U=merge ; U=key_merge ) |
+        U=U1,Kind=comparator,Db=0.
+get_util_name(U,U1,Kind,Db) :-
+    (U=keyed_bag ; U=keyed_set) |
+        U=U1,Kind=hasher,Db=0.
+get_util_name(sorted_bag_debug,      U,Kind,Db) :- true | Kind=comparator,Db=1,U=sorted_bag.
+get_util_name(keyed_sorted_bag_debug,U,Kind,Db) :- true | Kind=comparator,Db=1,U=keyed_sorted_bag.
+get_util_name(keyed_sorted_set_debug,U,Kind,Db) :- true | Kind=comparator,Db=1,U=keyed_sorted_set.
+get_util_name(merge_debug,           U,Kind,Db) :- true | Kind=comparator,Db=1,U=merge.
+get_util_name(key_merge_debug,       U,Kind,Db) :- true | Kind=comparator,Db=1,U=key_merge.
+get_util_name(keyed_bag_debug,       U,Kind,Db) :- true | Kind=hasher,Db=1,U=keyed_bag.
+get_util_name(keyed_set_debug,       U,Kind,Db) :- true | Kind=hasher,Db=1,U=keyed_set.
+

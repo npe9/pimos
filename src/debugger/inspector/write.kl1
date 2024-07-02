@@ -1,0 +1,311 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_write.
+:- with_macro pimos.
+:- public write/7,write/10,write/11,write_with_print_length/10.
+
+write(Abort,X,X1,IR,IR1,WS,WS1) :- true |
+        WS=[print_length(PL,PL),print_string_length(PSL,PSL)|WS0],
+        write0(Abort,X,X1,IR,IR1,WS0,WS1,0,PL,PSL).
+
+write(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M) :- true |
+        write0(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M,1,1).
+
+write(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M,N) :- true |
+        write0(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M,N,N).
+
+write_with_print_length(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M) :- true |
+        WS=[print_length(PL,PL),print_string_length(PSL,PSL)|WS0],
+        wait_pl_and_write(Abort,X,X1,IR,IR1,WS0,WS1,S,S1,M,PL,PSL).
+
+wait_pl_and_write(Abort,X,X1,IR,IR1,WS0,WS1,S,S1,M,PL,PSL) :- wait(PSL) |
+        write0(Abort,X,X1,IR,IR1,WS0,WS1,S,S1,M,PL,PSL).
+
+write0(Abort,X,X1,IR,IR1,WS,WS1,S,S1,M,N,PSL) :- true |
+        unbound(M,M0),
+        inspector_cmd_inspect:temp_stack(TS,S,S1),
+        if_down_m(Ab,M0,X,X1,TS,TS1,Res),
+        wait_down_m(Abort,Ab,Res,IR,IR1,WS,WS1,N,PSL,TS1,[repair_stack]).
+
+if_down_m(Ab,{M},X,X1,TS,TS1,Res) :- true |
+        inspector_cmd_monitor:check_param(Ab,M,X,X1,TS,TS1,Res).
+if_down_m(_,{_,_,M},X,X1,TS,TS1,Res) :- true |
+        X=X1,TS=TS1,Res=error(unwrapped_illegal_param(M)).
+
+wait_down_m(Abort,Ab,_,IR,IR1,WS,WS1,_,_,TS,TS1) :- wait(Abort) |
+        Ab=abort,IR=IR1,WS=WS1,TS=TS1.
+wait_down_m(_,Ab,_,[abort|IR],IR1,WS,WS1,_,_,TS,TS1) :- true |
+        Ab=abort,IR=IR1,WS=WS1,TS=TS1.
+wait_down_m(Abort,Ab,normal(X,X1,M),IR,IR1,WS,WS1,N,PSL,TS,TS1) :- true |
+        Ab=[],
+        TS=[get(Parent)|TS1],
+        wait_parent(Abort,X,X1,IR,IR1,WS,WS1,M,N,PSL,Parent).
+wait_down_m(_,Ab,error(Type),IR,IR1,WS,WS1,_,_,TS,TS1) :- true |
+        Ab=[],IR=IR1,TS=TS1,
+        WS=[error(Type)|WS1].
+wait_down_m(_,Ab,atomic(_,X,X1,M),IR,IR1,WS,WS1,_,_,TS,TS1) :- true |
+        Ab=[],X=X1,IR=IR1,TS=TS1,
+        WS=[error(illegal_param(M))|WS1].
+
+wait_parent(Abort,X,X1,IR,IR1,WS,WS1,_,N,PSL,{Parent,M}) :- true |
+        X=X1,
+        unbound(N,N0),
+        if_write(Abort,Parent,IR,IR1,WS,WS1,M,N0,PSL).
+wait_parent(Abort,X,X1,IR,IR1,WS,WS1,M,N,PSL,root) :- true |
+        X=X1,
+        unbound(N,N0),
+        if_write(Abort,X,IR,IR1,WS,WS1,M,N0,PSL).
+
+if_write(Abort,X,IR,IR1,WS,WS1,M,{N},PSL) :- integer(N) |
+        write0(Abort,X,_,IR,IR1,WS,WS1,M,N,PSL).
+otherwise.
+if_write(_,_,IR,IR1,WS,WS1,_,{N},_) :- true |
+        IR=IR1,
+        WS=[error(illegal_param(N))|WS1].
+if_write(_,_,IR,IR1,WS,WS1,_,{_,_,N},_) :- true |
+        IR=IR1,
+        WS=[error(unwrapped_illegal_param(N))|WS1].
+
+
+write0(Abort,X,X1,IR,IR1,WS,WS1,M,N,PSL) :- true |
+        unbound(X,X0),
+        if_unbound(Abort,X0,X1,IR,IR1,WS,WS1,M,N,PSL).
+
+if_unbound(Abort,{X},X1,IR,IR1,WS,WS1,M,N,PSL) :- true |
+        pwrite(Abort,X,X1,IR,IR1,WS,WS1,M,N,PSL).
+if_unbound(_,{_,_,X},X1,IR,IR1,WS,WS1,_,_,_) :- true |
+        X=X1,IR=IR1,
+        WS=[putf(string#"~s~n",[string#">Unbound"])|WS1].
+
+pwrite(Abort,X,X1,IR,IR1,WS,WS1,M,N,_) :- vector(X,L) |
+        pwrite_vect(Abort,X,X1,IR,IR1,WS,WS1,M,N,L).
+pwrite(Abort,X,X1,IR,IR1,WS,WS1,M,N,_) :- module(X,L) |
+        pwrite_mod(Abort,X,X1,IR,IR1,WS,WS1,M,N,L).
+pwrite(Abort,X,X1,IR,IR1,WS,WS1,M,N,_) :- list(X) |
+        pwrite_list(Abort,X,X1,IR,IR1,WS,WS1,M,N).
+pwrite(Abort,X,X1,IR,IR1,WS,WS1,M,_,N) :- string(X,L,_) |
+        pwrite_str(Abort,X,X1,IR,IR1,WS,WS1,M,N,L).
+otherwise.
+pwrite(_,X,X1,IR,IR1,WS,WS1,M,_,_) :- true |
+        WS=[print_depth(PD,PD),print_length(PL,PL),
+            wrap(X,X0,WT,~(PD+1),~(PL+1))|WS0],
+        pwrite_other(WT,X0,X1,IR,IR1,WS0,WS1,M).
+
+%*** vector_with_parameter ***
+pwrite_vect(Abort,X,X1,IR,IR1,WS,WS1,M,N,L) :- M<L |
+        get_ptr(M,N,L,P,Q),
+        do_pwrite_vect(Abort,X,X1,IR,IR1,WS,WS1,P,Q).
+otherwise.
+pwrite_vect(_,X,X1,IR,IR1,WS,WS1,M,_,_) :- true |
+        X=X1,IR=IR1,
+        WS=[error(illegal_param(M))|WS1].
+
+get_ptr(M,N,L,P,Q) :- N>=0 | P := M,get_ptr_a(~(M+N),L,Q).
+get_ptr(M,N,_,P,Q) :- N<0 | Q := M+1,get_ptr_d(~(M+N+1),P).
+
+get_ptr_a(Q0,L,Q) :- Q0=<L | Q := Q0.
+get_ptr_a(Q0,L,Q) :- Q0>L | Q := L.
+
+get_ptr_d(P0,P) :- P0>=0 | P := P0.
+get_ptr_d(P0,P) :- P0<0 | P := 0.
+
+do_pwrite_vect(kill,X,X1,IR,IR1,WS,WS1,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+do_pwrite_vect(_,X,X1,[abort|IR],IR1,WS,WS1,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+alternatively.
+do_pwrite_vect(Abort,X,X1,IR,IR1,WS,WS1,P,Q) :- P<Q |
+        set_vector_element(X,P,E,E1,X0),
+        WS=[write(P,E,E1)|WS0],
+        do_pwrite_vect(Abort,X0,X1,IR,IR1,WS0,WS1,~(P+1),Q).
+do_pwrite_vect(_,X,X1,IR,IR1,WS,WS1,P,P) :- true |
+        X=X1,IR=IR1,WS=WS1.
+
+%*** module_with_parameter ***
+pwrite_mod(Abort,X,X1,IR,IR1,WS,WS1,M,N,L) :- M<L |
+        get_ptr(M,N,L,P,Q),
+        do_pwrite_mod(Abort,X,X1,IR,IR1,WS,WS1,P,Q).
+otherwise.
+pwrite_mod(_,X,X1,IR,IR1,WS,WS1,M,_,_) :- true |
+        X=X1,IR=IR1,
+        WS=[error(illegal_param(M))|WS1].
+
+do_pwrite_mod(kill,X,X1,IR,IR1,WS,WS1,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+do_pwrite_mod(_,X,X1,[abort|IR],IR1,WS,WS1,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+alternatively.
+do_pwrite_mod(Abort,X,X1,IR,IR1,WS,WS1,P,Q) :- P<Q |
+        module_element(X,P,E),
+        WS=[write(P,E,_)|WS0],
+        do_pwrite_mod(Abort,X,X1,IR,IR1,WS0,WS1,~(P+1),Q).
+do_pwrite_mod(_,X,X1,IR,IR1,WS,WS1,P,P) :- true |
+        X=X1,IR=IR1,WS=WS1.
+
+%*** list_with_parameter ***
+pwrite_list(_,[E|X],X1,IR,IR1,WS,WS1,car,_) :- true |
+        X1=[E1|X],IR=IR1,
+        WS=[write(car,E,E1)|WS1].
+pwrite_list(_,[E|X],X1,IR,IR1,WS,WS1,cdr,_) :- true |
+        X1=[E|X0],IR=IR1,
+        WS=[write(cdr,X,X0)|WS1].
+pwrite_list(Abort,X,X1,IR,IR1,WS,WS1,tail,_) :- true |
+        pwrite_list_tail(Abort,X,X1,IR,IR1,WS,WS1).
+pwrite_list(Abort,X,X1,IR,IR1,WS,WS1,M,N) :- integer(M) |
+        get_ptr(M,N,P,Q),
+        skip_list(Abort,X,X1,IR,IR1,WS,WS1,0,P,Q).
+
+pwrite_list_tail(kill,X,X1,IR,IR1,WS,WS1) :- true |
+        X=X1,IR=IR1,WS=WS1.
+pwrite_list_tail(_,X,X1,[abort|IR],IR1,WS,WS1) :- true |
+        X=X1,IR=IR1,WS=WS1.
+alternatively.
+pwrite_list_tail(Abort,X,X1,IR,IR1,WS,WS1) :- true |
+        WS=[wrap(X,X0,WT,1,1)|WS0],
+        if_tail(WT,X0,X1,IR,IR1,WS0,WS1,Abort).
+
+if_tail(list(_),[E|X],X1,IR,IR1,WS,WS1,Abort) :- true |
+        X1=[E|X2],
+        pwrite_list_tail(Abort,X,X2,IR,IR1,WS,WS1).
+if_tail(variable(T),X,X1,IR,IR1,WS,WS1,_) :- true |
+        X=X1,IR=IR1,
+        WS=[write_wt(tail,variable(T))|WS1].
+otherwise.
+if_tail(_,X,X1,IR,IR1,WS,WS1,_) :- true |
+        IR=IR1,
+        WS=[write(tail,X,X1)|WS1].
+
+get_ptr(M,N,P,Q) :- N>=0 | P:=M,Q:=M+N.
+get_ptr(M,N,P,Q) :- N<0 | Q:=M+1,get_ptr_d(~(M+N+1),P).
+
+skip_list(kill,X,X1,IR,IR1,WS,WS1,_,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+skip_list(_,X,X1,[abort|IR],IR1,WS,WS1,_,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+alternatively.
+skip_list(Abort,X,X1,IR,IR1,WS,WS1,I,P,Q) :- I<P |
+        WS=[wrap(X,X0,WT,1,1)|WS0],
+        do_skip_list(WT,X0,X1,IR,IR1,WS0,WS1,I,P,Q,Abort).
+skip_list(Abort,X,X1,IR,IR1,WS,WS1,P,P,Q) :- true |
+        pwrite_list_int(Abort,X,X1,IR,IR1,WS,WS1,P,Q).
+
+do_skip_list(list(_),[E|X],X1,IR,IR1,WS,WS1,I,P,Q,Abort) :- true |
+        X1=[E|X2],
+        skip_list(Abort,X,X2,IR,IR1,WS,WS1,~(I+1),P,Q).
+do_skip_list(variable(T),X,X1,IR,IR1,WS,WS1,_,_,_,_) :- true |
+        X=X1,IR=IR1,
+        WS=[write_wt(tail,variable(T))|WS1].
+otherwise.
+do_skip_list(_,X,X1,IR,IR1,WS,WS1,_,P,_,_) :- true |
+        X=X1,IR=IR1,
+        WS=[error(illegal_param(P))|WS1].
+
+pwrite_list_int(kill,X,X1,IR,IR1,WS,WS1,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+pwrite_list_int(_,X,X1,[abort|IR],IR1,WS,WS1,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+alternatively.
+pwrite_list_int(Abort,X,X1,IR,IR1,WS,WS1,P,Q) :- P<Q |
+        WS=[wrap(X,X0,WT,1,1)|WS0],
+        do_pwrite_list_int(WT,X0,X1,IR,IR1,WS0,WS1,P,Q,Abort).
+pwrite_list_int(_,X,X1,IR,IR1,WS,WS1,P,P) :- true |
+        X=X1,IR=IR1,WS=WS1.
+
+do_pwrite_list_int(list(_),[E|X],X1,IR,IR1,WS,WS1,P,Q,Abort) :- true |
+        X1=[E1|X2],
+        WS=[write(P,E,E1)|WS0],
+        pwrite_list_int(Abort,X,X2,IR,IR1,WS0,WS1,~(P+1),Q).
+do_pwrite_list_int(variable(T),X,X1,IR,IR1,WS,WS1,_,_,_) :- true |
+        X=X1,IR=IR1,
+        WS=[write_wt(tail,variable(T))|WS1].
+otherwise.
+do_pwrite_list_int(_,X,X1,IR,IR1,WS,WS1,_,_,_) :- true |
+        IR=IR1,
+        WS=[write(tail,X,X1)|WS1].
+
+%*** other_with_parameter ***
+pwrite_other(unknown(_),X,X1,IR,IR1,WS,WS1,_) :- true |
+        IR=IR1,
+        WS=[write_tv(unknown_data_type,X,X1)|WS1].
+otherwise.
+pwrite_other({Type,WT},X,X1,IR,IR1,WS,WS1,0) :- true |
+        X=X1,IR=IR1,
+        WS=[write_wt(Type,{Type,WT})|WS1].
+otherwise.
+pwrite_other(_,X,X1,IR,IR1,WS,WS1,M) :- true |
+        X=X1,IR=IR1,
+        WS=[error(illegal_param(M))|WS1].
+
+%*** string_with_parameter ***
+pwrite_str(Abort,X,X1,IR,IR1,WS,WS1,M,N,L) :- M<L |
+        get_ptr(M,N,L,P,Q),
+        WS=[print_string_mode(PSM,PSM)|WS0],
+        do_pwrite_str(Abort,X,X1,IR,IR1,WS0,WS1,P,Q,L,PSM).
+otherwise.
+pwrite_str(_,X,X1,IR,IR1,WS,WS1,M,_,_) :- true |
+        X=X1,IR=IR1,
+        WS=[error(illegal_param(M))|WS1].
+
+do_pwrite_str(Abort,X,X1,IR,IR1,WS,WS1,P,Q,L,character) :- string(X,_,16) |
+        WS=[putf(string#"~s",[string#"string : """])|WS0],
+        write_str_char(Abort,X,X1,IR,IR1,WS0,WS1,P,~(Q-P),~(L-Q)).
+otherwise.
+do_pwrite_str(Abort,X,X1,IR,IR1,WS,WS1,P,Q,L,_) :- string(X,_,ESize) |
+        WS=[putf(string#"~s~t~s",[string#"string : ",ESize,string#"#{"])|WS0],
+        write_str_code(Abort,X,X1,IR,IR1,WS0,WS1,P,~(Q-P),~(L-Q)).
+
+
+%*** string ****
+write_str_char(Abort,X,X1,IR,IR1,WS,WS1,P,N,Post) :- true |
+        write_period(P,WS,WS0),
+        builtin#substring(X,P,N,Sub,X1),
+        write_substring(Abort,N,0,IR,IR1,WS0,WS1,Post,Sub).
+
+write_period(0,WS,WS1) :- true | WS=WS1.
+write_period(P,WS,WS1) :- P>0 | WS=[putf(string#"~s",[string#" ... "])|WS1].
+
+write_substring(kill,_,_,IR,IR1,WS,WS1,_,_) :- true |
+        IR=IR1,WS=WS1.
+write_substring(_,_,_,[abort|IR],IR1,WS,WS1,_,_) :- true |
+        IR=IR1,WS=WS1.
+alternatively.
+write_substring(Abort,N,P,IR,IR1,WS,WS1,Post,Str) :- N>64 |
+        builtin#substring(Str,P,64,Sub,Str1),
+        WS=[putf(string#"~s",[Sub])|WS0],
+        write_substring(Abort,~(N-64),~(P+64),IR,IR1,WS0,WS1,Post,Str1).
+write_substring(_,N,P,IR,IR1,WS,WS3,Post,Str) :- N=<64 |
+        IR=IR1,
+        builtin#substring(Str,P,N,Sub,_),
+        WS=[putf(string#"~s",[Sub])|WS1],
+        write_period(Post,WS1,WS2),
+        WS2=[putf(string#"~s~n",[string#""""])|WS3].
+
+write_str_code(Abort,X,X1,IR,IR1,WS,WS3,P,N,Post) :- true |
+        write_period(P,WS,WS1),
+        if_write_comma(P,WS1,WS2),
+        write_string_elements(Abort,X,X1,IR,IR1,WS2,WS3,P,~(P+N-1),Post).
+
+if_write_comma(0,WS,WS1) :- true | WS=WS1.
+if_write_comma(P,WS,WS1) :- P>0 | WS=[putf(string#"~s",[string#","])|WS1].
+
+write_string_elements(kill,X,X1,IR,IR1,WS,WS1,_,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+write_string_elements(_,X,X1,[abort|IR],IR1,WS,WS1,_,_,_) :- true |
+        X=X1,IR=IR1,WS=WS1.
+alternatively.
+write_string_elements(Abort,X,X1,IR,IR1,WS,WS1,P,Q,Post) :- P<Q |
+        string_element(X,P,E,X0),
+        WS=[putf(string#"~t~s",[E,string#","])|WS0],
+        write_string_elements(Abort,X0,X1,IR,IR1,WS0,WS1,~(P+1),Q,Post).
+write_string_elements(_,X,X1,IR,IR1,WS,WS4,P,P,Post) :- true |
+        IR=IR1,
+        string_element(X,P,E,X1),
+        WS=[putt(E)|WS1],
+        if_write_comma(Post,WS1,WS2),
+        write_period(Post,WS2,WS3),
+        WS3=[putf(string#"~s~n",[string#"}"])|WS4].
+

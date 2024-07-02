@@ -1,0 +1,1002 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_buffer.
+:- public interaction_filter/5, interaction_filter/4,
+          filter/2, op_type/2, input_filter/2.
+:- public pvar_mode/2.
+:- with_macro pimos.
+
+interaction_filter(ATM,In,Out,Package) :- true|
+    variable:pool2(VT),
+    interaction_filter(ATM,VT,In,Out,Package).
+interaction_filter(ATM,VT,In,Out,Package) :- true|
+    ATM={ATM1,ATM2,ATM3},
+    merge(In,In0),
+% 93.8.18
+%    predicate_to_code(module#listener_portray,go,1,Code),
+%
+    listener_operator:pool1(C_OP),
+    buffer:character_pool([atom_table(ATM1),operator_pool(C_OP)],
+        [print_string_length(1000000),print_atom_length(1000000)|IO]),
+    listener_operator:pool({OP1,OP2}),
+    buffer:character_pool([atom_table(ATM2),operator_pool(OP1)],
+        [print_string_length(1000000),print_atom_length(1000000)|CP]),
+    pool:keyed_bag(VPP,8),
+    manager(In0,In1,IO,CP,4,10,name,VT,VPP,Package),
+% 93.8.18
+%    buffer:interaction_filter([atom_table(ATM3),operator_pool(OP2),portray({Code,{_}})],
+    buffer:interaction_filter([atom_table(ATM3),operator_pool(OP2)],
+%
+       [print_depth(4),
+        print_length(10),
+        print_string_length(70),
+        print_atom_length(40)|In1],Out).
+
+input_filter(In,Out) :- true|
+    merge(In,In0),
+    listener_operator:pool(OP),
+    buffer:input_filter([operator_pool(OP)],In0,Out).
+
+
+% manager(MsgStm,InterBuffer,IoBuffer,Depth,Length,PrintVar,VarPool,VP_POOL,DefaultPackage)
+
+manager([change_portray(Portray,Status)|In],In1,IO,CH,D,L,Pvar,VT,VSK,Pac) :- true|
+    In1=[change_portray(Portray)|In2],
+    Status=normal,
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,Pac).
+% 93.8.31
+%manager([reset_portray(Status)|In],In1,IO,CH,D,L,Pvar,VT,VSK,Pac) :- true|
+%    predicate_to_code(module#listener_portray,go,1,Code),
+%    In1=[change_portray({Code,{_}})|In2],
+%    Status=normal,
+%    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,Pac).
+
+manager([wterm_to_string(Trm,Dep,Len,Str)|In],In1,IO,CH,D,L,Pvar,VT,VSK,Pac) :- true|
+    CH=[putwt(Trm,Dep,Len),nl,getl(Str),abandon_pool|CH1],
+    manager(In,In1,IO,CH1,D,L,Pvar,VT,VSK,Pac).
+manager([term_to_string(Trm,Str)|In],In1,IO,CH,D,L,Pvar,VT,VSK,Pac) :-
+    CH=[putt(Trm,10000,10000),nl,getl(Str),abandon_pool|CH1],
+    manager(In,In1,IO,CH1,D,L,Pvar,VT,VSK,Pac).
+manager([string_to_term(Str,Trm,N)|In],In1,IO,CH,D,L,Pvar,VT,VSK,Pac) :-
+    CH=[putb(Str),putb(" . "),getft(Trm,N),abandon_pool|CH1],
+    manager(In,In1,IO,CH1,D,L,Pvar,VT,VSK,Pac).
+
+manager([package(Pac)|In],In1,IO,CH,D,L,Pvar,VT,VSK,_) :-
+    manager(In,In1,IO,CH,D,L,Pvar,VT,VSK,Pac).
+
+% 90.10.31
+manager([putwt_with_prefix(normal(empty))|In],In1,IO,CH,D,L,Pvar,VT,VSK,Pac) :-
+    In1=[ungetb(".",_)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,Pac).
+manager([putwt_with_prefix(abnormal(WT))|In],In1,IO,CH,D,L,Pvar,VT,VSK,Pac) :-
+    CH=[print_text(WT),putb("."),nl,getl(String),abandon_pool|CH1],
+    In1=[ungetb(String,_)|In2],
+    manager(In,In2,IO,CH1,D,L,Pvar,VT,VSK,Pac).
+
+manager([write(T)|In],                  In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    wrap(Pvar,T,_,WT,D,L,VT,NVT),
+    In1=[putwtq(WT,D,L)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([write(T,NT)|In],               In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    wrap(Pvar,T,NT,WT,D,L,VT,NVT),
+    In1=[putwtq(WT,D,L)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([write(T,Dep,Len)|In],          In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    wrap(Pvar,T,_,WT,Dep,Len,VT,NVT),
+    In1=[putwtq(WT,Dep,Len)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([write(T,NT,Dep,Len)|In],       In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    wrap(Pvar,T,NT,WT,Dep,Len,VT,NVT),
+    In1=[putwtq(WT,Dep,Len)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+
+manager([print_var(K,T)|In],                In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    wrap(Pvar,T,_,WT,D,L,VT,NVT),
+    Var=vector({atom(=),variable(K),WT}),
+    In1=[printwtq(Var,D,L)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([print_var(K,T,Dep,Len)|In],          In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    wrap(Pvar,T,_,WT,Dep,Len,VT,NVT),
+    Var=vector({atom(=),variable(K),WT}),
+    In1=[printwtq(Var,Dep,Len)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+
+
+manager([wrap(T,WT)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    wrap(Pvar,T,_,WT,D,L,VT,NVT),
+    manager(In,In1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([wrap(T,WT,Dep,Len)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    wrap(Pvar,T,_,WT,Dep,Len,VT,NVT),
+    manager(In,In1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([wrap(T,NT,WT)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    wrap(Pvar,T,NT,WT,D,L,VT,NVT),
+    manager(In,In1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([wrap(T,NT,WT,Dep,Len)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    wrap(Pvar,T,NT,WT,Dep,Len,VT,NVT),
+    manager(In,In1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+
+manager([putGoal((M:P/A))|In],            In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    package_check(PAC,M,M1),
+    In1=[printtq((M1:P/A))|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([putGoal((P/A))|In],            In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    In1=[printtq((P/A))|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+
+manager([writeGoal((M:T))|In],            In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  wait(M),
+  vector_element(T,0,Na),
+  atom(Na) |
+    package_check(PAC,M,M1),
+    portray(T,T1),
+    wrap(Pvar,(M1:T1),_,WT,D,L,VT,NVT),
+    In1=[printwtq(WT,D,L)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([writeGoal((M:T),NT)|In],         In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  wait(M),
+  vector_element(T,0,Na),
+  atom(Na) |
+    package_check(PAC,M,M1),
+    portray(T,T1),
+    wrap(Pvar,(M1:T1),NT,WT,D,L,VT,NVT),
+    In1=[printwtq(WT,D,L)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([writeGoal((M:T),Dep,Len)|In], In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+  wait(M),
+  vector_element(T,0,Na),
+  atom(Na) |
+    package_check(PAC,M,M1),
+    portray(T,T1),
+    wrap(Pvar,(M1:T1),_,WT,Dep,Len,VT,NVT),
+    In1=[printwtq(WT,Dep,Len)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([writeGoal((M:T),NT,Dep,Len)|In], In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  wait(M),
+  vector_element(T,0,Na),
+  atom(Na) |
+    package_check(PAC,M,M1),
+    portray(T,T1),
+    wrap(Pvar,(M1:T1),NT,WT,Dep,Len,VT,NVT),
+    In1=[printwtq(WT,Dep,Len)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+
+manager([writeGoal((M:T))|In],            In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  wait(M),
+  atom(T) |
+    package_check(PAC,M,M1),
+    portray(T,T1),
+    In1=[printtq((M1:T1))|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([writeGoal((M:T),NT)|In],         In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  wait(M),
+  atom(T) |
+    package_check(PAC,M,M1),
+    NT=(M:T),
+    portray(T,T1),
+    In1=[printtq((M1:T1))|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([writeGoal((M:T),_,_)|In], In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+  wait(M),
+  atom(T) |
+    package_check(PAC,M,M1),
+    portray(T,T1),
+    In1=[printtq((M1:T1))|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([writeGoal((M:T),NT,_,_)|In], In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  wait(M),
+  atom(T) |
+    NT=(M:T),
+    package_check(PAC,M,M1),
+    portray(T,T1),
+    In1=[printtq((M1:T1))|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+
+manager([writeGoal(T)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  atom(T) |
+    portray(T,T1),
+    In1=[printtq(T1)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([writeGoal(T,NT)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  atom(T) |
+    NT=T,
+    portray(T,T1),
+    In1=[printtq(T1)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([writeGoal(T,_,_)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  atom(T) |
+    portray(T,T1),
+    In1=[printtq(T1)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([writeGoal(T,NT,_,_)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  atom(T) |
+    NT=T,
+    portray(T,T1),
+    In1=[printtq(T1)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+
+manager([getlt(T)|In],                  In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    In1=[getl(Line)|In2],
+    IO=[putb(Line),putb(" . "),getft(T,_),abandon_pool|IO1],
+    manager(In,In2,IO1,CH,D,L,Pvar,VT,VSK,PAC).
+
+manager([print_depth(Dep)|IN],IN1,IO,CH,_,L,Pvar,VT,VSK,PAC) :- 
+    IN1=[print_depth(Dep)|IN2],
+    manager(IN,IN2,IO,CH,Dep,L,Pvar,VT,VSK,PAC).
+manager([print_length(Len)|IN],IN1,IO,CH,D,_,Pvar,VT,VSK,PAC) :-
+    IN1=[print_length(Len)|IN2],
+    manager(IN,IN2,IO,CH,D,Len,Pvar,VT,VSK,PAC).
+manager([print_variable(Pvar)|IN],IN1,IO,CH,D,L,_,VT,VSK,PAC) :-
+    manager(IN,IN1,IO,CH,D,L,Pvar,VT,VSK,PAC).
+
+manager([print_depth(D0,Dep)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    D0=D,
+    IN1=[print_depth(Dep)|IN2],
+    manager(IN,IN2,IO,CH,Dep,L,Pvar,VT,VSK,PAC).
+manager([print_length(L0,Len)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    L0=L,
+    IN1=[print_length(Len)|IN2],
+    manager(IN,IN2,IO,CH,D,Len,Pvar,VT,VSK,PAC).
+manager([print_variable(Pv0,Pv)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    Pv0=Pvar,
+    manager(IN,IN1,IO,CH,D,L,Pv,VT,VSK,PAC).
+
+manager([get_print_depth(Dep)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    Dep=D,
+    manager(IN,IN1,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([get_print_length(Len)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    Len=L,
+    manager(IN,IN1,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([get_print_variable(Pv)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    Pv=Pvar,
+    manager(IN,IN1,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([get_print_string_length(Len)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    IN1=[print_string_length(Len,Len)|IN2],
+    manager(IN,IN2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([get_print_atom_length(Len)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    IN1=[print_atom_length(Len,Len)|IN2],
+    manager(IN,IN2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([get_print_integer_radix(Len)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    IN1=[print_integer_radix(Len,Len)|IN2],
+    manager(IN,IN2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+
+manager([set_print_depth(Dep)|IN],IN1,IO,CH,_,L,Pvar,VT,VSK,PAC) :-
+    IN1=[print_depth(Dep)|IN2],
+    manager(IN,IN2,IO,CH,Dep,L,Pvar,VT,VSK,PAC).
+manager([set_print_length(Len)|IN],IN1,IO,CH,D,_,Pvar,VT,VSK,PAC) :-
+    IN1=[print_length(Len)|IN2],
+    manager(IN,IN2,IO,CH,D,Len,Pvar,VT,VSK,PAC).
+manager([set_print_variable(Pv)|IN],IN1,IO,CH,D,L,_,VT,VSK,PAC) :- 
+    manager(IN,IN1,IO,CH,D,L,Pv,VT,VSK,PAC).
+manager([set_print_string_length(Len)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    IN1=[print_string_length(Len)|IN2],
+    manager(IN,IN2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([set_print_atom_length(Len)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    IN1=[print_atom_length(Len)|IN2],
+    manager(IN,IN2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+manager([set_print_integer_radix(Len)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    IN1=[print_integer_radix(Len)|IN2],
+    manager(IN,IN2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+
+manager([variable_pool(VT1)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    VT={VT1,VT2},
+    manager(In,In1,IO,CH,D,L,Pvar,VT2,VSK,PAC).
+
+manager([init_varpool(Vars)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    VT=[],
+    variable:pool2(VT1),
+    put_variable(Vars,VT1,VT2),
+    manager(In,In1,IO,CH,D,L,Pvar,VT2,VSK,PAC).
+manager([put_varpool(TskID)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- true|
+    VSK=[put(TskID,VT)|VSK1],
+    manager(In,In1,IO,CH,D,L,Pvar,_,VSK1,PAC).
+manager([change_varpool(TskID)|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- true|
+    VT=[],
+    VSK=[get(TskID,NVT)|VSK1],
+    manager(In,In1,IO,CH,D,L,Pvar,NVT,VSK1,PAC).
+manager([get_value(Name,Val)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    VT=[get_value(Name,Val)|NVT],
+    manager(IN,IN1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([put_var(Name,Val)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    VT=[put_var(Name,Val)|NVT],
+    manager(IN,IN1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([count(N)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    VT=[count(N)|NVT],
+    manager(IN,IN1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([unify|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    VT=[unify|NVT],
+    manager(IN,IN1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([reset|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    VT=[reset|NVT],
+    manager(IN,IN1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([get_name(V,R)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    VT=[get_name(V,R)|NVT],
+    manager(IN,IN1,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+%91.6.5 For scope(clause) command
+manager([init|In],In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    VT=[],
+    variable:pool2(VT1),
+    manager(In,In1,IO,CH,D,L,Pvar,VT1,VSK,PAC).
+
+
+manager([do(List)|IN],IN1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,IN,IN2),
+    manager(IN2,IN1,IO,CH,D,L,Pvar,VT,VSK,PAC).
+
+manager([],           In1,IO,CH,_,_,_,VT,VSK,_) :- true|
+    In1=[], IO=[], CH=[], VT=[], VSK=[get_all(All)],
+    close_varpool(All).
+
+otherwise.
+manager([putwt_with_prefix({_,WT})|In],In1,IO,CH,D,L,Pvar,VT,VSK,Pac) :-
+    CH=[putwtq(WT,10000,10000), putb(" ."), nl, getl(String), abandon_pool|CH1],
+    In1=[ungetb(String,_)|In2],
+    manager(In,In2,IO,CH1,D,L,Pvar,VT,VSK,Pac).
+
+manager([putGoal(T)|In],            In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+    In1=[printtq(T)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+
+manager([writeGoal(T)|In],            In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  vector_element(T,0,Na),
+  atom(Na) |
+    portray(T,T1),
+    wrap(Pvar,T1,_,WT,D,L,VT,NVT),
+    In1=[printwtq(WT,D,L)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([writeGoal(T,NT)|In],         In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  vector_element(T,0,Na),
+  atom(Na) |
+    portray(T,T1),
+    wrap(Pvar,T1,NT,WT,D,L,VT,NVT),
+    In1=[printwtq(WT,D,L)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([writeGoal(T,Dep,Len)|In], In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+  vector_element(T,0,Na),
+  atom(Na) |
+    portray(T,T1),
+    wrap(Pvar,T1,_,WT,Dep,Len,VT,NVT),
+    In1=[printwtq(WT,Dep,Len)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+manager([writeGoal(T,NT,Dep,Len)|In], In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :- 
+  vector_element(T,0,Na),
+  atom(Na) |
+    portray(T,T1),
+    wrap(Pvar,T1,NT,WT,Dep,Len,VT,NVT),
+    In1=[printwtq(WT,Dep,Len)|In2],
+    manager(In,In2,IO,CH,D,L,Pvar,NVT,VSK,PAC).
+otherwise.
+manager([P|In],             In1,IO,CH,D,L,Pvar,VT,VSK,PAC) :-
+    In1=[P|In2], manager(In,In2,IO,CH,D,L,Pvar,VT,VSK,PAC).
+
+
+wrap(address,T,NT,WT,D,L,VP,NVP) :- 
+    variable:wrap_address(T,Result,D,L),
+    unify_result(Result,NT,WT),
+    NVP=VP.
+otherwise.
+wrap(_,      T,NT,WT,D,L,VP,NVP) :- 
+    variable:black_wrap(T,Result,D,L,VP,NVP),
+    unify_result(Result,NT,WT).
+
+unify_result({NT,WT},NT1,WT1) :-  NT=NT1, WT=WT1.
+
+put_variable([],VT,NVT) :- NVT=VT.
+put_variable([{Name,Val}|L],VT,NVT) :- 
+    VT=[put_var(Name,Val)|VT1],
+    put_variable(L,VT1,NVT).
+put_variable([{Name,_,Val}|L],VT,NVT) :- 
+    VT=[put_var(Name,Val)|VT1],
+    put_variable(L,VT1,NVT).
+
+
+filter([change_portray({Code,ArgV},St)|US],OS) :- code(Code,Arity,_,_), vector(ArgV,Arity)|
+    OS=[change_portray({Code,ArgV},St1)|OS1],
+    listener_utility:ground_unify(St1,St),
+    filter(US,OS1).
+filter([change_portray(default,St)|US],OS) :- true|
+    OS=[change_portray(default,St1)|OS1],
+    listener_utility:ground_unify(St1,St),
+    filter(US,OS1).
+% 93.8.31
+%filter([reset_portray(St)|US],OS) :- true|
+%    OS=[reset_portray(St1)|OS1],
+%    listener_utility:ground_unify(St1,St),
+%    filter(US,OS1).
+
+filter([print_var(K,Val)|US],OS) :- string(K,_,_)|
+    OS=[print_var(K,Val)|OS1],
+    filter(US,OS1).
+filter([print_var(K,Val,D,L)|US],OS) :- string(K,_,_),D>0, L>0|
+    OS=[print_var(K,Val,D,L)|OS1],
+    filter(US,OS1).
+
+filter([get_print_length(L)|US],OS) :- 
+    OS=[get_print_length(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter(US,OS1).
+filter([get_print_depth(L)|US],OS) :- 
+    OS=[get_print_depth(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter(US,OS1).
+filter([get_print_string_length(L)|US],OS) :- 
+    OS=[get_print_string_length(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter(US,OS1).
+filter([get_print_atom_length(L)|US],OS) :- 
+    OS=[get_print_atom_length(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter(US,OS1).
+filter([get_print_integer_radix(L)|US],OS) :-
+    OS=[get_print_integer_radix(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter(US,OS1).
+filter([get_print_variable(L)|US],OS) :- 
+    OS=[get_print_variable(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter(US,OS1).
+
+filter([print_length(L)|US],OS) :- L>=0 |
+    OS=[print_length(L)|OS1],
+    filter(US,OS1).
+filter([print_depth(L)|US],OS) :- L>=0 |
+    OS=[print_depth(L)|OS1],
+    filter(US,OS1).
+filter([print_string_length(L)|US],OS) :- L>=0 |
+    OS=[print_string_length(L)|OS1],
+    filter(US,OS1).
+filter([print_atom_length(L)|US],OS) :- L>=0 |
+    OS=[print_atom_length(L)|OS1],
+    filter(US,OS1).
+filter([print_integer_radix(L)|US],OS) :- L>=2, L=<36|
+    OS=[print_integer_radix(L)|OS1],
+    filter(US,OS1).
+filter([print_variable(name)|US],OS) :- 
+    OS=[print_variable(name)|OS1],
+    filter(US,OS1).
+filter([print_variable(address)|US],OS) :- 
+    OS=[print_variable(address)|OS1],
+    filter(US,OS1).
+
+filter([print_length(L,NL)|US],OS) :-
+    OS=[get_print_length(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter([print_length(NL)|US],OS1).
+filter([print_depth(D,ND)|US],OS) :-
+    OS=[get_print_depth(D1)|OS1],
+    listener_utility:ground_unify(D1,D),
+    filter([print_depth(ND)|US],OS1).
+filter([print_string_length(L,NL)|US],OS) :-
+    OS=[get_print_string_length(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter([print_string_length(NL)|US],OS1).
+filter([print_atom_length(L,NL)|US],OS) :-
+    OS=[get_print_atom_length(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter([print_atom_length(NL)|US],OS1).
+filter([print_integer_radix(L,NL)|US],OS) :-
+    OS=[get_print_integer_radix(L1)|OS1],
+    listener_utility:ground_unify(L1,L),
+    filter([print_integer_radix(NL)|US],OS1).
+filter([print_variable(Pv,NPv)|US],OS) :- 
+    OS=[get_print_variable(Pv1)|OS1],
+    listener_utility:ground_unify(Pv1,Pv),
+    filter([print_variable(NPv)|US],OS1).
+
+filter([wrap(T,WT)|US],OS) :- 
+    OS=[wrap(T,WT1)|OS1],
+    listener_utility:ground_unify(WT1,WT),
+    filter(US,OS1).
+filter([wrap(T,NT,WT)|US],OS) :-
+    OS=[wrap(T,NT1,WT1)|OS1],
+    unify(NT1,NT),
+    listener_utility:ground_unify(WT1,WT),
+    filter(US,OS1).
+filter([wrap(T,WT,D,L)|US],OS) :- D>=0, L>=0 |
+    OS=[wrap(T,WT1,D,L)|OS1],
+    listener_utility:ground_unify(WT1,WT),
+    filter(US,OS1).
+filter([wrap(T,NT,WT,D,L)|US],OS) :- D>=0, L>=0 |
+    OS=[wrap(T,NT1,WT1,D,L)|OS1],
+    unify(NT1,NT),
+    listener_utility:ground_unify(WT1,WT),
+    filter(US,OS1).
+filter([add_op(P,T,OP)|US],OS) :- P>1, P=<1200, atom(T), atom(OP) |
+    op_type(T,Status),
+    filter1(Status,add_op(P,T,OP),OS,OS1),
+    filter(US,OS1).
+filter([remove_op(P,T,OP)|US],OS) :- P>1, P=<1200, atom(T), atom(OP) |
+    op_type(T,Status),
+    filter1(Status,remove_op(P,T,OP),OS,OS1),
+    filter(US,OS1).
+filter([operator(Def)|US],OS) :-
+    OS=[operator(Def1)|OS1],
+    listener_utility:ground_unify(Def1,Def),
+    filter(US,OS1).
+filter([operator(OP,Def)|US],OS) :- atom(OP) |
+    OS=[operator(OP,Def1)|OS1],
+    listener_utility:ground_unify(Def1,Def),
+    filter(US,OS1).
+filter([write(X)|US],OS) :- 
+    OS=[write(X)|OS1],
+    filter(US,OS1).
+filter([write(X,Y)|US],OS) :- 
+    OS=[write(X,Y1)|OS1],
+    unify(Y1,Y),
+    filter(US,OS1).
+filter([write(X,D,L)|US],OS) :- D>0, L>0 |
+    OS=[write(X,D,L)|OS1],
+    filter(US,OS1).
+filter([do(List)|US],OS) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,US,US1),
+    filter(US1,OS).
+filter([],OS) :- 
+    OS=[flush(X)],
+    listener_utility:ground_unify(X,_).
+
+% For inspector
+filter([get_char_size(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([get_position(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([get_title(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([get_font(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([get_buffer_name(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([set_size(_,X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([set_position(_,X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([reshape(_,_,X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([set_title(_,X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([set_font(_,X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([select_buffer(_,X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([activate(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([deactivate(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([show(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([hide(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([clear(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+filter([beep(X)|US],OS) :- true|
+    X=abnormal,
+    filter(US,OS).
+
+filter([getc(X)|US],OS) :- 
+    OS=[getc(X1)|OS1],
+    listener_utility:ground_unify(X1,X),
+    filter(US,OS1).
+filter([getl(X)|US],OS) :- 
+    OS=[getl(X1)|OS1],
+    listener_utility:ground_unify(X1,X),
+    filter(US,OS1).
+filter([getb(X,Y)|US],OS) :- integer(X) |
+    OS=[getb(X,Y1)|OS1],
+    listener_utility:ground_unify(Y1,Y),
+    filter(US,OS1).
+filter([getwt(X)|US],OS) :- 
+    OS=[getwt(X1)|OS1],
+    listener_utility:ground_unify(X1,X),
+    filter(US,OS1).
+filter([gett(X)|US],OS) :- 
+    OS=[gett(X1)|OS1],
+    listener_utility:ground_unify(X1,X),
+    filter(US,OS1).
+filter([gett(X,Y)|US],OS) :- % Y is OS
+    OS=[gett(X1,Y1)|OS1],
+    listener_utility:ground_unify(X1,X),
+    variable_filter(Y,Y1),
+    filter(US,OS1).
+filter([gett(X,Y,Z)|US],OS) :- % Y,Z is USER
+    OS=[gett(X1,Y1,Z)|OS1],
+    listener_utility:ground_unify(X1,X),
+    variable_filter(Y1,Y),
+    filter(US,OS1).
+filter([getft(X,Y)|US],OS) :-
+    OS=[gett(X1,Y1)|OS1],
+    listener_utility:ground_unify(X1,X),
+    listener_utility:ground_unify(Y1,Y),
+    filter(US,OS1).
+filter([skip(X)|US],OS) :- integer(X) |
+    OS=[skip(X)|OS1],
+    filter(US,OS1).
+filter([ungetc(X)|US],OS) :- integer(X) |
+    OS=[ungetc(X)|OS1],
+    filter(US,OS1).
+filter([prompt(X)|US],OS) :- string(X,_,_) |
+    OS=[prompt(X)|OS1],
+    filter(US,OS1).
+filter([putc(X)|US],OS) :- integer(X) |
+    OS=[putc(X)|OS1],
+    filter(US,OS1).
+filter([putl(X)|US],OS) :- string(X,_,_) |
+    OS=[putl(X)|OS1],
+    filter(US,OS1).
+filter([putb(X)|US],OS) :- string(X,_,_) |
+    OS=[putb(X)|OS1],
+    filter(US,OS1).
+filter([putwt(X,Y,Z)|US],OS) :- Y>=0, Z>=0 |
+    listener_utility:ground_unify(X,X1),
+    putwt_3(X1,Y,Z,OS,OS1),
+    filter(US,OS1).
+filter([putwt(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    putwt_1(X1,OS,OS1),
+    filter(US,OS1).
+filter([putwtq(X,Y,Z)|US],OS) :- Y>=0, Z>=0 |
+    listener_utility:ground_unify(X,X1),
+    putwtq_3(X1,Y,Z,OS,OS1),
+    filter(US,OS1).
+filter([putwtq(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    putwtq_1(X1,OS,OS1),
+    filter(US,OS1).
+filter([putt(X,Y,Z)|US],OS) :- Y>=0, Z>=0 |
+    listener_utility:ground_unify(X,X1),
+    putt_3(X1,Y,Z,OS,OS1),
+    filter(US,OS1).
+filter([putt(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    putt_1(X1,OS,OS1),
+    filter(US,OS1).
+filter([puttq(X,Y,Z)|US],OS) :- Y>=0, Z>=0 |
+    listener_utility:ground_unify(X,X1),
+    puttq_3(X1,Y,Z,OS,OS1),
+    filter(US,OS1).
+filter([puttq(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    puttq_1(X1,OS,OS1),
+    filter(US,OS1).
+filter([nl|US],OS) :-
+    OS=[nl|OS1],
+    filter(US,OS1).
+filter([tab(X)|US],OS) :- X>=0 |
+    OS=[tab(X)|OS1],
+    filter(US,OS1).
+filter([putf(X,Y)|US],OS) :- string(X,_,_), list(Y) |
+    OS=[putf(X,Y)|OS1],
+    filter(US,OS1).
+filter([putf(X,[])|US],OS) :- string(X,_,_) |
+    OS=[putf(X,[])|OS1],
+    filter(US,OS1).
+filter([print_error(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    print_error(X1,OS,OS1),
+    filter(US,OS1).
+filter([print_text(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    print_text(X1,OS,OS1),
+    filter(US,OS1).
+filter([flush(X)|US],OS) :-
+    OS=[flush(X1)|OS1],
+    listener_utility:ground_unify(X1,X),
+    filter(US,OS1).
+filter([reset(X,Y,Z)|US],OS) :-
+    OS=[reset(Reset)|OS1],
+    listener_utility:wait_unify(Reset,normal(X,Y,Z)),
+    filter(US,OS1).
+filter([resend(X)|US],OS) :- integer(X) |
+    OS=[resend(X,Status)|OS1],
+    listener_utility:ground_unify(Status,_),
+    filter(US,OS1).
+filter([cancel(X)|US],OS) :- integer(X) |
+    OS=[cancel(X,Status)|OS1],
+    listener_utility:ground_unify(Status,_),
+    filter(US,OS1).
+filter([next_attention(X)|US],OS) :-
+    OS=[next_attention(X1)|OS1],
+    listener_utility:wait_unify(X1,normal(X)),
+    filter(US,OS1).
+filter([count(X)|US],OS) :-
+    OS=[count(X1)|OS1],
+    listener_utility:ground_unify(X1,X),
+    filter(US,OS1).
+filter([unify|US],OS) :-
+    OS=[unify|OS1],
+    filter(US,OS1).
+filter([reset|US],OS) :-
+    OS=[reset|OS1],
+    filter(US,OS1).
+filter([get_value(X,Y)|US],OS) :- string(X,_,_) |
+    OS=[get_value(X,Y1)|OS1],
+    listener_utility:wait_unify(Y1,Y),
+    filter(US,OS1).
+filter([put_var(X,Y)|US],OS) :- string(X,_,_) |
+    OS=[get_value(X,Y1)|OS1],
+    variable_unify(Y1,X,Y,OS1,OS2),
+    filter(US,OS2).
+
+filter([printwt(X,Y,Z,S,A)|US],OS) :- Y>=0, Z>=0, S>=0, A>=0|
+    listener_utility:ground_unify(X,X1),
+    printwt_5(X1,Y,Z,S,A,OS,OS1),
+    filter(US,OS1).
+filter([printwt(X,Y,Z,S)|US],OS) :- Y>=0, Z>=0, S>=0 |
+    listener_utility:ground_unify(X,X1),
+    printwt_4(X1,Y,Z,S,OS,OS1),
+    filter(US,OS1).
+filter([printwt(X,Y,Z)|US],OS) :- Y>=0, Z>=0 |
+    listener_utility:ground_unify(X,X1),
+    printwt_3(X1,Y,Z,OS,OS1),
+    filter(US,OS1).
+filter([printwt(X,Y)|US],OS) :- true|
+    listener_utility:ground_unify(X,X1),
+    holo_check(Y,Y1),
+    printwt_2(X1,Y1,OS,OS1),
+    filter(US,OS1).
+filter([printwt(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    printwt_1(X1,OS,OS1),
+    filter(US,OS1).
+
+filter([printwtq(X,Y,Z,S,A)|US],OS) :- Y>=0, Z>=0, S>=0, A>=0|
+    listener_utility:ground_unify(X,X1),
+    printwtq_5(X1,Y,Z,S,A,OS,OS1),
+    filter(US,OS1).
+filter([printwtq(X,Y,Z,S)|US],OS) :- Y>=0, Z>=0, S>=0 |
+    listener_utility:ground_unify(X,X1),
+    printwtq_4(X1,Y,Z,S,OS,OS1),
+    filter(US,OS1).
+filter([printwtq(X,Y,Z)|US],OS) :- Y>=0, Z>=0 |
+    listener_utility:ground_unify(X,X1),
+    printwtq_3(X1,Y,Z,OS,OS1),
+    filter(US,OS1).
+filter([printwtq(X,Y)|US],OS) :- true|
+    listener_utility:ground_unify(X,X1),
+    holo_check(Y,Y1),
+    printwtq_2(X1,Y1,OS,OS1),
+    filter(US,OS1).
+filter([printwtq(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    printwtq_1(X1,OS,OS1),
+    filter(US,OS1).
+
+filter([printt(X,Y,Z,S,A)|US],OS) :- Y>=0, Z>=0, S>=0, A>=0|
+    listener_utility:ground_unify(X,X1),
+    printt_5(X1,Y,Z,S,A,OS,OS1),
+    filter(US,OS1).
+filter([printt(X,Y,Z,S)|US],OS) :- Y>=0, Z>=0, S>=0 |
+    listener_utility:ground_unify(X,X1),
+    printt_4(X1,Y,Z,S,OS,OS1),
+    filter(US,OS1).
+filter([printt(X,Y,Z)|US],OS) :- Y>=0, Z>=0 |
+    listener_utility:ground_unify(X,X1),
+    printt_3(X1,Y,Z,OS,OS1),
+    filter(US,OS1).
+filter([printt(X,Y)|US],OS) :- true|
+    listener_utility:ground_unify(X,X1),
+    holo_check(Y,Y1),
+    printt_2(X1,Y1,OS,OS1),
+    filter(US,OS1).
+filter([printt(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    printt_1(X1,OS,OS1),
+    filter(US,OS1).
+
+filter([printtq(X,Y,Z,S,A)|US],OS) :- Y>=0, Z>=0, S>=0, A>=0|
+    listener_utility:ground_unify(X,X1),
+    printtq_5(X1,Y,Z,S,A,OS,OS1),
+    filter(US,OS1).
+filter([printtq(X,Y,Z,S)|US],OS) :- Y>=0, Z>=0, S>=0 |
+    listener_utility:ground_unify(X,X1),
+    printtq_4(X1,Y,Z,S,OS,OS1),
+    filter(US,OS1).
+filter([printtq(X,Y,Z)|US],OS) :- Y>=0, Z>=0 |
+    listener_utility:ground_unify(X,X1),
+    printtq_3(X1,Y,Z,OS,OS1),
+    filter(US,OS1).
+filter([printtq(X,Y)|US],OS) :- true|
+    listener_utility:ground_unify(X,X1),
+    holo_check(Y,Y1),
+    printtq_2(X1,Y1,OS,OS1),
+    filter(US,OS1).
+filter([printtq(X)|US],OS) :-
+    listener_utility:ground_unify(X,X1),
+    printtq_1(X1,OS,OS1),
+    filter(US,OS1).
+
+filter([term_to_string(T,S)|US],OS) :- 
+    listener_utility:ground_unify(T,T1),
+    term_to_string(T1,S1,OS,OS1),
+    listener_utility:wait_unify(S1,S),
+    filter(US,OS1).
+filter([string_to_term(S,T,N)|US],OS) :- string(S,_,_) |
+    OS=[string_to_term(S,T1,N1)|OS1],
+    listener_utility:wait_unify(T1,T),
+    listener_utility:wait_unify(N1,N),
+    filter(US,OS1).
+
+filter([package(X)|US],OS) :- atom(X) |
+    OS=[package(X)|OS1],
+    filter(US,OS1).
+
+filter([switch(X)|US],OS) :- true |
+    OS=[switch(Y)|OS1],
+    listener_utility:wait_unify(Y,X),
+    filter(US,OS1).
+
+variable_filter([count(X)|US],OS) :-
+    OS=[count(X1)|OS1],
+    listener_utility:ground_unify(X1,X),
+    variable_filter(US,OS1).
+variable_filter([unify|US],OS) :-
+    OS=[unify|OS1],
+    variable_filter(US,OS1).
+variable_filter([reset|US],OS) :-
+    OS=[reset|OS1],
+    variable_filter(US,OS1).
+variable_filter([get_value(X,Y)|US],OS) :- string(X,_,_) |
+    OS=[get_value(X,Y1)|OS1],
+    listener_utility:wait_unify(Y1,Y),
+    variable_filter(US,OS1).
+variable_filter([put_var(X,Y)|US],OS) :- string(X,_,_) |
+    OS=[get_value(X,Y1)|OS1],
+    variable_unify(Y1,X,Y,OS1,OS2),
+    variable_filter(US,OS2).
+variable_filter([],OS) :- OS=[].
+
+
+variable_unify({},X,Y,OS,OS1) :- OS=[put_var(X,Y)|OS1].
+
+unify(X,X1) :- X=X1.
+
+filter1(normal,Msg,OS,OS1) :- OS=[Msg|OS1].
+otherwise.
+filter1(_,_,OS,OS1) :- OS1=OS.
+
+op_type(fx,S) :- S=normal.
+op_type(fy,S) :- S=normal.
+op_type(xfx,S) :- S=normal.
+op_type(yfx,S) :- S=normal.
+op_type(xfy,S) :- S=normal.
+op_type(xf,S) :- S=normal.
+op_type(yf,S) :- S=normal.
+otherwise.
+op_type(_,S) :- S=abnormal.
+
+putwt_3(X,Y,Z,OS,OS1) :- wait(X) | OS=[putwt(X,Y,Z)|OS1].
+putwt_1(X,OS,OS1) :- wait(X) | OS=[putwt(X)|OS1].
+putwtq_3(X,Y,Z,OS,OS1) :- wait(X) | OS=[putwtq(X,Y,Z)|OS1].
+putwtq_1(X,OS,OS1) :- wait(X) | OS=[putwtq(X)|OS1].
+putt_3(X,Y,Z,OS,OS1) :- wait(X) | OS=[putt(X,Y,Z)|OS1].
+putt_1(X,OS,OS1) :- wait(X) | OS=[putt(X)|OS1].
+puttq_3(X,Y,Z,OS,OS1) :- wait(X) | OS=[puttq(X,Y,Z)|OS1].
+puttq_1(X,OS,OS1) :- wait(X) | OS=[puttq(X)|OS1].
+print_error(X,OS,OS1) :- wait(X) | OS=[print_error(X)|OS1].
+print_text(X,OS,OS1) :- wait(X) | OS=[print_text(X)|OS1].
+
+printwt_5(X,Y,Z,S,A,OS,OS1) :- wait(X) | OS=[printwt(X,Y,Z,S,A)|OS1].
+printwt_4(X,Y,Z,S,OS,OS1) :- wait(X) | OS=[printwt(X,Y,Z,S)|OS1].
+printwt_3(X,Y,Z,OS,OS1) :- wait(X) | OS=[printwt(X,Y,Z)|OS1].
+printwt_2(X,Y,OS,OS1) :- wait(X) | OS=[printwt(X,Y)|OS1].
+printwt_1(X,OS,OS1) :- wait(X) | OS=[printwt(X)|OS1].
+
+printwtq_5(X,Y,Z,S,A,OS,OS1) :- wait(X) | OS=[printwtq(X,Y,Z,S,A)|OS1].
+printwtq_4(X,Y,Z,S,OS,OS1) :- wait(X) | OS=[printwtq(X,Y,Z,S)|OS1].
+printwtq_3(X,Y,Z,OS,OS1) :- wait(X) | OS=[printwtq(X,Y,Z)|OS1].
+printwtq_2(X,Y,OS,OS1) :- wait(X) | OS=[printwtq(X,Y)|OS1].
+printwtq_1(X,OS,OS1) :- wait(X) | OS=[printwtq(X)|OS1].
+
+printt_5(X,Y,Z,S,A,OS,OS1) :- wait(X) | OS=[printt(X,Y,Z,S,A)|OS1].
+printt_4(X,Y,Z,S,OS,OS1) :- wait(X) | OS=[printt(X,Y,Z,S)|OS1].
+printt_3(X,Y,Z,OS,OS1) :- wait(X) | OS=[printt(X,Y,Z)|OS1].
+printt_2(X,Y,OS,OS1) :- wait(X) | OS=[printt(X,Y)|OS1].
+printt_1(X,OS,OS1) :- wait(X) | OS=[printt(X)|OS1].
+
+printtq_5(X,Y,Z,S,A,OS,OS1) :- wait(X) | OS=[printtq(X,Y,Z,S,A)|OS1].
+printtq_4(X,Y,Z,S,OS,OS1) :- wait(X) | OS=[printtq(X,Y,Z,S)|OS1].
+printtq_3(X,Y,Z,OS,OS1) :- wait(X) | OS=[printtq(X,Y,Z)|OS1].
+printtq_2(X,Y,OS,OS1) :- wait(X) | OS=[printtq(X,Y)|OS1].
+printtq_1(X,OS,OS1) :- wait(X) | OS=[printtq(X)|OS1].
+
+
+term_to_string(T,S,OS,OS1) :- wait(T) | OS=[term_to_string(T,S)|OS1].
+
+
+package_check(Pac,Pac::M,M1) :- true | M1=M.
+otherwise.
+package_check(_,  M,     M1) :- true | M1=M.
+
+pvar_mode(name,   Pvar) :- true | Pvar=address.
+pvar_mode(address,Pvar) :- true | Pvar=name.
+
+close_varpool([{_,VP}|L]) :- true| VP=[], close_varpool(L).
+close_varpool([]) :- true| true.
+
+holo_check([print_depth(P)|H],L) :- P>=0 |
+    L=[print_depth(P)|L1], holo_check(H,L1).
+holo_check([print_length(P)|H],L) :- P>=0 |
+    L=[print_length(P)|L1], holo_check(H,L1).
+holo_check([print_string_length(P)|H],L) :- P>=0 |
+    L=[print_string_length(P)|L1], holo_check(H,L1).
+holo_check([print_atom_length(P)|H],L) :- P>=0 |
+    L=[print_atom_length(P)|L1], holo_check(H,L1).
+holo_check([print_integer_radix(P)|H],L) :- P>=0 |
+    L=[print_integer_radix(P)|L1], holo_check(H,L1).
+holo_check([],L) :- true| L=[].
+    
+% 93.8.18
+portray(unify(X,Y),                G) :- G=(X=Y).
+portray(add(A,B,C),                G) :- G=(C:=A+B).
+portray(subtract(A,B,C),           G) :- G=(C:=A-B).
+portray(multiply(A,B,C),           G) :- G=(C:=A*B).
+portray(divide(A,B,C),             G) :- G=(C:=A/B).
+portray(modulo(A,B,C),             G) :- G=(C:=A mod B).
+portray(shift_left(A,B,C),         G) :- G=(C:=A << B).
+portray(shift_right(A,B,C),        G) :- G=(C:=A >> B).
+portray(and(A,B,C),                G) :- G=(C:=A /\ B).
+portray(or(A,B,C),                 G) :- G=(C:=A \/ B).
+portray(exclusive_or(A,B,C),       G) :- G=(C:=A xor B).
+portray(minus(A,B),                G) :- G=(B:=(-A)).
+
+% Floating_point operation 
+portray(floating_point_add(A,B,C),      G) :- G={'$:=',C,(A+B)}.
+portray(floating_point_subtract(A,B,C), G) :- G={'$:=',C,(A-B)}.
+portray(floating_point_multiply(A,B,C), G) :- G={'$:=',C,(A*B)}.
+portray(floating_point_divide(A,B,C),   G) :- G={'$:=',C,(A/B)}.
+portray(floating_point_to_integer(A,B), G) :- G=(B:=ftoi(A)).
+portray(integer_to_floating_point(A,B), G) :- G={'$:=',B,itof(A)}.
+
+% Extended_floating_point operation 
+portray(extended_floating_point_to_integer(A,B),       G) :- G={':=',B,xtoi(A)}.
+portray(integer_to_extended_floating_point(A,B),       G) :- G={'$$:=',B,itox(A)}.
+portray(extended_floating_point_to_floating_point(A,B),G) :- G={'$:=',B,xtof(A)}.
+portray(floating_point_to_extended_floating_point(A,B),G) :- G={'$$:=',B,ftox(A)}.
+portray(extended_floating_point_sinh(A,B),         G) :- G={'$$:=',B,sinh(A)}.
+portray(extended_floating_point_sqrt(A,B),         G) :- G={'$$:=',B,sqrt(A)}.
+%portray(extended_floating_point_lognp1(A,B),      G) :- G={'$$:=',B,lognp1(A)}.
+%portray(extended_floating_point_etoxm1(A,B),      G) :- G={'$$:=',B,etoxm1(A)}.
+portray(extended_floating_point_tanh(A,B),         G) :- G={'$$:=',B,tanh(A)}.
+portray(extended_floating_point_atan(A,B),         G) :- G={'$$:=',B,atan(A)}.
+portray(extended_floating_point_asin(A,B),         G) :- G={'$$:=',B,asin(A)}.
+portray(extended_floating_point_atanh(A,B),        G) :- G={'$$:=',B,atanh(A)}.
+portray(extended_floating_point_sin(A,B),          G) :- G={'$$:=',B,sin(A)}.
+portray(extended_floating_point_tan(A,B),          G) :- G={'$$:=',B,tan(A)}.
+portray(extended_floating_point_etox(A,B),         G) :- G={'$$:=',B,exp(A)}.
+portray(extended_floating_point_twotox(A,B),       G) :- G={'$$:=',B,{(**),2,A}}.
+portray(extended_floating_point_tentox(A,B),       G) :- G={'$$:=',B,{(**),10,A}}.
+portray(extended_floating_point_logn(A,B),         G) :- G={'$$:=',B,ln(A)}.
+portray(extended_floating_point_log10(A,B),        G) :- G={'$$:=',B,log(A)}.
+portray(extended_floating_point_log2(A,B),         G) :- G={'$$:=',B,log2(A)}.
+portray(extended_floating_point_abs(A,B),          G) :- G={'$$:=',B,abs(A)}.
+portray(extended_floating_point_cosh(A,B),         G) :- G={'$$:=',B,cosh(A)}.
+portray(extended_floating_point_neg(A,B),          G) :- G={'$$:=',B,neg(A)}.
+portray(extended_floating_point_acos(A,B),         G) :- G={'$$:=',B,acos(A)}.
+portray(extended_floating_point_cos(A,B),          G) :- G={'$$:=',B,cos(A)}.
+portray(extended_floating_point_add(A,B,C),        G) :- G={'$$:=',C,(A+B)}.
+portray(extended_floating_point_subtract(A,B,C),   G) :- G={'$$:=',C,(A-B)}.
+portray(extended_floating_point_multiply(A,B,C),   G) :- G={'$$:=',C,(A*B)}.
+portray(extended_floating_point_divide(A,B,C),     G) :- G={'$$:=',C,(A/B)}.
+
+otherwise.
+portray(WT,                                             G) :- G=WT.

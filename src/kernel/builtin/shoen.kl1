@@ -1,0 +1,511 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- include("pimos.h").
+
+:- with_macro pimos.
+
+:- switch(machine_type).
+
+:- case(mpsi).
+:- module shoen.
+
+%:- default.
+%:- module shoen.
+
+:- end_switch.
+
+:- public execute/7, raise/3.           % For User
+:- public profile/7, profile/9.         % For Profiler
+:- public trace/2.                      % For Trace
+:- public execute/8.                    % For Old execute
+:- public execute/9.                    % For Distributed Processor
+:- public execute/3, execute1/3,noop/0. % For Top Level Shoen
+:- public ground_term/2, control/2,     % Non Public Predicates
+          report/2, 
+          monitor/3.
+:- public dummy/0.
+
+%**********************************************************************
+%       SHOEN LIBRARY PREDICATES
+%**********************************************************************
+
+%----------------------------------------------------------------------
+% execute
+%----------------------------------------------------------------------
+%%% Original Definition
+execute(Code, Argv, MinPrio, MaxPrio, ExcepMask, Control, Report) :-
+        0=< MinPrio, MinPrio =< 4096,
+        0=< MaxPrio, MaxPrio =< 4096,
+        MinPrio =< MaxPrio |
+    calculate_priority_from_current(~(MinPrio-4096), MinPrio1),
+    calculate_priority_from_current(~(MaxPrio-4096), MaxPrio1),
+    create_shoen(MinPrio1,MaxPrio1,ExcepMask,Code,Argv,Rep,Shoen),
+    report(Rep, Report),
+    control(Control,Shoen).
+
+execute(Code, Argv, MinPrio, MaxPrio, MinNode, NumNode,ExcepMask, Control, Report) :-
+        0=< MinPrio, MinPrio =< 4096,
+        0=< MaxPrio, MaxPrio =< 4096,
+        MinPrio =< MaxPrio |
+    calculate_priority_from_current(~(MinPrio-4096), MinPrio1),
+    calculate_priority_from_current(~(MaxPrio-4096), MaxPrio1),
+%    execute1(Code, Argv, {MinPrio1,MaxPrio1},{MinNode,NumNode},
+%       ExcepMask, Control,Report)@node(MinNode).
+    execute1(Code, Argv, {MinPrio1,MaxPrio1},{MinNode,NumNode},
+       ExcepMask, Control,Report)@processor(MinNode).
+
+
+execute1(Code, Argv, Prio,Node, ExcepMask, Control,Report):-
+    true|
+    create_shoen(Prio,Node, ExcepMask,Code,Argv,Rep,Shoen),
+    report(Rep, Report),
+    control(Control,Shoen).
+
+%%% For Trace
+%execute(Code, Argv, MinPrio, MaxPrio, ExcepMask, Control, Report) :- 
+%        0=< MinPrio, MinPrio =< 4096,
+%        0=< MaxPrio, MaxPrio =< 4096,
+%        MinPrio =< MaxPrio |
+%    calculate_priority_from_current(~(MinPrio-4096), MinPrio1),
+%    calculate_priority_from_current(~(MaxPrio-4096), MaxPrio1),
+%    predicate_to_code(module#shoen, trace, 2, Trace),
+%    create_shoen(MinPrio1,MaxPrio1,ExcepMask,Trace,{Code,Argv},Rep,Shoen),
+%    report(Rep, Report),
+%    control(Control,Shoen).
+
+%%% For Profiler
+profile(Code, Argv, MinPrio, MaxPrio, ExcepMask, Control, Report) :-
+        0=< MinPrio, MinPrio =< 4096,
+        0=< MaxPrio, MaxPrio =< 4096,
+        MinPrio =< MaxPrio |
+    calculate_priority_from_current(~(MinPrio-4096), MinPrio1),
+    calculate_priority_from_current(~(MaxPrio-4096), MaxPrio1),
+    create_profiling_shoen(MinPrio1,MaxPrio1,ExcepMask,Code,Argv,Rep,Shoen),
+    report(Rep, Report),
+    control(Control,Shoen).
+
+profile(Code, Argv, MinPrio, MaxPrio, MinNode, NodeNum, ExcepMask, Control, Report) :-
+        0=< MinPrio, MinPrio =< 4096,
+        0=< MaxPrio, MaxPrio =< 4096,
+        MinPrio =< MaxPrio |
+    calculate_priority_from_current(~(MinPrio-4096), MinPrio1),
+    calculate_priority_from_current(~(MaxPrio-4096), MaxPrio1),
+%    profile1(Code, Argv, {MinPrio1,MaxPrio1},{MinNode,NumNode},
+%       Excepmask, Control,Report)@node(MinNode).
+    profile1(Code, Argv, {MinPrio1,MaxPrio1},{MinNode,NumNode},
+       Excepmask, Control,Report)@processor(MinNode).
+
+
+profile1(Code, Argv, Prio,Node, Excepmask, Control,Report):-
+    true|
+    create_profiling_shoen(Prio,Node, ExcepMask,Code,Argv,Rep,Shoen),
+    report(Rep, Report),
+    control(Control,Shoen).
+
+trace(Code, Argv) :- halt(16#"1000") |
+    apply(Code, Argv).
+
+%----------------------------------------------------------------------
+% control stream manager
+%----------------------------------------------------------------------
+control([start|C],Sh) :- true |                         % START
+    start_shoen(Sh,NewSh),
+    control(C,NewSh).
+control([stop|C],Sh)  :- true |                         % STOP
+    stop_shoen(Sh,NewSh),
+    control(C,NewSh).
+control([abort|C],Sh) :- true |                         % ABORT
+    abort_shoen(Sh,NewSh),
+    control(C,NewSh).
+control([statistics|C],Sh) :- true |                    % STATISTICS
+    shoen_statistics(Sh,NewSh),
+    control(C,NewSh).
+control([add_resource(HR,LR)|C],Sh) :- true |             % ADD_RESOURCE
+    add_shoen_resource(Sh,HR,LR,NewSh),
+%    add_shoen_resource(Sh,LR,NewSh),
+    control(C,NewSh).
+control([allow_resource_report|C],Sh) :- true |         % ALLOW_RESOURCE_REPORT
+    allow_shoen_resource_report(Sh,NewSh),
+    control(C,NewSh).
+
+control([profile|C],Sh):- true|                         % For Profiler
+    shoen_profile(Sh,NewSh),
+    control(C,NewSh).
+
+control([],Sh) :- true |                                % REMOVE
+    remove_shoen(Sh).
+otherwise.
+control([Msg|C],Sh) :- true |                           % ILLEGAL MESSAGE
+    builtin:raise(pimos_tag#pimos,
+        fatal_error(string#"Illegal control message ~q"), Msg),
+    control(C, Sh).
+otherwise.
+control(X,Sh) :- true |                                 % ILLEGAL DATA
+    builtin:raise(pimos_tag#pimos,
+        fatal_error(string#"Illegal control data ~q"), _),
+    remove_shoen(Sh).
+
+
+%----------------------------------------------------------------------
+% report stream manager
+%----------------------------------------------------------------------
+report([shoen#started|ST], User) :- true |              % STARTED
+    User = [started|UT],
+    report(ST, UT).
+report([shoen#stopped|ST], User) :- true |              % STOPPED
+    User = [stopped|UT],
+    report(ST, UT).
+report([shoen#aborted|ST], User) :- true |              % ABORTED
+    User = [aborted|UT],
+    report(ST, UT).
+report([shoen#terminated|ST], User) :-  true |          % TERMINATED
+    User = [terminated|UT],
+    report(ST, UT).
+                                                        % EXCEPTION
+
+report([shoen#profiling_started|ST], User) :- true|
+    User = [profiling_started|UT],
+    report(ST, UT).                                     % For Profile
+report([shoen#profiling_rejected|ST], User) :- true|
+    User = [profiling_rejected|UT],
+    report(ST, UT).                                     % For Profile
+report([shoen#profiling_completed|ST], User) :- true|
+    User = [profiling_completed|UT],
+    report(ST, UT).                                     % For Profile
+
+% For new exception 
+%report([shoen#exception(16#"D",{ID,Proc},Sub,NewCode,NewArgv)|ST], User) :- true |
+%    User = [exception(trace,{Proc,ID,Sub},NewCode,NewArgv)|UT],
+%    report(ST, UT).
+report([shoen#exception(Kind,Info,NewCode,NewArgv)|ST], User) :- true |
+    exception_table:translate(Kind, Info, Kind1, Info1,done,Done),
+%93.5.20 by K.Nakao
+    Msg = exception(Kind1,Info1,NewCode0,NewArgv0),
+    send_msg(Done,Msg,User,UT),
+%93.5.20
+    check_NewCode_and_NewArgV_in_exception(Kind1,NewCode0,NewArgv0,NewCode,NewArgv),
+    report(ST, UT).
+
+report(
+    [shoen#profiling_information(Processor, Type, Depth, Data)|ST], User) 
+                          :- true |  % Profiling Information
+    exception_table:get_node(Processor,Node,done,Done),
+    Msg = profiling_information(Node,Type,Depth,Data),
+    send_msg(Done,Msg,User,UT),
+    report(ST, UT).                       % Profiling information
+
+%report(
+%    [shoen#profiling_information(Processor, Type, Depth, Data)|ST], User) 
+%                          :- true |
+%    User = [profiling_information(Processor, Type, Depth, Data)|UT],
+%    report(ST, UT).                       % Profile information
+
+%report([shoen#failure(Code,Argv,NewCode,NewArgv)|ST], User) :- true |
+%    User = [exception(reduction_failure,{0,Code,Argv},NewCode,NewArgv)|UT],
+%    report(ST, UT).
+                                                        % UNIFICATION_FAILURE
+%report([shoen#unification_failure(X,Y,NewCode,NewArgv)|ST], User) :- true |
+%    User = [exception(unification_failure,{0,X,Y},NewCode,NewArgv)|UT],
+%    report(ST, UT).
+                                                        % RAISED
+%report([shoen#raised(Info1,Info2,NewCode,NewArgv)|ST], User) :- true |
+%    User = [exception(raised,{0,Info1,Info2},NewCode,NewArgv)|UT],
+%    report(ST, UT).
+
+
+report([shoen#resource_low|ST], User) :- true |         % RESOURCE_LOW
+    User = [resource_low|UT],
+    report(ST, UT).
+report([shoen#resource_added|ST], User) :- true |       % RESOURCE_ADDED
+    User = [resource_added|UT],
+    report(ST, UT).
+                                                      % RESOURCE_REPORT_ALLOWED
+report([shoen#resource_report_allowed|ST], User) :- true |
+    User = [resource_report_allowed|UT],
+    report(ST, UT).
+report([shoen#statistics_started|ST], User) :- true |   % STATISTICS_STARTED
+    User = [statistics_started|UT],
+    report(ST, UT).
+report([shoen#statistics(HR,LR)|ST], User) :- true |     % STATISTICS
+    User = [statistics(HR,LR)|UT],
+    report(ST, UT).
+report([shoen#return_resource(HR,LR)|ST], User) :- true |   % RETUEN_RESOURCE
+    User = [return_resource(HR,LR)|UT],
+    report(ST, UT).
+report([], User) :- true |                              % []
+    User = [].
+otherwise.
+report([Msg|ST], User) :-                               % FIRM ERROR
+    put_console(ascii#"report: unexpected message (ignored)"),
+        put_console(13), put_console(10), display_console(Msg),
+        put_console(13), put_console(10) |
+        report(ST, User).
+otherwise.
+report(X, User) :-                                      % FIRM ERROR
+    put_console(ascii#"report: unexpected data !!!!"),
+        put_console(13), put_console(10), display_console(X),
+        put_console(13), put_console(10) | 
+    User = [].
+
+
+
+
+
+%----------------------------------------------------------------------
+% raise
+%----------------------------------------------------------------------
+
+
+raise(0, Info1, Info2) :- true |
+    builtin:raise(pimos_tag#pimos,
+        fatal_error(string#"Illegal mask data 0"), _).
+
+otherwise.
+
+raise(Tag, Info1, Info2) :- true |
+    ground_term(Info1, Info11),
+    wait_and_raise(Info11, Tag, Info2).
+
+wait_and_raise(Info1, Tag, Info2) :- wait(Info1) |
+    builtin:raise(Tag, Info1, Info2).
+
+%----------------------------------------------------------------------
+% wait ground term 
+%----------------------------------------------------------------------
+ground_term(Term, N_term) :- true |
+    ground_term(Term, [], Term1, Wait),
+    wait_and_unify(Wait, Term1, N_term).
+
+ground_term(Term, Data, N_term, Data1) :- vector(Term, L) |
+    new_vector(Term1, L),
+    wait_vector(L, Term, Term1, Data, N_term, Data1).
+ground_term([H|T], Data, N_term, Data1) :- true |
+    N_term = [H1|T1],
+    ground_term(H, Data, H1, Data2),
+    ground_term(T, Data2, T1, Data1).
+otherwise.
+ground_term(Term, Data, N_term, Data1) :-true | % wait(Term) |
+    N_term = Term, Data1 = Data.
+
+wait_and_unify(Wait, Term, Term1) :- wait(Wait) |
+    Term1 = Term.
+
+wait_vector(0, Vec, Vec1, Data, N_vec, Data1) :- true |
+    N_vec = Vec1, Data1 = Data.
+otherwise.
+wait_vector(L, Vec, Vec1, Data, N_vec, Data1) :- 
+        L1 := L-1,
+        vector_element(Vec, L1, D) |
+    ground_term(D, Data, D1, Data2),
+    set_vector_element(Vec1, L1, _, D1, Vec2),
+    wait_vector(L1, Vec, Vec2, Data2, N_vec, Data1).
+
+%----------------------------------------------------------------------
+% execute
+%----------------------------------------------------------------------
+%%% Old execute
+execute(Module, PredicateName, Argv, MinPrio, MaxPrio, 
+                                    ExcepMask, Control, Report) :- 
+    vector(Argv,Arity) |
+    predicate_to_code(Module,PredicateName,Arity,Code),
+    execute(Code, Argv, MinPrio, MaxPrio, ExcepMask, Control, Report).
+    
+%%% For Top Level Shoen
+execute(Module, PredicateName, Argv) :- true |
+    predicate_to_code(module#shoen, execute1, 3, Code),
+    create_shoen(0, 16#"FFFFFFFF", -1, Code, 
+                    {Module,PredicateName,Argv}, Rep, Shoen),
+    add_shoen_resource(Shoen, 0, 16#"7FFFFFFF", Shoen1),
+    start_shoen(Shoen1, Shoen2).
+    
+execute1(Module, PredicateName, Argv) :-
+        vector(Argv, Arity) |
+    predicate_to_code(Module,PredicateName,Arity,Code),
+    Control = [add_resource(16#"7FFFFFF0"),start|Cout],
+    execute(Code, Argv, 0, 4075, -1, Control, Report),
+    monitor(Report, [], Cout)@priority(*,4095).
+
+%----------------------------------------------------------------------
+% report stream monitor
+%----------------------------------------------------------------------
+%
+%       REPORT STREAM MESSAGES
+%
+%:: REP_ABORTED                 equ             1.
+%:: REP_EXCEPTION               equ             2.
+%:: REP_FAILURE                 equ             3.
+%:: REP_RAISED                  equ             4.
+%:: REP_RESOURCE_ADDED          equ             5.
+%:: REP_RESOURCE_LOW            equ             6.
+%:: REP_RESOURCE_REPORT_ALLOWED equ             7.
+%:: REP_STARTED                 equ             8.
+%:: REP_STATISTICS              equ             9.
+%:: REP_STATISTICS_STARTED      equ             10.
+%:: REP_STOPPED                 equ             11.
+%:: REP_TERMINATED              equ             12.
+%:: REP_UNIFICATION_FAILURE     equ             13.
+
+% monitor(R,Cin,Cout)
+%       R:      report stream from shoen
+%       Cin:    control stream from user
+%       Cout:   control stream to shoen
+%
+%       state transition of monitor process:
+%
+%                    R==[terminated]
+%           ==> cr -------------------> c
+%               |                       |
+%               |                       |
+%       Cin==[] |                       |Cin==[] / Cout<=[]
+%               |                       |
+%               V                       V
+%               r --------------------> o ------------> []
+%                    R==[terminated]/         R==[]
+%                    Cout<=[]
+%
+monitor(R,Cin,Cout) :- true | monitorS(R,Cin,Cout,cr).
+
+monitorS(R,[CM|Cin1],Cout,S) :- true |
+    Cout = [CM|Cout1], monitorS(R,Cin1,Cout1,S).
+monitorS(R,[],Cout,cr) :- true | monitorS(R,[],Cout,r).
+monitorS(R,[],Cout,c) :- true | Cout = [], monitorS(R,[],[],o).
+monitorS([started|R],Cin,Cout,S) :-                                 % STARTED
+    put_console(ascii#"report: started"),
+        put_console(13), put_console(10) |
+    monitorS(R,Cin,Cout,S).
+monitorS([stopped|R],Cin,Cout,S) :-                                 % STOPPED
+    put_console(ascii#"report: stopped"),
+        put_console(13), put_console(10) |
+    monitorS(R,Cin,Cout,S).
+monitorS([aborted|R],Cin,Cout,S) :-                                 % ABORTED
+    put_console(ascii#"report: aborted"),
+        put_console(13), put_console(10) |
+    monitorS(R,Cin,Cout,S).
+monitorS([terminated|R],Cin,Cout,cr) :-                             % TERMINATED
+    put_console(ascii#"report: terminated"),
+        put_console(13), put_console(10) |
+    monitorS(R,Cin,Cout,c).
+monitorS([terminated|R],Cin,Cout,r) :-
+    put_console(ascii#"report: terminated"),
+        put_console(13), put_console(10) |
+    Cout = [],
+    monitorS(R,Cin,[],o).
+monitorS([exception(EC,OP,Argv,NewCode,NewArgv)|R],Cin,Cout,S) :-   % EXCEPTION
+    put_console(ascii#"report: exception"),
+    display_console(EC), display_console(OP), display_console(Argv),
+        put_console(13), put_console(10) |
+    predicate_to_code(module#shoen,noop,0, NewCode),
+    NewArgv = {},
+    monitorS(R,Cin,Cout,S).
+monitorS([failure(Code,Argv,NewCode,NewArgv)|R],Cin,Cout,S) :-      % FAILURE
+    put_console(ascii#"report: failure"),
+    display_console(Code), display_console(Argv),
+        put_console(13), put_console(10) |
+    predicate_to_code(module#shoen,noop,0, NewCode),
+    NewArgv = {},
+    monitorS(R,Cin,Cout,S).
+monitorS([unification_failure(X,Y,NewCode,NewArgv)
+                                    |R],Cin,Cout,S) :-    % UNIFICATION_FAILURE
+    put_console(ascii#"report: unification_failure"),
+    display_console(X), display_console(Y),
+        put_console(13), put_console(10) |
+    predicate_to_code(module#shoen,noop,0, NewCode),
+    NewArgv = {},
+    monitorS(R,Cin,Cout,S).
+monitorS([raised(Info1,Info2,NewCode,NewArgv)|R],Cin,Cout,S) :-     % RAISED
+    put_console(ascii#"report: raised"),
+    display_console(Info1), display_console(Info2),
+        put_console(13), put_console(10) |
+    predicate_to_code(module#shoen,noop,0, NewCode),
+    NewArgv = {},
+    monitorS(R,Cin,Cout,S).
+monitorS([resource_low|R],Cin,Cout,S) :-                        % RESOURCE_LOW
+    put_console(ascii#"report: resource_low"),
+        put_console(13), put_console(10) |
+    Cout = [add_resource(1000), allow_resource_report | Cout2],
+    monitorS(R,Cin,Cout2,S).
+monitorS([resource_added|R],Cin,Cout,S) :-                    % RESOURCE_ADDED
+    put_console(ascii#"report: resource_added"),
+        put_console(13), put_console(10) |
+    monitorS(R,Cin,Cout,S).
+monitorS([resource_report_allowed|R],Cin,Cout,S) :-  % RESOURCE_REPORT_ALLOWED
+    put_console(ascii#"report: resource_report_allowed"),
+        put_console(13), put_console(10) |
+    monitorS(R,Cin,Cout,S).
+monitorS([statistics_started|R],Cin,Cout,S) :-             % STATISTICS_STARTED
+    put_console(ascii#"report: statistics_started"),
+        put_console(13), put_console(10) |
+    monitorS(R,Cin,Cout,S).
+monitorS([statistics(HR,LR)|R],Cin,Cout,S) :-                     % STATISTICS
+    put_console(ascii#"report: statistics"),
+    display_console(HR), display_console(LR), put_console(13), put_console(10) |
+    monitorS(R,Cin,Cout,S).
+monitorS([return_resource(HR,LR)|R],Cin,Cout,S) :-                     % STATISTICS
+    put_console(ascii#"report: return resource"),
+    display_console(HR), display_console(LR), put_console(13), put_console(10) |
+    monitorS(R,Cin,Cout,S).
+monitorS([],_,_,o) :-                                           % []
+    put_console(ascii#"report: []"),
+        put_console(13), put_console(10) | true.
+otherwise.
+monitorS([Msg|R],Cin,Cout,S) :-                                 % catch all
+    put_console(ascii#"report: unexpected message (ignored)"),
+        put_console(13), put_console(10), display_console(Msg),
+        put_console(13), put_console(10) | 
+        monitorS(R,Cin,Cout,S).
+otherwise.
+monitorS(X,Cin,Cout,S) :-                                       % catch all
+    put_console(ascii#"report: unexpected data !!!!"),
+        put_console(13), put_console(10), display_console(X),
+        put_console(13), put_console(10) | true.
+
+noop:- put_console(ascii#"noop"),
+        put_console(13), put_console(10) | true.
+
+
+check_NewCode_and_NewArgV_in_exception(_Kind,Code0,ArgV0,Code,ArgV) :- 
+  code(Code0,Arity,_,_), vector(ArgV0,Arity) |
+    Code=Code0, ArgV=ArgV0.
+otherwise.
+check_NewCode_and_NewArgV_in_exception(Kind,Code0,ArgV0,Code,ArgV) :- 
+  code(Code0,Arity,_,_), vector(ArgV0,Size), Arity=\=Size |
+    predicate_to_code(module#shoen,dummy,0,Code),
+    ArgV={},
+    shoen:raise(pimos_tag#error,'$PIMOS$'(
+        arity_mismatch,
+        string#"NewCode & NewArgV in exception"),
+        exception(Kind,_,Code0,ArgV0)).
+otherwise.
+check_NewCode_and_NewArgV_in_exception(Kind,Code0,ArgV0,Code,ArgV) :- 
+  code(Code0,_,_,_) |
+    predicate_to_code(module#shoen,dummy,0,Code),
+    ArgV={},
+    shoen:raise(pimos_tag#error,'$PIMOS$'(
+        illegal_data_type,
+        string#"NewArgV in exception"),
+        exception(Kind,_,Code0,ArgV0)).
+otherwise.
+check_NewCode_and_NewArgV_in_exception(Kind,Code0,ArgV0,Code,ArgV) :- 
+  vector(ArgV0,_) |
+    predicate_to_code(module#shoen,dummy,0,Code),
+    ArgV={},
+    shoen:raise(pimos_tag#error,'$PIMOS$'(
+        illegal_data_type,
+        string#"NewCode in exception"),
+        exception(Kind,_,Code0,ArgV0)).
+otherwise.
+check_NewCode_and_NewArgV_in_exception(Kind,Code0,ArgV0,Code,ArgV) :- true |
+    predicate_to_code(module#shoen,dummy,0,Code),
+    ArgV={},
+    shoen:raise(pimos_tag#error,'$PIMOS$'(
+        arity_mismatch,
+        string#"NewCode & NewArgV in exception"),
+        exception(Kind,_,Code0,ArgV0)).
+
+dummy :- true | true.
+
+send_msg(Done,Msg,S,S1) :- wait(Done)| S=[Msg|S1].

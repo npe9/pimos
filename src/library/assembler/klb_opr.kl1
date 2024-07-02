@@ -1,0 +1,604 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi277::>sys>user>pimos>V22>src>compiler>assembler>klb_opration.kl1.2, 06-Nov-90 19:13:06, Edit by hori
+:- module kl1_asm_inst_operation_routine.
+:- public pr/11.
+:- with_macro pimos.
+
+pr(Type, One, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, Streams, Err) :- true |
+    use_stream_p(Type, YorN),
+    processing(YorN, Type, One, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, Streams, Err).
+processing(yes, Type, One, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, Streams, Err) :- true |
+    p(Type, One, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, Streams, Err).
+processing(no, Type, One, Tag, Opcode, Acode0, Acode1, Word, _, _, 
+            {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, 
+            {E_in, E_out, S0, S1}) :- true |
+    p(Type, One, Tag, Opcode, Acode0, Acode1, Word),
+    E_in = E_out,
+    S0 = S1,
+    Put = Put1,
+    Get = Get1,
+    PutMPA = PutMPA1,
+    PutSCNT = PutSCNT1.
+
+p(no, One, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Acode0 = [{Tag, Op}|Acode1],
+    Word = 1.
+p(atom, {_, G, Atom}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode + G, 
+    Acode0 = [{atom, {Tag, Op, Atom}}|Acode1],
+    Word = 1.
+p(atom_no_length, {_, Atom}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Acode0 = [{atom, {Tag, Opcode, Atom}}|Acode1],
+    Word = 1.
+p(c8, {_, GorA}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    GorA1 := GorA<<16,
+    Data := Op \/ GorA1,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(c16, {_, Const}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Data := Op \/ Const,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(c24, {_, Int}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Data := Op \/ (Int /\ 16#"00FFFFFF"),
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+%p(c40, {_, Const}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+%    Op := Opcode<<24,
+%    Acode0 = [{Tag, Op}, Const|Acode1],
+%    Word = 2.
+p(c40, {_, Const}, Tag, Opcode, Acode0, Acode1, Word) :-
+%% Patched D.Sekita 890906
+%%    VCV := Const<<24,
+%%    VCV > 0 |
+      Const > 16#"007FFFFF" |
+%% Patched D.Sekita 890906
+    Op := Opcode<<24,
+    Acode0 = [{Tag, Op}, Const|Acode1],
+    Word = 2.
+p(c40, {_, Const}, Tag, Opcode, Acode0, Acode1, Word) :-
+%% Patched D.Sekita 890906
+%%    VCV := Const<<24,
+%%    VCV > 0 |
+      Const < 16#"FF800000" |
+%% Patched D.Sekita 890906
+    Op := Opcode<<24,
+    Acode0 = [{Tag, Op}, Const|Acode1],
+    Word = 2.
+p(c40, {_, Const}, Tag, Opcode, Acode0, Acode1, Word) :- 
+%%    VCV := Const <<24,
+%%    VCV =< 0 |
+      Const =< 16#"007FFFFF", Const >= 16#"FF800000" |
+    p(c24, {_, Const}, Tag, ~(Opcode+1), Acode0, Acode1, Word).
+%% patched for floating D.Sekita 89/11/15
+p(c40, {_, Const}, Tag, Opcode, Acode0, Acode1, Word) :- floating_point(Const) |
+    Op := Opcode<<24,
+    Acode0 = [{Tag, Op}, Const|Acode1],
+    Word = 2.
+p(r, {_, Register}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Re := Register<<16,
+    Data := Op \/ Re,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_r, {_, Reg1, Reg2}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Re1 := Reg1<<16,
+    Re2 := Reg2<<8,
+    Data := Op \/ Re1 \/ Re2,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_r_r, {_, Reg1, Reg2, Reg3}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Re1 := Reg1<<16,
+    Re2 := Reg2<<8,
+    Data := Op \/ Re1 \/ Re2 \/ Reg3,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_r_c8, {_, Reg1, Reg2, Reg3}, Tag, Opcode, Acode0, Acode1, Word) :- Reg3 =< 16#"ff" |
+    Op := Opcode<<24,
+    Re1 := Reg1<<16,
+    Re2 := Reg2<<8,
+    Data := Op \/ Re1 \/ Re2 \/ Reg3,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r4, {_, Reg1, Reg2, Reg3, Reg4}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Re1 := Reg1<<16,
+    Re2 := Reg2<<8,
+    Data := Op \/ Re1 \/ Re2 \/ Reg3,
+    Re4 := Reg4<<24,
+    Acode0 = [{Tag, Data}, Re4|Acode1],
+    Word = 2.
+p(r5, {_, Reg1, Reg2, Reg3, Reg4, Reg5}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Re1 := Reg1<<16,
+    Re2 := Reg2<<8,
+    Data1 := Op \/ Re1 \/ Re2 \/ Reg3,
+    Re4 := Reg4<<24,
+    Re5 := Reg5<<16,
+    Data2 := Re4 \/ Re5,
+    Acode0 = [{Tag, Data1}, Data2|Acode1],
+    Word = 2.
+%% 901210 D.Sekita
+p(r6, {_, Reg1, Reg2, Reg3, Reg4, Reg5, Reg6}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Re1 := Reg1<<16,
+    Re2 := Reg2<<8,
+    Data1 := Op \/ Re1 \/ Re2 \/ Reg3,
+    Re4 := Reg4<<24,
+    Re5 := Reg5<<16,
+    Re6 := Reg6<<8,
+    Data2 := Re4 \/ Re5 \/ Re6,
+    Acode0 = [{Tag, Data1}, Data2|Acode1],
+    Word = 2.
+p(r7, {_, Reg1, Reg2, Reg3, Reg4, Reg5, Reg6, Reg7}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Re1 := Reg1<<16,
+    Re2 := Reg2<<8,
+    Data1 := Op \/ Re1 \/ Re2 \/ Reg3,
+    Re4 := Reg4<<24,
+    Re5 := Reg5<<16,
+    Re6 := Reg6<<8,
+    Data2 := Re4 \/ Re5 \/ Re6 \/ Reg7,
+    Acode0 = [{Tag, Data1}, Data2|Acode1],
+    Word = 2.
+p(c8_c16, {_, GorA, Const}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    GorA1 := GorA<<16,
+    Data := Op \/ GorA1 \/ (Const /\ 16#"0000FFFF"),
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+%p(c8_c40, {_, G, Const}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+%    Op := Opcode<<24,
+%    G1 := G<<16,
+%    Data := Op \/ G1,
+%    Acode0 = [{Tag, Data}, Const|Acode1],
+%    Word = 2.
+p(c8_c40, {_, G, Const}, Tag, Opcode, Acode0, Acode1, Word) :- 
+%% Patched D.Sekita 890906
+%%    VCV := Const>>16,
+%%    VCV > 0 |
+      Const > 16#"00007FFF" |
+%% Patched D.Sekita 890906
+    Op := Opcode<<24,
+    G1 := G<<16,
+    Data := Op \/ G1,
+    Acode0 = [{Tag, Data}, Const|Acode1],
+    Word = 2.
+p(c8_c40, {_, G, Const}, Tag, Opcode, Acode0, Acode1, Word) :- 
+%% Patched D.Sekita 890906
+%%    VCV := Const>>16,
+%%    VCV > 0 |
+      Const < 16#"FFFF8000" |
+% Patched D.Sekita 890906
+    Op := Opcode<<24,
+    G1 := G<<16,
+    Data := Op \/ G1,
+    Acode0 = [{Tag, Data}, Const|Acode1],
+    Word = 2.
+p(c8_c40, {_, G, Const}, Tag, Opcode, Acode0, Acode1, Word) :- 
+      Const =< 16#"00007FFF", Const >= 16#"FFFF8000" |
+    p(c8_c16, {_, G, Const}, Tag, ~(Opcode+1), Acode0, Acode1, Word).
+%% pathed for floating D.Sekita 89/11/15
+p(c8_c40, {_, G, Const}, Tag, Opcode, Acode0, Acode1, Word) :- floating_point(Const) |
+    Op := Opcode<<24,
+    G1 := G<<16,
+    Data := Op \/ G1,
+    Acode0 = [{Tag, Data}, Const|Acode1],
+    Word = 2.
+p(c8_r, {_, GorA, Reg}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    GorA1 := GorA<<16,
+    Re := Reg<<8,
+    Data := Op \/ GorA1 \/ Re,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_c16, {_, Reg, Const}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re \/ (Const /\ 16#"0000FFFF"),
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+%p(r_c40, {_, Reg, Const}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+%    Op := Opcode<<24,
+%    Re := Reg<<16,
+%    Data := Op \/ Re,
+%    Acode0 = [{Tag, Data}, Const|Acode1],
+%    Word = 2.
+p(r_c40, {_, Reg, Const}, Tag, Opcode, Acode0, Acode1, Word) :- 
+%% Patched 890906 D.Sekita
+%%    VCV := Const>>16,
+%%    VCV > 0 |
+      Const > 16#"00007FFF" |
+%% Patched 890906 D.Sekita
+    Op := Opcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re,
+    Acode0 = [{Tag, Data}, Const|Acode1],
+    Word = 2.
+p(r_c40, {_, Reg, Const}, Tag, Opcode, Acode0, Acode1, Word) :- 
+%% Patched 890906 D.Sekita
+%%    VCV := Const>>16,
+%%    VCV > 0 |
+      Const < 16#"FFFF8000" |
+%% Patched 890906 D.Sekita
+    Op := Opcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re,
+    Acode0 = [{Tag, Data}, Const|Acode1],
+    Word = 2.
+p(r_c40, {_, Reg, Const}, Tag, Opcode, Acode0, Acode1, Word) :- 
+%% Patched 890906 D.Sekita
+%%    VCV := Const>>16,
+%%    VCV =< 0 |
+      Const =< 16#"00007FFF", Const >= 16#"FFFF8000" |
+%% Patched 890906 D.Sekita
+    p(r_c16, {_, Reg, Const}, Tag, ~(Opcode+1), Acode0, Acode1, Word).
+%% patched for floating D.Sekita 89/11/15
+p(r_c40, {_, Reg, Const}, Tag, Opcode, Acode0, Acode1, Word) :- floating_point(Const) |
+    Op := Opcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re,
+    Acode0 = [{Tag, Data}, Const|Acode1],
+    Word = 2.
+p(r_vector, {_, Reg, Length}, Tag, Opcode, Acode0, Acode1, Word) :- Length=<6 |
+    Ropcode := Opcode - 7 + Length,
+    Op := Ropcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_vector, {_, Reg, Length}, Tag, Opcode, Acode0, Acode1, Word) :- Length>6 |
+    Ropcode := Opcode,
+    Op := Ropcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re \/ Length,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p({f_r_r, F}, {_, Reg1, Reg2}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    F1 := F<<16, 
+    Re1 := Reg1<<8,
+    Data := Op \/ F1 \/ Re1 \/ Reg2,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p({f_r_r_r, F}, {_, Reg1, Reg2, Reg3}, Tag, Opcode, Acode0, Acode1, Word) :- true |
+    Op := Opcode<<24,
+    F1 := F<<16, 
+    Re1 := Reg1<<8,
+    Data := Op \/ F1 \/ Re1 \/ Reg2,
+    Re3 := Reg3<<24,                    %%%% HORI PATCH (Newly Added 6/16) %%%%
+    Acode0 = [{Tag, Data}, Re3|Acode1],
+%%    Acode0 = [{Tag, Data}, Reg3|Acode1],
+    Word = 2.
+otherwise.
+p(Type, Code, Tag, Opcode, Acode0, Acode1, _) :- true |
+    shoen:raise(pimos_tag#job, fatal(string#"error in code translation  ~t", 
+            [Type, Code, Tag, Opcode]), _),
+    Acode0 = Acode1.
+
+cal_location_address(Laddress, Myaddress, Location, ERR) :- true |
+    Loc := Laddress - (Myaddress + 2),
+    cal_loc(Loc, Location, ERR).
+
+cal_loc(Loc, Location, {Err_in, Err_out, S0, S1}) :-
+    16#"FFFF8000" > Loc |
+    Location = 0,                       % Patch by Hori 06-Nov-90
+    S1 = abnormal,
+    Err_in = [error(string#"ASSEMBLER : relative address overflow (module too large)",[])|Err_out].
+cal_loc(Loc, Location, {Err_in, Err_out, S0, S1}) :-
+    Loc > 16#"7FFF" |
+    Location = 0,                       % Patch by Hori 06-Nov-90
+    S1 = abnormal,
+    Err_in = [error(string#"ASSEMBLER : relative address overflow (module too large)",[])|Err_out].
+otherwise.
+cal_loc(Loc, Location, {Err_in, Err_out, S0, S1}) :-
+    Location := Loc /\ 16#"FFFF",
+    S0 = S1,
+    Err_in = Err_out.
+
+p(c8_c16_exe, {_, Narg, Label}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    Get = [label(Label, Laddress)|Get1],
+    Put = Put1,
+    PutMPA = PutMPA1,
+    PutSCNT = PutSCNT1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Narg1 := Narg<<16,
+    Data := Op \/ Narg1 \/ Location,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_c16_i, {_, Reg, Label}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    Get = [label(Label, Laddress)|Get1],
+    Put = Put1,
+    PutMPA = PutMPA1,
+    PutSCNT = PutSCNT1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re \/ Location,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_r_c16_i, {_, Reg1, Reg2, Label}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    Get = [label(Label, Laddress)|Get1],
+    Put = Put1,
+    PutMPA = PutMPA1,
+    PutSCNT = PutSCNT1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Re1 := Reg1<<16,
+%%    Re2 := Reg2<<16,
+%% changed D.Sekita for switch_on_non_vector instruction
+    Re2 := Reg2<<8,
+%%
+    Data := Op \/ Re1 \/ Re2,
+    Acode0 = [{Tag, Data}, Location|Acode1],
+    Word = 2.
+p(r_c16_scnst, {_, Reg, {'$SCNST', Scnst}}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    PutSCNT = [scnst(Scnst, 0)|PutSCNT1],
+    Get = [scnst(Scnst, Laddress)|Get1],
+    Put = Put1,
+    PutMPA = PutMPA1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re \/  Location,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_c16_scnst, {_, Reg, {'$MODULE', Module}}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- atom(Module) |
+    PutSCNT = [module({(::),0,Module}, 0)|PutSCNT1],
+    Get = [module({(::),0,Module}, Laddress)|Get1],
+    Put = Put1,
+    PutMPA = PutMPA1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re \/  Location,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_c16_scnst,{_,Reg,{'$MODULE',{(::),Package,Module}}},Tag,Opcode,Acode0,Acode1,Word,Myaddress,Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    PutSCNT = [module({(::),Package,Module}, 0)|PutSCNT1],
+    Get = [module({(::),Package,Module}, Laddress)|Get1],
+    Put = Put1,
+    PutMPA = PutMPA1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Re := Reg<<16,
+    Data := Op \/ Re \/  Location,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(c8_c16_ext, {_, Narg, {:, M, {/, P, A}}}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- atom(M) |
+    PutMPA = [external({(::),0,M}, P, A, 0)|PutMPA1],
+    Get = [external({(::),0,M}, P, A, Laddress)|Get1],
+    Put = Put1,
+    PutSCNT = PutSCNT1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Narg1 := Narg<<16,
+    Data := Op \/ Narg1 \/ Location,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(c8_c16_ext, {_,Narg,{:,{(::),Pac,M},{/,Pre,A}}},Tag,Opcode,Acode0,Acode1,Word,Myaddress,Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    PutMPA = [external({(::),Pac,M}, Pre, A, 0)|PutMPA1],
+    Get = [external({(::),Pac,M}, Pre, A, Laddress)|Get1],
+    Put = Put1,
+    PutSCNT = PutSCNT1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Narg1 := Narg<<16,
+    Data := Op \/ Narg1 \/ Location,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(r_c16_c8_exe, {_, Pri, {/, Pred, Arity}, Narg}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    Get = [pred_head(Pred, Arity, Laddress)|Get1],
+    Put = Put1,
+    PutMPA = PutMPA1,
+    PutSCNT = PutSCNT1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Pr := Pri<<16,
+    Data := Op \/ Pr \/ Location,
+    Data1 := Narg<<24,
+    Acode0 = [{Tag, Data}, Data1|Acode1],
+    Word = 2.
+p(r_c16_c8_ext, {_, Pro, {:, M, {/, P, A}}, Narg}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top,
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- atom(M) |
+    PutMPA = [external({(::),0,M}, P, A, 0)|PutMPA1],
+    Get = [external({(::),0,M}, P, A, Laddress)|Get1],
+    Put = Put1,
+    PutSCNT = PutSCNT1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Pr := Pro<<16,
+    Data := Op \/ Pro \/ Location,      % ?????????
+    Data1 := Narg<<24,
+    Acode0 = [{Tag, Data}, Data1|Acode1],
+    Word = 2.
+p(r_c16_c8_ext, {_,Pro,{:,{(::),Pac,M},{/,Pre,A}},Narg},Tag,Opcode,Acode0,Acode1,Word,Myaddress,Top,
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    PutMPA = [external({(::),Pac,M}, Pre, A, 0)|PutMPA1],
+    Get = [external({(::),Pac,M}, Pre, A, Laddress)|Get1],
+    Put = Put1,
+    PutSCNT = PutSCNT1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Pr := Pro<<16,
+    Data := Op \/ Pro \/ Location,      % ????????
+    Data1 := Narg<<24,
+    Acode0 = [{Tag, Data}, Data1|Acode1],
+    Word = 2.
+p(c16_exe, {_, Label}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    Get = [label(Label, Laddress)|Get1],
+    Put = Put1,
+    PutMPA = PutMPA1,
+    PutSCNT = PutSCNT1,
+    cal_location_address(Laddress, Myaddress, Location, ERR),
+    Op := Opcode<<24,
+    Data := Op \/ Location,
+    Acode0 = [{Tag, Data}|Acode1],
+    Word = 1.
+p(label, {_, Label}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, {E_in, E_out, S0, S1}) :- true |
+    Put = [label(Label, Myaddress)|Put1],
+    E_in = E_out,
+    S0 = S1,
+    Get = Get1,
+    PutMPA = PutMPA1,
+    PutSCNT = PutSCNT1,
+    Acode0 = Acode1,
+    Word = 0.
+p(r_c16_c16_16s_sw, {_, Reg, List, Elselabel}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    count_list_length(List, 0, Length),
+    Op := Opcode<<24,
+    Re1 := Reg<<16,
+    Data := Op \/ Re1 \/ Length,
+    Get = [label(Elselabel, Elseaddress)|Get01],
+%    cal_location_address(Elseaddress, Myaddress, Lelse, ERR),
+    make_label_list(List, Acode00, Acode1, Get01, Get1, Myaddress, Elseaddress, ERR),
+    Put = Put1,
+    PutMPA = PutMPA1,
+    PutSCNT = PutSCNT1,
+    Acode0 = [{Tag, Data}|Acode00],
+    Word := (Length*2) + 1.
+p(r_c16_c16_16s_ha, {_, Reg, Hashlist, Elselabel}, Tag, Opcode, Acode0, Acode1, Word, Myaddress, Top, 
+        {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, ERR) :- true |
+    calculate_hash_size(Hashlist, Hashsize, Listlength),
+    Op := Opcode<<24,
+    Re1 := Reg<<16,
+    Mask := Hashsize - 1,
+    Data := Op \/ Re1 \/ Mask,
+    Get = [label(Elselabel, Elseaddress)|Get01],
+    cal_location_address(Elseaddress, ~(Myaddress+1), Loc, ERR),
+    make_hashlabel_list(Hashlist, Key_label_list, Get01, Get1, Top, ERR),
+    Put = Put1,
+    PutMPA = PutMPA1,
+    PutSCNT = PutSCNT1,
+    Acode0 = [{Tag, Data}, Loc, {table, {Hashsize, Key_label_list}}|Acode1],
+    Word := Hashsize + (Listlength*2) + 2.
+otherwise.
+p(Type, Code, Tag, Opcode, Acode0, Acode1, _, _, _, _, {E_in, E_out}) :- true |
+    shoen:raise(pimos_tag#job, fatal(string#"error in code translation with streams ~t", 
+            [Type, Code, Tag, Opcode]), _),
+    Acode0 = Acode1, E_in = E_out.
+
+make_label_list(List, Labellist, Llist, Get, Get1, Myaddress, Lelse, ERR) :- true |
+    make_label(List, 2, Labellist, Llist, Get, Get1, Myaddress, Lelse, ERR).
+make_label([{=, Atom, Label}|Rest], P, Labellist, Llist, Get, Get2, Myaddress, Lelse, ERR) :- 
+    atom(Atom) |
+    Get = [label(Label, Laddress)|Get1],
+    cal_location_address(Lelse, ~(Myaddress+P), Location, ERR),
+    Lel := Location<<16,
+    cal_location_address(Laddress, ~(Myaddress+P), Offset, ERR),
+%% patched by D.Sekita
+%    Data = {16#"23", ~(Lel \/ Offset)},
+    Data = {16#"00", ~(Lel \/ Offset)},
+%%
+    Labellist = [Atom, Data|HRest],
+    make_label(Rest, ~(P+2), HRest, Llist, Get1, Get2, Myaddress, Lelse, ERR).
+make_label([{=, C, Label}|Rest], P, Labellist, Llist, Get, Get2, Myaddress, Lelse, ERR) :-
+    integer(C) |
+    Get = [label(Label, Laddress)|Get1],
+%% patched by D.Sekita
+%%    cal_location_address(Lelse, P, Location, ERR),
+    cal_location_address(Lelse, ~(Myaddress+P), Location, ERR),
+%%
+    Lel := Location<<16,
+    cal_location_address(Laddress, ~(Myaddress+P), Offset, ERR),
+%% patched by D.Sekita
+%    Data = {16#"23", ~(Lel \/Offset)},
+    Data = {16#"00", ~(Lel \/Offset)},
+%%
+    Labellist = [C, Data|HRest],
+    make_label(Rest, ~(P+2), HRest, Llist, Get1, Get2, Myaddress, Lelse, ERR).
+make_label([], _, Labellist, Llist, Get, Get1, Myaddress, _, ERR) :- true | 
+    Get = Get1, Labellist = Llist.
+otherwise.
+make_label(List, _, Hashkeylist, Llist, Get, Get1, Myaddress, _, ERR) :- true | 
+    shoen:raise(pimos_tag#job, fatal(string#"illegal data in constant list ~t", [List]), _),
+    Get = Get1, Hashkeylist = [], Llist = [].
+
+make_hashlabel_list(Hashlist, Hashkeylist, Get, Get1, Top, ERR) :- true |
+    make_hash(Hashlist, Hashkeylist, Get, Get1, Top, ERR).
+make_hash([{=, C, Label}|Rest], Hashkeylist, Get, Get2, Top, ERR) :- true |
+    Get = [label(Label, Laddress)|Get1],
+    Offset := Laddress + Top,
+    Hashkeylist = [{=, C, Offset}|HRest],
+    make_hash(Rest, HRest, Get1, Get2, Top, ERR).
+make_hash([], Hashkeylist, Get, Get1, Top, ERR) :- true | 
+    Get = Get1, Hashkeylist = [].
+otherwise.
+make_hash(List, Hashkeylist, Get, Get1, Top, ERR) :- true | 
+    shoen:raise(pimos_tag#job, fatal(string#"error in making hash table ~t", [List]), _),
+    Get = Get1, Hashkeylist = [].
+
+calculate_hash_size(Hashlist, Hashsize, Length) :- true |
+    count_list_length(Hashlist, 0, Length),
+    kl1_self_assembler:calculate_hash_size(Length, Hashsize).
+count_list_length([A|B], L, Length) :- true |
+    L1 := L + 1,
+    count_list_length(B, L1, Length).
+count_list_length([], L, Length) :- true |
+    L = Length.
+
+%%%%%
+
+use_stream_p(no, YorN) :- true | YorN = no.
+use_stream_p(atom, YorN) :- true | YorN = no.
+use_stream_p(atom_no_length, YorN) :- true | YorN = no.
+use_stream_p(c8, YorN) :- true | YorN = no.
+use_stream_p(c16, YorN) :- true | YorN = no.
+use_stream_p(c24, YorN) :- true | YorN = no.
+use_stream_p(c40, YorN) :- true | YorN = no.
+use_stream_p(r, YorN) :- true | YorN = no.
+use_stream_p(r_r, YorN) :- true | YorN = no.
+use_stream_p(r_r_r, YorN) :- true | YorN = no.
+use_stream_p(r_r_c8, YorN) :- true | YorN = no.
+use_stream_p(r4, YorN) :- true | YorN = no.
+use_stream_p(r5, YorN) :- true | YorN = no.
+use_stream_p(r6, YorN) :- true | YorN = no.
+use_stream_p(r7, YorN) :- true | YorN = no.
+use_stream_p(c8_c16, YorN) :- true | YorN = no.
+use_stream_p(c8_c40, YorN) :- true | YorN = no.
+use_stream_p(c8_r, YorN) :- true | YorN = no.
+use_stream_p(r_c16, YorN) :- true | YorN = no.
+use_stream_p(r_c40, YorN) :- true | YorN = no.
+use_stream_p(r_c16_i, YorN) :- true | YorN = yes.
+use_stream_p(r_r_c16_i, YorN) :- true | YorN = yes.
+use_stream_p(r_c16_scnst, YorN) :- true | YorN = yes.
+use_stream_p(r_vector, YorN) :- true | YorN = no.
+use_stream_p(c8_c16_exe, YorN) :- true | YorN = yes.
+use_stream_p(c8_c16_ext, YorN) :- true | YorN = yes.
+use_stream_p(r_c16_c8_exe, YorN) :- true | YorN = yes.
+use_stream_p(r_c16_c8_ext, YorN) :- true | YorN = yes.
+use_stream_p(c16_exe, YorN) :- true | YorN = yes.
+use_stream_p({f_r_r, F}, YorN) :- true | YorN = no.
+use_stream_p({f_r_r_r, F}, YorN) :- true | YorN = no.
+use_stream_p(label, YorN) :- true | YorN = yes.
+use_stream_p(r_c16_c16_16s_sw, YorN) :- true | YorN = yes.
+use_stream_p(r_c16_c16_16s_ha, YorN) :- true | YorN = yes.
+otherwise.
+use_stream_p(Type, YorN) :-
+    true |
+    shoen:raise(pimos_tag#job, fatal(string#"This type of instruction is undefined ~t", [Type]), _).
+

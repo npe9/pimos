@@ -1,0 +1,474 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module resources.
+:- with_macro pimos.
+:- public table/1.
+
+wait_and_unify(Wait,A,B):-
+    wait(Wait)|
+    A = B.
+
+table(In):-
+    true|
+    pool:keyed_set(Pool),
+    merge(PoolIn,Pool),
+    scene1(In,PoolIn).
+
+scene1([],Pool):-
+    true|
+    Pool = [].
+scene1([register(Name,Info,Shut,Result)|Next],Pool):-
+    true|
+    Pool = [do([get_if_any(Name,R1)|DNext])|{Table,PNext}],
+    scene1cut2(R1,DNext,Name,Info,Shut,Table,Result),
+    scene1(Next,PNext).
+scene1([request(Name,Type,Info,UAbort,CAbort,Result)|Next],Pool):-
+    true|
+    Pool = [do([get_if_any(Name,R1)|DNext])|PNext],
+    scene1cut3(R1,DNext,Name,Type,Info,{UAbort,CAbort},Result),
+    scene1(Next,PNext).
+scene1([request_anyway(Name,Type,Info,UAbort,CAbort,Result)|Next],Pool):-
+    true|
+    Pool = [do([get_if_any(Name,R1)|DNext])|PNext],
+    scene1cut4(R1,DNext,Name,Type,Info,{UAbort,CAbort},Result),
+    scene1(Next,PNext).
+scene1([attention(Name,Info,Result)|Next],Pool):-
+    true|
+    Pool = [do([get_if_any(Name,R1)|DNext])|PNext],
+    scene1cut5(R1,DNext,Name,Info,Result),
+    scene1(Next,PNext).
+
+scene1cut2(R1,Pool,Name,Info,Shut,Table,Result):-
+    vector(R1,0)|
+    scene1get_info(Info,Prot,Mode),
+    Pool = [put(Name,{Mode,Prot,TaskIn,Att},Old)],
+    merge(TaskIn,Task),
+    scene2prolog(Task,Server,Abort,Shut,Name,Table),
+    wait_and_unify(Old,Result,normal(Server,Abort,Att)).
+otherwise.
+scene1cut2(R1,Pool,Name,Info,Shut,Table,Result):-
+    vector_element(R1,0,Var)|
+    set_vector_element(Var,0,ID,ID,VarN),
+    scene1cut21(ID,VarN,Pool,Name,Info,Shut,Table,Result).
+
+scene1cut21(predefined,Var,Pool,Name,Info,Shut,Table,Result):-
+    vector_element(Var,2,Q)|
+    scene1get_info(Info,Prot,Mode),
+    Pool = [put(Name,{Mode,Prot,TaskIn,Att},Old)],
+    merge(TaskIn,Task),
+    Q = [get_all(ALL)|QN],
+    qtrans(ALL,QN,Shut,NewQ),
+    merge(QIn,NewQ),
+    scene2prolog1(Task,Server,Abort,Shut,Name,Table,QIn),
+    wait_and_unify(Old,Result,normal(Server,Abort,Att)).
+otherwise.
+scene1cut21(_,Var,Pool,Name,_,_,Table,Result):-
+    true|
+    Table = [],
+    Pool = [put(Name,Var,Old)],
+    wait_and_unify(Old,Result,abnormal).
+
+scene1cut3(R1,DNext,_,_,_,_,Result):-
+    vector(R1,0)|
+    DNext = [],
+    Result = abnormal.
+otherwise.
+scene1cut3(R1,DNext,Name,Type,Info,CAbort,Result):-
+    vector_element(R1,0,V)|
+    V = {Mode,Prot,Stream,Att},
+    scene1cut31(Mode,Prot,Stream,Att,DNext,Name,Type,Info,CAbort,Result).
+
+scene1cut31(predefined,_,Q,_,DNext,Name,_,_,_,Result):-
+    true|
+    DNext = [put(Name,{predefined,0,Q,_},Old)],
+    wait_and_unify(Old,Result,abnormal).
+otherwise.
+scene1cut31(Mode,Prot,Stream,Att,DNext,Name,Type,Info,CAbort,Result):-
+    true|
+    protect(Type,Prot,Mode,Info,InfoN,Rs),
+    wait_scene1cut31(Rs,Mode,Prot,Stream,Att,DNext,Name,Type,InfoN,CAbort,Result).
+
+wait_scene1cut31(no,Mode,Prot,Stream,Att,DNext,Name,_,_,_,Result):-
+    true|
+    DNext = [put(Name,{Mode,Prot,Stream,Att},Old)],
+    wait_and_unify(Old,Result,abnormal).
+otherwise.
+wait_scene1cut31(_,Mode,Prot,Stream,Att,DNext,Name,Type,Info,CAbort,Result):-
+    true|
+    Stream = [request(Type,Info,CAbort,Result)|SN],
+    DNext = [put(Name,{Mode,Prot,SN,Att},_)].
+
+scene1cut4(R1,DNext,Name,Type,Info,CAbort,Result):-
+    vector(R1,0)|
+    qprocess0([add_queue(Type,CAbort,Info,Result,_)|QN]),
+    DNext = [put(Name,{predefined,0,QN,_},_)].
+otherwise.
+scene1cut4(R1,DNext,Name,Type,Info,CAbort,Result):-
+    vector_element(R1,0,V)|
+    V = {Mode,Prot,Stream,Att},
+    scene1cut41(Mode,Prot,Stream,Att,DNext,Name,Type,Info,CAbort,Result).
+
+scene1cut41(predefined,Prot,Q,Att,DNext,Name,Type,Info,CAbort,Result):-
+    true|
+    Q = [add_queue(Type,CAbort,Info,Result,_)|QN],
+    DNext = [put(Name,{predefined,Prot,QN,Att},_)].
+otherwise.
+scene1cut41(Mode,Prot,Stream,Att,DNext,Name,Type,Info,CAbort,Result):-
+    true|
+    protect(Type,Prot,Mode,Info,InfoN,Rs),
+    wait_scene1cut31(Rs,Mode,Prot,Stream,Att,DNext,Name,Type,InfoN,CAbort,Result).
+
+
+scene1cut5(R1,DNext,Name,Info,Result):-
+    vector(R1,0)|
+    Result = abnormal,
+    DNext = [].
+otherwise.
+scene1cut5(R1,DNext,Name,Info,Result):-
+    vector_element(R1,0,V)|
+    V = {Mode,Prot,Stream,Att},
+    scene1cut51(Mode,Prot,Stream,Att,DNext,Name,Info,Result).
+scene1cut51(predefined,Prot,Q,Att,DNext,Name,Info,Result):-
+    true|
+    Result =abnormal,
+    DNext = [put(Name,{predefined,Prot,Q,Att},_)].
+otherwise.
+scene1cut51(Mode,Prot,Stream,Att,DNext,Name,Info,Result):-
+    true|
+    protect(attention,Prot,Mode,Info,InfoN,RS),
+    scene1cut52(RS,Mode,Prot,Stream,Att,DNext,Name,Result).
+
+scene1cut52(no,Mode,Prot,Stream,Att,DNext,Name,Result):-
+    true|
+    Result = abnormal,
+    DNext = [put(Name,{Mode,Prot,Stream,Att},_)].
+otherwise.
+scene1cut52(_,Mode,Prot,Stream,Att,DNext,Name,Result):-
+    true|
+    Result = normal,
+    Att = attention(NAtt),
+    DNext = [put(Name,{Mode,Prot,Stream,NAtt},_)].
+
+scene1get_info({[_],Info},Prot,Mode):-
+    true|
+    Info = Prot,
+    Mode = super.
+otherwise.
+scene1get_info({_,Info},Prot,Mode):-
+    true|
+    Info = Prot,
+    Mode = normal.
+
+
+% scene2(Task,Server,Abort,Shut,Name,Table)
+scene2prolog(Task,Server,Abort,Shut,Name,Table):-
+    true|
+    scene2in(Task,Server,Abort,Shut,Out),
+    scene2(Out,Name,Table).
+scene2prolog1(Task,Server,Abort,Shut,Name,Table,Q):-
+    true|
+    scene2in(Task,Server,Abort,Shut,Out),
+    scene2(Out,Name,Q,Table).
+
+scene2in([],_,_,_,Out):-
+    true|
+    Out = [].
+scene2in(_,[],_,_,Out):-
+    true|
+    Out = [].
+scene2in(_,Server,Abort,Shut,Out):-
+    wait(Abort)|
+    scene2abort(Server,Shut),
+    Out = [].
+scene2in(_,_,_,Shut,Out):-
+    wait(Shut)|
+    Out = [].
+%alternatively.
+scene2in(Task,[get_request(Code,Comm,Result)|Server],Abort,Shut,Out):-
+    true|
+    Out = [change_new_scene(Code,Comm,Result,In)|OutN],
+    wait_scene3in(In,Task,Server,Abort,Shut,OutN).
+%alternatively.
+scene2in([request(general,Vars,CAbort,Result)|Task],
+                                     Server,Abort,Shut,Out):-
+    true|
+    Out = [add_queue(general,CAbort,Vars,Result,Shut)|OutN],
+    scene2in(Task,Server,Abort,Shut,OutN).
+scene2in([request(stdio,Vars,CAbort,Result)|Task],
+                                     Server,Abort,Shut,Out):-
+    true|
+    Out = [add_queue(stdio,CAbort,Vars,Result,Shut)|OutN],
+    scene2in(Task,Server,Abort,Shut,OutN).
+
+scene2abort(Server,Shut):-
+    wait(Shut)|
+    true.
+scene2abort([get_request(_,_,Result)|Next],Shut):-
+    true|
+    Result = aborted,
+    scene2abort(Next,Shut).
+
+% scene2 main cut
+scene2(In,Name,Table):-
+    true|
+    qprocess0(Q),
+    merge(QIn,Q),
+    scene2(In,Name,QIn,Table).
+
+scene2([],Name,Q,Table):-
+    true|
+    Q = [],
+    Table = [get_if_any(Name,Vec)],
+    scene2app(Vec).
+scene2([change_new_scene(Code,Comm,Result,Out)|In],Name,Q,Table):-
+    true|
+    scene3prolog(Q,Out,Code,Comm,Result,In,Name,Table).
+scene2([add_queue(Type,CAbort,Info,Result,Shut)|In],Name,Q,Table):-
+    true|
+    Q = [add_queue(Type,CAbort,Info,Result,Shut)|QN],
+    scene2(In,Name,QN,Table).
+
+qprocess0(In):-
+    true|
+    pool:keyed_sorted_set(ascending,Pool),
+    merge(PoolIn,Pool),
+    qprocess(In,PoolIn,0).
+
+qprocess([],P,N):-
+    true|
+    P = [get_all(Eles)],
+    qprocess_end(Eles).
+qprocess([get_all(Eles)|Q],P,N):-
+    true|
+    P = [get_all(Eles)|PN],
+    qprocess(Q,PN,N).
+qprocess([put(Key,Eles,Old)|Q],P,N):-
+    true|
+    P = [put(Key,Eles,Old)|PN],
+    qprocess(Q,PN,N).
+qprocess([get(Result)|Q],P,N):-
+    true|
+    P = [get_min_if_any(Ele)|PN],
+    qprocess1(Ele,Result,Q,PN,N).
+qprocess([add_queue(Type,{UAbort,CAbort},Info,Result,Shut)|Q],P,N):- %%%%
+    N1 := N + 1|
+    P = {P1,P2},
+    qabort(CAbort,UAbort,QAbort,N,P1),
+    P2 = [put(N,{QAbort,Type,CAbort,Info,Result,Shut},_)|PN],
+    qprocess(Q,PN,N1).
+
+qprocess1(Ele,Result,Q,P,N):-
+    vector(Ele,0)|
+    Result = empty,
+    qprocess(Q,P,N).
+qprocess1(Ele,Result,Q,P,N):-
+    vector_element(Ele,1,E)|
+    Result = normal(E),
+    qprocess(Q,P,N).
+
+qtrans([],OldQ,Shut,NewQ):-
+    true|
+    OldQ = NewQ.
+qtrans([{I,V}|Next],OldQ,Shut,NewQ):-
+    true|
+    set_vector_element(V,5,_,Shut,VN),
+    OldQ = [put(I,VN,_)|OldQN],
+    qtrans(Next,OldQN,Shut,NewQ).
+
+qprocess_end([]):- true| true.
+qprocess_end([{_,{QAbort,_,_,Info,Result,Shut}}|QN]):-  %%%
+    true|
+    QAbort = abort,
+    Result = aborted,
+    qprocess_end(QN).
+
+qabort(CAbort,_,_,N,P):-
+    wait(CAbort)|
+    P = [get_if_any(N,Value)],
+    qabort1(Value).
+qabort(_,UAbort,_,N,P):-
+    wait(UAbort)|
+    P = [get_if_any(N,Value)],
+    qabort1(Value).
+qabort(_,_,QAbort,_,P):-
+    wait(QAbort)|
+    P = [].
+
+qabort1(Vec):-
+    vector(Vec,0)|
+    true.
+otherwise.
+qabort1(Vec):-
+    true|
+    set_vector_element(Vec,0,V1,0,_),
+    set_vector_element(V1,4,aborted,0,_).
+
+%scene2inepilog([request(_,_,_,Result)|Task]):-
+%    true|
+%    Result = aborted,
+%    scene2inepilog(Task).
+%scene2inepilog([]):-
+%    true|
+%    true.
+
+scene2app(Vec):-
+    vector(Vec,0)|
+    true.
+otherwise.
+scene2app(Vec):-
+    vector_element(Vec,0,E)|
+    set_vector_element(E,2,[],0,E2),
+    set_vector_element(E2,3,[],0,_).
+
+%  scene3
+wait_scene3in(empty,Task,Server,Abort,Shut,Out):-
+    true|
+    scene3in(Task,Server,Abort,Shut,Out).
+otherwise.
+wait_scene3in(_,Task,Server,Abort,Shut,Out):-
+    true|
+    scene2in(Task,Server,Abort,Shut,Out).
+
+scene3in([],_,_,_,Out):-
+    true|
+    Out = [].
+scene3in(Task,[],_,_,Out):-
+    true|
+    Out = [].
+scene3in(Task,_,Abort,_,Out):-
+    wait(Abort)|
+    Out = [].
+scene3in(Task,_,_,Shut,Out):-
+    wait(Shut)|
+    Out = [].
+%alternatively.
+scene3in([request(general,Vars,CAbort,Result)|Task],
+                                      Server,Abort,Shut,Out):-
+    true|
+    Out = [request(general,Vars,CAbort,Shut,Result)|OutN],
+    scene2in(Task,Server,Abort,Shut,OutN).
+scene3in([request(stdio,Vars,CAbort,Result)|Task],
+                                      Server,Abort,Shut,Out):-
+    true|
+    Out = [request(stdio,Vars,CAbort,Shut,Result)|OutN],
+    scene2in(Task,Server,Abort,Shut,OutN).
+
+% scene3 main cut
+
+scene3prolog(Q,Out,Code,Comm,Result,In,Name,Table):-
+    true|
+    Q = [get(Value)|QN],
+    scene3prolog1(Value,Out,QN,Code,Comm,Result,In,Name,Table).
+
+scene3prolog1(empty,Out,Q,Code,Comm,Result,In,Name,Table):-
+    true|
+    Out = empty,
+    scene3(In,Code,Comm,Result,Q,Name,Table).
+scene3prolog1(normal(Value),Out,Q,Code,Comm,Result,In,Name,Table):-
+    true|
+    Out = not_empty,
+    Value = {QAbort,Type,CAbort,Info,CR,Shut},%%%%%
+    QAbort = abort,
+    scene3connect(Type,CAbort,Info,CR,Code,Comm,Shut,Result),%%%%
+    scene2(In,Name,Q,Table).
+
+scene3([request(general,Vars,{_,CAbort},Shut,Status)|In], %%%%
+       Code,Comm,Result,Q,Name,Table):-
+    true|
+    Result = general_request(Cont,Ab,CAbort,Vars,FInfo,Stream),
+    Status = normal(Code,Comm,Cont,Stream,Ab,FInfo,Shut), %%%%
+    scene2(In,Name,Q,Table).
+scene3([request(stdio,Vars,{_,CAbort},Shut,Status)|In], %%%%
+       Code,Comm,Result,Q,Name,Table):-
+    true|
+    Result = standard_io(Cont,CAbort,Vars),
+    Status = normal(Code,Comm,Cont,Shut), %%%%
+    scene2(In,Name,Q,Table).
+scene3([],_,_,Result,Q,Name,Table):-
+    true|
+    Result = aborted,
+    Table = [get_if_any(Name,Vec)],
+    scene2app(Vec),
+    Q = [].
+
+% scene3connect(Type,CAbort,Info,CR,Code,Result)
+scene3connect(general,CAbort,Info,CR,Code,Comm,Shut,Result):- %%%%%
+    true|
+    CR = normal(Code,Comm,SCont,SOut,SAbort,FInfo,Shut),
+    Result = general_request(SCont,SAbort,CAbort,Info,FInfo,SOut).
+scene3connect(stdio,CAbort,Info,CR,Code,Comm,Shut,Result):-
+    true|
+    CR = normal(Code,Comm,SControl,Shut),
+    Result = standard_io(SControl,CAbort,Info).
+
+protect(Type,Prot,Mode,Info,InfoN,Rs):-
+    true|
+    set_vector_element(Info,0,UID,UID,Info1),
+    set_vector_element(Info1,1,GIDS,GIDSN,Info2),
+    mode_check(Mode,Info2,InfoN),
+    copy:copy(GIDS,GIDS1,GIDSN),
+    set_vector_element(Prot,0,Uid,Uid,Prot1),
+    set_vector_element(Prot1,1,Gid,Gid,Prot2),
+    set_vector_element(Prot2,2,PMode,PMode,ProtN),
+    protect(PMode,Uid,Gid,UID,GIDS1,ProtN,Rs).
+
+protect(_,_,_,0,_,_,Rs):-
+    true|
+    Rs = yes.
+otherwise.
+protect(1,_,_,_,_,_,Rs):-
+    true|
+    Rs = yes.
+protect(2,_,Gid,_,GIDS,_,Rs):-
+    true|
+    gprotect(Gid,GIDS,Rs).
+protect(3,_,_,_,_,_,Rs):-
+    true|
+    Rs = yes.
+protect(4,Uid,_,Uid,_,_,Rs):-
+    true|
+    Rs = yes.
+protect(5,_,_,_,_,_,Rs):-
+    true|
+    Rs = yes.
+protect(6,Uid,_,Uid,_,_,Rs):-
+    true|
+    Rs = yes.
+protect(6,Uid,Gid,UID,GIDS,Prot,Rs):-
+    Uid \= UID|
+    gprotect(Gid,GIDS,Rs).
+protect(7,_,_,_,_,_,Rs):-
+    true|
+    Rs = yes.
+otherwise.
+protect(_,_,_,_,_,_,Rs):-
+    true|
+    Rs = no.
+
+gprotect(_,[],Rs):-
+    true|
+    Rs = no.
+gprotect(Gid,[Gid|_],Rs):-
+    true|
+    Rs = yes.
+otherwise.
+gprotect(Gid,[_|Next],Rs):-
+    true|
+    gprotect(Gid,Next,Rs).
+
+mode_check(super,Info,InfoN):-
+    true|
+    Info = InfoN.
+mode_check(normal,Info,InfoN):-
+    true|
+    new_vector(Tmp,2),
+    set_vector_element(Tmp,0,_,Fep,Tmp2),
+    set_vector_element(Tmp2,1,_,IONode,RemInfo),
+    set_vector_element(Info,2,Remote,RemInfo,InfoN),
+    set_vector_element(Remote,0,Fep,0,Remote1),
+    set_vector_element(Remote1,1,IONode,0,_).
+

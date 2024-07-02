@@ -1,0 +1,84 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1_macro_preprocessor.
+:- public translate/2.
+:- public translate/5.
+:- public parse/5.
+:- with_macro pimos.
+
+translate(In, Out) :- true | In="mac", Out="pkl1".
+
+translate(Macro0, KL1, VP0, Msg, Stat) :- true |
+    errFilter(Msg, [], normal, Stat, Err0),
+    switch_macro(Err0, Err1, Macro0, Macro),
+    kl1cmp_macro_driver:driver(Err1, Err2, VP0, VP1, Macro, PreProcMacro),
+    kl1cmp_maccomp:compile_macro(VP1, [], PreProcMacro, KL1, [], Err2, []).
+
+
+:- local_implicit msg:oldnew.
+switch_macro([wrap#(:- user_macro(Mac))-Pos|Cdr], Macro) --> true |
+ {{convert_macro:oldToNew([wrap#(:- user_macro(Mac))-Pos|Cdr], Macro)}}.
+switch_macro([wrap#(:- old_macro)-Pos|Cdr], Macro0) --> true |
+   getOldMacro(OldMac0, [], Cdr, Cont),
+ {{convert_macro:oldToNew(Macro0, Macro, OldMac0)}},
+   switch_macro(Cont, Macro).
+otherwise.
+switch_macro([Term|Cdr], Macro0) --> true |
+   Macro0=[Term|Macro],
+   switch_macro(Cdr, Macro).
+switch_macro([], Macro0) --> true | Macro0=[].
+
+:- local_implicit msg:oldnew, cls:oldnew.
+getOldMacro([wrap#(:- end_old_macro)-_|Cdr], Cont) --> true |
+   Cont=Cdr.
+getOldMacro([wrap#(:- user_macro(_))-_|Cdr], Cont) --> true |
+   getOldMacro(Cdr, Cont).
+otherwise.
+%getOldMacro([wrap#(:- _)-_|Cdr], Cont) --> true |
+%   getOldMacro(Cdr, Cont).
+%otherwise.
+getOldMacro([Term-Pos], Cont) --> true |
+   Cont=[],
+   &msg <<= [error("can't find :- end_old_macro.", [], Pos)],
+   &cls <<= [Term-Pos].
+otherwise.
+getOldMacro([Term-Pos|Cdr], Cont) --> true |
+   &cls <<= [Term-Pos],
+   getOldMacro(Cdr, Cont).
+getOldMacro([], Cont) --> true | Cont=[].
+
+:- local_implicit msg:oldnew, stat:oldnew.
+errFilter([error(Str, Arg)|Cdr]) --> true |
+    &msg <<= [error(Str, Arg)],
+    &stat <= abnormal,
+    errFilter(Cdr).
+errFilter([error(Str, Arg, [])|Cdr]) --> true |
+    &msg <<= [error(Str, Arg)],
+    &stat <= abnormal,
+    errFilter(Cdr).
+errFilter([warning(Str, Arg, [])|Cdr]) --> true |
+    &msg <<= [warning(Str, Arg)],
+    errFilter(Cdr).
+otherwise.
+errFilter([Msg|Cdr]) --> true |
+    &msg <<= [Msg],
+    errFilter(Cdr).
+errFilter([]) --> true | true.
+
+parse(In, Terms, VP, Msg, Stat) :- true |
+    operator:pool(Out0),
+    outputOp(Out0, Out1),
+    kl1_standard_preprocessor:parse_with_op_pool(In, Terms, Out1, VP, Msg, Stat).
+
+outputOp(Str0, Str) :- true |
+    Str0=[add_op(1150, fx, macro_module),add_op(1150, fx, inherit_macro),
+        remove_op(1200, fx, (':-')), remove_op(1200, xfx, (':-')), remove_op(1200, xfx, ('-->')),
+        add_op(1175, fx, (':-')),add_op(1175, xfx, (':-')),add_op(1175, xfx, ('-->')),
+        add_op(1200, xfy, ('!')),add_op(1050, xfy, when),add_op(1050, xfy, where),
+        add_op(1050, xfy, with_clauses),add_op(1050, xfy, with_predicates)|Str].
+
+

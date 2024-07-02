@@ -1,0 +1,240 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v27>Asm>assemble.kl1.7, 21-May-91 11:51:18, Edit by hori
+:- module kl1_self_assembler.
+:- public self_assemble/6, calculate_hash_size/2.
+:- with_macro pimos.
+
+self_assemble(From_compilor,ModInfo,To_loader,ERR_in,ERR_out,Status) :- true |
+    assem(From_compilor,Assemble_result,ModInfo,ERR_in,ERR_out,Status),
+    Assemble_result = To_loader.
+
+%%%% PATCH BY HORI 89/5/31 begin
+assem(module(_, [], _), Ass, ModInfo, E_in, E_out, Status) :- true |
+    E_in = E_out,
+    Status = abnormal,
+%%    shoen:raise(pimos_tag#job, fatal(string#"There is no compiled code ~t", [F]), _),
+    Ass = [].
+assem(module(_, _, []), Ass, ModInfo, E_in, E_out, Status) :- true |
+    E_in = E_out,
+    Status = abnormal,
+    Ass = [].
+%%%% PATCH BY HORI 89/5/31 end
+assem(module(Module, Public, Code), Ass, ModInfo, E_in, E_out, Status) :-
+    list(Public), list(Code) |
+    kl1_asm_address_table:create(Put, Get, E_in, E_m1, normal, Status1),
+    kl1_asm_address_table:create(PutMPA, GetMPA, E_m1, E_m2, normal, Status2),
+    kl1_asm_address_table:create(PutSCNT, GetSCNT, E_m2, E_m3, normal, Status3),
+    Put = {Put0, Put2},
+    Get = {Get1, Get2},
+    Ass = {module, Module, GC_size, GC_area, Public_hash_size,
+                PPT_size, Public_predicate_table, Code_length, Assemble_code},
+    GC_top := 0 - GC_size - PPT_size - Public_hash_size - 1 ,
+            %%%%%%%%%%% for micro program counter must be plus 2
+    p_gc_area_and_constant_struct(GC_top, GC_size, GC_area, ModInfo, Put0, GetMPA, GetSCNT),
+    p_public_predicate(Public, Public_hash_size, Public_predicate_table, PPT_size, Top_address, Get1),
+    Top_address := GC_size + Public_hash_size + PPT_size + 3,
+         %% for micro program counter Top_address must be plus 2
+    p_code_area(Code, Assemble_code, Top_address, Code_length, Put2, Get2, PutMPA, PutSCNT, 
+            {E_m3, E_out, normal, Status4}),
+    check_status([Status4, Status3, Status2, Status1], Status).
+otherwise.
+assem(F, Ass, ModInfo, E_in, E_out, Status) :- true |
+    E_in = E_out,
+    Status = abnormal,
+    shoen:raise(pimos_tag#job, fatal(string#"Compiled Code is illegal form ~t", [F]), _),
+    Ass = [].
+
+check_status([normal], Status) :- true | Status = normal.
+otherwise.
+check_status([normal|SR], Status) :- true | check_status(SR, Status).
+check_status([abnormal|_], Status) :- true | Status = abnormal.
+
+p_public_predicate(Public, Public_hash_size, Public_predicate_table, Length, Top, Get) :-
+    true |
+    make_public_predicate_table(Public, Public_predicate_table, 0, Length, Top, Get),
+    HS := Length>>1,
+    calculate_hash_size(HS, Public_hash_size).
+
+make_public_predicate_table([{/, Pred_name, Arity}|PR], PPT, L, Length, Top, Get) :-
+    true |
+    Get = [{pred_head, Pred_name, Arity, P_address}|Get1],
+    Add := P_address + Top,
+    PPT = [{pred, {/, Pred_name, Arity}}, {pointer, Add} | PPTR],
+    make_public_predicate_table(PR, PPTR, ~(L+2), Length, Top, Get1).
+make_public_predicate_table([], PPT, L, Length, _, Get) :- 
+    L\=0 | L=Length, Get = [], PPT = [].
+%make_public_predicate_table([], PPT, L, Length, _, Get) :-
+%    L=0 | Get = [], PPT = [],
+%    shoen:raise(pimos_tag#job, fatal(string#"There is no public predicate ~t", []), _).
+make_public_predicate_table([], PPT, L, Length, _, Get) :-
+    L=0 | true.
+otherwise.
+make_public_predicate_table(P, PPT, L, Length, Top, Get) :- true |
+    shoen:raise(pimos_tag#job, fatal(string#"public predicate is illegal ~t", [P]), _),
+    PPT = [], Get = [].
+
+calculate_hash_size(Length, Public_hash_size) :- true |
+    count_hash_size(Length, 1, Public_hash_size).
+
+count_hash_size(P_number, Size, Public_hash_size) :- P_number<Size |
+    Public_hash_size = Size.
+count_hash_size(P_number, Size, Public_hash_size) :- P_number>=Size |
+    count_hash_size(P_number, ~(Size<<1), Public_hash_size).
+
+%%%%%
+
+p_gc_area_and_constant_struct(GC_top, GC_size, GC_area, ModInfo, Put, GetMPA, GetSCNST) :- 
+    ModInfo = {MagicNum,ModInfoVec} |
+    GetMPA = [get_all(MPA)],
+    GetSCNST = [get_all(SCNST)],
+    Put = {Put1, Put2},
+    GC_area = [MagicNum,ModInfoVec|GC_area0],
+    make_external_predicate_table(MPA,~(GC_top+4),Offset_from_code1,0,Size1,GC_area0,GC_area1,Put1),
+    make_constant_structure_pointer(SCNST,Offset_from_code1,GC_bottom,0,Size2,GC_area1,Put2),
+%%    GC_size := Size1 + Size2 + 1.   %%% 1 is for module_name
+%%    GC_size := Size1 + Size2 + 2.   %%% 2 is for module_name and package name
+    GC_size := Size1 + Size2 + 4.   %%% more 2 is for time stamp info.
+
+make_external_predicate_table([],Offset,Offset_of_end1,L,Size,GC_area,GC_area1,Put) :- true |
+    Offset_of_end1 = Offset, GC_area = GC_area1, Size = L,Put = [].
+make_external_predicate_table([{{external, M, Pre, A}, _}|MPA], 
+                                Offset_from_top, Offset_of_end1, L, Size, GC_area, GC_area1, Put) :-
+    atom(M) |
+    GC_area = [extCall(M, pred(Pre/A))|NGC_area],  % Default Package ( = 0 )
+    Put = [{external, M, Pre, A, Offset_from_top}|Put1],
+      Noff := Offset_from_top + 5,
+      NL := L + 5,
+    make_external_predicate_table(MPA,Noff,Offset_of_end1,NL,Size,NGC_area,GC_area1,Put1).
+make_external_predicate_table([{{external, {(::),Package,M}, Pre, A}, _}|MPA], 
+                                Offset_from_top, Offset_of_end1, L, Size, GC_area, GC_area1, Put) :-
+    true |
+    GC_area = [extCall({(::),Package,M}, pred(Pre/A))|NGC_area], % Package 
+    Put = [{external, {(::),Package,M}, Pre, A, Offset_from_top}|Put1],
+      Noff := Offset_from_top + 5,      % Package
+      NL := L + 5,                      % Package
+    make_external_predicate_table(MPA,Noff,Offset_of_end1,NL,Size,NGC_area,GC_area1,Put1).
+otherwise.
+make_external_predicate_table(MPA, _, _, _, _, Area1, Area2, Put) :- true |
+    shoen:raise(pimos_tag#job, fatal(string#"pointer to external predicate is illegal ~t", [L]), _),
+    Area1 = [], Area2 = [], Put = [].
+
+make_constant_structure_pointer([], Offset, Offset_of_end2, L, Size, GC_area, Put) :-
+    true |
+    Offset_of_end2 := Offset, L = Size, GC_area = [], Put = [].
+make_constant_structure_pointer([{{scnst, Const}, _}|SCNST], Offset_from_top,
+                                            Offset_of_end2, L, Size, GC_area, Put) :-
+    true|
+    GC_area = [{struct, Const}|NGC_area],
+    Put = [{scnst, Const, Offset_from_top}|Put1],
+    Noff := Offset_from_top + 1,
+    NL := L + 1,
+    make_constant_structure_pointer(SCNST, Noff, Offset_of_end2, NL, Size, NGC_area, Put1).
+make_constant_structure_pointer([{{module, Module}, _}|SCNST], Offset_from_top,
+                                            Offset_of_end2, L, Size, GC_area, Put) :-
+    atom(Module) |
+    GC_area = [{(module), Module} |NGC_area],  % Defaul Package
+    Put = [{module, Module, Offset_from_top}|Put1],
+    Noff := Offset_from_top + 2,
+    NL := L + 2,
+    make_constant_structure_pointer(SCNST, Noff, Offset_of_end2, NL, Size, NGC_area, Put1).
+make_constant_structure_pointer([{{module, {(::),Package,Module}}, _}|SCNST], Offset_from_top,
+                                            Offset_of_end2, L, Size, GC_area, Put) :-
+    true|
+    GC_area = [{(module), {(::),Package,Module}} |NGC_area],  % Package
+    Put = [{module, {(::),Package,Module}, Offset_from_top}|Put1],
+    Noff := Offset_from_top + 2,        % Package
+    NL := L + 2,                        % Package
+    make_constant_structure_pointer(SCNST, Noff, Offset_of_end2, NL, Size, NGC_area, Put1).
+otherwise.
+make_constant_structure_pointer(SCNST, _, _, _, _, Area, Put) :- true |
+    shoen:raise(pimos_tag#job, fatal(string#"pointer to structured constant is illegal ~t", [L]), _),
+    Area = [], Put = [].
+
+%%%%%
+    
+p_code_area(Code, Assemble_code, Top_address, Code_length, Put, Get, PutMPA, PutSCNT, ERR) :-
+    true |
+    p_one_predicate_code(Code, Assemble_code, 0, 0, Code_length, Top_address, Top_address,
+                Put, Get, PutMPA, PutSCNT, ERR).
+
+p_one_predicate_code([procedure(Pred, Arity, Code)|Rest], Assemble_code00, Address00, 
+                CL, Code_length, Top, Offset, Put, Get, PutMPA, PutSCNT, {E_in, E_out, S0, Status}) :-
+    true |
+    Put = {Put10, Put20},
+    Address01 := Address00 + 4,
+    Put10 = [{pred_head, Pred, Arity, Address01},{label, {/, Pred, Arity}, Address01}|Put11],
+    Get = {Get10, Get20},
+    PutMPA = {PutMPA10, PutMPA20},
+    PutSCNT = {PutSCNT10, PutSCNT20},
+    make_pred_head(Pred, Arity, Assemble_code00, Assemble_code01, Top, Cword),
+%%    p_one_code(Code, Assemble_code01, Assemble_code02, Address01, Address02, 0, Cword, Top,
+%%            Put11, Get10, PutMPA10, PutSCNT10, {E_in, E_in1, S0, Status1}),
+    p_one_code(Code, Assemble_code01, Assemble_code02, Address01, Address02, 0, Cword, Offset,
+            Put11, Get10, PutMPA10, PutSCNT10, {E_in, E_in1, S0, Status1}),
+    CCL := CL + Cword + 4,
+    Newtop := Top + Cword + 4,
+    p_one_predicate_code(Rest, Assemble_code02, Address02, CCL, Code_length, Newtop, Offset,
+                         Put20, Get20, PutMPA20, PutSCNT20, {E_in1, E_out, Status1, Status}).
+p_one_predicate_code([], Assemble_code00, _, CL, Code_length, _, _, Put, Get, PutMPA, PutSCNT, 
+            {E_in, E_out, S0, Status}) :-
+    true |
+    Assemble_code00 = [],
+    Code_length = CL,
+    E_in = E_out, S0 = Status,
+    Put = [], Get = [], PutMPA = [], PutSCNT = [].
+otherwise.
+p_one_predicate_code(Code, _, Addres, _, _, _, _, Put, Get, MPA, SCNT, {E_in, E_out, _, _}) :- true |
+    shoen:raise(pimos_tag#job, fatal(string#"failure in translate code ~t", [Code]), _),
+    E_in = E_out, Put = [], Get = [], MPA = [], SCNT = [].
+
+make_pred_head(Pred_name, Arity, Assemble_code00, Assemble_code01, Top, Clength) :- 
+    atom(Pred_name), integer(Arity) |
+    Data := (Arity<<24) \/ (~(Top+2)),
+    Assemble_code00 = [Pred_name, 
+                       0, 
+                       {16#"24", Data}, 
+                       ~(Clength<<16)
+                            |Assemble_code01].
+otherwise.
+make_pred_head(P, A, Code0, Code1, _, _) :- true |
+    shoen:raise(pimos_tag#job, fatal(string#"Predicate head data is illegal ~t", [P,A]), _),
+    Code0 = [], Code1 = [].
+
+p_one_code([One|Code], Acode0, Acode, Add0, Add, L, Cword, Top, Put, Get, PutMPA, PutSCNT, 
+            {E_in, E_out, S0, Status}) :- 
+    vector(One, _) |
+    vector_element(One, 0, Opatom, One1),
+    kl1_asm_inst_code_table:t(Opatom, Tag, Opcode, Type),
+    kl1_asm_inst_operation_routine:pr(Type, One1, Tag, Opcode, Acode0, Acode1, Word, 
+                Add0, Top, {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, 
+                {E_in, E_in1, S0, Status1}),
+    L1 := L + Word,
+    Add1 := Add0 + Word,
+    p_one_code(Code, Acode1, Acode, Add1, Add, L1, Cword, Top, Put1, Get1, PutMPA1, PutSCNT1, 
+            {E_in1, E_out, Status1, Status}).
+p_one_code([One|Code], Acode0, Acode, Add0, Add, L, Cword, Top, Put, Get, PutMPA, PutSCNT, 
+            {E_in, E_out, S0, Status}) :- 
+    atom(One) |
+    kl1_asm_inst_code_table:t(One, Tag, Opcode, Type),
+    kl1_asm_inst_operation_routine:pr(Type, One, Tag, Opcode, Acode0, Acode1, Word, 
+                Add0, Top, {Put, Put1, Get, Get1, PutMPA, PutMPA1, PutSCNT, PutSCNT1}, 
+                {E_in, E_in1, S0, Status1}),
+    L1 := L + Word,
+    Add1 := Add0 + Word,
+    p_one_code(Code, Acode1, Acode, Add1, Add, L1, Cword, Top, Put1, Get1, PutMPA1, PutSCNT1, 
+                {E_in1, E_out, Status1, Status}).
+p_one_code([], Ass_code0, Ass_code, Add0, Add, L, Cword, _, Put, Get, PutMPA, PutSCNT, 
+                {E_in, E_out, S0, Status}) :- true |
+    Ass_code = Ass_code0, Add = Add0, L = Cword, E_in = E_out, S0 = Status,
+    Put = [], Get = [], PutMPA = [], PutSCNT = [].
+otherwise.
+p_one_code(Code, Ass0, AssR, _, _, _, _, _, Put, Get, MPA, SCNT, {E_in, E_out, _, _}) :- true |
+    shoen:raise(pimos_tag#job, fatal(string#"cannot translate that code ~t", [Code]), _),
+    E_in = E_out,
+    Ass0 = [], AssR = [], Put = [], Get = [], MPA = [], SCNT = [].
+

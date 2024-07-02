@@ -1,0 +1,210 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_interrupter.
+:- public query/11.
+:- with_macro pimos.
+
+query(Detach,Ctr,RSC,RSC1,IN,IN2,GM,MM,Num,Status,Time) :- wait(Detach)|
+    IN=[putf(" ?? Interruption (~s msec): ",[Time]), getc(Char)|IN1],
+    query1(Char,Ctr,RSC,RSC1,IN1,IN2,GM,MM,Num,Status).
+
+query1(#"?",Ctr,RSC,RSC1,IN,IN1,GM,MM,Num,Status) :- true|
+    query1(#"h",Ctr,RSC,RSC1,IN,IN1,GM,MM,Num,Status).
+query1(#"h",Ctr,RSC,RSC1,IN,IN2,GM,MM,Num,Status) :- true|
+    IN=[skip(key#lf),
+       putf("~n <cr>: continue~n",[]),
+         putf("    g: gc & continue~n",[]),
+         putf("    r: resource consumption~n",[]),
+         putf("    s: task status~n",[]),
+         putf("    @: resource status~n",[]),
+         putf("    l: list variables~n",[]),
+         putf("    v: display variables~n",[]),
+         putf("    t: list traced goals~n",[]),
+         putf("    k: list kept goals~n",[]),
+         putf("    m: list monitored terms~n",[]),
+         putf("    b: break~n",[]),
+         putf("    &: background~n",[]),
+         putf("    a: abort~n",[]),
+         putf("    A: abort profiler~2n",[]),
+         putb(" ?? ------------ (h for help): "), getc(Char)|IN1],
+    query1(Char,Ctr,RSC,RSC1,IN1,IN2,GM,MM,Num,Status).
+
+query1(key#lf,Ctr,RSC,RSC1,IN,IN1,GM,MM,_Num,Status) :- true |
+    Ctr=[], RSC=RSC1, GM=[], MM=[], IN1=IN, Status=fore.
+
+query1(#"g",Ctr,RSC,RSC1,IN,IN1,GM,MM,_Num,Status) :- true|
+    IN=[skip(key#lf)|IN1],
+    gc:go, Ctr=[], RSC=RSC1, GM=[], MM=[], Status=fore.
+
+query1(#"a",Ctr,RSC,RSC1,IN,IN1,GM,MM,_Num,Status) :- true|
+    IN=[skip(key#lf)|IN1],
+    Ctr=[], RSC=RSC1, GM=[], MM=[], Status=aborted.
+
+query1(#"A",Ctr,RSC,RSC1,IN,IN1,GM,MM,_Num,Status) :- true|
+    IN=[skip(key#lf)|IN1],
+    Ctr=[abort_profiler(_)], RSC=RSC1, GM=[], MM=[], Status=aborted.
+
+query1(#"r",Ctr,RSC,RSC1,IN,IN2,GM,MM,Num,Status) :- true |
+    Ctr=[status([],task,detail,InfoStatus)|Ctr1],
+    get_consume_info(InfoStatus,Reductions),
+    IN=[skip(key#lf),
+        putf("~n  Consumption : ~s reductions~2n",[Reductions]),
+        putb(" ?? ------------ (h for help): "), getc(Char)|IN1],
+    query1(Char,Ctr1,RSC,RSC1,IN1,IN2,GM,MM,Num,Status).
+
+query1(#"s",Ctr,RSC,RSC1,IN,IN4,GM,MM,Num,Status) :- true |
+    Ctr=[status(*,task,detail,InfoStatus)|Ctr1],
+    IN=[skip(key#lf)|IN1],
+    display_task_status(InfoStatus,IN1,IN2),
+    IN2=[putb(" ?? ------------ (h for help): "), getc(Char)|IN3],
+    query1(Char,Ctr1,RSC,RSC1,IN3,IN4,GM,MM,Num,Status).
+
+query1(#"@",Ctr,RSC,RSC1,IN,IN4,GM,MM,Num,Status) :- true |
+    Ctr=[status('*','*',brief,InfoStatus)|Ctr1],
+    IN=[skip(key#lf)|IN1],
+    display_rsc_status(InfoStatus,IN1,IN2),
+    IN2=[putb(" ?? ------------ (h for help): "), getc(Char)|IN3],
+    query1(Char,Ctr1,RSC,RSC1,IN3,IN4,GM,MM,Num,Status).
+
+query1(#"v",Ctr,RSC,RSC2,IN,IN4,GM,MM,Num,Status) :- true |
+    IN=[skip(key#lf)|IN1],
+    listener_execution_query:value(Num,RSC,RSC1,IN1,IN2),
+    IN2=[putb(" ?? ------------ (h for help): "), getc(Char)|IN3],
+    query1(Char,Ctr,RSC1,RSC2,IN3,IN4,GM,MM,Num,Status).
+
+query1(#"l",Ctr,RSC,RSC2,IN,IN4,GM,MM,Num,Status) :- true |
+    MM={MM1,MM2},
+    IN=[skip(key#lf)|IN1],
+    listener_execution_query:query(Num,IN1,IN2,RSC,RSC1,MM1,_),
+    IN2=[putb(" ?? ------------ (h for help): "), getc(Char)|IN3],
+    query1(Char,Ctr,RSC1,RSC2,IN3,IN4,GM,MM2,Num,Status).
+
+query1(#"t",Ctr,RSC,RSC2,IN,IN4,GM,MM,Num,Status) :- true |
+    MM={MM1,MM2},
+    IN=[skip(key#lf)|IN1],
+    listener_traced_goals:list(local,GM,GM1,IN1,IN2,RSC,RSC1,MM1,Num),
+    IN2=[putb(" ?? ------------ (h for help): "), getc(Char)|IN3],
+    query1(Char,Ctr,RSC1,RSC2,IN3,IN4,GM1,MM2,Num,Status).
+
+query1(#"k",Ctr,RSC,RSC2,IN,IN4,GM,MM,Num,Status) :- true |
+    MM={MM1,MM2},
+    IN=[skip(key#lf)|IN1],
+    listener_goal_keeper:list(local,GM,GM1,IN1,IN2,RSC,RSC1,MM1,Num),
+    IN2=[putb(" ?? ------------ (h for help): "), getc(Char)|IN3],
+    query1(Char,Ctr,RSC1,RSC2,IN3,IN4,GM1,MM2,Num,Status).
+
+query1(#"m",Ctr,RSC,RSC1,IN,IN3,GM,MM,Num,Status) :- true |
+    MM=[monitored_terms(IN1)|MM1],
+    IN=[skip(key#lf),do(IN1),
+        putb(" ?? ------------ (h for help): "), getc(Char)|IN2],
+    query1(Char,Ctr,RSC,RSC1,IN2,IN3,GM,MM1,Num,Status).
+
+query1(#"b",Ctr,RSC,RSC1,IN,IN1,GM,MM,_Num,Status) :- true|
+    Ctr=[], RSC1=RSC, GM=[], MM=[], IN=[skip(key#lf)|IN1],
+    Status=stopped.
+
+query1(#"&",Ctr,RSC,RSC1,IN,IN1,GM,MM,_Num,Status) :- true|
+    Ctr=[], RSC1=RSC, GM=[], MM=[], IN=[skip(key#lf)|IN1],
+    Status=back.
+
+otherwise.
+query1(_,Ctr,RSC,RSC1,IN,IN2,GM,MM,Num,Status) :- true |
+    IN=[skip(key#lf),
+        putb(" ?? ------------ (h for help): "), getc(Char)|IN1],
+    query1(Char,Ctr,RSC,RSC1,IN1,IN2,GM,MM,Num,Status).
+
+
+get_consume_info(normal(Info),Reductions) :- 
+  Info=[Inf|_],
+  vector_element(Inf,4,Consume) |
+  get_consume(Consume,Reductions).
+otherwise.
+get_consume_info(_,           Reductions) :- Reductions= "unknown".
+
+display_task_status(normal([{Id,Name,Status,Limit,Consume,Children}]),IN,IN2) :- true |
+    get_consume(Limit,  Limit1),
+    get_consume(Consume,Reductions),
+    IN=[nl,
+        putb("  %%% TASK STATUS %%%"), nl,
+        putb("  Id         : "), putt(Id),         nl,
+        putb("  Name       : "), putt(Name),       nl,
+        putb("  Status     : "), putt(Status),     nl,
+        putb("  Limit      : "), putb(Limit1),     
+                                           putb(" reductions"), nl,
+        putb("  Consumption: "), putb(Reductions), 
+                                           putb(" reductions"), nl|IN1],
+    display_children(Children,task,IN1,IN2).
+display_task_status(normal([{Id,Children}]),IN,IN2) :- true |
+    IN=[nl,
+        putb("  %%% TASK STATUS %%%"), nl,
+        putb("  Id         : "), putt(Id),         nl|IN1],
+    display_children(Children,task,IN1,IN2).
+otherwise.
+display_task_status(_,           IN,IN1) :- IN=[putb("    STATUS unknown"), nl|IN1].
+
+display_rsc_status(normal([{Id,Type,Name,Children}]),IN,IN2) :- true |
+    IN=[nl,  
+         putb("  %%% RESOURCE STATUS %%%"), nl,
+         putb("  Id         : "), putt(Id),   nl,
+         putb("  Type       : "), putt(Type), nl,
+         putb("  Name       : "), putt(Name), nl|IN1],
+    display_children(Children,resource,IN1,IN2).
+display_rsc_status(normal([{Id,Children}]),IN,IN2) :- true |
+    IN=[nl,  
+         putb("  %%% RESOURCE STATUS %%%"), nl,
+         putb("  Id         : "), putt(Id),   nl|IN1],
+    display_children(Children,resource,IN1,IN2).
+otherwise.
+display_rsc_status(_,            IN,IN1) :- true |
+    IN=[putb("    STATUS unknown"), nl|IN1].
+
+get_consume({U,L},Reductions) :-
+    listener_utility:half(U,L,U1,L1),
+    listener_utility:integer_to_string(U1,L1,Reductions).
+otherwise.
+get_consume(_  ,Reductions) :- Reductions= "unknown".
+
+display_children([],_,        IN,IN1) :-
+    IN=[putb("  Children   : none"), nl, nl|IN1].
+otherwise.
+display_children(Inf,task,    IN,IN2) :-
+    IN=[putb("  [Children] (Id Name Status Limit Consumption)"), nl|IN1],
+    disp_task_children(Inf,2,IN1,[nl|IN2]).
+display_children(Inf,resource,IN,IN2) :-
+    IN=[putb("  [Children] (Id Type Name)"), nl|IN1],
+    disp_rsc_children(Inf,2,IN1,[nl|IN2]).
+
+disp_task_children([],        _,  IN,IN1) :- IN=IN1.
+disp_task_children([{Id,Name,Status,Limit,Consume,Children}|Inf],Tab,IN,IN3) :- true |
+    get_consume(Limit,  Limit1),
+    get_consume(Consume,Reductions),
+    Tab1 := Tab+2,
+    IN=[tab(Tab), putt(Id), 
+        tab(1),   putt(Name), 
+        tab(1),   putt(Status), 
+        tab(1),   putb(Limit1),
+        tab(1),   putb(Reductions), nl|IN1],
+    disp_task_children(Children,Tab1,IN1,IN2),
+    disp_task_children(Inf,Tab,IN2,IN3).
+disp_task_children([{Id,Children}|Inf],Tab,IN,IN3) :- true |
+    Tab1 := Tab+2,
+    IN=[tab(Tab), putt(Id), nl|IN1],
+    disp_task_children(Children,Tab1,IN1,IN2),
+    disp_task_children(Inf,Tab,IN2,IN3).
+
+disp_rsc_children([],        _,  IN,IN1) :- IN=IN1.
+disp_rsc_children([{Id,Type,Name,Children}|Inf],Tab,IN,IN3) :- true |
+    Tab1 := Tab+2,
+    IN=[tab(Tab), putt(Id), tab(1), putt(Type), tab(1), putt(Name), nl|IN1],
+    disp_rsc_children(Children,Tab1,IN1,IN2),
+    disp_rsc_children(Inf,Tab,IN2,IN3).
+disp_rsc_children([{Id,Children}|Inf],Tab,IN,IN3) :- true |
+    Tab1 := Tab+2,
+    IN=[tab(Tab), putt(Id), nl|IN1],
+    disp_rsc_children(Children,Tab1,IN1,IN2),
+    disp_rsc_children(Inf,Tab,IN2,IN3).

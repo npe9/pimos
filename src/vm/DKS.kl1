@@ -1,0 +1,393 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%----------------------%
+% PIMOS disk simulator %
+%----------------------%
+
+%---------%
+% history %
+%---------%
+%-----------%
+% version 1 %
+%-----------%
+%  This module provides a physical volume simulation process which receives and executes simulated
+% i/o.
+%  You can prepare a one dimensional data block array with some error conditions, which you can change
+% at any time.
+%  The physical volume simulator consists of this main module and another in order for checking arguments.
+
+%-----------%
+% version 2 %
+%-----------%
+% 1. The module name is changed to disk_simulator.
+% 2. Data structure of the simulator is changed to have error conditions among normal data blocks.
+%   Therefore, the "Errors" Arguments disappear.
+% 3. Since "MediaStructureConstants" are newly introduced in the physical volume management,
+%   the size of the simulator or volume size is changed accordingly, that is, CylinderSize * DiskSize.
+% 4. The return value of an argument error is generally
+%                       illegal_parameter(argument_name(A Given Argument)),
+%   for example,        illegal_parameter(block_size(BlockSize)).
+
+
+% Data Structure %
+
+%  <block number>  <data or error condition> 
+%       +---+        +-------------------+
+%       | 0 -------> |    8bit-string    |        % user's data
+%       +---+        +-------------------+
+%       | 1 -------> |    8bit-string    |        % user's data
+%       +---+        +-------------------+
+%       | 2 ------->          0                   % unaccessed and unable to read
+%       +---+
+%       | 3 ------->  atom/non-zero integer       % unable to read anb write
+%         .                   .                         .
+%         .                   .                         .
+
+%     (a vector)
+
+:- module disk_simulator.
+:- with_macro pimos.
+
+%----------------%
+% User Interface %
+%----------------%
+:- public create/5.
+
+%----------%
+% create/5 %
+%----------%
+% Arguments
+% 1.    BlockSize       i           an integer greater than 1 (bytes)
+% 2.    CylinderSize    i           an integer greater than 1 (blocks)
+% 3.    DiskSize        i           an integer greater than 1 (cylinders)
+% 4.    Contents        i       initial value of contents in a simulated disk
+%                                   [](asking to set 0 all)/
+%                                   a vector whose length is CylinderSize * DiskSize
+% 5.    Status          o       the result of a process creation
+%                                   normal(^Messages)/
+%                                           Messages is a merged stream to the simulation process.
+%                                   abnormal(illegal_parameter(Error))/
+%                                       Error is one of the following terms.
+%                                           block_size(BlockSize)/
+%                                           cylinder_size(CylinderSize)/
+%                                           disk_size(DiskSize)/
+%                                           contents(Contents)/
+
+create(BlockSize, CylinderSize, DiskSize, Contents, Status):-
+    true |
+        dks_arguments:create(BlockSize, CylinderSize, DiskSize, Contents, NewContents, TotalBlocks, ErrorList),
+        VolumeInfo = {BlockSize, CylinderSize, DiskSize, TotalBlocks},
+        initiate(ErrorList, NewContents, TotalBlocks, VolumeInfo, Status).
+
+%------------%
+% initiate/5 %
+%------------%
+initiate([], CurrentContents, TotalBlocks, VolumeInfo, Status):-
+    true |
+        create(CurrentContents, TotalBlocks, Contents),
+        simulate(Contents, VolumeInfo, Status).
+initiate([ParameterError|_], _, _, _, Status):-
+    true |
+        Status = abnormal(ParameterError).
+
+%----------%
+% create/3 %
+%----------%
+create([], TotalBlocks, Contents):-
+    true |
+        new_vector(Contents, TotalBlocks).
+otherwise.
+create(CurrentContents, _, Contents):-
+    true |
+        Contents = CurrentContents.
+
+%------------%
+% simulate/3 %
+%------------%
+simulate(Contents, VolumeInfo, Status):-
+    wait(Contents)|
+        merge(MessageStream, MergedMessages),
+        Status = normal(MessageStream),
+        simulate_specified(MergedMessages, Contents, VolumeInfo).
+
+%===================%
+% Message Interface %
+%===================%
+%----------------------%
+% simulate_specified/3 %
+%----------------------%
+%--------------------------%
+% media_structure(^Status) %
+%--------------------------%
+%   Status  ::= normal(simulator(BlockSize, CylinderSize, DiskSize))
+%       BlockSize       :   (bytes)
+%       CylinderSize    :   (blocks)
+%       DiskSize        :   (cylinders)
+
+simulate_specified([media_structure(Status)|Messages], Contents, VolumeInfo):-
+    true |
+        VolumeInfo = {BlockSize, CylinderSize, DiskSize, _},
+        Status = normal(simulator(BlockSize, CylinderSize, DiskSize)),
+        simulate_specified(Messages, Contents, VolumeInfo).
+
+%------------------------------------%
+% read(Block, Size, Buffer, ^Status) %
+%------------------------------------%
+%   Block   :   the number of the first block to read
+%   Size    :   the total number of continuous blocks to read
+%   Buffer  :   8-bit string
+%   Status  :   normal(Data)/ 
+%                       Data is a 8bit-string.
+%               abnormal(illegal_parameter(ArgError))/
+%                       ArgError is one of the following terms.
+%                           block(Block)/
+%                           size(Size)
+%                           buffer(Buffer).
+%               abnormal(io_error(InfoList)).
+%                       InfoList ::= [{Block, Condition}... ].
+%
+
+simulate_specified([read(Block, Size, Buffer, Status)|Messages], Contents, VolumeInfo):-
+    true |
+        dks_arguments:read(Block, Size, Buffer, VolumeInfo, ApprovedBuffer, ErrorList),
+        read(ErrorList, Contents, Block, Size, ApprovedBuffer, VolumeInfo, Status),
+        simulate_specified(Messages, Contents, VolumeInfo).
+
+%-----------------------------------%
+% write(Block, Size, Buffer, ^Status) %
+%-----------------------------------%
+%   Block   :   the number of the first block to write
+%   Size    :   the number of continuous blocks to write
+%   Buffer  :   an 8bit-string
+%   Status  :   normal/
+%               abnormal(illegal_parameter(ArgError))/
+%                       ArgError is one of the following terms.
+%                           block(Block)/
+%                           size(Size)/
+%                           Buffer(Buffer).
+%               abnormal(io_error(InfoList)).
+%                       InfoList ::= [{Block, Condition}... ].
+%
+
+simulate_specified([write(Block, Size, Buffer, Status)|Messages], Contents, VolumeInfo):-
+    true |
+        dks_arguments:write(Block, Size, Buffer, VolumeInfo, ApprovedBuffer, ErrorList),
+        write(ErrorList, Contents, Block, Size, ApprovedBuffer, VolumeInfo, NewContents, Status),
+        simulate_specified(Messages, NewContents, VolumeInfo).
+
+%-----------------------------------------------%
+% set_contents(Block, Size, Condition, ^Status) %
+%-----------------------------------------------%
+%   Block       :   the number of the first block to set "Condition".
+%   Size        :   the number of continuous blocks to set "Condition".
+%   Condition   :   0/                              unreadable but writable
+%                   atom/                           unreadable and unwritable
+%                   nonzero-integer/                unreadable and unwritable
+%                   8bit-string of "BlockSize"/     normal data    
+%   Status  :   normal/
+%               abnormal(illegal_parameter(ArgError)).
+%                       ArgError is one of the following terms.
+%                           block(Block)/
+%                           size(Size)/
+%                           condition(Condition).
+%
+
+simulate_specified([set_contents(Block, Size, Condition, Status)|Messages], Contents, VolumeInfo):-
+    true |
+        dks_arguments:set_contents(Block, Size, Condition, VolumeInfo, ApprovedCondition, ErrorList),
+        set_contents(ErrorList, Contents, Block, Size, ApprovedCondition, NewContents, Status),
+        simulate_specified(Messages, NewContents, VolumeInfo).
+
+%-------------------%
+% contents(^Status) %
+%-------------------%
+%   Status  ::= normal(Contents)
+%       Contents    :   a vector
+
+simulate_specified([contents(Status)|Messages], Contents, VolumeInfo):-
+    true |
+        Status = normal(Contents),
+        simulate_specified(Messages, Contents, VolumeInfo).
+
+%-------------%
+% Termination %
+%-------------%
+simulate_specified([], _, _):- true | true .
+
+% &
+
+%--------%
+% read/7 %
+%--------%
+read([], Contents, Block, Size, Buffer, VolumeInfo, Status):-
+    VolumeInfo = {BlockSize, _, _, _} |
+        End := Block + Size,
+        read_from(Contents, Block, End, Conditions, DataBlocks),
+        append_blocks(Conditions, DataBlocks, Buffer, 0, BlockSize, Status0),
+        read_status(Status0, Size, BlockSize, Status).
+read([ArgError|_], _, _, _, _, _, Status):-
+    true |
+        Status = abnormal(ArgError).
+
+%-------------%
+% read_from/5 %
+%-------------%
+read_from(Contents, Block, End, Conditions, DataBlocks):-
+    Block < End,
+    NextBlock := Block + 1 |
+        vector_element(Contents, Block, DataBlock, CurrentContents),
+        readable(Block, DataBlock, Conditions, ConditionsTail, DataBlocks, DataBlocksTail),
+        read_from(CurrentContents, NextBlock, End, ConditionsTail, DataBlocksTail).
+otherwise.
+read_from(_, _, _, Conditions, DataBlocks):-
+    true |
+        Conditions = [],
+        DataBlocks = [].
+
+%------------%
+% readable/6 %
+%------------%
+readable(_, DataBlock, Conditions, ConditionsTail, DataBlocks, DataBlocksTail):-
+    string(DataBlock, _, 8) |
+        Conditions = ConditionsTail,
+        DataBlocks = [DataBlock|DataBlocksTail].
+otherwise.
+readable(Block, Error, Conditions, ConditionsTail, DataBlocks, DataBlocksTail):-
+    true |
+        Conditions = [{Block, Error}|ConditionsTail],
+        DataBlocks = DataBlocksTail.
+
+%-----------------%
+% append_blocks/6 %
+%-----------------%
+append_blocks(Conditions, _, _, _, _, Status):-
+    Conditions = [_|_] |
+        Status = abnormal(io_error(Conditions)).
+alternatively.
+
+append_blocks([], [], Data, _, _, Status):-
+    true |
+        Status = normal(Data).
+append_blocks(Conditions, [DataBlock|DataBlocksTail], Data, Position, BlockSize, Status):-
+    NextPosition := Position + BlockSize |
+        builtin#set_substring(Data, Position, DataBlock, CurrentData),
+        append_blocks(Conditions, DataBlocksTail, CurrentData, NextPosition, BlockSize, Status).
+
+%---------------%
+% read_status/4 %
+%---------------%
+read_status(normal(NewBuffer), Size, BlockSize, Status):-
+    true |
+        DataSize := Size * BlockSize,
+        Status = normal(DataSize, NewBuffer).
+otherwise.
+read_status(Status0, _, _, Status):-
+    true |
+        Status = Status0.
+
+% &
+
+%---------%
+% write/8 %
+%---------%
+write([], Contents, Block, Size, Buffer, VolumeInfo, NewContents, Status):-
+    VolumeInfo = {BlockSize, _, _, _},
+        End := Block + Size,
+        DataSize := BlockSize * Size |
+        cut(Buffer, 0, DataSize, BlockSize,  NewBuffer, DataBlocks),
+        write_on(DataBlocks, Contents, Block, End, BlockSize, NewContents, ErrorBlocks),
+        write_status(ErrorBlocks, DataSize, NewBuffer, Status).
+write([ArgError|_], Contents, _, _, _, _, NewContents, Status):-
+    true |
+        Contents = NewContents,
+        Status = abnormal(ArgError).
+
+%-------%
+% cut/6 %
+%-------%
+cut(Data, Position, End, BlockSize,  NewData, DataBlocks):-
+    Position < End,
+    NextPosition := Position + BlockSize |
+        builtin#substring(Data, Position, BlockSize, DataBlock, CurrentData),
+        DataBlocks = [DataBlock|DataBlocksTail],
+        cut(CurrentData, NextPosition, End, BlockSize,  NewData, DataBlocksTail).
+otherwise.
+cut(CurrentData, _, _, _,  NewData, DataBlocks):-
+    true |
+        NewData = CurrentData,
+        DataBlocks = [].
+
+%------------%
+% write_on/7 %
+%------------%
+write_on(DataBlocks, Contents, Block, End, BlockSize, NewContents, ErrorBlocks):-
+    Block < End,
+    NextBlock := Block + 1 |
+        DataBlocks = [DataBlock|DataBlocksTail],                    % does not wait.
+        vector_element(Contents, Block, Content, CContents),
+        write_if_normal(Content, DataBlock, CContents, Block, ErrorBlocks, CurrentContents, ErrorBlocksTail),
+        write_on(DataBlocksTail, CurrentContents, NextBlock, End, BlockSize, NewContents, ErrorBlocksTail).
+write_on([], Contents, Block, End, _, NewContents, ErrorBlocks):-
+    Block >= End |
+        NewContents = Contents,
+        ErrorBlocks = [].
+
+%-------------------%
+% write_if_normal/7 %
+%-------------------%
+write_if_normal(Content, DataBlock, Contents, Block, ErrorBlocks, CurrentContents, ErrorBlocksTail):-
+    string(Content, _, 8) |
+        set_vector_element(Contents, Block, _, DataBlock, CurrentContents),
+        ErrorBlocks = ErrorBlocksTail.
+write_if_normal(0, DataBlock, Contents, Block, ErrorBlocks, CurrentContents, ErrorBlocksTail):-
+    true |    
+        set_vector_element(Contents, Block, _, DataBlock, CurrentContents),
+        ErrorBlocks = ErrorBlocksTail.
+otherwise.
+write_if_normal(Error, _, Contents, Block, ErrorBlocks, CurrentContents, ErrorBlocksTail):-
+    true |
+        CurrentContents = Contents,
+        ErrorBlocks = [{Block, Error}|ErrorBlocksTail].
+
+%----------------%
+% write_status/4 %
+%----------------%
+write_status([], DataSize, NewBuffer, Status):-
+    true |
+        Status = normal(DataSize, NewBuffer).
+otherwise.
+write_status(InfoList, _, _, Status):-
+    true |
+        Status = abnormal(io_error(InfoList)).
+
+% &
+
+%----------------%
+% set_contents/7 %
+%----------------%
+set_contents([], Contents, Block, Size, Condition, NewContents, Status):-
+    End := Block + Size |
+        Status = normal,
+        put_contents(Contents, Block, End, Condition, NewContents).
+set_contents([ArgError|_], Contents, _, _, _, NewContents, Status):-
+    true |
+        NewContents = Contents,
+        Status = abnormal(ArgError).
+
+
+%----------------%
+% put_contents/5 %
+%----------------%
+put_contents(Contents, Block, End, Condition, NewContents):-
+    Block < End,
+    NextBlock := Block + 1 |
+        set_vector_element(Contents, Block, _, Condition, CurrentContents),
+        put_contents(CurrentContents, NextBlock, End, Condition, NewContents).
+otherwise.
+put_contents(Contents, _, _, _, NewContents):-
+    true |
+        NewContents = Contents.

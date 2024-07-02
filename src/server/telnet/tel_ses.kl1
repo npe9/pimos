@@ -1,0 +1,1233 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module telnet_session.
+:- with_macro pimos.
+:- public session/8.
+
+
+%%
+%% toplevel(telnet_session)
+%%
+%  In   : Login(Shell ..etc) <--> Telnet
+%  Add  : accept(normal(Add,_))
+%  SD   : accept(normal(_, SD))
+%  CS   : general_request(CS,_,_,_,_,_)
+%  Ab   : general_request(_,Ab,_,_,_,_)
+%  At   : general_request(_,_,At,_,_,_)
+%  Abort: go(_,Abort)
+%  Options: telnet options keyed_set stream
+
+session(In,Add,SD,CS,Ab,At,Abort,Options):- true |
+    new_string(GA1,8,8),
+    set_string_element(GA1,0,tel#iac,GA2),
+    set_string_element(GA2,1,tel#ga,GA3),
+    set_string_element(GA3,2,tel#iac,GA4),
+    set_string_element(GA4,3,tel#will,GA5),
+    set_string_element(GA5,4,telopt#echo,GA6),
+    set_string_element(GA6,5,tel#iac,GA7),
+    set_string_element(GA7,6,tel#will,GA8),
+    set_string_element(GA8,7,telopt#sga,GA9),
+    SD=[reset(R3),set_option([keepalive],R5),
+        send_timeout(0,R1),receive_timeout(0,R2),send(GA9,R4)|NSD],
+    Result={R1,R2,R3,R4,R5},
+    telnet_part(Result,Req,Buf,CAt,NSD,CS,Ab,At,Abort,Options,{[],EC}),
+    id_table:id_table(Table),
+    user_part(In,Add,Req,Buf,CAt,abort,attention,Table,Suspend,Suspend,EC).
+
+
+%%
+%% telnet_part
+%% telnet_line
+%%
+
+telnet_part({normal,normal,normal(SAb,_,_),normal,normal},
+        Req,Buf,CAt,SD,CS,Ab,At,Abort,Options,{F,EC})
+:- true |
+    new_string(Be,1024,8),
+    new_string(T,1024,8),
+    new_string(Dm1,5,8),
+    set_string_element(Dm1,0,tel#iac,Dm2),
+    set_string_element(Dm2,1,tel#will,Dm3),
+    set_string_element(Dm3,2,16#"06",Dm4),
+    set_string_element(Dm4,3,tel#iac,Dm5),
+    set_string_element(Dm5,4,tel#dm,Dm6),   
+    SD=[receive(1024,Res)|NSD],
+    telnet_line(Res,Req,Buf,CAt,NSD,SAb,CS,Ab,At,Abort,
+        Be,0,T,0,Options,Dm6,{F,EC}).
+otherwise.
+telnet_part(Res,Req,Buf,CAt,SD,CS,Ab,At,Abort,Options,{F,EC}):- true |
+    telnet_clear_req(Req),
+    Buf=[],CAt=[],SD=[],
+    Options=[],
+    CS=[change_comment(abnormal,_)].
+
+
+telnet_line(Res,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- wait(At) |
+    telnet_clear_req(Req),
+    Opt=[],
+    Buf=[],CAt=[],SD=[],SAb=abort,CS=[].
+telnet_line(Res,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- wait(Abort) |
+    telnet_clear_req(Req),
+    Opt=[],
+    CS=[change_comment(aborted,_)],
+    Buf=[],CAt=[],SD=[],SAb=abort.
+telnet_line(Res,[],Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    Opt=[],
+    Buf=[],CAt=[],SD=[],SAb=abort,CS=[].
+
+alternatively.
+telnet_line(aborted,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    telnet_clear_req(Req),
+    CS=[change_comment(aborted,_)],
+    Opt=[],
+    Buf=[],CAt=[],SD=[],SAb=abort.
+telnet_line(abnormal,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    telnet_clear_req(Req),
+    CS=[change_comment(abnormal,_)],
+    Opt=[],
+    Buf=[],CAt=[],SD=[],SAb=abort.
+telnet_line(disconnected,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    telnet_clear_req(Req),
+    CS=[change_comment(disconnected,_)],
+    Opt=[],
+    Buf=[],CAt=[],SD=[],SAb=abort.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+telnet_line(Res,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{_,[abort|EC]})
+:- true |
+    telnet_line(Res,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{[],EC}).
+
+alternatively.
+telnet_line(normal(Str),Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{[],[echo|EC]})
+:- string(Str,Byte,8),Byte=\=0 |
+    telnet_parse(Byte,Str,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{echo,EC}).
+
+telnet_line(normal(Str),Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{[],[noecho|EC]})
+:- string(Str,Byte,8),Byte=\=0 |
+    telnet_parse(Byte,Str,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{noecho,EC}).
+
+telnet_line(normal(Str),Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{echo,EC})
+:- string(Str,Byte,8),Byte=\=0 |
+    telnet_parse(Byte,Str,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{echo,EC}).
+
+telnet_line(normal(Str),Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{noecho,EC})
+:- string(Str,Byte,8),Byte=\=0 |
+    telnet_parse(Byte,Str,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{noecho,EC}).
+
+%% 94/1/10
+alternatively.
+telnet_line(normal(Str),Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{_,EC})
+:- string(Str,Byte,8),Byte=\=0 |
+    telnet_parse(Byte,Str,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{echo,EC}).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+telnet_line(normal(Str),Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- string(Str,Byte,8),Byte=:=0 |
+    telnet_line(disconnected,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{F,EC}).
+
+alternatively.
+telnet_line(Res,[putb(Str,Status)|Req],
+        Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    SAb=abort,
+    SD=[reset(Result)|NSD],
+    telnet_put(Result,Res,[putb(Str,Status)|Req],
+        Buf,CAt,NSD,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC}).
+telnet_line(Res,[prompt(Str,Status)|Req],
+        Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    SAb=abort,
+    SD=[reset(Result)|NSD],
+    telnet_put(Result,Res,[prompt(Str,Status)|Req],
+        Buf,CAt,NSD,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC}).
+telnet_line(Res,[ungetb(Str,Status)|Req],
+        Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    SAb=abort,
+    SD=[reset(Result)|NSD],
+    telnet_put(Result,Res,[ungetb(Str,Status)|Req],
+        Buf,CAt,NSD,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC}).
+
+
+
+%%
+%% telnet_put
+%% telnet_clear_req
+%%
+
+%%% putb %%%
+telnet_put(normal(NewSAb,_,ID),Res,[putb(Str,Status)|Req],
+                            Buf,CAt,SD,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    string_modify_crlf(Str,Str2),
+    code_convert:jis_to_euc(Str2,Euc),
+    SD=[send(Euc,Status),resend(ID,Sta2)|NSD],
+    telnet_put_2(Status,Sta2,Res,
+        Req,Buf,CAt,NSD,NewSAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC}).
+
+%%% prompt %%%
+telnet_put(normal(NewSAb,_,ID),Res,[prompt(Str,Status)|Req],
+                            Buf,CAt,SD,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    string_modify_crlf(Str,Str2),
+    code_convert:jis_to_euc(Str2,Euc),
+%
+%    builtin#append_string(Dm,Euc,Euc2),
+%    SD=[send(Euc2,Status),resend(ID,Sta2)|NSD],
+%
+    SD=[send(Euc,Status),resend(ID,Sta2)|NSD],
+    telnet_put_2(Status,Sta2,Res,
+        Req,Buf,CAt,NSD,NewSAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC}).
+
+%%% ungetb %%%
+telnet_put(normal(NewSAb,_,ID),Res,[ungetb(Str,Status)|Req],
+                            Buf,CAt,SD,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    string_modify_crlf(Str,Str2),
+    code_convert:jis_to_euc(Str2,Euc),
+    string(Euc,EucLen,_,Euc2),
+    SD=[send(Euc2,Status),resend(ID,Sta2)|NSD],
+    builtin#set_substring(Be,0,EucLen,Euc2,Be2),
+    telnet_put_2(Status,Sta2,Res,
+        Req,Buf,CAt,NSD,NewSAb,CS,Ab,At,Abort,Be2,EucLen,T,TLen,Opt,Dm,{F,EC}).
+
+otherwise.
+telnet_put(Result,Res,[{_,_,Status}|Req],Buf,CAt,SD,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    telnet_clear_req(Req),
+    Status=abnormal,
+    CS=[change_comment(Result,_)],
+    Opt=[],
+    Buf=[],CAt=[],SD=[].
+
+
+telnet_put_2(Sta1,Sta2,Res,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- wait(Sta1),wait(Sta2) |
+    telnet_line(Res,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC}).
+
+
+telnet_clear_req([]):- true | true.
+telnet_clear_req([putb(_,Status)|Req]):- true |
+    Status=abnormal,
+    telnet_clear_req(Req).
+telnet_clear_req([prompt(_,Status)|Req]):- true |
+    Status=abnormal,
+    telnet_clear_req(Req).
+telnet_clear_req([ungetb(_,Status)|Req]):- true |
+    Status=abnormal,
+    telnet_clear_req(Req).
+
+
+
+%%
+%% telnet_parse
+%%
+
+telnet_parse(Byte,Str,Req,Buf,CAt,SD,SAb,
+        CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    Last:= Byte - 1,
+    telnet_parse0(0,Last,Str,Req,Buf,CAt,
+        SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+telnet_parse0(Pos,Last,Data,Req,Buf,CAt,
+    SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos > Last |
+    telnet_parse3(Req,Buf,CAt,SD,SAb,
+        CS,Ab,At,Abort,Be,BeLen,T,TLen,Opt,Dm,{F,EC}).
+telnet_parse0(Pos,Last,Data,Req,Buf,CAt,
+    SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos =< Last |
+    string_element(Data,Pos,Val,Data2),
+    telnet_parse1(Val,Pos,Last,Data2,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+telnet_parse3(Req,Buf,CAt,SD,SAb,
+        CS,Ab,At,Abort,New,NewLen,T,0,Opt,Dm,{end,EC})
+:- true |
+    SD=[receive(1024,Res)|NSD],
+    telnet_line(Res,Req,Buf,CAt,NSD,SAb,
+        CS,Ab,At,Abort,New,NewLen,T,0,Opt,Dm,{[],EC}).
+otherwise.
+telnet_parse3(Req,Buf,CAt,SD,SAb,
+        CS,Ab,At,Abort,New,NewLen,T,0,Opt,Dm,{F,[abort|EC]})
+:- true |
+    SD=[receive(1024,Res)|NSD],
+    telnet_line(Res,Req,Buf,CAt,NSD,SAb,
+        CS,Ab,At,Abort,New,NewLen,T,0,Opt,Dm,{[],EC}).
+alternatively.
+telnet_parse3(Req,Buf,CAt,SD,SAb,
+        CS,Ab,At,Abort,New,NewLen,T,0,Opt,Dm,{F,EC})
+:- true |
+    SD=[receive(1024,Res)|NSD],
+    telnet_line(Res,Req,Buf,CAt,NSD,SAb,
+        CS,Ab,At,Abort,New,NewLen,T,0,Opt,Dm,{F,EC}).
+otherwise.
+telnet_parse3(Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,New,NewLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    builtin#substring(T,0,TLen,Sub,T2),
+    SD=[send(Sub,Res)|NSD],
+    telnet_parse4(Res,Req,Buf,CAt,NSD,SAb,CS,Ab,At,Abort,
+        New,NewLen,T2,0,Opt,Dm,{F,EC}).
+
+
+telnet_parse4(normal,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        New,NewLen,T,TLen,Opt,Dm,{end,EC})
+:- true |
+    SD=[receive(1024,Res)|NSD],
+    telnet_line(Res,Req,Buf,CAt,NSD,SAb,CS,Ab,At,Abort,
+        New,NewLen,T,TLen,Opt,Dm,{[],EC}).
+otherwise.
+telnet_parse4(normal,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        New,NewLen,T,TLen,Opt,Dm,{F,[abort|EC]})
+:- true |
+    SD=[receive(1024,Res)|NSD],
+    telnet_line(Res,Req,Buf,CAt,NSD,SAb,CS,Ab,At,Abort,
+        New,NewLen,T,TLen,Opt,Dm,{[],EC}).
+alternatively.
+telnet_parse4(normal,Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        New,NewLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    SD=[receive(1024,Res)|NSD],
+    telnet_line(Res,Req,Buf,CAt,NSD,SAb,CS,Ab,At,Abort,
+        New,NewLen,T,TLen,Opt,Dm,{F,EC}).
+otherwise.
+telnet_parse4(Res,Req,Buf,CAt,SD,SAb,
+        CS,Ab,At,Abort,New,NewLen,T,TLen,Opt,Dm,{F,EC})
+:- true |
+    telnet_clear_req(Req),
+    CS=[change_comment(Res,_)],
+    Opt=[],
+    Buf=[],CAt=[],SD=[],SAb=abort.
+
+
+
+telnet_parse1(tel#null,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse1(tel#bell,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% bs %%%
+telnet_parse1(tel#bs,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_ec(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse1(16#"7F",Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_ec(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+telnet_parse1(tel#ht,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% lf %%%
+telnet_parse1(tel#lf,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    set_telnet_element(Be,BeLen,tel#lf,Be2),
+    BeLen2:= BeLen + 1,
+    builtin#substring(Be2,0,BeLen2,New1,Be3),
+    code_convert:euc_to_jis(New1,Jis),
+    Buf=[Jis|BufN],
+    Pos2:= Pos + 1,
+    Opt=[carbon_copy(telopt#sga,Sga),carbon_copy(telopt#echo,Echo)|Opt2],
+    telnet_parse1_lf(Echo,Sga,Pos2,Last,Data,
+        Req,BufN,CAt,SD,SAb,CS,Ab,At,Abort,Be3,0,Dm,T,TLen,Opt2,{end,EC}).
+
+telnet_parse1(tel#vt,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse1(tel#ff,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse1(tel#cr,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse1_cr(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% iac %%%%%%%%
+telnet_parse1(tel#iac,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse_iac(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% ip %%%%%%%%
+telnet_parse1(16#"03",Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Opt=[carbon_copy(telopt#echo,Result)|Opt2],
+    telnet_parse1_ip(Result,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt2,{F,EC}).
+
+otherwise.
+telnet_parse1(Val,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- (Val<16#"20" ; Val=:=16#"7F") |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+otherwise.
+telnet_parse1(Val,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+%    set_telnet_element(Be,BeLen,Val,Be2),
+%    BeLen2:= BeLen + 1,
+%    set_telnet_element(T,TLen,Val,T2),
+%    TLen2:= TLen + 1,
+%    Pos2:= Pos + 1,
+%    telnet_parse0(Pos2,Last,Data,
+%        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be2,BeLen2,Dm,T2,TLen2,Opt).
+%%%
+    Opt=[carbon_copy(telopt#echo,Result)|Opt2],
+    set_telnet_element(Be,BeLen,Val,Be2),
+    BeLen2:= BeLen + 1,
+    telnet_parse10(Result,Val,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be2,BeLen2,Dm,T,TLen,Opt2,{F,EC}).
+
+
+telnet_parse10([on],Val,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- F \= noecho |
+    set_telnet_element(T,TLen,Val,T2),
+    TLen2:= TLen + 1,
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T2,TLen2,Opt,{F,EC}).
+otherwise.
+telnet_parse10(_,Val,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+
+telnet_ec(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- BeLen=:=0 |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_ec(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- BeLen=:=1 |
+    set_telnet_element(T,TLen,tel#bs,T2),
+    set_telnet_element(T2,~(TLen+1),16#"20",T3),
+    set_telnet_element(T3,~(TLen+2),tel#bs,T4),
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,0,Dm,T4,~(TLen+3),Opt,{F,EC}).
+otherwise.
+telnet_ec(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    string_element(Be,~(BeLen-1),Val,Be2),
+    telnet_ec3(Val,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be2,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+telnet_ec3(Val,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Val > 16#"7F" |
+    set_telnet_element(T,TLen,tel#bs,T2),
+    set_telnet_element(T2,~(TLen+1),tel#bs,T3),
+    set_telnet_element(T3,~(TLen+2),16#"20",T4),
+    set_telnet_element(T4,~(TLen+3),16#"20",T5),
+    set_telnet_element(T5,~(TLen+4),tel#bs,T6),
+    set_telnet_element(T6,~(TLen+5),tel#bs,T7),
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,~(BeLen-2),Dm,T7,~(TLen+6),Opt,{F,EC}).
+telnet_ec3(Val,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Val =< 16#"7F" |
+    set_telnet_element(T,TLen,tel#bs,T2),
+    set_telnet_element(T2,~(TLen+1),16#"20",T3),
+    set_telnet_element(T3,~(TLen+2),tel#bs,T4),
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,
+        Be,~(BeLen-1),Dm,T4,~(TLen+3),Opt,{F,EC}).
+
+
+telnet_el(0,Send,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+otherwise.
+telnet_el(Count,Send,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Count2:= Count - 1,
+    set_telnet_element(T,TLen,tel#bs,T2),
+    set_telnet_element(T2,~(TLen+1),16#"20",T3),
+    set_telnet_element(T3,~(TLen+2),tel#bs,T4),
+    telnet_el(Count2,Send,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T4,~(TLen+3),Opt,{F,EC}).
+
+
+
+telnet_parse1_cr(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos > Last |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse1_cr(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos =< Last |
+    string_element(Data,Pos,Val,Data2),
+    telnet_parse1_cr2(Val,Pos,Last,Data2,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+telnet_parse1_cr2(tel#null,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    telnet_parse1(tel#lf,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+otherwise.
+telnet_parse1_cr2(Val,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    telnet_parse1(Val,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+telnet_parse1_lf(Echo,[on],Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    telnet_parse1_lf2(Echo,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+otherwise.
+telnet_parse1_lf(Echo,Sga,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    set_telnet_element(T,TLen,tel#iac,T2),
+    set_telnet_element(T2,~(TLen+1),tel#ga,T3),
+    telnet_parse1_lf2(Echo,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T3,~(TLen+2),Opt,{F,EC}).
+
+
+telnet_parse1_lf2([on],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    set_telnet_element(T,TLen,tel#cr,T2),
+    set_telnet_element(T2,~(TLen+1),tel#lf,T3),
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T3,~(TLen+2),Opt,{F,EC}).
+otherwise.
+telnet_parse1_lf2(Echo,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+telnet_parse1_ip([on],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    CAt=[attention|CAtN],
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAtN,SD,SAb,CS,Ab,At,Abort,Be,0,Dm,T,TLen,Opt,{F,EC}).
+otherwise.
+telnet_parse1_ip(Result,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    set_telnet_element(Be,BeLen,Val,Be2),
+    BeLen2:= BeLen + 1,
+    set_telnet_element(T,TLen,Val,T2),
+    TLen2:= TLen + 1,
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be2,BeLen2,Dm,T2,TLen2,Opt,{F,EC}).
+
+
+
+telnet_parse_iac(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos > Last |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse_iac(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos =< Last |
+    string_element(Data,Pos,Val,Data2),
+    telnet_parse2(Val,Pos,Last,Data2,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+telnet_parse2(tel#se,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse2(tel#nop,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse2(tel#dm,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse2(tel#bk,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse2(tel#ao,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% ayt %%%%%%%%
+telnet_parse2(tel#ayt,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    T=T1,
+    set_telnet_element(T1,TLen,key#cr,T2),
+    set_telnet_element(T2,~(TLen+1),key#lf,T3),
+    set_telnet_element(T3,~(TLen+2),c#"[",T4),
+    set_telnet_element(T4,~(TLen+3),c#"Y",T5),
+    set_telnet_element(T5,~(TLen+4),c#"e",T6),
+    set_telnet_element(T6,~(TLen+5),c#"s",T7),
+    set_telnet_element(T7,~(TLen+6),c#"]",T8),
+    set_telnet_element(T8,~(TLen+7),key#cr,T9),
+    set_telnet_element(T9,~(TLen+8),key#lf,T10),
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T10,~(TLen+9),Opt,{F,EC}).
+
+%%% ec %%%%%%%%
+telnet_parse2(tel#ec,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_ec(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% el %%%%%%%%
+telnet_parse2(tel#el,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_el(BeLen,ascii#"",Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,0,Dm,T,TLen,Opt,{F,EC}).
+
+telnet_parse2(tel#ga,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse2(tel#sb,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse_sb(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% ip %%%
+telnet_parse2(tel#ip,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    CAt=[attention|CAtN],
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAtN,SD,SAb,CS,Ab,At,Abort,Be,0,Dm,T,TLen,Opt,{F,EC}).
+
+%%% will %%%
+telnet_parse2(tel#will,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_will(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% wont %%%
+telnet_parse2(tel#wont,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_wont(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% do %%%
+telnet_parse2(tel#do,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_do(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+%%% dont %%%
+telnet_parse2(tel#dont,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_dont(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+otherwise.
+telnet_parse2(Val,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    set_telnet_element(Be,BeLen,Val,Be2),
+    BeLen2:= BeLen + 1,
+    set_telnet_element(T,TLen,Val,T2),
+    TLen2:= TLen + 1,
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be2,BeLen2,Dm,T2,TLen2,Opt,{F,EC}).
+
+
+
+telnet_will(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos > Last |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_will(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos =< Last |
+    string_element(Data,Pos,Val,Data2),
+    Opt=[carbon_copy(Val,Res)|Opt2],
+    telnet_will2(Val,Res,Pos,Last,Data2,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt2,{F,EC}).
+
+
+telnet_will2(Val,[on],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_will2(Val,[off],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Opt=[put(Val,on,_)|Opt2],
+    set_telnet_element(T,TLen,tel#iac,T2),
+    set_telnet_element(T2,~(TLen+1),tel#do,T3),
+    set_telnet_element(T3,~(TLen+2),Val,T4),
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T4,~(TLen+3),Opt2,{F,EC}).
+otherwise.
+telnet_will2(Val,Res,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    set_telnet_element(T,TLen,tel#iac,T2),
+    set_telnet_element(T2,~(TLen+1),tel#dont,T3),
+    set_telnet_element(T3,~(TLen+2),Val,T4),
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T4,~(TLen+3),Opt,{F,EC}).
+
+
+
+telnet_wont(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos > Last |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_wont(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos =< Last |
+    string_element(Data,Pos,Val,Data2),
+    Opt=[carbon_copy(Val,Res)|Opt2],
+    telnet_wont2(Val,Res,Pos,Last,Data2,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt2,{F,EC}).
+
+
+telnet_wont2(Val,[on],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Opt=[put(Val,off,_)|Opt2],
+    set_telnet_element(T,TLen,tel#iac,T2),
+    set_telnet_element(T2,~(TLen+1),tel#dont,T3),
+    set_telnet_element(T3,~(TLen+2),Val,T4),
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T4,~(TLen+3),Opt2,{F,EC}).
+telnet_wont2(Val,[off],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+otherwise.
+telnet_wont2(Val,Res,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+
+telnet_do(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos > Last |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_do(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos =< Last |
+    string_element(Data,Pos,Val,Data2),
+    Opt=[carbon_copy(Val,Res)|Opt2],
+    telnet_do2(Val,Res,Pos,Last,Data2,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt2,{F,EC}).
+
+
+telnet_do2(Val,[on],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_do2(Val,[off],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Opt=[put(Val,on,_)|Opt2],
+    set_telnet_element(T,TLen,tel#iac,T2),
+    set_telnet_element(T2,~(TLen+1),tel#will,T3),
+    set_telnet_element(T3,~(TLen+2),Val,T4),
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T4,~(TLen+3),Opt2,{F,EC}).
+otherwise.
+telnet_do2(Val,Res,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    set_telnet_element(T,TLen,tel#iac,T2),
+    set_telnet_element(T2,~(TLen+1),tel#wont,T3),
+    set_telnet_element(T3,~(TLen+2),Val,T4),
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T4,~(TLen+3),Opt,{F,EC}).
+
+
+
+telnet_dont(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos > Last |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_dont(Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos =< Last |
+    string_element(Data,Pos,Val,Data2),
+    Opt=[carbon_copy(Val,Res)|Opt2],
+    telnet_dont2(Val,Res,Pos,Last,Data2,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt2,{F,EC}).
+
+
+telnet_dont2(Val,[on],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Opt=[put(Val,off,_)|Opt2],
+    set_telnet_element(T,TLen,tel#iac,T2),
+    set_telnet_element(T2,~(TLen+1),tel#wont,T3),
+    set_telnet_element(T3,~(TLen+2),Val,T4),
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T4,~(TLen+3),Opt2,{F,EC}).
+telnet_dont2(Val,[off],Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+otherwise.
+telnet_dont2(Val,Res,Pos,Last,Data,
+    Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+
+telnet_parse_sb(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos > Last |
+    telnet_parse0(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+telnet_parse_sb(Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- Pos =< Last |
+    string_element(Data,Pos,Val,Data2),
+    telnet_parse_sb2(Val,Pos,Last,Data2,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+telnet_parse_sb2(tel#se,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse0(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+otherwise.
+telnet_parse_sb2(_,Pos,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC})
+:- true |
+    Pos2:= Pos + 1,
+    telnet_parse_sb(Pos2,Last,Data,
+        Req,Buf,CAt,SD,SAb,CS,Ab,At,Abort,Be,BeLen,Dm,T,TLen,Opt,{F,EC}).
+
+
+
+%%
+%% user_part
+%%
+
+user_part(In,Add,Req,[],CAt,TAb,TAt,T,Sus1,Sus2,EC):- true |
+    TAt=attention,
+    Req=[],
+    user_part_2(In,abnormal),
+    Sus2=[],
+    user_part_2(Sus1,aborted),
+    T=[get_all(O)],
+    EC=[],
+    user_part_4(O).
+
+user_part([],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC):- true |
+    TAt=attention,
+    Req=[],
+    Sus2=[],
+    user_part_2(Sus1,aborted),
+    T=[get_all(O)],
+    EC=[],
+    user_part_4(O).
+
+%%% attention from telnet_part %%%
+user_part(In,Add,Req,Buf,[attention|CAt],TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    TAt=attention,
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+alternatively.
+%%% getb %%%
+user_part([getb(Len,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    EC=[echo|EC2],
+    user_part_getb([getb(Len,Status)|In],
+        Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC2).
+
+%%% getb_noecho %%%
+user_part([getb_noecho(Len,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    EC=[noecho|EC2],
+    user_part_getb([getb_noecho(Len,Status)|In],
+        Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC2).
+
+%%% putb %%%
+user_part([putb(String,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- wait(TAb) |
+    Sus2=[putb(String,Status)|SusN],
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,SusN,EC).
+alternatively.
+user_part([putb(String,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Req=[putb(String,Status)|ReqN],
+    user_part(In,Add,ReqN,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+%%% prompt %%%
+user_part([prompt(String,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- wait(TAb) |
+    Sus2=[prompt(String,Status)|SusN],
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,SusN,EC).
+alternatively.
+user_part([prompt(String,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Req=[prompt(String,Status)|ReqN],
+    user_part(In,Add,ReqN,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+%%% ungetb %%%
+user_part([ungetb(String,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- wait(TAb) |
+    Sus2=[ungetb(String,Status)|SusN],
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,SusN,EC).
+alternatively.
+user_part([ungetb(String,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Req=[ungetb(String,Status)|ReqN],
+    user_part(In,Add,ReqN,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+%%% flush %%%
+user_part([flush(Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- wait(TAb) |
+    Sus2=[flush(Status)|SusN],
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,SusN,EC).
+alternatively.
+user_part([flush(Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Status=normal,
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+%%% get_attributes %%%
+user_part([get_attributes(Result)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- wait(TAb) |
+    Sus2=[get_attributes(Result)|SusN],
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,SusN,EC).
+alternatively.
+user_part([get_attributes(Result)|In],{IP,Port},Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Result=normal(telnet,[ip_address(IP),port_number(Port)]),
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+%%% reset,next_attention,resend,cancel %%%
+user_part([reset(Result)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Result=normal(NewTAb,NewTAt,ID),
+    T=[put_with_new_id(ID,{Sus1,Sus2})|T2],
+    TAb=abort,TAt=attention,
+    user_part(In,Add,Req,Buf,CAt,NewTAb,NewTAt,T2,NewSus,NewSus,EC).
+
+user_part([next_attention(Result)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Result=normal(NewTAt),
+    TAt=attention,
+    user_part(In,Add,Req,Buf,CAt,TAb,NewTAt,T,Sus1,Sus2,EC).
+
+user_part([resend(ID,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    T=[get_if_any(ID,X)|T2],
+    user_part_3(resend,X,Status,In,Add,Req,Buf,CAt,TAb,TAt,T2,Sus1,Sus2,EC).
+
+user_part([cancel(ID,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    T=[get_if_any(ID,X)|T2],
+    user_part_3(cancel,X,Status,In,Add,Req,Buf,CAt,TAb,TAt,T2,Sus1,Sus2,EC).
+
+
+%%
+%% user_part_getb
+%%
+
+user_part_getb(In,Add,Req,[],CAt,TAb,TAt,T,Sus1,Sus2,EC):- true |
+    TAt=attention,
+    Req=[],
+    user_part_2(In,abnormal),
+    Sus2=[],
+    user_part_2(Sus1,aborted),
+    T=[get_all(O)],
+    EC=[],
+    user_part_4(O).
+
+user_part_getb([],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC):- true |
+    TAt=attention,
+    Req=[],
+    Sus2=[],
+    user_part_2(Sus1,aborted),
+    T=[get_all(O)],
+    EC=[],
+    user_part_4(O).
+
+%%% attention from telnet_part %%%
+user_part_getb(In,Add,Req,Buf,[attention|CAt],TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    TAt=attention,
+    user_part_getb(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+alternatively.
+
+%%% getb %%%
+user_part_getb([getb(Len,Status)|In],Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- wait(TAb) |
+    Sus2=[getb(Len,Status)|SusN],
+    EC=[abort|EC2],
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,SusN,EC2).
+alternatively.
+user_part_getb([getb(Len,Status)|In],Add,Req,[Str|Buf],
+        CAt,TAb,TAt,T,Sus1,Sus2,EC):- string(Str,Len2,_),Len>=Len2 |
+    Status=normal(Str),
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+user_part_getb([getb(Len,Status)|In],Add,Req,[Str|Buf],
+        CAt,TAb,TAt,T,Sus1,Sus2,EC):- string(Str,Len2,_),Len<Len2 |
+    Over:= Len2 - Len,
+    builtin#substring(Str,0,Len,Sub1,NewStr),
+    builtin#substring(NewStr,Len,Over,Sub2,_),
+    Status=normal(Sub1),
+    user_part(In,Add,Req,[Sub2|Buf],CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+%%% getb_noecho %%%
+user_part_getb([getb_noecho(Len,Status)|In],Add,Req,Buf,
+        CAt,TAb,TAt,T,Sus1,Sus2,EC):- wait(TAb) |
+    Sus2=[getb_noecho(Len,Status)|SusN],
+    EC=[abort|EC2],
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,SusN,EC2).
+alternatively.
+user_part_getb([getb_noecho(Len,Status)|In],Add,Req,[Str|Buf],
+        CAt,TAb,TAt,T,Sus1,Sus2,EC):- string(Str,Len2,_),Len>=Len2 |
+    Status=normal(Str),
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+user_part_getb([getb_noecho(Len,Status)|In],Add,Req,[Str|Buf],
+        CAt,TAb,TAt,T,Sus1,Sus2,EC):- string(Str,Len2,_),Len<Len2 |
+    Over:= Len2 - Len,
+    builtin#substring(Str,0,Len,Sub1,NewStr),
+    builtin#substring(NewStr,Len,Over,Sub2,_),
+    Status=normal(Sub1),
+    user_part(In,Add,Req,[Sub2|Buf],CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+
+user_part_2([],Value):- true | true.
+user_part_2([getb(_,Status)|In],Value):- true |
+    Status=Value,
+    user_part_2(In,Value).
+user_part_2([ungetb(_,Status)|In],Value):- true |
+    Status=Value,
+    user_part_2(In,Value).
+user_part_2([prompt(_,Status)|In],Value):- true |
+    Status=Value,
+    user_part_2(In,Value).
+user_part_2([putb(_,Status)|In],Value):- true |
+    Status=Value,
+    user_part_2(In,Value).
+user_part_2([flush(Result)|In],Value):- true |
+    Result=Value,
+    user_part_2(In,Value).
+user_part_2([get_attributes(Result)|In],Value):- true |
+    Result=Value,
+    user_part_2(In,Value).
+user_part_2([getb_noecho(_,Status)|In],Value):- true |
+    Status=Value,
+    user_part_2(In,Value).
+user_part_2([reset(Result)|In],Value):- true |
+    Result=Value,
+    user_part_2(In,Value).
+user_part_2([next_attention(Result)|In],Value):- true |
+    Result=Value,
+    user_part_2(In,Value).
+user_part_2([resend(_,Status)|In],Value):- true |
+    Status=Value,
+    user_part_2(In,Value).
+user_part_2([cancel(_,Status)|In],Value):- true |
+    Status=Value,
+    user_part_2(In,Value).
+
+
+user_part_3(resend,{},Status,In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Status=abnormal,
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+user_part_3(resend,{{S1,S2}},Status,In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Status=normal,
+    S2=In,
+    user_part(S1,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+user_part_3(cancel,{},Status,In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Status=abnormal,
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+user_part_3(cancel,{{S1,S2}},Status,In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC)
+:- true |
+    Status=normal,
+    S2=[],
+    user_part_2(S1,aborted),
+    user_part(In,Add,Req,Buf,CAt,TAb,TAt,T,Sus1,Sus2,EC).
+
+
+user_part_4([]):- true | true.
+user_part_4([{_,{S1,S2}}|O]):- true |
+    S2=[],
+    user_part_2(S1,aborted),
+    user_part_4(O).
+
+
+
+string_modify_crlf(In,Out):- string(In,Len,16) |
+    Last:= Len - 1,
+    new_string(Str1,2,16),
+    set_string_element(Str1,0,16#"0D",Str2),
+    set_string_element(Str2,1,16#"0A",CRLF),
+    string_modify_crlf2(In,0,Last,CRLF,Out).
+
+string_modify_crlf2(In,Start,Last,CRLF,Out):- Start >  Last | In=Out.
+string_modify_crlf2(In,Start,Last,CRLF,Out):- Start =< Last |
+    search_character(In,Start,Last,10,Pos,In2),
+    string_modify_crlf3(Pos,In2,Start,Last,CRLF,Out).
+
+string_modify_crlf3(-1,In,Start,Last,CRLF,Out):- true | In=Out.
+otherwise.
+string_modify_crlf3(Pos,In,Start,Last,CRLF,Out):- true |
+    builtin#substring(In,0,Pos,Prefix,In2),
+    Pos2:= Pos + 1,
+    Len:= Last - Pos,
+    builtin#substring(In2,Pos2,Len,Suffix,_),
+    builtin#append_string([Prefix,CRLF,Suffix],NewStr),
+    NewStart:= Pos + 2,
+    NewLast:= Last + 1,
+    string_modify_crlf2(NewStr,NewStart,NewLast,CRLF,Out).
+
+
+set_telnet_element(Str,Pos,Val,Str2):- string(Str,Len,ES),Len=<Pos |
+    new_string(New,1024,ES),
+    builtin#append_string(Str,New,Str3),
+    set_string_element(Str3,Pos,Val,Str2).
+set_telnet_element(Str,Pos,Val,Str2):- string(Str,Len,_),Len>Pos |
+    set_string_element(Str,Pos,Val,Str2).

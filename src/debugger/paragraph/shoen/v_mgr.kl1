@@ -1,0 +1,455 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ :- with_macro pimos.
+ :- module profiler_view_mgr.
+ :- public command/8.
+
+   command(Term,PE,ToMngStream,ToMng1,In,In1,Dev,Dev1):- true |
+       disp_command(Term,PE,ToMngStream,ToMng1,In,In1,Dev,Dev1).
+ 
+   disp_command(plot(overall_what_when,Type,To,Wid,Gid),PE,ToMngStream,ToMngStream1,In,In1,Dev,Dev2):- true|
+        integer_check(To,N),
+        View = overall_what_when,
+        ( Type=r ->N1=N,Type=Type1,Ans= all(NewSet);
+          Type=s ->N1=N,Type=Type1,Ans= all(NewSet);
+          Type=rs ->N1=0,Type1=r,Ans= NewSet ),
+        ToMngStream = [max_and_else(N1,what_when,Type1,Set),cy(Cy),view(ViewMode)|ToMngStream1],
+        trans(View,ViewId),
+        trans(Type,TypeId),
+        new_string(String1, 8, 16),
+        set_string(String1,[ViewId,Cy,PE,TypeId,0,N,Wid,Gid],String8),
+        make_set(ViewMode,View,Type,Set,NewSet,PE,1),
+        Dev = [io(10,String8,Res)|Dev1],
+        check_output(plot,View,Type,Res,Ans,Wid,Gid,In,In1,Dev1,Dev2).
+
+   disp_command(plot(overall_what_where,Type,To,Wid,Gid),PE,ToMngStream,ToMngStream1,In,In1,Dev,Dev2):- true|
+        integer_check(To,N),
+        View = overall_what_where,
+        ( Type=r ->N1=N ,Type=Type1,Ans= all(NewSet);
+          Type=s ->N1=N ,Type=Type1,Ans= all(NewSet);
+          Type=rs ->N1=0 ,Type1=r,Ans = NewSet),
+        ToMngStream = [max_and_else(N1,what_where,Type1,Set),cy(Cy),start_pe(SPE),view(ViewMode)|ToMngStream1],
+        trans(View,ViewId),
+        trans(Type,TypeId),
+        new_string(String1, 8, 16),
+        set_string(String1,[ViewId,Cy,PE,TypeId,SPE,N,Wid,Gid],String9),
+        Dev = [io(10,String9,Res)|Dev1],
+        make_set(ViewMode,View,Type,Set,NewSet,Cy,1),
+        check_output(plot,View,Type,Res,Ans,Wid,Gid,In,In1,Dev1,Dev2).
+
+   disp_command(predicate(Wid,Gid),PE,ToMngStream,ToMngStream1,In,In1,Dev,Dev2):- true|
+        trans(predicate,ViewId),
+        new_string(String1, 5, 16),
+        set_string(String1,[ViewId,Cy,PE,Wid,Gid],String6),
+        Dev = [io(10,String6,Res)|Dev1],
+        ToMngStream = [cy(Cy)|ToMngStream1],
+        check_output(plot,predicate,rs,Res,predicate,Wid,Gid,In,In1,Dev1,Dev2).
+
+   disp_command(predicate(Wid),PE,ToMngStream,ToMngStream1,In,In1,Dev,Dev2):- true|
+        ToMngStream = [cy(Cy)|ToMngStream1],
+        trans(predicate,ViewId),
+        new_string(String1, 5, 16),
+        set_string(String1,[ViewId,Cy,PE,Wid,Wid],String6),
+        Dev = [io(10,String6,Res)|Dev1],
+        check_output(plot,predicate,rs,Res,predicate,Wid,Wid,In,In1,Dev1,Dev2).
+
+%%%%%% when_where %%%%%%
+   disp_command(plot(when_where,Type,Wid,Gid),PE,ToMngStream,ToMngStream1,In,In1,Dev,Dev2):- true |
+       View = when_where,
+        ToMngStream = [get(View,Type,Set),cy(Cy),start_pe(SPE)|ToMngStream1],
+        max_value(Set,MaxValue,NewSet),
+        trans(View,ViewId),
+        trans(Type,TypeId),
+        check_value(MaxValue,MValue1,MValue2),
+        new_string(String1, 11, 16),
+        set_string(String1,[ViewId,Cy,PE,MValue1,MValue2,TypeId,SPE,Wid,Gid,0,0],String9),
+        Dev = [io(10,String9,Res)|Dev1],
+        check_output(plot,View,Type,Res,NewSet,Wid,Gid,In,In1,Dev1,Dev2).
+
+%%%% what_when, what_where %%%% 
+   disp_command(plot(what_when,Type,From,N0,Wid,Gid),PE,ToMngStream,ToMngStream1,In,In1,Dev,Dev2):- 
+        integer(From),integer(N0) |
+        View = what_when,
+        integer_check(N0,N),
+        ( Type=r -> Type1=Type,
+                    make_set2(ViewMode,View,Type1,1,From,Set,NewSet,PE,1) ;
+          Type=s -> Type1=Type,
+                    make_set2(ViewMode,View,Type1,1,From,Set,NewSet,PE,1) ;
+          Type=rs -> Type1=r,
+                    make_set2(ViewMode,View,rs,1,From,Set,NewSet,PE,1) ),
+        N1 := From + N - 1,
+        ToMngStream = [max(N1,View,Type1,Set),cy(Cy),start_pe(SPE),view(ViewMode)|ToMngStream1],
+        trans(View,ViewId),
+        trans(Type,TypeId),
+        new_string(String1, 9, 16),
+        set_string(String1,[ViewId,Cy,PE,TypeId,From,SPE,N,Wid,Gid],String10),
+        Dev = [io(10,String10,Res)|Dev1],
+        check_output(plot,View,Type,Res,NewSet,Wid,Gid,In,In1,Dev1,Dev2).
+
+   disp_command(plot(what_where,Type,From,N0,Wid,Gid),PE,ToMngStream,ToMngStream1,In,In1,Dev,Dev2):- 
+        integer(From),integer(N0) |
+        integer_check(N0,N),
+        View = what_where,
+        ( Type=r -> Type1=Type,
+                    make_set2(ViewMode,View,Type1,1,From,Set,NewSet,Cy,1) ;
+          Type=s -> Type1=Type,
+                    make_set2(ViewMode,View,Type1,1,From,Set,NewSet,Cy,1) ;
+          Type=rs -> Type1=r,
+                    make_set2(ViewMode,View,rs,1,From,Set,NewSet,Cy,1) ),
+        N1 := From + N - 1,
+        ToMngStream = [max(N1,View,Type1,Set),cy(Cy),start_pe(SPE),view(ViewMode)|ToMngStream1],
+        trans(View,ViewId),
+        trans(Type,TypeId),
+        new_string(String1, 9, 16),
+        set_string(String1,[ViewId,Cy,PE,TypeId,From,SPE,N,Wid,Gid],String10),
+        Dev = [io(10,String10,Res)|Dev1],
+        check_output(plot,View,Type,Res,NewSet,Wid,Gid,In,In1,Dev1,Dev2).
+
+ otherwise.
+   disp_command({Code,Wid,Gid},PE,ToMngStream,ToMngStream1,In,In1,Dev,Dev1):- true|
+        Dev = [send({Code,Wid,Gid},Res)|Dev1],
+        ToMngStream = ToMngStream1,
+        In = In1.
+
+ otherwise.
+   disp_command(Unkown,PE,ToMngStream,ToMngStream1,In,In1,Dev,Dev1):- true |
+        In=[nl,puttq(Unkown),nl,prompt("?- "),gett(Term)|In1],
+        ToMngStream = ToMngStream1,
+        Dev = Dev1.
+
+   integer_check(N0,N):-
+     N0 > 15 |
+     N = 15.
+   integer_check(N0,N):-
+     N0 =< 15 |
+     N0 = N.
+
+
+%%%%%
+   set_string(String1,[ViewId,Cy,PE,TypeId,SPE,N,Wid,Gid],NewString):- wait(ViewId), wait(TypeId) |
+        set_string_element(String1, 0, ViewId, String2),
+        set_string_element(String2, 1, Cy, String3),
+        set_string_element(String3, 2, PE, String4),
+        set_string_element(String4, 3, TypeId, String5),
+        set_string_element(String5, 4, SPE, String6),
+        set_string_element(String6, 5, N, String7),
+        set_string_element(String7, 6, Wid, String8),
+        set_string_element(String8, 7, Gid, String9),
+        NewString = String9.
+
+   set_string(String1,[ViewId,Cy,PE,Wid,Gid],NewString):- wait(ViewId) |
+        set_string_element(String1, 0, ViewId, String2),
+        set_string_element(String2, 1, Cy, String3),
+        set_string_element(String3, 2, PE, String4),
+        set_string_element(String4, 3, Wid, String5),
+        set_string_element(String5, 4, Gid, String6),
+        NewString = String6.
+
+   set_string(String1,[ViewId,Cy,PE,MaxValue1,MaxValue2,TypeId,SPE,Wid,Gid,_,_],NewString):- wait(ViewId), wait(TypeId)|
+        set_string_element(String1, 0, ViewId, String2),
+        set_string_element(String2, 1, Cy, String3),
+        set_string_element(String3, 2, PE, String4),
+        set_string_element(String4, 3, MaxValue1, String5),
+        set_string_element(String5, 4, MaxValue2, String6),
+        set_string_element(String6, 5, TypeId, String7),
+        set_string_element(String7, 6, SPE, String8),
+        set_string_element(String8, 7, Wid, String9),
+        set_string_element(String9, 8, Gid, String10),
+        NewString = String10.
+     
+    set_string(String1,[ViewId,Cy,PE,TypeId,From,SPE,N,Wid,Gid],NewString):- wait(ViewId), wait(TypeId)|
+        set_string_element(String1, 0, ViewId, String2),
+        set_string_element(String2, 1, Cy, String3),
+        set_string_element(String3, 2, PE, String4),
+        set_string_element(String4, 3, TypeId, String5),
+        set_string_element(String5, 4, From, String6),
+        set_string_element(String6, 5, SPE, String7),
+        set_string_element(String7, 6, N, String8),
+        set_string_element(String8, 7, Wid, String9),
+        set_string_element(String9, 8, Gid, String10),
+        NewString = String10.
+
+        
+%%%%%% check_output %%%%%%%
+
+   check_output(plot,_,_,Res,NewSet,Wid,Gid,In,In1,Dev,NewDev):- true |
+     disp(NewSet,Wid,Gid,In,In1,Dev,Dev1),
+     new_string(String, 2, 16),
+     set_string_element(String, 0, Wid, String2),
+     set_string_element(String2, 1, Gid, String3),
+     Dev1 = [io(14,String3,Res1)|Dev2],
+     NewDev = Dev2.
+
+   disp([],_,_,In,In1,Dev,Dev1):- true | In=In1,Dev=Dev1.
+   disp(predicate,Wid,Gid,In,In1,Dev0,Dev1):- true |
+        new_string(String1, 3, 16),
+        trans(predicate,ViewId),
+        set_string_element(String1, 0, ViewId, String2),
+        set_string_element(String2, 1, Wid, String3),
+        set_string_element(String3, 2, Gid, String4),
+        Dev0 = [io(11,String4,Res)|Dev1],
+        In=In1 .
+   disp(all(String),Wid,Gid,In,In1,Dev0,Dev1):- string(String,Size,_ESize) |
+        Length := Size + 2,
+        new_string(NString, Length, 16),
+        builtin#set_substring(NString,0,String,NString2),
+        P1 := Size + 1,
+        set_string_element(NString2, Size, Wid, NString3),
+        set_string_element(NString3, P1, Gid, NString4),
+        Dev0 = [io(12,NString4,Res)|Dev1],
+        In=In1.
+  disp(String,Wid,Gid,In,In1,Dev0,Dev1):- string(String,Size,_ESize) |
+        Length := Size + 2,
+        new_string(NString, Length, 16),
+        builtin#set_substring(NString,0,String,NString2),
+        P1 := Size + 1,
+        set_string_element(NString2, Size, Wid, NString3),
+        set_string_element(NString3, P1, Gid, NString4),
+        Dev0 = [io(13,NString4,Res)|Dev1],
+        In=In1.
+
+%%%%%%%%%%%%
+
+   make_set(ViewMode,View,Type,[],V,Cycle,N):- true |
+        V = [].
+otherwise.
+   make_set(ViewMode,View,rs,List,V,Cycle,N):- true |
+        count(List,0,Num),
+        List = [{Key,Vect}|_RList],
+        vector(Vect,Size,_NewVect),
+        %%%% Length := 4*Num*(Size/2-1) + Num
+        Length := Num*(2*Size-3),
+        new_string(String1, Length, 16),
+        USize := Size/2 - 1,
+        make_set1(ViewMode,View,rs,List,0,String1,V,USize,Cycle,N).
+  otherwise.
+   make_set(ViewMode,View,Type,List,V,Cycle,N):- true |
+        count(List,0,Num),
+        List = [{Key,Vect}|_RList],
+        vector(Vect,Size,_NewVect),
+        %%%% Length := Num*(Size/2-1)*2 + Num
+        Length := Num*Size - Num,
+        new_string(String1, Length, 16),
+        USize := Size/2 - 1,
+        make_set1(ViewMode,View,Type,List,0,String1,V,USize,Cycle,N).
+
+  make_set2(ViewMode,View,Type,C,S,[],V,Cycle,N):- true |
+        V = [].
+  make_set2(ViewMode,View,Type,C,S,[A|R],V,Cycle,N):- C < S |
+       C1 := C + 1,
+       make_set2(ViewMode,View,Type,C1,S,R,V,Cycle,N).
+  make_set2(ViewMode,View,rs,C,S,List,V,Cycle,N):- C >= S |
+        count(List,0,Num),
+        List = [{Key,Vect}|_RList],
+        vector(Vect,Size,_NewVect),
+        %%%% Length := 4*Num*(Size/2-1) + Num
+        Length := Num*(2*Size-3),
+        new_string(String1, Length, 16),
+        USize := Size/2 - 1,
+        make_set1(ViewMode,View,rs,List,0,String1,V,USize,Cycle,N).
+otherwise.
+   make_set2(ViewMode,View,Type,C,S,List,V,Cycle,N):- true |
+        count(List,0,Num),
+        List = [{Key,Vect}|_RList],
+        vector(Vect,Size,_NewVect),
+        %%%% Length := Num*(Size/2-1)*2 + Num
+        Length := Num*Size - Num,
+        new_string(String1, Length, 16),
+        USize := Size/2 - 1,
+        make_set1(ViewMode,View,Type,List,0,String1,V,USize,Cycle,N).
+
+   make_set1(ViewMode,View,Type,[],Po,String,V,_,Cycle,Num):- true | V = String.
+   make_set1(ViewMode,View,rs,[{Key,Vect}|RV],Po,String,V,Size,Cycle,Num):-  true |
+        set_string_element(String, Po, Key, String1),
+        Po2 := Po + 1,
+        set2(ViewMode,2,Vect,Po2,Next,0,Size,String1,String2,Cycle,Num),
+        make_set1(ViewMode,View,rs,RV,Next,String2,V,Size,Cycle,Num).
+ otherwise.
+   make_set1(ViewMode,View,Type,[{Key,Vect}|RV],Po,String,V,Size,Cycle,Num):- true |
+       ( Type=r -> P:=2 ;
+         Type=s -> P:=3 ),
+        set_string_element(String, Po, Key, String1),
+        Po2 := Po + 1,
+        set(ViewMode,P,Vect,Po2,Next,0,Size,String1,String2,Cycle,Num),
+        make_set1(ViewMode,View,Type,RV,Next,String2,V,Size,Cycle,Num).
+
+   set(ViewMode,C,Vect,Po,Next,Count,N,NewString0,NewString,_,_):- Count=N |
+        NewString = NewString0, Next = Po.
+  otherwise.
+   set(goal,C,Vect,Po,Next,Count,N,NewString0,NewString,_,_):- true |
+        vector_element(Vect,C,Data,Vect1),
+        check_value(Data,Value1,Value2),
+        Po2 := Po+1,
+        set_string_element(NewString0,Po,Value1,NewString1),
+        set_string_element(NewString1,Po2,Value2,NewString2),
+        NextC := C+2,
+        NextCount := Count+1,
+        NextPo := Po2 + 1,
+        set(goal,NextC,Vect1,NextPo,Next,NextCount,N,NewString2,NewString,_,_).
+   set(msg,C,Vect,Po,Next,Count,N,NewString0,NewString,_,_):- true |
+        vector_element(Vect,C,Data,Vect1),
+        check_value(Data,Value1,Value2),
+        Po2 := Po+1,
+        set_string_element(NewString0,Po,Value1,NewString1),
+        set_string_element(NewString1,Po2,Value2,NewString2),
+        NextC := C+2,
+        NextCount := Count+1,
+        NextPo := Po2 + 1,
+        set(msg,NextC,Vect1,NextPo,Next,NextCount,N,NewString2,NewString,_,_).
+   set(pe,C,Vect,Po,Next,Count,N,NewString0,NewString,Cycle,Num):- true |
+        vector_element(Vect,C,Data,Vect1),
+        d_check(Data,Cycle,Num,Data1),
+        check_value(Data1,Value1,Value2),
+        Po2 := Po+1,
+        set_string_element(NewString0,Po,Value1,NewString1),
+        set_string_element(NewString1,Po2,Value2,NewString2),
+        NextC := C+2,
+        NextCount := Count+1,
+        NextPo := Po2 + 1,
+        set(pe,NextC,Vect1,NextPo,Next,NextCount,N,NewString2,NewString,Cycle,Num).
+
+
+   set2(ViewMode,C,Vect,Po,Next,Count,N,NewString0,NewString,_,_):- Count=N |
+        NewString = NewString0, Next = Po.
+  otherwise.
+   set2(goal,C,Vect,Po,Next,Count,N,NewString0,NewString,_,_):- true |
+        C2 := C+1,
+        Po2 := Po+1,
+        Po3 := Po+2,
+        Po4 := Po+3,
+        vector_element(Vect,C,Data,Vect1),
+        vector_element(Vect1,C2,Data2,Vect2),
+        check_value(Data,Value1,Value2),
+        check_value(Data2,Value3,Value4),
+        set_string_element(NewString0,Po,Value1,NewString1),
+        set_string_element(NewString1,Po2,Value2,NewString2),
+        set_string_element(NewString2,Po3,Value3,NewString3),
+        set_string_element(NewString3,Po4,Value4,NewString4),
+        NextC := C+2,
+        NextCount := Count+1,
+        NextPo := Po + 4,
+        set2(goal,NextC,Vect2,NextPo,Next,NextCount,N,NewString4,NewString,_,_).
+   set2(msg,C,Vect,Po,Next,Count,N,NewString0,NewString,_,_):- true |
+        C2 := C+1,
+        Po2 := Po+1,
+        Po3 := Po+2,
+        Po4 := Po+3,
+        vector_element(Vect,C,Data,Vect1),
+        vector_element(Vect1,C2,Data2,Vect2),
+        check_value(Data,Value1,Value2),
+        check_value(Data2,Value3,Value4),
+        set_string_element(NewString0,Po,Value1,NewString1),
+        set_string_element(NewString1,Po2,Value2,NewString2),
+        set_string_element(NewString2,Po3,Value3,NewString3),
+        set_string_element(NewString3,Po4,Value4,NewString4),
+        NextC := C+2,
+        NextCount := Count+1,
+        NextPo := Po + 4,
+        set2(msg,NextC,Vect2,NextPo,Next,NextCount,N,NewString4,NewString,_,_).
+   set2(pe,C,Vect,Po,Next,Count,N,NewString0,NewString,Cycle,Num):- true |
+        C2 := C+1,
+        Po2 := Po+1,
+        Po3 := Po+2,
+        Po4 := Po+3,
+        vector_element(Vect,C,Data,Vect1),
+        vector_element(Vect1,C2,Data2,Vect2),
+        d_check(Data,Cycle,Num,Data11),
+        d_check(Data2,Cycle,Num,Data12),
+        check_value(Data11,Value1,Value2),
+        check_value(Data12,Value3,Value4),
+        set_string_element(NewString0,Po,Value1,NewString1),
+        set_string_element(NewString1,Po2,Value2,NewString2),
+        set_string_element(NewString2,Po3,Value3,NewString3),
+        set_string_element(NewString3,Po4,Value4,NewString4),
+        NextC := C+2,
+        NextCount := Count+1,
+        NextPo := Po + 4,
+        set2(pe,NextC,Vect2,NextPo,Next,NextCount,N,NewString4,NewString,Cycle,Num).
+
+  d_check(Data,Cycle,Num,Data1):- Cycle = 0 | Data1 = 0 .
+  d_check(Data,Cycle,Num,Data1):- Data = 0 | Data1 = 0 .
+  d_check(Data,Cycle,Num,Data2):- Data =\= 0 |
+        Data1 := Data / Cycle ,
+      ( Data1 =\= 0 ,Num =\=0 -> Data2 := Data1 / Num ;
+        otherwise ;
+        true -> Data2 = 0 ).
+  
+
+  count([],C,Ans):- true |
+        Ans = C.
+ otherwise.
+  count([H|T],C,Ans):- true |
+        C1 := C+1,
+        count(T,C1,Ans).
+  
+  max_value(List,Max,NewList):- true |
+        count(List,0,Num),
+        List = [{Key,Vect}|_RList],
+        vector(Vect,Size,_NewVect),
+        %%%% Length := Num*Size*2+Num
+        Length := Num*(Size*2+1),
+        new_string(String1, Length, 16),
+        make_set3(List,0,Max,0,String1,NewList,Size).
+
+  make_set3([],Max0,Max,Po,String,NewString,Size):- true |
+        Max=Max0, NewString = String.
+otherwise.
+  make_set3([{Key,V}|RestTerm],Max0,Max,Po,String,NewString,Size):- vector(V,L) |
+       set_string_element(String, Po, Key, String1),
+       Po2 := Po + 1,
+       max_val(V,0,L,0,Max1,Po2,NextPo,String1,String2),
+        ( Max0 >= Max1 -> Next=Max0 ;
+          Max0 < Max1 -> Next=Max1 ),
+        make_set3(RestTerm,Next,Max,NextPo,String2,NewString,Size).
+ 
+  max_val(V,L,L,Max0,Max,Po,NextPo,NewString0,NewString):- true  |
+        Max=Max0, NewString = NewString0, NextPo = Po.
+otherwise.
+  max_val(V,C,L,Max0,Max,Po,NextPo,NewString0,NewString):- true  |
+        vector_element(V,C,Data,V1),
+        ( Max0 >= Data -> Next=Max0 ;
+          Max0 < Data -> Next=Data ),
+        check_value(Data,Value1,Value2),
+        Po2 := Po+1,
+        set_string_element(NewString0,Po,Value1,NewString1),
+        set_string_element(NewString1,Po2,Value2,NewString2),
+        NextP := Po2 + 1,
+        C1 := C+1,
+        max_val(V1,C1,L,Next,Max,NextP,NextPo,NewString2,NewString).
+ 
+ check_value(0,Value1,Value2):- true |
+        Value1 = 0,
+        Value2 = 0.
+ check_value(Data,Value1,Value2):- Data > 0 |
+        Value1 := Data/65536,
+        Value2 := Data mod 65536.
+        
+  cal_total([],Po,RCount,RAll,SCount,SAll):- true |
+    RAll = RCount,
+    SAll = SCount.
+  cal_total([{Pred,Vect}|R],Po,RCount,RAll,SCount,SAll):- vector(Vect,N)|
+    vector_element(Vect,Po,Data,Vect1),
+    Po2 := Po + 1,
+    vector_element(Vect1,Po2,Data2,Vect2),
+    NextRC := RCount + Data,
+    NextSC := SCount + Data2,
+    cal_total(R,Po,NextRC,RAll,NextSC,SAll). 
+
+  trans(View,Id):- wait(View)|
+    tr(View,Id).
+
+  tr(predicate,Id):- true  |Id = 1.
+  tr(what_where,Id):- true |Id = 2.
+  tr(overall_what_where,Id):- true |Id = 3.
+  tr(what_when,Id):- true |Id = 4.
+  tr(overall_what_when,Id):- true |Id = 5.
+  tr(when_where,Id):- true |Id = 6.
+  tr(r,Id):- true |Id = 7.
+  tr(s,Id):- true |Id = 8.
+  tr(rs,Id):- true |Id = 9.
+ 

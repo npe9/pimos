@@ -1,0 +1,73 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class as_pg_color_window has
+
+attribute
+        (register:= L :- :create(#list_index,L),
+                    freeze({65535,65535,65535},C1),
+                    freeze({0,0,0},C2),
+                    freeze({0,55000,30000},C3),
+                    freeze({65535,65535,0},C4),
+                    freeze({60000,30000,40000},C5),
+                    freeze({65535,30000,0},C6),
+                    freeze({65535,0,65535},C7),
+                    freeze({65535,0,0},C8),
+                    freeze({0,65535,0},C9),
+                    freeze({65535,65535,51200},C10),
+                    freeze({51200,65535,65535},C11),
+                    freeze({10000,10000,65535},C12),
+                    :put_contents_with_key(L,
+                        [{C1 ,white},
+                         {C2 ,black},
+                         {C3 ,green},
+                         {C4 ,yellow},
+                         {C5 ,pink},
+                         {C6 ,orange},
+                         {C7 ,purple},
+                         {C8 ,red},
+                         {C9 ,yellow_green},
+                         {C10,light_green},
+                         {C11,light_blue},
+                         {C12,blue}]));
+
+after:create(Class,_,Obj):-
+    :init_pg_color(Obj,Class);
+
+instance
+
+attribute table;
+
+:init_pg_color(Obj,Class):-
+    :create(#list_index,L),
+    Obj!table:=L,
+    :get_contents_with_key(Class!register,CL),
+    set_table(CL,0,L);
+%    CL=[_,_|CL0],
+%    set_color_pairs(CL0,2,Obj);
+
+%%% :get_color_at(+,+,-)
+
+:get_color_at(Obj,ColorName,PaletteNum):-
+    :get_at(Obj!table,PaletteNum,ColorName);
+
+:set_color_contents(Obj,Class):-
+    :get_contents_with_key(Class!register,CL),
+    CL=[_,_|CL0],
+    set_color_pairs(CL0,2,Obj);
+
+local
+
+set_table([],_,_):-!;
+set_table([{Fr,Name}|L],Num,List):-
+    :add_at(List,Num,Name),
+    set_table(L,Num+1,List);
+
+set_color_pairs([],_,_):-!;
+set_color_pairs([{Fr0,_},{Fr1,_}|L],Num,Obj):-!,
+    melt(Fr0,S0),
+    melt(Fr1,S1),
+    :set_color_pair(Obj,Num,{S0,S1}),
+    set_color_pairs(L,Num+2,Obj);
+
+end.
+

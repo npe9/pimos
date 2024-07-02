@@ -1,0 +1,345 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_execution_query.
+:- public query/7, query/9, display_var/3, display_var/5, value/5.
+:- with_macro pimos.
+
+% query/9
+query(no,  _,  _,   _,  IN,IN1,RSC,RSC1,MM) :- true| IN1=IN, RSC1=RSC, MM=[].
+query(all, Old,_,   New,IN,IN1,RSC,RSC1,MM) :- true|
+    listener_utility:prepend(Old,New,All),
+    sorter:sort(All,All1),
+    query0(All1,IN,IN1,RSC,RSC1,MM,_).
+query(used,_,  Used,_,  IN,IN1,RSC,RSC1,MM) :- true|
+    sorter:sort(Used,Used1),
+    query0(Used1,IN,IN1,RSC,RSC1,MM,_).
+query(new, _,  _,   New,IN,IN1,RSC,RSC1,MM) :- true|
+    sorter:sort(New,New1),
+    query0(New1,IN,IN1,RSC,RSC1,MM,_).
+
+% query/7
+query(Num,IN,IN1,RSC,RSC2,MM,At) :- true|
+    RSC=[variable(get_variables(Num,Vars))|RSC1],
+    query0(Vars,IN,IN1,RSC1,RSC2,MM,At).
+
+% query0/7
+query0([],  IN,IN1,RSC,RSC1,MM,At) :- true|
+    IN=[next_attention(At)|IN1], RSC1=RSC, MM=[].
+otherwise.
+query0(Used,IN,IN2,RSC,RSC1,MM,At1) :- list(Used) |
+    IN=[next_attention(normal(At))|IN1],
+    query_prompt(Used,Pro),
+    builtin#append_string(["("|Pro],Prompt),
+    query1(Prompt,Used,IN1,IN2,RSC,RSC1,MM,At,At1).
+
+
+query_prompt([{K,_,_}],  Pro) :- Pro=[" ",K," )? "].
+query_prompt([{K,_}],    Pro) :- Pro=["^",K," )? "].
+otherwise.
+query_prompt([{K,_,_}|L],Pro) :- Pro=[" ",K,","|Pro1], query_prompt(L,Pro1).
+query_prompt([{K,_}  |L],Pro) :- Pro=["^",K,","|Pro1], query_prompt(L,Pro1).
+
+query1(Pro,Used,IN,IN3,RSC,RSC1,MM,At,At2) :-
+    IN=[putb(Pro),getlt(Com)|IN1],
+    next_attention(Com,Com1,At,At1,IN1,IN2),
+    is_command(Com1,Used,NewCom),
+    do_command(NewCom,Pro,Used,IN2,IN3,RSC,RSC1,MM,At1,At2).
+
+next_attention(Com,Com1,At,At2,IN,IN2) :- wait(At) |
+    IN=[next_attention(normal(At1))|IN1],
+    next_attention(Com,Com1,At1,At2,IN1,IN2).
+alternatively.
+next_attention(Com,Com1,At,At1,IN,IN1) :- wait(Com) |
+    Com1=Com, At1=At, IN1=IN.
+
+
+is_command(end_of_file,             _,   C) :- C=quit.
+is_command(quit,                    _,   C) :- C=quit.
+is_command(q,                       _,   C) :- C=quit.
+is_command(help,                    _,   C) :- C=help.
+is_command(h,                       _,   C) :- C=help.
+is_command(?,                       _,   C) :- C=help.
+is_command(value,                   Used,C) :- C=display(Used).
+is_command(v,                       Used,C) :- C=display(Used).
+is_command(write,                   Used,C) :- C=write(Used).
+is_command(w,                       Used,C) :- C=write(Used).
+is_command(write(Vars),             Used,C) :- check_argument(Vars,Used,write,C).
+is_command(w(Vars),                 Used,C) :- check_argument(Vars,Used,write,C).
+is_command(inspect,                 Used,C) :- C=inspect(Used).
+is_command(ins,                     Used,C) :- C=inspect(Used).
+is_command(inspect(Vars),           Used,C) :- check_argument(Vars,Used,inspect,C).
+is_command(ins(Vars),               Used,C) :- check_argument(Vars,Used,inspect,C).
+is_command(remember,                Used,C) :- C=remember(Used).
+is_command(rem,                     Used,C) :- C=remember(Used).
+is_command(remember(Vars),          Used,C) :- check_argument(Vars,Used,remember,C).
+is_command(rem(Vars),               Used,C) :- check_argument(Vars,Used,remember,C).
+is_command(forget,                  Used,C) :- C=forget(Used).
+is_command(fgt,                     Used,C) :- C=forget(Used).
+is_command(forget(Vars),            Used,C) :- check_argument(Vars,Used,forget,C).
+is_command(fgt(Vars),               Used,C) :- check_argument(Vars,Used,forget,C).
+is_command(print_length(P),         _,   C) :- C=print_length(P).
+is_command(print_length,            _,   C) :- C=print_length.
+is_command(pl(P),                   _,   C) :- C=print_length(P).
+is_command(pl,                      _,   C) :- C=print_length.
+is_command(print_depth(P),          _,   C) :- C=print_depth(P).
+is_command(print_depth,             _,   C) :- C=print_depth.
+is_command(pd(P),                   _,   C) :- C=print_depth(P).
+is_command(pd,                      _,   C) :- C=print_depth.
+is_command(print_string_length(P),  _,   C) :- C=print_string_length(P).
+is_command(print_string_length,     _,   C) :- C=print_string_length.
+is_command(psl(P),                  _,   C) :- C=print_string_length(P).
+is_command(psl,                     _,   C) :- C=print_string_length.
+is_command(print_atom_length(P),    _,   C) :- C=print_atom_length(P).
+is_command(print_atom_length,       _,   C) :- C=print_atom_length.
+is_command(pal(P),                  _,   C) :- C=print_atom_length(P).
+is_command(pal,                     _,   C) :- C=print_atom_length.
+is_command(print_variable_mode,     _,   C) :- C=print_variable_mode.
+is_command(pv,                      _,   C) :- C=print_variable_mode.
+is_command('$error'(_),             _,   C) :- C=syntax_error.
+is_command('$ambiguous'(_),         _,   C) :- C=syntax_error.
+otherwise.
+is_command(Vars,                    Used,C) :- check_argument(Vars,Used,display,C).
+
+do_command(print_length(L),       Pro,Used,IN,IN3,RSC,RSC1,MM,AT,AT1) :- L>=0 |
+    IN=[print_length(L)|IN1],
+    display_var(Used,IN1,IN2),
+    query1(Pro,Used,IN2,IN3,RSC,RSC1,MM,AT,AT1).
+do_command(print_length,          Pro,Used,IN,IN4,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_length(L,Len),
+        putb(" Print length: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    display_var(Used,IN2,IN3),
+    query1(Pro,Used,IN3,IN4,RSC,RSC1,MM,AT,AT1).
+do_command(print_depth(L),        Pro,Used,IN,IN3,RSC,RSC1,MM,AT,AT1) :- L>=0 |
+    IN=[print_depth(L)|IN1],
+    display_var(Used,IN1,IN2),
+    query1(Pro,Used,IN2,IN3,RSC,RSC1,MM,AT,AT1).
+do_command(print_depth,           Pro,Used,IN,IN4,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_depth(L,Len),
+        putb(" Print depth: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    display_var(Used,IN2,IN3),
+    query1(Pro,Used,IN3,IN4,RSC,RSC1,MM,AT,AT1).
+do_command(print_string_length(L),Pro,Used,IN,IN3,RSC,RSC1,MM,AT,AT1) :- L>=0 |
+    IN=[print_string_length(L)|IN1],
+    display_var(Used,IN1,IN2),
+    query1(Pro,Used,IN2,IN3,RSC,RSC1,MM,AT,AT1).
+do_command(print_string_length,   Pro,Used,IN,IN4,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_string_length(L,Len),
+        putb(" Print string length: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    display_var(Used,IN2,IN3),
+    query1(Pro,Used,IN3,IN4,RSC,RSC1,MM,AT,AT1).
+do_command(print_atom_length(L),  Pro,Used,IN,IN3,RSC,RSC1,MM,AT,AT1) :- L>=0 |
+    IN=[print_atom_length(L)|IN1],
+    display_var(Used,IN1,IN2),
+    query1(Pro,Used,IN2,IN3,RSC,RSC1,MM,AT,AT1).
+do_command(print_atom_length,     Pro,Used,IN,IN4,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_string_length(L,Len),
+        putb(" Print atom length: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    display_var(Used,IN2,IN3),
+    query1(Pro,Used,IN3,IN4,RSC,RSC1,MM,AT,AT1).
+do_command(print_variable_mode,   Pro,Used,IN,IN3,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_variable(P,P1)|IN1],
+    listener_buffer:pvar_mode(P,P1),
+    display_var(Used,IN1,IN2),
+    query1(Pro,Used,IN2,IN3,RSC,RSC1,MM,AT,AT1).
+
+do_command(quit,_,_,IN,IN1,RSC,RSC1,MM,AT,AT1) :- IN1=IN, RSC1=RSC, MM=[], AT1=normal(AT).
+
+do_command(display(Vars),Pro,Used,IN,IN2,RSC,RSC1,MM,AT,AT1) :- list(Vars) |
+    display_var(Vars, IN,IN1),
+    query1(Pro,Used,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+do_command(display(illegal_input(Input)),Pro,Used,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[tab(1), putft(Input), putf(": Command not found.~n",[])|IN1],
+    query1(Pro,Used,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+do_command(write(Vars),Pro,Used,IN,IN2,RSC,RSC2,MM,AT,AT1) :- list(Vars) |
+    RSC=[get(rewrite_depth, Dep),get(rewrite_length,Len)|RSC1],
+    display_var(Vars, Dep,Len,IN,IN1),
+    query1(Pro,Used,IN1,IN2,RSC1,RSC2,MM,AT,AT1).
+do_command(inspect(Vars),Pro,Used,IN,IN3,RSC,RSC2,MM,AT,AT2) :- list(Vars) |
+    list_to_and(Vars, Val),
+    RSC=[abort_line(Kill), variable(_TF,VAR), get(tracer,TrID)|RSC1],
+    IN=[do(IN1)|IN2],
+    MM={MM1, MM2},
+    listener_inspector:create(Kill,TrID,Val,VAR,IN1,AT,{_,AT1},MM1),
+    query1(Pro,Used,IN2,IN3,RSC1,RSC2,MM2,AT1,AT2).
+
+do_command(remember(Vars),_,Used,IN,IN2,RSC,RSC2,MM,AT,AT1) :- list(Vars) |
+    remember(Vars,IN,IN1,RSC,RSC1,Used,Used1),
+    query_prompt(Used1,Pro),
+    builtin#append_string(["("|Pro],Prompt),
+    query1(Prompt,Used1,IN1,IN2,RSC1,RSC2,MM,AT,AT1).
+do_command(forget(Vars),_,Used,IN,IN1,RSC,RSC2,MM,AT,AT1) :- list(Vars) |
+    forget(Vars,RSC,RSC1,Used,Used1),
+    query_prompt(Used1,Pro),
+    builtin#append_string(["("|Pro],Prompt),
+    query1(Prompt,Used1,IN,IN1,RSC1,RSC2,MM,AT,AT1).
+
+do_command(help,Pro,Used,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[
+        putf(" v              : display all variables~n",[]),
+        putf(" VAR, ...       : display variables~n",[]),
+        putf(" w   <VAR, ...> : display variables~n",[]),
+        putf(" ins <VAR, ...> : inspect variables~n",[]),
+        putf(" rem <VAR, ...> : remember the binding~n",[]),
+        putf(" fgt <VAR, ...> : forget the binding~n",[]),
+        putf(" pd  <DEPTH>    : print depth~n",[]),
+        putf(" pl  <LENGTH>   : print length~n",[]),
+        putf(" pal <LENGTH>   : print atom length~n",[]),
+        putf(" psl <LENGTH>   : print string length~n",[]),
+        putf(" pv             : print variable mode~n",[]),
+        putf(" <cr>,  q       : quit~n",[])|IN1],
+    query1(Pro,Used,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+do_command(syntax_error,Pro,Used,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[putf(">Syntax error~n", [])|IN1],
+    query1(Pro,Used,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+otherwise.
+do_command({Name,non_existent(V)},Pro,Used,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[putf(" ~t: ~s Variable unknown.~n", [Name,V])|IN1],
+    query1(Pro,Used,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+otherwise.
+do_command({Name,illegal_input(Input)},Pro,Used,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[putf(" ~t: ",[Name]), putft(Input), putf(" illegal parameter.~n",[])|IN1],
+    query1(Pro,Used,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+otherwise.
+do_command({Name,P},Pro,Used,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[putf(" ~t: ",[Name]), putft(P), putf(" illegal parameter.~n",[])|IN1],
+    query1(Pro,Used,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+
+
+check_argument(X, Used,Name,Com) :- true|
+    get_vars(X, Used,Vars0),
+    check_vars(Vars0,St,Vars),
+    (
+    St=normal -> Com={Name, Vars};
+    otherwise;
+    true      -> Com={Name, St}
+    ).
+
+get_vars(('$VAR'(_, K),A),Used,Vars) :-
+    get_var(K, Used,Var),
+    Vars=[Var|Vars1], 
+    get_vars(A, Used,Vars1).
+get_vars('$VAR'(_, K),Used,Vars) :-
+    get_var(K, Used,Var),
+    Vars=[Var].
+otherwise.
+get_vars(X, _,Vars) :- Vars=[illegal_input(X)].
+
+get_var(K, [{K,V}  |_],Data) :- Data={K,V}.
+get_var(K, [{K,M,V}|_],Data) :- Data={K,M,V}.
+get_var(K, [],         Data) :- Data=non_existent(K).
+otherwise.
+get_var(K, [_|L],      Data) :- get_var(K,L,Data).
+
+check_vars([{K, V}|L],St,Vars) :- string(K,_,_) |
+    Vars=[{K, V}|Vars1],
+    check_vars(L, St,Vars1).
+check_vars([{K,M,V}|L],St,Vars) :- string(K,_,_) |
+    Vars=[{K,M,V}|Vars1],
+    check_vars(L, St,Vars1).
+check_vars([], St,Vars) :- St=normal,Vars=[].
+otherwise.
+check_vars([X|_], St,Vars) :- St=X, Vars=[].
+
+remember([{K,_,V}|L],IN,IN1,RSC,RSC2,Used,Used1) :- true|
+    RSC=[variable(put_immediately(K,V,Status))|RSC1],
+    remember1(L,IN,IN1,RSC1,RSC2,Used,Used1,K,V,Status).
+remember([],IN,IN1,RSC,RSC1,Used,Used1) :- true| 
+    IN1=IN, RSC1=RSC, Used1=Used.
+otherwise.
+remember([_|L],IN,IN1,RSC,RSC1,Used,Used1) :- true|
+    remember(L,IN,IN1,RSC,RSC1,Used,Used1).
+
+remember1(L,IN,IN1,RSC,RSC1,Used,Used2,K,_,normal) :- true|    
+    change_remembrance(K,remember,Used,Used1),
+    remember(L,IN,IN1,RSC,RSC1,Used1,Used2).
+remember1(L,IN,IN2,RSC,RSC1,Used,Used1,K,V,existent) :- true|
+    IN=[putf(" ~s already remembered.~n",[K]),
+        putb(" Type new name> "), getlt(Var)|IN1],
+    remember2(L,IN1,IN2,RSC,RSC1,Used,Used1,Var,V).
+remember1(L,IN,IN2,RSC,RSC1,Used,Used1,_,V,abnormal) :- true|
+    IN=[putb(" Illegal name, type new name> "), getlt(Var)|IN1],
+    remember2(L,IN1,IN2,RSC,RSC1,Used,Used1,Var,V).
+
+remember2(L,IN,IN2,RSC,RSC1,Used,Used1,'$VAR'(_,Var),V) :- string(Var,_,_)|
+    IN=[get_value(Var,Val)|IN1],
+    remember3(L,IN1,IN2,RSC,RSC1,Used,Used1,Var,Val,V).
+remember2(L,IN,IN1,RSC,RSC1,Used,Used1,end_of_file,_) :- true|
+    remember(L,IN,IN1,RSC,RSC1,Used,Used1).
+otherwise.
+remember2(L,IN,IN1,RSC,RSC1,Used,Used1,_,V) :- true|
+    remember1(L,IN,IN1,RSC,RSC1,Used,Used1,_,V,abnormal).
+
+remember3(L,IN,IN1,RSC,RSC2,Used,Used1,Var,{},V) :- true|
+    RSC=[variable(put_immediately(Var,V,Status))|RSC1],
+    remember4(L,IN,IN1,RSC1,RSC2,Used,Used1,Var,V,Status).
+remember3(L,IN,IN2,RSC,RSC1,Used,Used1,Var,{_},V) :- true|
+    IN=[putf(" ~s already displayed.~n",[Var]),
+        putb(" Type other name> "), getlt(Var1)|IN1],
+    remember2(L,IN1,IN2,RSC,RSC1,Used,Used1,Var1,V).
+
+remember4(L,IN,IN2,RSC,RSC1,Used,Used2,Name,V,normal) :- true|
+    IN=[put_var(Name,V)|IN1],
+    Used1=[{Name,V}|Used],
+    remember(L,IN1,IN2,RSC,RSC1,Used1,Used2).
+otherwise.
+remember4(L,IN,IN1,RSC,RSC1,Used,Used1,Name,V,Status) :- true|
+    remember1(L,IN,IN1,RSC,RSC1,Used,Used1,Name,V,Status).
+
+
+change_remembrance(K,remember,[{K,_,V}|L],L1) :- L1=[{K,V}|L].
+change_remembrance(K,forget,  [{K,V}|L],  L1) :- L1=[{K,forget,V}|L].
+change_remembrance(_,_,       [],         L1) :- L1=[].
+otherwise.
+change_remembrance(K,M,       [V|L],      L1) :- L1=[V|L2], change_remembrance(K,M,L,L2).
+
+
+forget([{K,_}|L],RSC,RSC2,Used,Used2) :-
+    RSC=[variable(forget(K,_))|RSC1],
+    change_remembrance(K,forget,Used,Used1),
+    forget(L,RSC1,RSC2,Used1,Used2).
+forget([{K,remember,_}|L],RSC,RSC2,Used,Used1) :-
+    RSC=[variable(forget(K,_))|RSC1],
+    forget(L,RSC1,RSC2,Used,Used1).
+forget([{_,forget,_}|L],RSC,RSC1,Used,Used1) :-
+    forget(L,RSC,RSC1,Used,Used1).
+forget([], RSC,RSC1,Used,Used1) :- RSC1=RSC, Used1=Used.
+
+display_var([],      IN,IN1) :- IN1=IN.
+display_var([{Key,Data}|VT],IN,IN2) :-
+    IN=[putb("^"), print_var(Key,Data), nl |IN1], 
+    display_var(VT,IN1,IN2).
+display_var([{Key,_,Data}|VT],IN,IN2) :-
+    IN=[putb(" "), print_var(Key,Data), nl |IN1], 
+    display_var(VT,IN1,IN2).
+
+display_var([], _,_,IN,IN1) :- IN1=IN.
+display_var([{Key,Data}|VT],D,L,IN,IN2) :-
+    IN=[putb("^"), print_var(Key,Data,D,L), nl |IN1], 
+    display_var(VT, D,L,IN1,IN2).
+display_var([{Key,_,Data}|VT],D,L,IN,IN2) :-
+    IN=[putb(" "), print_var(Key,Data,D,L), nl |IN1], 
+    display_var(VT, D,L,IN1,IN2).
+
+list_to_and([{_,Val}],And) :- And=Val.
+list_to_and([{_,_,Val}],And) :- And=Val.
+otherwise.
+list_to_and([{_,Val}|L],And) :- And=(Val,And1), list_to_and(L,And1).
+list_to_and([{_,_,Val}|L],And) :- And=(Val,And1), list_to_and(L,And1).
+
+
+value(Num,RSC,RSC1,IN,IN1) :- true|
+    RSC=[variable(get_variables(Num,Vars))|RSC1],
+    display_var(Vars,IN,IN1).

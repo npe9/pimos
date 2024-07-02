@@ -1,0 +1,167 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module interaction_filter.
+:- with_macro pimos.
+:- public init/6,usage/1.
+
+usage(L) :- true | ioutls_usage:interaction_filter(L).
+
+init(In,Out,N,OpPool,AtomDvc,Ptry) :- wait(N) |
+        merge(In,In1),
+        OpPool={OpPool0,OpPool1},
+        AtomDvc={AtomDvc0,AtomDvc1},
+        merge({InputOut,OutputOut},Out0),
+        inMonitor(Input,Output,[],In1),
+        input_filter:init(Input,InputOut,N,OpPool0,AtomDvc0),
+        output_filter:init(Output,OutputOut,N,OpPool1,AtomDvc1,Ptry),
+        interactionFilterOut(Out0,Out).
+
+interactionFilterOut([],Out) :- true | Out=[].
+interactionFilterOut([mkflush(Stat)|In],Out) :- true |
+        Stat=normal,
+        interactionFilterOut(In,Out).
+otherwise.
+interactionFilterOut([Msg|In],Out) :- true |
+        Out=[Msg|Out1],
+        interactionFilterOut(In,Out1).
+
+:- local_implicit in:stream, out:stream, do:shared.
+%
+% inMonitor(+In)
+%
+
+inMonitor([Msg|In]) -->
+    (Msg=getc(Ch)
+    ;Msg=getl(L)
+    ;Msg=getb(Size,B)
+    ;Msg=gett(Term,VT,NVT)
+    ;Msg=gett(Term,NVT)
+    ;Msg=gett(Term)
+    ;Msg=getft(Term,N)
+    ;Msg=getwt(WT)
+    ;Msg=skip(N)
+    ;Msg=ungetc(Ch)
+    ;Msg=prompt(Str)) |
+        &out <<= [mkflush(Status)],
+        wait_mkflushed(In,in,Msg,Status).
+inMonitor([Msg|In]) -->
+    (Msg=putc(Ch)
+    ;Msg=putl(L)
+    ;Msg=putb(B,Cnt)
+    ;Msg=putb(B)
+    ;Msg=putt(Term)                 ;Msg=puttq(Term)
+    ;Msg=putt(Term,EnvL)            ;Msg=puttq(Term,EnvL)
+    ;Msg=putt(Term,D,L)             ;Msg=puttq(Term,D,L)
+    ;Msg=putt(Term,D,L,SL)          ;Msg=puttq(Term,D,L,SL)
+    ;Msg=putt(Term,D,L,SL,AL)       ;Msg=puttq(Term,D,L,SL,AL)
+    ;Msg=putft(Term)                ;Msg=putftq(Term)
+    ;Msg=putft(Term,D,L)            ;Msg=putftq(Term,D,L)
+    ;Msg=putft(Term,D,L,SL)         ;Msg=putftq(Term,D,L,SL)
+    ;Msg=putft(Term,D,L,SL,AL)      ;Msg=putftq(Term,D,L,SL,AL)
+    ;Msg=putwt(Term)                ;Msg=putwtq(Term)
+    ;Msg=putwt(Term,EnvL)           ;Msg=putwtq(Term,EnvL)
+    ;Msg=putwt(Term,D,L)            ;Msg=putwtq(Term,D,L)
+    ;Msg=putwt(Term,D,L,SL)         ;Msg=putwtq(Term,D,L,SL)
+    ;Msg=putwt(Term,D,L,SL,AL)      ;Msg=putwtq(Term,D,L,SL,AL)
+    ;Msg=putf(Format,Arg)
+    ;Msg=printt(Term)               ;Msg=printtq(Term)
+    ;Msg=printt(Term,EnvL)          ;Msg=printtq(Term,EnvL)
+    ;Msg=printt(Term,D,L)           ;Msg=printtq(Term,D,L)
+    ;Msg=printt(Term,D,L,SL,AL)     ;Msg=printtq(Term,D,L,SL,AL)
+    ;Msg=printwt(Term)              ;Msg=printwtq(Term)
+    ;Msg=printwt(Term,EnvL)         ;Msg=printwtq(Term,EnvL)
+    ;Msg=printwt(Term,D,L)          ;Msg=printwtq(Term,D,L)
+    ;Msg=printwt(Term,D,L,SL,AL)    ;Msg=printwtq(Term,D,L,SL,AL)
+    ;Msg=print_error(Info)
+    ;Msg=print_text(Info)
+    ;Msg=flush
+    ;Msg=flush(Status0)
+    ;Msg=nl
+    ;Msg=tab(N)
+    ;Msg=print_length(L)            ;Msg=print_length(L,L1)
+    ;Msg=print_depth(D)             ;Msg=print_depth(D,D1)
+    ;Msg=print_string_length(SL)    ;Msg=print_string_length(SL,SL1)
+    ;Msg=print_atom_length(AL)      ;Msg=print_atom_length(AL,AL1)) |
+        &in <<= [mkflush(Status)],
+        wait_mkflushed(In,out,Msg,Status).
+inMonitor([Msg|In]) -->
+    (Msg=reset(Res)
+    ;Msg=resend(ID,Status)
+    ;Msg=cancel(ID,Status)
+    ;Msg=next_attention(Res)) |
+        &out <<= [Msg],
+        inMonitor(In).
+inMonitor([do(S)|In]) --> true |
+        {{merge(S,S1)}},
+        &do <= [In|&do],
+        inMonitor(S1).
+inMonitor([]) --> &do=[S|SS] |
+        &do <= SS,
+        inMonitor(S).
+inMonitor([]) --> &do=[] | true.
+otherwise.
+inMonitor([Msg|In]) --> true |
+        inMonitor_others([Msg|In]).
+
+inMonitor_others([Msg|In]) -->
+    (Msg=add_op(Prec,Type,OpName) ;
+     Msg=remove_op(Prec,Type,OpName)) |
+        &in <<= [replace_op_pool(Op,NOp)],
+        Op = [Msg|{NOp,NOp1}],
+        &out <<= [change_op_pool(NOp1)],
+        inMonitor(In).
+inMonitor_others([Msg|In]) -->
+    (Msg=operator(OpName,Def) ;
+     Msg=operator(All)) |
+        &in <<= [Msg],
+        inMonitor(In).
+inMonitor_others([{MsgName,Old,New}|In]) -->
+    (MsgName=replace_op_pool ; MsgName=replace_atom_table) |
+        New={New0,New1},
+        &in <<= [{MsgName,Old,New0}],
+        &out <<= [{MsgName,[],New1}],
+        inMonitor(In).
+inMonitor_others([{MsgName,New}|In]) -->
+    (MsgName=change_op_pool ; MsgName=change_atom_table) |
+        New={New0,New1},
+        &in <<= [{MsgName,New0}],
+        &out <<= [{MsgName,New1}],
+        inMonitor(In).
+inMonitor_others([Msg|In]) --> Msg=change_portray(New) |
+        &out <<= [Msg],
+        inMonitor(In).
+
+%inMonitor_others([changeBuffer(InBuf),changeBuffer(OutBuf)|In]) --> true |
+%    &in <<= [changeBuffer(InBuf)],
+%    &out <<= [changeBuffer(OutBuf)],
+%    inMonitor(In).
+inMonitor_others([replaceInBuffer(Old,New)|In]) --> true |
+        &in <<= [replaceBuffer(Old,New)],
+        inMonitor(In).
+inMonitor_others([replaceOutBuffer(Old,New)|In]) --> true |
+        &out <<= [replaceBuffer(Old,New)],
+        inMonitor(In).
+inMonitor_others([close_output|In]) --> true |
+        &out = [],
+        inMonitor(In).
+inMonitor_others([abandon_pool|In]) --> true |
+        &in <<= [abandon_pool],
+        &out <<= [abandon_pool],
+        inMonitor(In).
+otherwise.
+inMonitor_others([Msg|In]) --> true |
+        &in <<= [mkflush(Status)],
+        wait_mkflushed(In,out,Msg,Status).
+
+wait_mkflushed(In,Type,Msg,Status) --> wait(Status),Type=in |
+        &in <<= [Msg],
+        inMonitor(In).
+wait_mkflushed(In,Type,Msg,Status) --> wait(Status),Type=out |
+        &out <<= [Msg],
+        inMonitor(In).
+

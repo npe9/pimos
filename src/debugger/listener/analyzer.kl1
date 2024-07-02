@@ -1,0 +1,1157 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+:- module listener_command_analyzer.
+:- public command_analyzer/14.
+:- with_macro pimos.
+
+%%%%%%%%%%%%%%%%%
+% SPECIAL COMMAND
+%%%%%%%%%%%%%%%%%
+% . <CR>
+command_analyzer(normal(empty),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,COM,COM1,_,_,_) :-
+    GOAL=empty, DEV=[], MCR=MCR1, VAR1=VAR, COD1=COD, COM1=COM.
+
+% end_of_file
+command_analyzer(normal(end_of_file),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,COM,COM1,_,_,_) :-
+    GOAL=end_of_file, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD, COM1=COM.
+
+% end_of_take
+command_analyzer(normal(end_of_take),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,COM,COM1,_,_,_) :-
+    GOAL=end_of_take, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD, COM1=COM.
+
+% Syntax error
+command_analyzer(abnormal(Error),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,COM,COM1,_,_,_) :-
+    GOAL=abnormal(Error), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD, COM1=COM.
+
+otherwise.
+command_analyzer(normal(Trm),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,COM,COM1,DM,Db,Rk) :-
+    COM=[expand(Trm,NewTrm)|COM1],
+    command_analyzer(NewTrm,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,DM,Db,Rk).
+
+% fore, back, stop, kill, status
+command_analyzer(wrap#fore,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+    GOAL=fore, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#fore(NUM),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- 
+  NUM=integer(N) |
+    GOAL=fore(N), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#back,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+    GOAL=back, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#back(NUM),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- 
+  NUM=integer(N) |
+    GOAL=back(N), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#stop,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+    GOAL=stop, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#stop(NUM),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- 
+  NUM=integer(N) |
+    GOAL=stop(N), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#kill,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+    GOAL=kill, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#kill(NUM),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- 
+  NUM=integer(N) |
+    GOAL=kill(N), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#kill(all),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true|
+    GOAL=kill(all), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#status,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+    GOAL=status, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+
+% exit
+command_analyzer(wrap#exit,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+    GOAL=exit, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+
+% pwd
+%command_analyzer(wrap#pwd,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+%    GOAL=pwd, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+% value
+%command_analyzer(wrap#value,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+%    GOAL=value, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+%
+% trace 90.11.28
+%command_analyzer(wrap#trace,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+%    GOAL=trace, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+%command_analyzer(wrap#notrace,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+%    GOAL=notrace, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+%command_analyzer(wrap#spy_reduction,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true |
+%    GOAL=spy_reduction, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+%command_analyzer(wrap#spy_fork,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true|
+%    GOAL=spy_fork, DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+
+% Print-event
+command_analyzer(wrap#{(!),NUM},GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- NUM=integer(N) |
+    GOAL=print_event(N), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#{(!),(!)},GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true|
+    GOAL=print_event(last), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+
+% Re-execute
+command_analyzer(wrap#NUM,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- NUM=integer(N) |
+    GOAL=execute(N), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+command_analyzer(wrap#(!),GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- true|
+    GOAL=execute(last), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+
+% Do
+command_analyzer(wrap#LIST,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,_,_,_) :- LIST=list(L) |
+    GOAL=list(L), DEV=[], MCR1=MCR, VAR1=VAR, COD1=COD.
+
+otherwise.
+command_analyzer(WT,GOAL,DEV,MCR,MCR1,VAR,VAR1,COD,COD1,DM,Db,Rk) :- true|
+    MCR=[get_macro(WT,ExpWT)|MCR1],
+    com_analyzer(ExpWT,GOAL,DEV,VAR,VAR1,COD,COD1,DM,Db,Rk).
+
+
+com_analyzer(normal(WT),GOAL,DEV,VAR,VAR1,COD,COD2,DM,Db,Rk) :- true|
+    analyzer(WT,Goals,Devs,ForB,VAR,VAR1,COD,COD1,DM,Db,Rk),
+    goal_check(Goals,GOALS,Gstat,COD1,COD2),
+    dev_check(Devs,DEVS,OUTS,listener,MES,Dstat),
+    status_check(Gstat,GOALS,Dstat,ForB,DEVS,OUTS,MES,GOAL,DEV).
+com_analyzer(abnormal(_,Info),GOAL,DEV,VAR,VAR1,COD,COD1,_,_,_) :- true|
+    DEV=[],VAR1=VAR,COD1=COD,
+    GOAL=macro_error(Format,Arg),
+    macro_error(Info,FormatL,Arg),
+    builtin#append_string(FormatL,Format).
+
+macro_error([illegal_macro(Mac)|Err],Fs,Arg) :- true|
+    Fs= ["!WARNING! illegal macro module: ~t~n"|Fs1],
+    Arg=[Mac|Arg1],
+    macro_error(Err,Fs1,Arg1).
+macro_error([non_existent(Mac)|Err],Fs,Arg) :- true|
+    Fs= ["!WARNING! non-existent macro module: ~t~n"|Fs1],
+    Arg=[Mac|Arg1],
+    macro_error(Err,Fs1,Arg1).
+macro_error([protection_violation(Mac)|Err],Fs,Arg) :- true|
+    Fs= ["!WARNING! macro module is protection violation: ~t~n"|Fs1],
+    Arg=[Mac|Arg1],
+    macro_error(Err,Fs1,Arg1).
+macro_error([],Fs,Arg) :- true|
+    Fs=["!CAUTION! switched to non-expansible mode.~n"], Arg=[].
+otherwise.
+macro_error([Info|Err],Fs,Arg) :- true|
+    Fs= ["!WARNING! ~t~n"|Fs1],
+    Arg=[Info|Arg1],
+    macro_error(Err,Fs1,Arg1).
+
+
+% Check fore or back
+analyzer(wrap#{(&),X},GOAL,DEV,ForB,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    ForB=back,
+    analyzer0(X,GOAL,DEV,VP,VP1,COD,COD1,DM,Db,Rk).
+otherwise.
+analyzer(X,GOAL,DEV,ForB,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    ForB=fore,
+    analyzer0(X,GOAL,DEV,VP,VP1,COD,COD1,DM,Db,Rk).
+
+
+% Collect standard-io devices
+analyzer0(wrap#{(<=),X,Y},GOAL,DEV,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    DEV=[Dev|DEV1],
+    analyzer0(X,GOAL,DEV1,VP,VP1,COD,COD1,DM,Db,Rk),
+    stdio_dev(in,Y,Dev).
+analyzer0(wrap#{(=>),X,Y},GOAL,DEV,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    DEV=[Dev|DEV1],
+    analyzer0(X,GOAL,DEV1,VP,VP1,COD,COD1,DM,Db,Rk),
+    stdio_dev(out,Y,Dev).
+analyzer0(wrap#{(->),X,Y},GOAL,DEV,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    DEV=[Dev|DEV1],
+    analyzer0(X,GOAL,DEV1,VP,VP1,COD,COD1,DM,Db,Rk),
+    stdio_dev(mes,Y,Dev).
+
+otherwise.
+analyzer0(X,GOAL,DEV,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    DEV=[],
+    analyzer1(X,GOAL,[],VP,VP1,COD,COD1,DM,Db,Rk).
+
+
+analyzer1(wrap#if(C,A,B),GOAL,GOAL1,VP,VP3,COD,COD3,DM,Db,Rk) :- true|
+    GOAL=[if(GC,GA,GB)|GOAL1],
+    exp_melt(C,GC,VP,VP1,COD,COD1),
+    analyzer1(A,GA,[],VP1,VP2,COD1,COD2,DM,Db,Rk),
+    analyzer1(B,GB,[],VP2,VP3,COD2,COD3,DM,Db,Rk).
+
+analyzer1(wrap#(A;B),GOAL,GOAL1,VP,VP2,COD,COD2,DM,Db,Rk) :- true|
+    GOAL=[unit(GA,GB)|GOAL1],
+    analyzer1(A,GA,[],VP, VP1,COD, COD1,DM,Db,Rk),
+    analyzer1(B,GB,[],VP1,VP2,COD1,COD2,DM,Db,Rk).
+
+analyzer1(wrap#(A,B),GOAL,GOAL2,VP,VP2,COD,COD2,DM,Db,Rk) :- true|
+    analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,Db,Rk),
+    analyzer1(B,GOAL1,GOAL2,VP1,VP2,COD1,COD2,DM,Db,Rk).
+
+% Check profile
+analyzer1(wrap#profile(A),GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,_) :- true|
+    GOAL=[profile(A,GL)|GOAL1],
+    p_analyzer1(A,GL,[],VP,VP1,COD,COD1,DM).
+analyzer1(wrap#{(@),profile(A),_},GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,_) :- true|
+    GOAL=[profile(A,GL)|GOAL1],
+    p_analyzer1(A,GL,[],VP,VP1,COD,COD1,DM).
+analyzer1(wrap#profile_msg(A),GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,_) :- true|
+    GOAL=[profile_msg(A,GL)|GOAL1],
+    p_analyzer1(A,GL,[],VP,VP1,COD,COD1,DM).
+analyzer1(wrap#{(@),profile_msg(A),_},GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,_) :- true|
+    GOAL=[profile_msg(A,GL)|GOAL1],
+    p_analyzer1(A,GL,[],VP,VP1,COD,COD1,DM).
+analyzer1(wrap#profile_node(A),GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,_) :- true|
+    GOAL=[profile_node(A,GL)|GOAL1],
+    p_analyzer1(A,GL,[],VP,VP1,COD,COD1,DM).
+analyzer1(wrap#{(@),profile_node(A),_},GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,_) :- true|
+    GOAL=[profile_node(A,GL)|GOAL1],
+    p_analyzer1(A,GL,[],VP,VP1,COD,COD1,DM).
+
+% Check execution mode
+analyzer1(wrap#notrace(A),GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,Rk) :- true|
+    analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,notrace,Rk).
+analyzer1(wrap#{(@),notrace(A),_},GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,Rk) :- true|
+    analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,notrace,Rk).
+analyzer1(wrap#trace(A),GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,Rk) :- true|
+    analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,trace,Rk).
+analyzer1(wrap#{(@),trace(A),_},GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,Rk) :- true|
+    analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,trace,Rk).
+analyzer1(wrap#spy_fork(A),GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,Rk) :- true|
+    analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,spyf,Rk).
+analyzer1(wrap#{(@),spy_fork(A),_},GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,Rk) :- true|
+    analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,spyf,Rk).
+analyzer1(wrap#spy_reduction(A),GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,Rk) :- true|
+    analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,spyr,Rk).
+analyzer1(wrap#{(@),spy_reduction(A),_},GOAL,GOAL1,VP,VP1,COD,COD1,DM,_,Rk) :- true|
+    analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,spyr,Rk).
+
+otherwise.
+% Check pragma
+analyzer1(wrap#{(@),A,node(B)},GOAL,GOAL1,VP,VP2,COD,COD2,DM,Db,Rk) :- true|
+    GOAL=[{Cde,Arg,node,Pe}|GOAL1],
+    analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk),
+    exp_melt(B,Pe,VP1,VP2,COD1,COD2).
+analyzer1(wrap#{(@),A,priority(B,C)},GOAL,GOAL1,VP,VP3,COD,COD3,DM,Db,Rk) :- true|
+    GOAL=[{Cde,Arg,priority,Sp,Pri}|GOAL1],
+    analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk),
+    exp_melt(B,Sp, VP1,VP2,COD1,COD2),
+    exp_melt(C,Pri,VP2,VP3,COD2,COD3).
+
+:- switch(machine_type).
+:- case(vpim).
+analyzer1(wrap#{(@),A,cluster(B)},GOAL,GOAL1,VP,VP2,COD,COD2,DM,Db,Rk) :- true|
+    GOAL=[{Cde,Arg,cluster,Pe}|GOAL1],
+    analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk),
+    exp_melt(B,Pe,VP1,VP2,COD1,COD2).
+analyzer1(wrap#{(@),A,resident_to_cluster(B)},GOAL,GOAL1,VP,VP2,COD,COD2,DM,Db,Rk) :- true|
+    GOAL=[{Cde,Arg,resident_to_cluster,Pe}|GOAL1],
+    analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk),
+    exp_melt(B,Pe,VP1,VP2,COD1,COD2).
+analyzer1(wrap#{(@),A,emigrant_to_cluster},GOAL,GOAL1,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    GOAL=[{Cde,Arg,emigrant_to_cluster}|GOAL1],
+    analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk).
+analyzer1(wrap#{(@),A,processor(B)},GOAL,GOAL1,VP,VP2,COD,COD2,DM,Db,Rk) :- true|
+    GOAL=[{Cde,Arg,processor,Pe}|GOAL1],
+    analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk),
+    exp_melt(B,Pe,VP1,VP2,COD1,COD2).
+analyzer1(wrap#{(@),A,resident_to_processor(B)},GOAL,GOAL1,VP,VP2,COD,COD2,DM,Db,Rk) :- true|
+    GOAL=[{Cde,Arg,resident_to_processor,Pe}|GOAL1],
+    analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk),
+    exp_melt(B,Pe,VP1,VP2,COD1,COD2).
+analyzer1(wrap#{(@),A,emigrant_to_processor},GOAL,GOAL1,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    GOAL=[{Cde,Arg,emigrant_to_processor}|GOAL1],
+    analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk).
+:- end_switch.
+
+otherwise.
+analyzer1(wrap#{(@),_,Pgm},GOAL,GOAL1,VP,VP1,COD,COD1,_,_,_) :- true|
+    GOAL=[{unknown_pragma,Pgm}|GOAL1], VP1=VP, COD1=COD.
+
+otherwise.
+analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    GOAL=[{Cde,Arg}|GOAL1],
+    analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk).
+
+
+% Check remember command
+analyzer2(wrap#remember(VAR),Cde,Arg,VP,VP1,COD,COD2,_,_,_) :-
+  VAR=variable(Name) |
+    Cde=notrace(Cde1),
+    COD=[get_code(listener_cmd_builtin,do_command,1,STAT)|COD1],
+    (
+    STAT=normal(Code) -> 
+        Cde1=Code, COD2=COD1;
+    otherwise;
+    true -> 
+        COD1=[get_code(pimos,listener_cmd_builtin,do_command,1,normal(Cde1))|COD2]
+    ),
+    Arg={true},
+    VP=[remember(Name,_)|VP1].
+analyzer2(wrap#remember({(^),VAR}),Cde,Arg,VP,VP1,COD,COD2,_,_,_) :- 
+  VAR=variable(Name) |
+    Cde=notrace(Cde1),
+    COD=[get_code(listener_cmd_builtin,do_command,1,STAT)|COD1],
+    (
+    STAT=normal(Code) -> 
+        Cde1=Code, COD2=COD1;
+    otherwise;
+    true -> 
+        COD1=[get_code(pimos,listener_cmd_builtin,do_command,1,normal(Cde1))|COD2]
+    ),
+    Arg={true},
+    VP=[remember(Name,_)|VP1].
+
+% Check forget command
+analyzer2(wrap#forget(VAR),Cde,Arg,VP,VP1,COD,COD2,_,_,_) :- 
+  VAR=variable(Name) |
+    Cde=notrace(Cde1),
+    COD=[get_code(listener_cmd_varpool,do_command,1,STAT)|COD1],
+    (
+    STAT=normal(Code) -> 
+        Cde1=Code, COD2=COD1;
+    otherwise;
+    true -> 
+        COD1=[get_code(pimos,listener_cmd_varpool,do_command,1,normal(Cde1))|COD2]
+    ),
+    Arg={forget(Name)},
+    VP1=VP.
+analyzer2(wrap#forget({(^),VAR}),Cde,Arg,VP,VP1,COD,COD2,_,_,_) :- 
+  VAR=variable(Name) |
+    Cde=notrace(Cde1),
+    COD=[get_code(listener_cmd_varpool,do_command,1,STAT)|COD1],
+    (
+    STAT=normal(Code) -> 
+        Cde1=Code, COD2=COD1;
+    otherwise;
+    true -> 
+        COD1=[get_code(pimos,listener_cmd_varpool,do_command,1,normal(Cde1))|COD2]
+    ),
+    Arg={forget(Name)},
+    VP1=VP.
+
+% Check Alias
+analyzer2(wrap#alias(Goal,NewGoal),Cde,Arg,VP,VP1,COD,COD2,_,_,_) :- true|
+    Cde=notrace(Cde1),
+    COD=[get_code(listener_cmd_basic,do_command,1,STAT)|COD1],
+    (
+    STAT=normal(Code) -> 
+        Cde1=Code, COD2=COD1;
+    otherwise;
+    true -> 
+        COD1=[get_code(pimos,listener_cmd_basic,do_command,1,normal(Cde1))|COD2]
+    ),
+    Arg={alias(Goal,NewGoal)},
+    VP1=VP.
+analyzer2(wrap#alias(Goal),Cde,Arg,VP,VP1,COD,COD2,_,_,_) :- true|
+    Cde=notrace(Cde1),
+    COD=[get_code(listener_cmd_basic,do_command,1,STAT)|COD1],
+    (
+    STAT=normal(Code) -> 
+        Cde1=Code, COD2=COD1;
+    otherwise;
+    true -> 
+        COD1=[get_code(pimos,listener_cmd_basic,do_command,1,normal(Cde1))|COD2]
+    ),
+    Arg={alias(Goal)},
+    VP1=VP.
+analyzer2(wrap#unalias(Goal),Cde,Arg,VP,VP1,COD,COD2,_,_,_) :- true|
+    Cde=notrace(Cde1),
+    COD=[get_code(listener_cmd_basic,do_command,1,STAT)|COD1],
+    (
+    STAT=normal(Code) -> 
+        Cde1=Code, COD2=COD1;
+    otherwise;
+    true -> 
+        COD1=[get_code(pimos,listener_cmd_basic,do_command,1,normal(Cde1))|COD2]
+    ),
+    Arg={unalias(Goal)},
+    VP1=VP.
+
+% Check monitor 91.10.20
+analyzer2(wrap#monitor(VAR),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk) :-
+  VAR=variable(Name), string(Name,_,_) |
+    String=string(Name),
+    analyzer2(wrap#monitor(VAR,String),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk).
+analyzer2(wrap#monitor(T,VAR),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk) :- 
+  VAR=variable(Name), string(Name,_,_) |
+    String=string(Name),
+    analyzer2(wrap#monitor(T,String),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk).
+analyzer2(wrap#monitor_and_fork(VAR),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk) :-
+  VAR=variable(Name), string(Name,_,_) |
+    String=string(Name),
+    analyzer2(wrap#monitor_and_fork(VAR,String),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk).
+analyzer2(wrap#monitor_and_fork(T,VAR),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk) :- 
+  VAR=variable(Name), string(Name,_,_) |
+    String=string(Name),
+    analyzer2(wrap#monitor_and_fork(T,String),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk).
+
+% Package::Module:Public
+analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_,Db,_) :- Goal=wrap#{(:),{(::),PAC,MOD},PRED} |
+    ( 
+    PAC=variable(Name) -> 
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    MOD=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PAC=atom(Pac), MOD=atom(Mod), PRED=atom(Pred) ->
+        COD=[get_code(Pac,Mod,Pred,0,Status)|COD0],
+        code_check(Status,Pac::Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    PAC=atom(Pac), MOD=atom(Mod), 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Pac,Mod,Pred,~(Size-1),Status)|COD0],
+        code_check(Status,Pac::Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+% Package::Module!Local
+analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_,Db,_) :- Goal=wrap#{(!),{(::),PAC,MOD},PRED} |
+    ( 
+    PAC=variable(Name) -> 
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    MOD=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PAC=atom(Pac), MOD=atom(Mod), PRED=atom(Pred) ->
+        COD=[get_code(Pac,Mod,Pred,0,Status)|COD0],
+        local_code_check(Status,Pac::Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    PAC=atom(Pac), MOD=atom(Mod), 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Pac,Mod,Pred,~(Size-1),Status)|COD0],
+        local_code_check(Status,Pac::Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+
+% Package::Module(...) (shell-utility)
+analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_,_,_) :- Goal=wrap#{(::),PAC,PRED} |
+    ( 
+    PAC=variable(Name) -> 
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PAC=atom(Pac), PRED=atom(Pred) ->
+        COD=[get_code(Pac,Pred,go,0,Status)|COD0],
+        code_check(Status,Pac::Pred,PRED,VP,VP1,COD0,COD1,Cde,Arg,notrace);
+    PAC=atom(Pac),
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Pac,Pred,go,~(Size-1),Status)|COD0],
+        code_check(Status,Pac::Pred,PRED,VP,VP1,COD0,COD1,Cde,Arg,notrace);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+% !Local (default module)
+analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,DM,Db,_) :- Goal=wrap#{(!),PRED} |
+    ( 
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    DM\=0, PRED=atom(Pred) ->
+        COD=[get_code(DM,Pred,0,Status)|COD0],
+        local_code_check(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    DM\=0, 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(DM,Pred,~(Size-1),Status)|COD0],
+        local_code_check(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    DM=0 -> 
+        Cde=default_module_not_set, Arg=0, VP1=VP, COD1=COD;
+    otherwise;
+    true ->
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+otherwise.
+% Module:Public (default-package)
+analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_,Db,_) :- Goal=wrap#{(:),MOD,PRED} |
+    ( 
+    MOD=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    MOD=atom(Mod), PRED=atom(Pred) ->
+        COD=[get_code(Mod,Pred,0,Status)|COD0],
+        code_check(Status,Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    MOD=atom(Mod), 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Mod,Pred,~(Size-1),Status)|COD0],
+        code_check(Status,Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+% Module!local (default-package)
+analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_,Db,_) :- Goal=wrap#{(!),MOD,PRED} |
+    ( 
+    MOD=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    MOD=atom(Mod), PRED=atom(Pred) ->
+        COD=[get_code(Mod,Pred,0,Status)|COD0],
+        local_code_check(Status,Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    MOD=atom(Mod), 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Mod,Pred,~(Size-1),Status)|COD0],
+        local_code_check(Status,Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+otherwise.
+% Command | Shell-utility | Public(default-module)
+analyzer2(PRED,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk) :- true|
+    ( 
+    PRED=variable(_) ->
+        Cde=illegal_goal, Arg=PRED, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=atom(Pred) ->
+        listener_cmd_table:is_command(Pred,0,Mod),
+        command_or_not(Mod,Pred,0,atom(Pred),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk);
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        Arity := Size-1,
+        listener_cmd_table:is_command(Pred,Arity,Mod),
+        set_vector_element(Vec,0,_,atom(Pred),Vec1),
+        command_or_not(Mod,Pred,Arity,vector(Vec1),Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=PRED, VP1=VP, COD1=COD
+    ).
+
+
+code_check(normal(Code),_,PRED,VP,VP1,COD,COD1,Cde,Arg,Db) :-
+    Cde={Db,Code},
+    exp_melt(PRED,Goal,VP,VP1,COD,COD1),
+    listener_utility:break_up_goal(Goal,_Func,Arg).
+code_check(non_existent,Mod,_,VP,VP1,COD,COD1,Cde,Arg,_) :-
+    Cde=non_existent_module, Arg=Mod, VP1=VP, COD1=COD.
+code_check(non_existent(code(Module,Pred,Arity)),Mod,_,VP,VP1,COD,COD1,Cde,Arg,_) :-
+    VP1=VP, COD1=COD,
+    module:get_code(Module,Pred,Arity,Code),
+    (
+    code(Code,_,_,_) ->
+        Cde=local_predicate, Arg=(Mod:Pred/Arity);
+    otherwise;
+    true ->
+        Cde=non_existent_public_predicate, Arg=(Mod:Pred/Arity)
+    ).
+code_check(protection_violation,Mod,_,VP,VP1,COD,COD1,Cde,Arg,_) :-
+    Cde=protection_violation, Arg=Mod, VP1=VP, COD1=COD.
+code_check(abnormal,_,_,VP,VP1,COD,COD1,Cde,Arg,_) :- true|
+    Cde=illegal_macro_expansion, Arg=0, VP1=VP, COD1=COD.
+code_check(abnormal(Reason),_,_,VP,VP1,COD,COD1,Cde,Arg,_) :- true|
+    Cde=illegal_macro_expansion, Arg=Reason, VP1=VP, COD1=COD.
+
+
+local_code_check(normal(Code),Mod,_,VP,VP1,COD,COD1,Cde,Arg,_) :-
+    code_to_predicate(Code,_,Pred,Arity,_),
+    Cde=public_predicate, Arg=(Mod:Pred/Arity), VP1=VP, COD1=COD.
+local_code_check(non_existent,Mod,_,VP,VP1,COD,COD1,Cde,Arg,_) :-
+    Cde=non_existent_module, Arg=Mod, VP1=VP, COD1=COD.
+local_code_check(non_existent(code(Module,Pred,Arity)),Mod,PRED,VP,VP1,COD,COD1,Cde,Arg,Db) :-
+    module:get_code(Module,Pred,Arity,Code),
+    (
+    code(Code,_,_,_) ->
+        Cde={Db,Code},
+        exp_melt(PRED,Goal,VP,VP1,COD,COD1),
+        listener_utility:break_up_goal(Goal,_Func,Arg);
+    otherwise;
+    true ->
+        VP1=VP, COD1=COD,
+        Cde=non_existent_local_predicate, Arg=(Mod:Pred/Arity)
+    ).
+local_code_check(protection_violation,Mod,_,VP,VP1,COD,COD1,Cde,Arg,_) :-
+    Cde=protection_violation, Arg=Mod, VP1=VP, COD1=COD.
+local_code_check(abnormal,_,_,VP,VP1,COD,COD1,Cde,Arg,_) :-
+    Cde=illegal_macro_expansion, Arg=0, VP1=VP, COD1=COD.
+local_code_check(abnormal(Reason),_,_,VP,VP1,COD,COD1,Cde,Arg,_) :-
+    Cde=illegal_macro_expansion, Arg=Reason, VP1=VP, COD1=COD.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Check shell-utility | public-predicate in default-module.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Shell-utility | Public
+command_or_not(Mod,Pred,Arity,PRED,Cde,Arg,VP,VP1,COD,COD1,DM,Db,Rk) :- 
+  ( Mod=unknown; Mod>Rk) |
+    COD=[get_code(Pred,go,Arity,Status)|COD0],
+    analyzer3(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db).
+command_or_not(Rank,_,_,PRED,Cde,Arg,VP,VP1,COD,COD1,_,_,Rk) :- Rk>=Rank |
+    Cde=notrace(Cde1),
+    COD=[get_code(listener_cmd_builtin,do_command,1,STAT)|CODE],
+    (
+    STAT=normal(Code) -> 
+        Cde1=Code, COD0=CODE;
+    otherwise;
+    true -> 
+        CODE=[get_code(pimos,listener_cmd_builtin,do_command,1,normal(Cde1))|COD0]
+    ),
+    exp_melt(PRED,Arg1,VP,VP1,COD0,COD1),
+    Arg={Arg1}.
+otherwise.
+% Listener-command
+command_or_not(Mod,    _,   _,    PRED,Cde,Arg,VP,VP1,COD,COD1,_,_,_) :- true|
+    Cde=notrace(Cde1),
+    COD=[get_code(Mod,do_command,1,STAT)|CODE], % pimos::Mod?
+    (
+    STAT=normal(Code) -> 
+        Cde1=Code, COD0=CODE;
+    otherwise;
+    true -> 
+        CODE=[get_code(pimos,Mod,do_command,1,normal(Cde1))|COD0]
+    ),
+    exp_melt(PRED,Arg1,VP,VP1,COD0,COD1),
+    Arg={Arg1}.
+
+
+% Shell-utility
+analyzer3(normal(Code),_,PRED,VP,VP1,COD,COD1,Cde,Arg,_) :-
+    Cde=notrace(Code),
+    exp_melt(PRED,Goal,VP,VP1,COD,COD1),
+    listener_utility:break_up_goal(Goal,_Func,Arg).
+otherwise.
+% Public predicate in default-module.
+analyzer3(_,DM,PRED,VP,VP1,COD,COD1,Cde,Arg,Db) :-
+    (
+    % Check public in default-module.
+    DM\=0, PRED=atom(Pred) ->
+        COD=[get_code(DM,Pred,0,Status)|COD0],
+        code_check(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    % Check public in default-module.
+    DM\=0, PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(DM,Pred,~(Size-1),Status)|COD0],
+        code_check(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg,Db);
+    otherwise;
+    true -> 
+        Cde=non_existent_command, Arg=PRED, VP1=VP, COD1=COD
+    ).
+
+
+exp_melt(list([Car|Cdr]),   Y,VTS,VTS2,CDS,CDS2) :- true |
+    Y=[Car1|Cdr1],
+    exp_melt(Car,Car1,VTS, VTS1,CDS, CDS1),
+    exp_melt(Cdr,Cdr1,VTS1,VTS2,CDS1,CDS2).
+exp_melt(variable(Name),    Y,VTS,VTS1,CDS,CDS1) :- true |
+    VTS=[put(Name,Y)|VTS1],
+    CDS1=CDS.
+exp_melt(vector({atom(^),variable(Name)}),Y,VTS,VTS1,CDS,CDS1) :- true |
+    VTS=[remember(Name,Y)|VTS1],
+    CDS1=CDS.
+exp_melt(vector({atom(#),atom(module),atom(Name)}),
+  Y,VTS,VTS1,CDS,CDS1) :- true | % module#xxx
+    CDS=[get_module(Name,Status)|CDS1],
+    new_vector(Macro,3),
+    set_vector_element(Macro, 0,_,('#'), Macro1),
+    set_vector_element(Macro1,1,_,module,Macro2),
+    set_vector_element(Macro2,2,_,Name,  Macro3),
+    module_check(Status,Macro3,Y),
+    VTS1=VTS.
+exp_melt(vector({atom(#),atom(module),vector({atom(::),atom(Pac),atom(Name)})}),
+  Y,VTS,VTS1,CDS,CDS1) :- true | % module#xxx::yyy
+    CDS=[get_module(Pac,Name,Status)|CDS1],
+    new_vector(Mac,3),
+    set_vector_element(Mac, 0,_,('::'),Mac1),
+    set_vector_element(Mac1,1,_,Pac,   Mac2),
+    set_vector_element(Mac2,2,_,Name,  Mac3),
+    new_vector(Macro,3),
+    set_vector_element(Macro, 0,_,('#'), Macro1),
+    set_vector_element(Macro1,1,_,module,Macro2),
+    set_vector_element(Macro2,2,_,Mac3,  Macro3),
+    module_check(Status,Macro3,Y),
+    VTS1=VTS.
+otherwise.
+exp_melt(vector(X),        Y,VTS,VTS1,CDS,CDS1) :- vector(X,Size) |
+    new_vector(Vct,Size),
+    expand_melt_args(0,Size,X,Vct,Y,VTS,VTS1,CDS,CDS1).
+otherwise. % atom, integer, floating_point, string, module, code, unknown
+exp_melt({_,X},            Y,VTS,VTS1,CDS,CDS1) :- true |
+    Y=X, VTS1=VTS, CDS1=CDS.
+
+expand_melt_args(N,N,_,Vct,Y,VTS,VTS1,CDS,CDS1) :- true |
+    Y=Vct, VTS1=VTS, CDS1=CDS.
+otherwise.
+expand_melt_args(K,N,X,Vct,Y,VTS,VTS2,CDS,CDS2) :- true |
+    K1 := K+1,
+    set_vector_element(X,K,Xk,_,X1),
+    exp_melt(Xk,Vk,VTS,VTS1,CDS,CDS1),
+    set_vector_element(Vct,K,_,Vk,Vct1),
+    expand_melt_args(K1,N,X1,Vct1,Y,VTS1,VTS2,CDS1,CDS2).
+
+module_check(normal(Module),_    ,Y) :- true | Y=Module.
+otherwise.
+module_check(_,             MACRO,Y) :- true | Y=MACRO.
+
+
+goal_check([if(GC,GA,GB)|Gs],GOAL,Status,COD,COD3) :-
+    goal_check(GA,GA1,StatusA,COD, COD1),
+    goal_check(GB,GB1,StatusB,COD1,COD2),
+    (
+    StatusA=normal, StatusB= normal ->
+        GOAL=[if(GC,GA1,GB1)|GOAL1],
+        goal_check(Gs,GOAL1,Status,COD2,COD3);
+    otherwise;
+    StatusA=normal ->
+        Status=StatusB, COD3=COD2;
+    otherwise;
+    true ->
+        Status=StatusA, COD3=COD2
+    ).
+goal_check([unit(GA,GB)|Gs],GOAL,Status,COD,COD3) :-
+    goal_check(GA,GA1,StatusA,COD, COD1),
+    goal_check(GB,GB1,StatusB,COD1,COD2),
+    (
+    StatusA=normal, StatusB= normal ->
+        GOAL=[unit(GA1,GB1)|GOAL1],
+        goal_check(Gs,GOAL1,Status,COD2,COD3);
+    otherwise;
+    StatusA=normal ->
+        Status=StatusB, COD3=COD2;
+    otherwise;
+    true ->
+        Status=StatusA, COD3=COD2
+    ).
+goal_check([profile(WT,G)|Gs],GOAL,Status,COD,COD3) :-
+    goal_check(G,G1,Status1,COD,COD1),
+    (
+    Status1=normal ->
+        GOAL=[profile(WT1,G1)|GOAL1],
+        replace_numbervars(WT,WT1,COD1,COD2),
+        goal_check(Gs,GOAL1,Status,COD2,COD3);
+    otherwise;
+    true -> 
+        Status=Status1, COD3=COD1
+    ).
+goal_check([profile_msg(WT,G)|Gs],GOAL,Status,COD,COD3) :-
+    goal_check(G,G1,Status1,COD,COD1),
+    (
+    Status1=normal ->
+        GOAL=[profile_msg(WT1,G1)|GOAL1],
+        replace_numbervars(WT,WT1,COD1,COD2),
+        goal_check(Gs,GOAL1,Status,COD2,COD3);
+    otherwise;
+    true -> 
+        Status=Status1, COD3=COD1
+    ).
+goal_check([profile_node(WT,G)|Gs],GOAL,Status,COD,COD3) :-
+    goal_check(G,G1,Status1,COD,COD1),
+    (
+    Status1=normal ->
+        GOAL=[profile_node(WT1,G1)|GOAL1],
+        replace_numbervars(WT,WT1,COD1,COD2),
+        goal_check(Gs,GOAL1,Status,COD2,COD3);
+    otherwise;
+    true -> 
+        Status=Status1, COD3=COD1
+    ).
+otherwise.
+goal_check([G|_],_,Status,COD,COD1) :- 
+  vector_element(G,0,Type), atom(Type), vector_element(G,1,Arg) |
+    (
+    Type=unknown_pragma ->
+        replace_numbervars(Arg,Arg1,COD,COD1),
+        Status=error(" Unknown pragma>> ~w~n",[Arg1]);
+    Type=illegal_input, string(Arg,_,_) ->
+        COD1=COD,
+        Status=error(" Illegal input>> ~s~n",[Arg]);
+    Type=illegal_input, integer(Arg) ->
+        COD1=COD,
+        Status=error(" Illegal input>> _~t~n",[Arg]);
+    Type=non_existent_command ->
+        replace_numbervars(Arg,Arg1,COD,COD1),
+        Status=error(" Nonexistent command>> ~w~n",[Arg1]);
+    Type=illegal_goal ->
+        replace_numbervars(Arg,Arg1,COD,COD1),
+        Status=error(" Illegal goal>> ~w~n",[Arg1]);
+    Type=default_module_not_set ->
+        COD1=COD,
+        Status=error(" >> Default module is not set.~n",[]);
+    Type=non_existent_module ->
+        COD1=COD,
+        Status=error(" Nonexistent module>> ~t~n",[Arg]);
+    Type=local_predicate ->
+        COD1=COD,
+        Status=error(" Local predicate>> ~t~n",[Arg]);
+    Type=non_existent_public_predicate ->
+        COD1=COD,
+        Status=error(" Nonexistent public predicate>> ~t~n",[Arg]);
+    Type=protection_violation ->
+        COD1=COD,
+        Status=error(" Protection violation>> ~t~n",[Arg]);
+    Type=illegal_macro_expansion, Arg=0 ->
+        COD1=COD,
+        Status=error(" >> Macro expansion is abnormal, check your macro module.~n",[]);
+    Type=public_predicate ->
+        COD1=COD,
+        Status=error(" Public predicate>> ~t~n",[Arg]);
+    Type=non_existent_local_predicate ->
+        COD1=COD,
+        Status=error(" Nonexistent local predicate>> ~t~n",[Arg]);
+    otherwise;
+    Type=illegal_macro_expansion ->
+        COD1=COD,
+        Status=error(" >> Macro expansion is abnormal because of ~t.~n",[Arg])
+    ).    
+goal_check([G|Gs],GOAL,Status,COD,COD1) :- vector_element(G,0,profile(Cde)) |
+    set_vector_element(G,0,_,Cde,NewG),
+    GOAL=[NewG|GOAL1], 
+    goal_check(Gs,GOAL1,Status,COD,COD1).
+goal_check([],GOAL,Status,COD,COD1) :- GOAL=[], Status=normal, COD1=COD.
+otherwise.
+goal_check([G|Gs],GOAL,Status,COD,COD1) :- GOAL=[G|GOAL1], goal_check(Gs,GOAL1,Status,COD,COD1).
+
+
+replace_numbervars(vector({atom(#),atom(module),atom(Name)}),Y,CDS,CDS1) :- true | % module#xxx
+    CDS=[get_module(Name,Status)|CDS1],
+    module_check_with_wrap(Status,vector({atom(#),atom(module),atom(Name)}),Y).
+replace_numbervars(vector({atom(#),atom(module),vector({atom(::),Pac,Name})}),Y,CDS,CDS1) :- 
+  Pac=atom(Pac1), Name=atom(Name1) |
+    CDS=[get_module(Pac1,Name1,Status)|CDS1],
+    module_check_with_wrap(Status,vector({atom(#),atom(module),vector({atom(::),Pac,Name})}),Y).
+replace_numbervars(variable(N),       Y,COD,COD1) :- integer(N) |
+    buffer_utility:integer_to_string(N,10,Name0),
+    builtin#append_string("_",Name0,Name),
+    COD1=COD,
+    Y=variable(Name).
+replace_numbervars(list([Car|Cdr]),   Y,COD,COD2) :-
+    Y=list([Car1|Cdr1]),
+    replace_numbervars(Car,Car1,COD,COD1),
+    replace_numbervars(Cdr,Cdr1,COD1,COD2).
+otherwise.
+replace_numbervars(vector(X),         Y,COD,COD1) :- vector(X,Size) |
+    Y=vector(NVct),
+    new_vector(Vct,Size),
+    replace_numbervars_args(0,Size,X,Vct,NVct,COD,COD1).
+otherwise. 
+% atom, integer, floating_point, string, module, code, unknown
+replace_numbervars(X,             Y,COD,COD1) :- Y=X, COD1=COD.
+
+replace_numbervars_args(N,N,_,Vct,Y,COD,COD1) :- Y=Vct, COD1=COD.
+otherwise.
+replace_numbervars_args(K,N,X,Vct,Y,COD,COD2) :-
+    K1 := K+1,
+    set_vector_element(X,K,Xk,_,X1),
+    replace_numbervars(Xk,Vk,COD,COD1),
+    set_vector_element(Vct,K,_,Vk,Vct1),
+    replace_numbervars_args(K1,N,X1,Vct1,Y,COD1,COD2).
+
+module_check_with_wrap(normal(Module),_    ,Y) :- Y=module(Module).
+otherwise.
+module_check_with_wrap(_,             MACRO,Y) :- Y=MACRO.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% ANALYZER FOR PROFILE COMMAND
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+p_analyzer1(wrap#(A,B),GOAL,GOAL2,VP,VP2,COD,COD2,DM) :-
+    p_analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM),
+    p_analyzer1(B,GOAL1,GOAL2,VP1,VP2,COD1,COD2,DM).
+
+% Check pragma
+p_analyzer1(wrap#{(@),A,processor(B)},GOAL,GOAL1,VP,VP2,COD,COD2,DM) :-
+    GOAL=[{Cde,Arg,Pe}|GOAL1],
+    p_analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM),
+    exp_melt(B,Pe,VP1,VP2,COD1,COD2).
+p_analyzer1(wrap#{(@),A,node(B)},GOAL,GOAL1,VP,VP2,COD,COD2,DM) :-
+    GOAL=[{Cde,Arg,Pe}|GOAL1],
+    p_analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM),
+    exp_melt(B,Pe,VP1,VP2,COD1,COD2).
+
+otherwise.
+p_analyzer1(wrap#{(@),_,Pgm},GOAL,GOAL1,VP,VP1,COD,COD1,_) :-
+    GOAL=[{unknown_pragma,Pgm}|GOAL1], VP1=VP, COD1=COD.
+
+otherwise.
+p_analyzer1(A,GOAL,GOAL1,VP,VP1,COD,COD1,DM) :-
+    GOAL=[{Cde,Arg}|GOAL1],
+    p_analyzer2(A,Cde,Arg,VP,VP1,COD,COD1,DM).
+
+
+% Package::Module:Public
+p_analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_) :- Goal=wrap#{(:),{(::),PAC,MOD},PRED} |
+    ( 
+    PAC=variable(Name) -> 
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    MOD=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PAC=atom(Pac), MOD=atom(Mod), PRED=atom(Pred) ->
+        COD=[get_code(Pac,Mod,Pred,0,Status)|COD0],
+        code_check(Status,Pac::Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    PAC=atom(Pac), MOD=atom(Mod), 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Pac,Mod,Pred,~(Size-1),Status)|COD0],
+        code_check(Status,Pac::Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+% Package::Module!Local
+p_analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_) :- Goal=wrap#{(!),{(::),PAC,MOD},PRED} |
+    ( 
+    PAC=variable(Name) -> 
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    MOD=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PAC=atom(Pac), MOD=atom(Mod), PRED=atom(Pred) ->
+        COD=[get_code(Pac,Mod,Pred,0,Status)|COD0],
+        local_code_check(Status,Pac::Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    PAC=atom(Pac), MOD=atom(Mod), 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Pac,Mod,Pred,~(Size-1),Status)|COD0],
+        local_code_check(Status,Pac::Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+
+% Package::Module(...) (shell-utility)
+p_analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_) :- Goal=wrap#{(::),PAC,PRED} |
+    ( 
+    PAC=variable(Name) -> 
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PAC=atom(Pac), PRED=atom(Pred) ->
+        COD=[get_code(Pac,Pred,go,0,Status)|COD0],
+        code_check(Status,Pac::Pred,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    PAC=atom(Pac),
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Pac,Pred,go,~(Size-1),Status)|COD0],
+        code_check(Status,Pac::Pred,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+otherwise.
+% Module:Public (default-package)
+p_analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_) :- Goal=wrap#{(:),MOD,PRED} |
+    ( 
+    MOD=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    MOD=atom(Mod), PRED=atom(Pred) ->
+        COD=[get_code(Mod,Pred,0,Status)|COD0],
+        code_check(Status,Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    MOD=atom(Mod), 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Mod,Pred,~(Size-1),Status)|COD0],
+        code_check(Status,Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+% Module!local (default-package)
+p_analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,_) :- Goal=wrap#{(!),MOD,PRED} |
+    ( 
+    MOD=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    MOD=atom(Mod), PRED=atom(Pred) ->
+        COD=[get_code(Mod,Pred,0,Status)|COD0],
+        local_code_check(Status,Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    MOD=atom(Mod), 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Mod,Pred,~(Size-1),Status)|COD0],
+        local_code_check(Status,Mod,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+% !Local (default module)
+p_analyzer2(Goal,Cde,Arg,VP,VP1,COD,COD1,DM) :- Goal=wrap#{(!),PRED} |
+    ( 
+    PRED=variable(Name) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    DM\=0, PRED=atom(Pred) ->
+        COD=[get_code(DM,Pred,0,Status)|COD0],
+        local_code_check(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    DM\=0, 
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(DM,Pred,~(Size-1),Status)|COD0],
+        local_code_check(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    DM=0 -> 
+        Cde=default_module_not_set, Arg=0, VP1=VP, COD1=COD;
+    otherwise;
+    true ->
+        Cde=illegal_goal, Arg=Goal, VP1=VP, COD1=COD
+    ).
+
+otherwise.
+% Shell-utility | Public(default-module)
+p_analyzer2(PRED,Cde,Arg,VP,VP1,COD,COD1,DM) :- 
+    ( 
+    PRED=variable(_) ->
+        Cde=illegal_goal, Arg=PRED, VP1=VP, COD1=COD;
+    PRED=vector(Vec), vector_element(Vec,0,variable(Name)) ->
+        Cde=illegal_input, Arg=Name, VP1=VP, COD1=COD;
+    PRED=atom(Pred) ->
+        COD=[get_code(Pred,go,0,Status)|COD0],
+        p_analyzer3(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg);
+    PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(Pred,go,~(Size-1),Status)|COD0],
+        p_analyzer3(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=PRED, VP1=VP, COD1=COD
+    ).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Check shell-utility | public-predicate in default-module.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Shell-utility
+p_analyzer3(normal(Code),_,PRED,VP,VP1,COD,COD1,Cde,Arg) :-
+    Cde=profile(Code),
+    exp_melt(PRED,Goal,VP,VP1,COD,COD1),
+    listener_utility:break_up_goal(Goal,_Func,Arg).
+otherwise.
+% Public predicate in default-module.
+p_analyzer3(_,DM,PRED,VP,VP1,COD,COD1,Cde,Arg) :-
+    (
+    % Check public in default-module.
+    DM\=0, PRED=atom(Pred) ->
+        COD=[get_code(DM,Pred,0,Status)|COD0],
+        code_check(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    % Check public in default-module.
+    DM\=0, PRED=vector(Vec), vector_element(Vec,0,atom(Pred)), vector(Vec,Size) ->
+        COD=[get_code(DM,Pred,~(Size-1),Status)|COD0],
+        code_check(Status,DM,PRED,VP,VP1,COD0,COD1,Cde,Arg,profile);
+    otherwise;
+    true -> 
+        Cde=illegal_goal, Arg=PRED, VP1=VP, COD1=COD
+    ).
+
+
+stdio_dev(Type,wrap#window(StrN),Dev) :- 
+  StrN=string(Name) |
+    Dev={{Type,{window_request,{Name,mouse,mouse},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,IntX,IntY,IntW,IntH),Dev) :-
+  StrN=string(Name),
+  IntX=integer(X), X>=0,
+  IntY=integer(Y), Y>=0,
+  IntW=integer(W), W>0,
+  IntH=integer(H), H>0 |
+    Dev={{Type,{window_request,{Name,at(X,Y),char(W,H)},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,IntX,IntY,IntW,IntH,StrF),Dev) :-
+  StrN=string(Name),
+  IntX=integer(X), X>=0,
+  IntY=integer(Y), Y>=0,
+  IntW=integer(W), W>0,
+  IntH=integer(H), H>0,
+  StrF=string(Font) |
+    Dev={{Type,{window_request,{Name,at(X,Y),char(W,H),Font},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,at(IntX,IntY),char(IntW,IntH)),Dev) :-
+  StrN=string(Name),
+  IntX=integer(X), X>=0,
+  IntY=integer(Y), Y>=0,
+  IntW=integer(W), W>0,
+  IntH=integer(H), H>0 |
+    Dev={{Type,{window_request,{Name,at(X,Y),char(W,H)},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,mouse,char(IntW,IntH)),Dev) :-
+  StrN=string(Name),
+  IntW=integer(W), W>0,
+  IntH=integer(H), H>0 |
+    Dev={{Type,{window_request,{Name,mouse,char(W,H)},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,at(IntX,IntY),mouse),Dev) :-
+  StrN=string(Name),
+  IntX=integer(X), X>=0,
+  IntY=integer(Y), Y>=0 |
+    Dev={{Type,{window_request,{Name,at(X,Y),mouse},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,mouse,mouse),Dev) :-
+  StrN=string(Name) |
+    Dev={{Type,{window_request,{Name,mouse,mouse},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,at(IntX,IntY),char(IntW,IntH),StrF),Dev) :-
+  StrN=string(Name),
+  IntX=integer(X), X>=0,
+  IntY=integer(Y), Y>=0,
+  IntW=integer(W), W>0,
+  IntH=integer(H), H>0,
+  StrF=string(Font) |
+    Dev={{Type,{window_request,{Name,at(X,Y),char(W,H),Font},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,mouse,char(IntW,IntH),StrF),Dev) :-
+  StrN=string(Name),
+  IntW=integer(W), W>0,
+  IntH=integer(H), H>0,
+  StrF=string(Font) |
+    Dev={{Type,{window_request,{Name,mouse,char(W,H),Font},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,at(IntX,IntY),mouse,StrF),Dev) :-
+  StrN=string(Name),
+  IntX=integer(X), X>=0,
+  IntY=integer(Y), Y>=0,
+  StrF=string(Font) |
+    Dev={{Type,{window_request,{Name,at(X,Y),mouse,Font},Out}},{Type,Out}}.
+stdio_dev(Type,wrap#window(StrN,mouse,mouse,StrF),Dev) :-
+  StrN=string(Name),
+  StrF=string(Font) |
+    Dev={{Type,{window_request,{Name,mouse,mouse,Font},Out}},{Type,Out}}.
+
+stdio_dev(Type,wrap#file(StrP),Dev) :-
+  StrP=string(Path), string(Path,_,16) |
+    Dev={{Type,{file_request,Path,Out}},{Type,Out}}.
+stdio_dev(Type,wrap#file(^(StrP)),Dev) :-
+  StrP=string(Path), string(Path,_,16) |
+    Dev={{Type,{file_request,{(^),Path},Out}},{Type,Out}}.
+stdio_dev(Type,string(Path),Dev) :-
+  string(Path,_,16) |
+    Dev={{Type,{file_request,Path,Out}},{Type,Out}}.
+stdio_dev(Type,wrap#{(^),StrP},Dev) :-
+  StrP=string(Path), string(Path,_,16) |
+    Dev={{Type,{file_request,{(^),Path},Out}},{Type,Out}}.
+
+otherwise.
+stdio_dev(Type,IoDev,Dev) :- true | Dev=abnormal(Type,IoDev).
+
+dev_check([abnormal(Type,IoDev)|_],_,_,_,_,Status) :- true | 
+    Status=error(" Illegal standard ~t device>> ~w~n",[Type,IoDev]).
+dev_check([{{mes,Mes},_}|Devs],DEVS,OUTS,_,MES,Status) :- true |
+    dev_check(Devs,DEVS,OUTS,Mes,MES,Status).
+otherwise.
+dev_check([{Dev,Out}|Devs],DEVS,OUTS,Mes,MES,Status) :- true |
+    DEVS=[Dev|DEVS1],
+    OUTS=[Out|OUTS1],
+    dev_check(Devs,DEVS1,OUTS1,Mes,MES,Status).
+dev_check([],DEVS,OUTS,Mes,MES,Status) :- true | DEVS=[], OUTS=[], MES=Mes, Status=normal.
+
+
+status_check(normal,GOALS,normal,ForB,DEVS,OUTS,MES,GOAL,DEV) :- true |
+    GOAL=normal(GOALS,ForB), DEV={DEVS,OUTS,MES}.
+otherwise.
+status_check(normal,_,Abnormal,_,_,_,_,GOAL,DEV) :- true |
+    GOAL=Abnormal, DEV=[].
+otherwise.
+status_check(Abnormal,_,_,_,_,_,_,GOAL,DEV) :- true |
+    GOAL=Abnormal, DEV=[].

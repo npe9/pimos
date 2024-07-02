@@ -1,0 +1,493 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%% history window
+%%% 1.30 --> 2/7 (pmacs file window)
+%%% 1991.5.7 for PSI-UX
+%%% 1991.10.24 for pimos 3.0
+
+class as_history_window has
+nature  labeled_sash,as_graphics,
+        has_icon_window,with_history_scroll,
+        as_mouse_input,inferior_window;
+:go(C):-
+%    :create(#font,">sys>csp>FONT.DIR>test_11.font",F),
+    :create(#font,"font:test_11.font",F),
+    :create(C,[size(482,300),title(" History manipulator"),
+            border_flag(off),margin_flag(off)],W),
+    :set_out_font(W,F),
+    :activate(W),
+    :draw(W),
+    :create(#standard_io_window,[size(200,200),
+        position(500,0)],T),
+    :activate(T),
+    LL=["abcd","qwer","1234","3456","poyt"],%%
+    :redraw_inside(W,LL),
+    repeat,
+    :read(W,Code),
+    :putt(T,Code),:putl(T),
+    (Code==previous_one,!,:up(W);
+     Code==next_one,!,:down(W);
+     Code==previous_page,!,:redraw_inside(W,LL);
+     Code==next_page,!,:redraw_inside(W,LL);
+     Code==remove,!,:part(W,2);
+     integer(Code),!,:reverse(W,Code);
+     true),
+    Code==exit,!,
+    :kill(T),
+    :kill(W);
+instance
+attribute font_in,adjY,inX,inY,inW,inH,maxN;
+:set_out_font(Win,F):-Win!font_in:=F;
+:get_info(Win,X,Y,W,H,Max):-
+    X=Win!inX,
+    Y=Win!inY+Win!adjY,
+    W=Win!inW,
+    H=Win!inH,
+    Max=Win!maxN;
+:draw(Win):-
+    F=Win!font_in,
+    :get_size(Win,W,Height),
+    H=Height-24,
+    IX=10,
+    IY=10,
+    :draw_filled_rectangle(Win,0,0,W,H,0,fix,set),
+    :draw_filled_rectangle(Win,0,0,W,H,0,light_paint,reset),
+
+%%% up
+    :draw_line(Win,0,1,W,1,2,solid,reset),
+%%% left
+    :draw_line(Win,0,0,0,H,2,solid,reset),
+%%% under
+    :draw_line(Win,1,H-2,W,H-2,1,solid,set),
+    :draw_line(Win,0,H-1,W,H-1,1,solid,set),
+%%% right
+    :draw_line(Win,W-2,1,W-2,H,1,solid,set),
+    :draw_line(Win,W-1,0,W-1,H-1,1,solid,set),
+
+    BY=H-27,
+    Mar=20,
+    Int=6,
+    SW=(W-Mar*2-Int*4)/6,
+    SH=22,
+    BX1=Mar,
+    BX2=Mar+(Int+SW)*1,
+    BX3=Mar+(Int+SW)*2,
+    BX4=Mar+(Int+SW)*3,
+    BX5=Mar+(Int+SW)*4,
+    BX6=Mar+(Int+SW)*5,
+
+    box(Win,BX1-1,BY,SW,SH,"renew",F),
+    box(Win,BX2-2,BY,SW,SH,"remove",F),
+    box(Win,BX3,BY,SW,SH,"load",F),
+    box(Win,BX4+1,BY,SW,SH,"save",F),
+    box(Win,BX5+2,BY,SW,SH,"plot",F),
+    box(Win,BX6+3,BY,SW,SH,"exit",F),
+
+    :create(#no_image_icon,BX1,BY,B1),
+    :set_code(B1,renew),
+    :set_size(B1,SW,SH),
+    :regist(Win,B1),
+    :create(#no_image_icon,BX2,BY,B2),
+    :set_code(B2,remove),
+    :set_size(B2,SW,SH),
+    :regist(Win,B2),
+    :create(#no_image_icon,BX3,BY,B3),
+    :set_code(B3,load),
+    :set_size(B3,SW,SH),
+    :regist(Win,B3),
+    :create(#no_image_icon,BX4,BY,B4),
+    :set_code(B4,save),
+    :set_size(B4,SW,SH),
+    :regist(Win,B4),
+    :create(#no_image_icon,BX5,BY,B5),
+    :set_code(B5,plot),
+    :set_size(B5,SW,SH),
+    :regist(Win,B5),
+    :create(#no_image_icon,BX6,BY,B6),
+    :set_code(B6,exit),
+    :set_size(B6,SW,SH),
+    :regist(Win,B6),
+
+    :draw_filled_rectangle(Win,IX,IY,W-40,H-40,0,fix,reset),
+    :draw_line(Win,IX-2,IY-1,IX+W-40,IY-1,2,solid,set),
+    :draw_line(Win,IX-2,IY-2,IX-2,IY+H-40,2,solid,set),
+    :create(#scroll_bar_icon,W-27,(H-40-100)/2+10,Scroll),
+    :regist(Win,Scroll),
+
+    :create(#scroll_top_icon,
+        W-27,(H-40-100)/2+10-12,Top),
+    :create(#scroll_bottom_icon,
+        W-27,(H-40-100)/2+10+112+4,Bottom),
+    :regist(Win,Top),
+    :regist(Win,Bottom),
+
+    regist_menu_area(Win,IX,IY,W-40,H-40,ADJ,MaxN),
+    Win!adjY:=ADJ,
+    Win!maxN:=MaxN,
+    Win!inX:=IX,
+    Win!inY:=IY,
+    Win!inW:=W-40,
+    Win!inH:=H-40;
+
+local
+
+box(Win,X,Y,W,H,St,F):-
+    string(St,Len,_),
+    X0=(W-Len*11)/2+X,
+    Y0=Y+2,
+%%% string
+    %:confirm(#messenger,"copy start"),
+    copy(Win,X0,Y0,Len*11,H,St,F),
+    %:confirm(#messenger,"copy end"),
+%%% up
+    :draw_line(Win,X,Y+1,X+W,Y+1,2,solid,reset),
+%%% left
+    :draw_line(Win,X,Y,X,Y+H,2,solid,reset),
+%%% under
+    :draw_line(Win,X+1,Y+H-1,X+W,Y+H-1,1,solid,set),
+    :draw_line(Win,X,Y+H,X+W,Y+H,1,solid,set),
+%%% right
+    :draw_line(Win,X+W-1,Y+1,X+W-1,Y+H,1,solid,set),
+    :draw_line(Win,X+W,  Y,  X+W,  Y+H,1,solid,set);
+
+copy(W,X,Y,L,H,S,F):-!,
+    draw_label(W,S,X,Y,F);
+
+draw_label(Obj,String,X,Y,Font):-
+    Win=Obj,
+    Work=Obj,
+    AX=50,
+    AY=50,
+    DX=X,
+    DY=Y,
+    SX=AX+10,
+    SY=AY+20,
+    %:get_parameter(#ipl,bmm_size,Dev),
+    :get_parameter(#profiler_ux_patch,Dev),
+    (Dev==16#"07FF",!,Disp=mono;
+     Dev==16#"0FFF",!,Disp=color;
+     Dev==16#"17FF",!,Disp=color,
+     (#view_selector!color==on,!,
+      :set_color_pair(Win,0,
+        {{45570,56830,60670},{0,0,0}}),!;
+      true);
+     Dev==16#"1FFF",!,Disp=color,
+     (#view_selector!color==on,!,
+      :set_color_pair(Win,0,
+        {{45570,56830,60670},{0,0,0}}),!;
+      true);
+     Disp=mono),
+    (Disp==mono,!,OP1=copy,OP2=reset;OP1=reverse,OP2=set),
+%%% work
+    :draw_filled_rectangle(Work,AX,AY,200,100,0,fix,reset),
+    :draw_string(Work,SX,SY,String,Font,set),
+    :draw_filled_rectangle(Work,SX,SY,67,22,0,light_paint,exclusive_or),
+    %:confirm(#messenger,"copy 1"),
+%%% copy 1
+    :transfer(Win,SX+1,SY+1,DX+1,DY+1,63,20,OP1),
+%%% dist
+    :draw_filled_rectangle(Win,DX,DY,65,22,0,light_paint,OP2),
+%%% copy 2
+    %:confirm(#messenger,"copy 2"),
+    (Dev==16#"1FFF",!,
+     :transfer(Win,SX,SY,DX,DY,65,22,exclusive_or);
+     :transfer(Win,SX+1,SY+1,DX+1,DY+1,63,20,exclusive_or)),
+    %:confirm(#messenger,"copy 2 End"),
+    true;
+
+%% regist_menu_area(+,+,+,+,+,-)
+%%  ADJ = start Y adjust additon
+
+regist_menu_area(Win,X,Y,W,H,ADJ,Max):-!,
+    Max=H/20,
+    ADJ=(H-Max*20)/2,
+    loop(Max,X,Y+H-ADJ-20,W,Win);
+
+loop(0,_,_,_,_):-!;
+loop(N,X,Y,W,Win):-
+    :create(#no_image_icon,X,Y,I),
+    :set_size(I,W,20),
+    :set_code(I,N),
+    :regist(Win,I),
+    loop(N-1,X,Y-20,W,Win);
+
+end.
+
+class scroll_bar_icon has
+
+nature  icon_button;
+
+instance
+attribute
+            x,
+            y,
+            width:=20,
+            height:=112;
+
+%% :code(+,+,+,-)
+
+:code(Icon,X,Y,Code):-
+    Height=Icon!height/4,
+    (Y=<Height,!,
+     Code=previous_page;
+     Y=<(Height*2),!,
+     Code=previous_one;
+     Y=<(Height*3),!,
+     Code=next_one;
+     Code=next_page);
+
+%% :draw(+,+,+,+,+,+)
+
+:draw(Icon,X,Y,W0,H0,Win):-
+    Icon!x:=X,
+    Icon!y:=Y,
+    W=W0-1,
+    H=H0-1,
+    H_One=Icon!height/4,
+    W1=W0/2,
+    H1=H_One/2,
+
+    Y1=Y +H_One,
+    Y2=Y1+H_One,
+    Y3=Y2+H_One,
+
+%%
+
+    draw_box(Win,X,Y, W,H_One),
+    draw_box(Win,X,Y1,W,H_One),
+    draw_box(Win,X,Y2,W,H_One),
+    draw_box(Win,X,Y3,W,H_One),
+
+    X1=X+W1-1,
+
+    draw_up1(Win,X1,Y+4,         W-6,(H_One/2)-4),
+    draw_up1(Win,X1,Y+(H_One/2),W-6,(H_One/2)-4),
+    draw_up1(Win,X1,Y1+7,        W-6,H_One-14),
+    
+    draw_down1(Win,X1,Y+H-3,         W-6,(H_One/2)-4),
+    draw_down1(Win,X1,Y3+(H_One/2), W-6,(H_One/2)-4),
+    draw_down1(Win,X1,Y3-7,          W-6,H_One-14);
+
+
+
+local
+
+draw_box(Win,X,Y,W,H):-
+
+    :draw_line(Win,X,Y+1,X+W-1,Y+1,  2,solid,reset),
+    :draw_line(Win,X,Y,  X,    Y+H-1,2,solid,reset),
+
+    :draw_line(Win,X,    Y+H-1,X+W-1,Y+H-1, 1,solid,set),
+    :draw_line(Win,X+1,  Y+H-2,X+W-1,Y+H-2,1,solid,set),
+    :draw_line(Win,X+W-1,Y,    X+W-1,Y+H-1,1,solid,set),
+    :draw_line(Win,X+W-2,Y+2,  X+W-2,Y+H-1,1,solid,set);
+
+
+draw_down(Win,X,Y,W0,H0):-
+    W1=W0/2,
+    H=H0-1,
+    W=W0-1,
+
+    :draw_line(Win,X-W1-1,Y-H,  X-1,     Y+1,1,solid,reset),
+    :draw_line(Win,X-W1,Y-H,  X,     Y+1,1,solid,reset),
+
+    :draw_line(Win,X+W1,  Y-H,  X,   Y+1,1,solid,set),
+    :draw_line(Win,X+W1-1,  Y-H+1,X-1,     Y+1,1,solid,set),
+    :draw_line(Win,X-W1-1,Y-H,  X+W1-1,  Y-H,1,solid,reset),
+    :draw_line(Win,X-W1-1,Y-H+1,  X+W1-2,  Y-H+1,1,solid,reset);
+
+draw_up(Win,X,Y,W0,H0):-
+    W1=W0/2,
+    H=H0-1,
+    W=W0-1,
+
+    :draw_line(Win,X,     Y,    X-W1+1,Y+H,1,solid,reset),
+    :draw_line(Win,X-1,   Y,    X-W1,Y+H,1,solid,reset),
+    :draw_line(Win,X-W1+1,Y+H-1,X+W1-1,Y+H-1,1,solid,set),
+    :draw_line(Win,X-W1,  Y+H,  X+W1,  Y+H,  1,solid,set),
+    :draw_line(Win,X+1,   Y,    X+W1,  Y+H-1,1,solid,set),  
+    :draw_line(Win,X+1,   Y+1,  X+W1,  Y+H,  1,solid,set);
+
+
+draw_up1(Win,X,Y,W0,H0):-
+    W1=W0/2,
+    H=H0-1,
+    W=W0-1,
+
+    :draw_line(Win,X,Y,X-W1,Y+H,1,solid,set),
+    :draw_line(Win,X,Y,X+W1,Y+H,1,solid,set),
+    :draw_line(Win,X,Y-1,X-W1-1,Y+H-1,1,solid,reset),
+    :draw_line(Win,X,Y-1,X+W1+1,Y+H-1,1,solid,reset);
+
+draw_down1(Win,X,Y,W0,H0):-
+    W1=W0/2,
+    H=H0-1,
+    W=W0-1,
+
+    :draw_line(Win,X,Y,X-W1,Y-H,1,solid,set),
+    :draw_line(Win,X,Y,X+W1,Y-H,1,solid,set),
+    :draw_line(Win,X,Y+1,X-W1-1,Y-H+1,1,solid,reset),
+    :draw_line(Win,X,Y+1,X+W1+1,Y-H+1,1,solid,reset);
+
+end.
+
+class no_image_icon has
+nature icon_button;
+instance
+attribute
+    x,
+    y,
+    width,
+    height,
+    code;
+:draw(Icon,X,Y,W0,H0,Win):-!;
+:code(Icon,X,Y,Code):-!,
+    Code=Icon!code;
+:set_code(Icon,Code):-
+    Icon!code:=Code;
+end.
+
+
+
+class with_history_scroll has
+instance
+:reverse(Win,N):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    (N>Max,!;
+     :draw_filled_rectangle(Win,
+        X,Y+(N-1)*H,(W/11)*11,H,0,fix,exclusive_or));
+:redraw_inside(Win,L):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    draw_lines(L,0,Ans,X,Y,Win!font_in,Win),
+    (Max==Ans,!;
+     Max>Ans,
+     :draw_filled_rectangle(Win,
+        X,Y+Ans*H,W,H*(Max-Ans),0,fix,reset));
+:top(Win,S):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_string(Win,X,Y,S,Win!font_in,set);
+:bottom(Win,S):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_string(Win,X,Y+(Max-1)*H,S,Win!font_in,set);
+:bottom(Win):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_filled_rectangle(Win,
+        X,Y+(Max-1)*H,W,H,0,fix,reset);    
+:up(Win):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :transfer(Win,X,Y+H,X,Y,W,H*(Max-1),copy);
+:down(Win):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :transfer(Win,X,Y,X,Y+H,W,H*(Max-1),copy);
+:part(Win,N):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    DY=Y+(N-1)*H,
+    SY=DY+H,
+    DH=(Max-N)*H,
+    :transfer(Win,X,SY,X,DY,W,DH,copy);
+:inside_clear(Win):-
+    :get_info(Win,X,Y,W,_,Max),
+    H=20,
+    :draw_filled_rectangle(Win,X,Y,W,(Max-1)*H,0,fix,reset);
+local
+draw_lines([],N,N,_,_,_,_):-!;
+draw_lines([S|L],C,N,X,Y,F,Win):-
+    :draw_string(Win,X,Y,S,F,set),
+    draw_lines(L,C+1,N,X,Y+20,F,Win);
+end.
+
+class input_file_name_window has
+nature  labeled_sash,as_graphics,
+        as_superior,inferior_window;
+:create(Class,Win,L,Obj):-
+    :create(Class,L,Obj),
+    Obj!history_window:=Win,
+    :get_size(Obj,W,H),
+    :draw(Obj),
+    :create(#pmacs_window,[label_flag(off),%%2/7
+    %:create(#standard_io_window,[label_flag(off),%%2/7
+        size(W-20,H-20-24),position(9,9),
+        border_flag(off),
+        superior(Obj)],PW),
+    %:set_border_width(PW,1),
+    Obj!child:=PW,
+    :activate(PW),
+    :draw_filled_rectangle(Obj,8,8,W-20+4,H-20-24+4,0,fix,reset),
+    :draw_line(Obj,8,9,8+W-20+4,9,2,solid,set),
+    :draw_line(Obj,8,8,8,8+H-20-24+4,2,solid,set);
+instance
+attribute history_window,child;
+:activate(W,L):-
+    :set_title(W,L),
+    %:clear(W!child),
+    %:flush(W!child),%%%
+    %%:get_size(W!child,Wi,H),%%2/7
+    %%:draw_filled_rectangle(W,10,10,Wi-2,H-2,0,fix,reset),%%2/7
+    :activate(W),
+    %%:move_cursor(W!child,0,0);%%2/7
+    true;%%
+
+:draw(Win):-
+    :get_size(Win,W,Height),
+    H=Height-24,
+    :draw_filled_rectangle(Win,0,0,W,H,0,fix,set),
+    :draw_filled_rectangle(Win,0,0,W,H,0,light_paint,reset),
+%%% up
+    :draw_line(Win,0,1,W,1,2,solid,reset),
+%%% left
+    :draw_line(Win,0,0,0,H,2,solid,reset),
+%%% under
+    :draw_line(Win,1,H-2,W,H-2,1,solid,set),
+    :draw_line(Win,0,H-1,W,H-1,1,solid,set),
+%%% right
+    :draw_line(Win,W-2,1,W-2,H,1,solid,set),
+    :draw_line(Win,W-1,0,W-1,H-1,1,solid,set);
+
+:get(Win,S):-
+    %:current_buffer(Win!child,B),
+    %:create(#standard_input_text_buffer_accessor,B,AcI),
+    %:create(#standard_output_text_buffer_accessor,B,AcO),
+    %:assign(B),
+    %:show_buffer(Win!child),
+    :putb(Win!child,"FileName:",9),
+    %:flash(Win!child),
+    %:show_buffer(Win!child),
+    :getl(Win!child,S),
+    %:resign(B);
+    true;
+
+:put_file_mes(Win,Status):-!,
+    W=Win!child,
+    get_file_mes(Status,String),
+    :beep(W),
+    string(String,Len,_),
+    :putb(W,String,Len),
+    :putl(W),
+    :flash(W);
+:put_load_mes(Win):-!,
+    W=Win!child,
+    :putb(W,"   Loading ...",14),
+    :flash(W);
+:put_save_mes(Win):-!,
+    W=Win!child,
+    :putb(W,"   Saving ...",13),
+    :flash(W);
+:put_nl(Win):-
+    W=Win!child,
+    :putl(W),
+    :flash(W);
+
+local
+
+get_file_mes(normal," Normal end"):-!;
+get_file_mes(abnormal," Abnormal abort"):-!;
+
+end.

@@ -1,0 +1,282 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi329::>sys>user>yashiro>PIMOS>v15b>shell>main>parser.kl1.2, 31-Oct-89 21:27:27, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is Shell Parser module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module shellParser.
+:- public paraParser/2, seqParser/2, tosParser/4,
+        ioParser/4, mesParser/3, iomParser/2.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Parsing the Pararel Execution Operator %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  paraParser :                                                       %%%
+%%%    (1) {'&', JobGroup1, {'&', JobGroup2, {'&', JobGroup3, ...}}}    %%%
+%%%           ===>  [JobGroup1, JobGroup2, JobGroup3, ..., JobGroupN]   %%%
+%%%                   ( back )   ( back )   ( back )        ( fore )    %%%
+%%%            [ O R ]                                                  %%%
+%%%    (2) JobGroup1    ===>    [JobGroup1]                             %%%
+%%%                 ( fore )                                            %%%
+%%%            [ O R ]                                                  %%%
+%%%    (3) {'&', JobGroup1}    ===>    JobGroup1                        %%%
+%%%                    ( back )                                         %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+paraParser(In, Out) :- atom(In) | Out = [fore(In)].    %%%  Case (2)  %%%
+paraParser(In, Out) :-                                 %%%  Case (2)  %%%
+    vector(In, _), vector_element(In, 0, V0), V0 \= ('&') | Out = [fore(In)].
+paraParser({('&'), JobGroup}, Out) :- true |           %%%  Case (3)  %%%
+    Out = [back(JobGroup)].
+paraParser({('&'), JobGroup, Remain}, Out) :- true |   %%%  Case (1)  %%%
+    Out = [back(JobGroup) | NewOut], paraParser(Remain, NewOut).
+%
+% next term has been inserted by H.Yashiro 1989/10/31
+%
+otherwise.
+paraParser(_, Out) :- true | Out =[].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Parsing the Sequential Execution Operator %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  seqParser :                                                %%%
+%%%     {';', Job1, {';', Job2, {';', Job3, ...}}}              %%%
+%%%         ===>  [Job1, Job2, Job3, ...]                       %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+seqParser({(';'), Job, Remain}, Out) :- true |       %%%  Case (1)  %%%
+    Out = [Job | NewOut], seqParser(Remain, NewOut).
+otherwise.
+seqParser(In, Out) :- true| Out = [In].              %%%  Case (1)  %%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Shell Tos Parser %%%
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  tosParser :                                                  %%%
+%%%    {'|', Tos1, {'|', Tos2, {'|', Tos3, ...}}}                 %%%
+%%%        ===>  [Tos1, Tos2, Tos3, ...]  &  StdIn  &  StdOut     %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+tosParser(In, Goal, StdIn, StdOut) :- true |
+    tosParser1(In, TosList, 0, Size),
+    tosParser2(Size, TosList, Goal, StdIn, StdOut).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  tosParser1 :                                       %%%
+%%%    {'|', Tos1, {'|', Tos2, {'|', Tos3, ...}}}       %%%
+%%%        ===>  [Tos1, Tos2, Tos3, ...]                %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+tosParser1({('|'), Tos, Remain}, Out, Cntr, Size) :- true |
+    NewCntr := Cntr + 1, Out = [Tos | NewOut],
+    tosParser1(Remain, NewOut, NewCntr, Size).
+otherwise.
+tosParser1(In, Out, Cntr, Size) :- true | Size := Cntr + 1, Out = [In].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  tosParser2 :                               %%%
+%%%    if the count of Tos is equal to 1        %%%
+%%%        then execute tosParser3              %%%
+%%%        else execute tosParser4              %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+tosParser2(Size, TosList, Goal, StdIn, StdOut) :- Size =< 1 |
+    tosParser3(TosList, Goal, StdIn, StdOut).
+tosParser2(Size, TosList, Goal, StdIn, StdOut) :- Size > 1 |
+    tosParser4(TosList, Goal, StdIn, StdOut).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  tosParser3 : Job contains only one Tos.  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+tosParser3([Tos], ParsedGoal, StdIn, StdOut) :- true |
+    ParsedGoal = [Goal], ioParser(Tos, Goal, StdIn, StdOut).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  tosParser4 : Job contains plural Toses.  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+tosParser4(TosList, Goal, StdIn, StdOut) :- true |
+    separateTos(TosList, First, Med, Last),
+    checkFirstTos(First, FGoal, StdIn),
+    checkMedTos(Med, MGoal),
+    checkLastTos(Last, LGoal, StdOut),
+    shellUtils:append([FGoal | MGoal], [LGoal], Goal).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Separate TosList into First, Last and Others  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+separateTos([Tos | Remain], First, Med, Last) :- true |
+    First = Tos, separateTos1(Remain, Med, Last).
+
+separateTos1([Tos], Med, Last) :- true | Med = [], Last = Tos.
+otherwise.
+separateTos1([Tos | Remain], Med, Last) :- true |
+    Med = [Tos | NewMed], separateTos1(Remain, NewMed, Last).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Check First Tos  (StdIn)  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+checkFirstTos(First, FGoal, StdIn) :- true |
+    ioParser(First, FGoal1, StdIn, StdOut),
+    checkFirstTos1(StdOut, FGoal, FGoal1).
+
+checkFirstTos1(shell, FGoal, FGoal1) :- true | FGoal = FGoal1.
+otherwise.
+checkFirstTos1(Operand, FGoal, _) :- true |
+    FGoal = {(':'), shellUtils, {displayer, {illegalIo, Operand}}}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Check Last Tos  (StdOut)  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+checkLastTos(Last, LGoal, StdOut) :- true |
+    ioParser(Last, LGoal1, StdIn, StdOut),
+    checkLastTos1(StdIn, LGoal, LGoal1).
+
+checkLastTos1(shell, LGoal, LGoal1) :- true | LGoal = LGoal1.
+otherwise.
+checkLastTos1(Operand, LGoal, _) :- true |
+    LGoal = {(':'), shellUtils, {displayer, {illegalIo, Operand}}}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%  Check Other Toses  %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+checkMedTos([], MGoal) :- true | MGoal = [].
+checkMedTos([Tos | Med], MGoal) :- true |
+    ioParser(Tos, Goal1, StdIn, StdOut),
+    checkMedTos1(StdIn, StdOut, Goal, Goal1),
+    MGoal = [Goal | NewMGoal],
+    checkMedTos(Med, NewMGoal).
+
+checkMedTos1(shell, shell, Goal, Goal1) :- true | Goal = Goal1.
+otherwise.
+checkMedTos1(Operand1, Operand2, Goal, _) :- true |
+    (Operand1 = shell, Operand2 \= shell -> Info = Operand2 ;
+     Operand1 \= shell, Operand2 = shell -> Info = Operand1 ;
+     Operand1 \= shell, Operand2 \= shell -> Info = {Operand1, Operand2} ),
+    Goal = {(':'), shellUtils, {displayer, {illegalIo, Info}}}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Shell I/O Parser %%%
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+ioParser(In, Goal, NStdIn, NStdOut) :- true |
+    ioParser1(In, Goal, shell, shell, StdIn, StdOut),
+    checkString(StdIn,NStdIn),
+    checkString(StdOut,NStdOut).
+
+ioParser1({Operator, In, Operand}, Goal, X, Y, StdIn, StdOut) :- true |
+    (Operator = ('<='), X = shell ->
+        ioParser1(In, Goal, Operand, Y, StdIn, StdOut) ;
+     Operator = ('=>'), Y = shell ->
+        ioParser1(In, Goal, X, Operand, StdIn, StdOut) ;
+     Operator = ('<='), X \= shell ->
+        Goal = {(':'), shellUtils, {displayer, {illegalIo, Operand}}},
+        StdIn = shell, StdOut = shell ;
+     Operator = ('=>'), Y \= shell ->
+        Goal = {(':'), shellUtils, {displayer, {illegalIo, Operand}}},
+        StdIn = shell, StdOut = shell ;
+    otherwise;
+     true -> {Operator, In, Operand} = Goal, X = StdIn, Y = StdOut ).
+otherwise.
+ioParser1(In, Goal, X, Y, StdIn, StdOut) :- true |
+    In = Goal, X = StdIn, Y = StdOut.
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Shell Mes Parser %%%
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+mesParser(In, Goal, NStdMes) :- true |
+    mesParser1(In, Goal, shell, StdMes),
+    checkString(StdMes,NStdMes).
+
+mesParser1({('->'), In, Operand}, Goal, X, StdMes) :- true |
+    (X = shell -> mesParser1(In, Goal, Operand, StdMes) ;
+     X \= shell -> StdMes = shell,
+        Goal = {(':'), shellUtils, {displayer, {illegalIo, Operand}}} ).
+otherwise.
+mesParser1(In, Goal, X, StdMes) :- true | In = Goal, X = StdMes.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Shell I/O/M Parser (only use it by the job-group)    %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+iomParser(In, Goal) :- true |
+    iomParser1(In, Med, shell, shell, shell, StdIn, StdOut, StdMes, Stat),
+    checkString(StdIn,NStdIn),
+    checkString(StdOut,NStdOut),
+    checkString(StdMes,NStdMes),
+    iomParser2(Stat, Med, NStdIn, NStdOut, NStdMes, Goal).
+
+iomParser1({Operator, In, Operand}, Goal, X, Y, Z,
+        StdIn, StdOut, StdMes, Stat) :- true |
+    (Operator = ('<='), X = shell ->
+        iomParser1(In, Goal, Operand, Y, Z, StdIn, StdOut, StdMes, Stat) ;
+     Operator = ('=>'), Y = shell ->
+        iomParser1(In, Goal, X, Operand, Z, StdIn, StdOut, StdMes, Stat) ;
+     Operator = ('->'), Z = shell ->
+        iomParser1(In, Goal, X, Y, Operand, StdIn, StdOut, StdMes, Stat) ;
+     Operator = ('<='), X \= shell ->
+        Goal = {(':'), shellUtils, {displayer, {illegalIo, Operand}}},
+        StdIn = shell, StdOut = shell, StdMes = shell, Stat = abnormal ;
+     Operator = ('=>'), Y \= shell ->
+        Goal = {(':'), shellUtils, {displayer, {illegalIo, Operand}}},
+        StdIn = shell, StdOut = shell, StdMes = shell, Stat = abnormal ;
+     Operator = ('->'), Z \= shell ->
+        Goal = {(':'), shellUtils, {displayer, {illegalIo, Operand}}},
+        StdIn = shell, StdOut = shell, StdMes = shell, Stat = abnormal ;
+    otherwise;
+     true -> {Operator, In, Operand} = Goal,
+        X = StdIn, Y = StdOut, Z = StdMes, Stat = normal ).
+otherwise.
+iomParser1(In, Goal, X, Y, Z, StdIn, StdOut, StdMes, Stat) :- true|
+    In = Goal, X = StdIn, Y = StdOut, Z = StdMes, Stat = normal.
+
+iomParser2(normal, In, StdIn, StdOut, StdMes, Goal) :- true |
+    Goal1 = {(':'), subShell, {shell, In}},
+    addIO(('->'), StdMes, Goal1, Goal2),
+    addIO(('=>'), StdOut, Goal2, Goal3),
+    addIO(('<='), StdIn, Goal3, Goal).
+iomParser2(abnormal, In, _, _, _, Goal) :- true |
+    Goal = {(':'), subShell, {shell, In}}.
+
+%%% {':', module, {predicate, arg1, ..., argN}} %%%
+
+addIO(_, shell, In, Out) :- true | Out = In.
+addIO(Type, IO, In, Out) :- IO \= shell |
+    new_vector(NVct, 3),
+    set_vector_element(NVct, 0, Type, _, NVct1),
+    set_vector_element(NVct1, 1, IO, _, NVct2),
+    set_vector_element(NVct2, 2, In, _, Out).
+
+checkString(StdIo,NStdIo) :- true |
+    ( string(StdIo,_,_) -> NStdIo = file(StdIo) ;
+     otherwise ;
+      true -> NStdIo = StdIo ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of Shell I/O Paser module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+

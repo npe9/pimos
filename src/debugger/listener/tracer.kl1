@@ -1,0 +1,200 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+:- module listener_tracer.
+:- public trace/3.
+:- public translate_spy_goal/6.
+:- with_macro pimos.
+
+% CHECK TRACER STATUS
+% ABORTED
+trace(_Mode,{IN,IN1,RSC,RSC1,SW,SW1,GM,GM1,MM,aborted,_Num,Status},
+       {NewArg,_SubGoals,_Pe,_ID,_Inf,_CN}) :- true |
+    IN1=IN, RSC1=RSC, SW1=SW, GM1=GM, MM=[], Status=aborted,
+    NewArg={[]}.
+% NOTRACE
+trace(trace,{IN,IN1,RSC,RSC1,SW,SW1,GM,GM1,MM,notrace,_Num,Status},
+       {NewArg,SubGoals,_Pe,_ID,_Inf,_CN}) :- true |
+    IN1=IN, RSC1=RSC, SW1=SW, GM1=GM, MM=[], Status=notrace,    
+    translate_subgoals(SubGoals,SubGoals1),
+    NewArg={SubGoals1}.
+trace(spy,{IN,IN1,RSC,RSC1,SW,SW1,GM,GM1,MM,notrace,_Num,Status},
+       {NewArg,SubGoals,_Pe,_ID,_Inf,_CN}) :- true |
+    IN1=IN, RSC1=RSC, SW1=SW, GM1=GM, MM=[], Status=notrace,    
+    NewArg={SubGoals}.
+% NORMAL
+trace(trace,{IN,IN1,RSC,RSC2,SW,SW1,GM,GM2,MM,Cnt,Num,Status},
+       {NewArg,SubGoals,Pe,ID,Inf,CN}) :- integer(Cnt) |
+    GM=[trace_id(TID,TID1)|GM1],
+    translate_subgoals(SubGoals,SubGoals1),
+    listener_trace_output:make_index(Inf,Pe,ID,CN,SubGoals1,RSC,RSC1,TID,TID1,GL),
+    listener_trace_command:
+        query_or_auto(Cnt,GL,IN,IN1,RSC1,RSC2,GM1,GM2,MM,NewArg,Status,SW,SW1,Num).
+trace(spy,{IN,IN1,RSC,RSC3,SW,SW1,GM,GM2,MM,Cnt,Num,Status},
+        {NewArg,SubGoal,Pe,ID,{_,W,Lvl,_,_},{Mod,Offset}}) :- integer(Cnt) |
+    GM=[trace_id(TID,TID1)|GM1],
+    get_priority(RSC,RSC1,NewArg,NewArg1,Pri),
+    module:get_predicate_info(Mod,Offset,_,Ppac,Pm,Pp,Pa),
+    listener_trace_output:make_index({W,Lvl,Ppac::Pm,Pp,Pa,Pri},
+                        Pe,ID,0,SubGoal,RSC1,RSC2,TID,TID1,GL),
+    listener_trace_command:
+        query_or_auto(Cnt,GL,IN,IN1,RSC2,RSC3,GM1,GM2,MM,NewArg1,Status,SW,SW1,Num).
+trace(resume,{IN,IN1,RSC,RSC1,SW,SW1,GM,GM1,MM,Cnt,Num,Status},
+       {NewArg,GL,_,_,_,_}) :- integer(Cnt) |
+    listener_trace_command:
+        query_or_auto(Cnt,GL,IN,IN1,RSC,RSC1,GM,GM1,MM,NewArg,Status,SW,SW1,Num).
+
+
+get_priority(RSC,RSC1,NewArg,NewArg1,Pri) :-
+    RSC=[timer(on_after(1000,TF))|RSC1],
+    predicate_to_code(module#listener_trace_driver,calculate_priority,4,CP),
+    predicate_to_code(module#listener_trace_driver,apply_goals,1,AG),
+    NewArg={[{current_priority,{P,Min,Max}},
+             {internal,CP,{P,Min,Max,Pri1}},
+             {internal,AG,NewArg1}]},
+    fork_priority(Pri1,TF,Pri).
+
+fork_priority(P,_, Pri) :- wait(P)  | Pri=P.
+alternatively.
+fork_priority(_,normal(TF),  Pri) :- wait(TF) | Pri= '???' .
+fork_priority(_,abnormal,    Pri) :- true     | Pri= '???' .
+fork_priority(_,abnormal(_), Pri) :- true     | Pri= '???' .
+fork_priority(_,aborted,     Pri) :- true     | Pri= '???' .
+fork_priority(_,disconnected,Pri) :- true     | Pri= '???' .
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Subgoal Format (Exception->)
+% {priority,                Code,ArgV,{Pri,Min,Max}}
+% {node,                    Code,ArgV, Node}% MPSI,PIM/m
+% {cluster,                 Code,ArgV,Cls}  % VPIM 
+% {resident_to_cluster,     Code,ArgV,Cls}  % VPIM
+% {emigrant_to_cluster,     Code,ArgV}      % VPIM
+% {processor,               Code,ArgV, Pe}  % VPIM
+% {resident_to_processor,   Code,ArgV, Pe}  % VPIM
+% {emigrant_to_processor,   Code,ArgV}      % VPIM
+% {external,                Code,ArgV}
+% {internal,                Code,ArgV}
+% {Builtin,                      ArgV}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+translate_subgoals([{enqueue,Code,ArgV}|L],Goals) :- 
+    Goals=[{internal,Code,ArgV}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([{execute,Code,ArgV}|L],Goals) :- 
+    Goals=[{internal,Code,ArgV}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([{execute_external,Code,ArgV}|L],Goals) :- 
+    Goals=[{external,Code,ArgV}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([{enqueue_with_priority,Code,ArgV,Priority}|L],Goals) :- 
+    Goals=[{priority,Code,ArgV,Priority}|Goals1],
+    translate_subgoals(L,Goals1).
+:- switch(machine).
+:- case(mpsi,pimm).
+translate_subgoals([{enqueue_to_processor,Code,ArgV,Pe}|L],Goals) :- 
+    Goals=[{node,Code,ArgV,Pe}|Goals1],
+    translate_subgoals(L,Goals1).
+:- default.
+translate_subgoals([{enqueue_to_processor,Code,ArgV,Pe}|L],Goals) :- 
+    Goals=[{processor,Code,ArgV,Pe}|Goals1],
+    translate_subgoals(L,Goals1).
+:- end_switch.
+translate_subgoals([{enqueue_external,Code,ArgV}|L],Goals) :- 
+    Goals=[{external,Code,ArgV}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([{Name,ArgV}|L],Goals) :- 
+    Goals=[{Name,ArgV}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([],Goals) :- Goals=[].
+% VPIM
+translate_subgoals([{enqueue_to_cluster,Code,ArgV,Cls}|L],Goals) :- 
+    Goals=[{cluster,Code,ArgV,Cls}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([{enqueue_resident_to_cluster,Code,ArgV,Cls}|L],Goals) :- 
+    Goals=[{resident_to_cluster,Code,ArgV,Cls}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([{enqueue_emigrant_to_cluster,Code,ArgV}|L],Goals) :- 
+    Goals=[{emigrant_to_cluster,Code,ArgV}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([{enqueue_resident_to_processor,Code,ArgV,Pe}|L],Goals) :- 
+    Goals=[{resident_to_processor,Code,ArgV,Pe}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([{enqueue_emigrant_to_processor,Code,ArgV}|L],Goals) :- 
+    Goals=[{emigrant_to_processor,Code,ArgV}|Goals1],
+    translate_subgoals(L,Goals1).
+translate_subgoals([{execute_self,Code,ArgV}|L],Goals) :- 
+    Goals=[{internal,Code,ArgV}|Goals1],
+    translate_subgoals(L,Goals1).
+
+
+translate_spy_goal({execute,Code,ArgV},Goal,Pac,M,P,A) :- 
+    Goal={internal,Code,ArgV},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+translate_spy_goal({execute_external,Code,ArgV},Goal,Pac,M,P,A) :- 
+    Goal={external,Code,ArgV},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+translate_spy_goal({enqueue,Code,ArgV},Goal,Pac,M,P,A) :- 
+    Goal={internal,Code,ArgV},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+translate_spy_goal({enqueue_with_priority,Code,ArgV,Pgm},Goal,Pac,M,P,A) :- 
+    Goal={priority,Code,ArgV,Pgm},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+:- switch(machine).
+:- case(mpsi,pimm).
+translate_spy_goal({enqueue_to_processor,Code,ArgV,Pgm},Goal,Pac,M,P,A) :- 
+    Goal={node,Code,ArgV,Pgm},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+:- default.
+translate_spy_goal({enqueue_to_processor,Code,ArgV,Pgm},Goal,Pac,M,P,A) :- 
+    Goal={processor,Code,ArgV,Pgm},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+:- end_switch.
+translate_spy_goal({enqueue_external,Code,ArgV},Goal,Pac,M,P,A) :- 
+    Goal={external,Code,ArgV},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+% VPIM
+translate_spy_goal({enqueue_to_cluster,Code,ArgV,Pgm},Goal,Pac,M,P,A) :- 
+    Goal={cluster,Code,ArgV,Pgm},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+translate_spy_goal({enqueue_resident_to_cluster,Code,ArgV,Pgm},Goal,Pac,M,P,A) :- 
+    Goal={resident_to_cluster,Code,ArgV,Pgm},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+translate_spy_goal({enqueue_emigrant_to_cluster,Code,ArgV},Goal,Pac,M,P,A) :- 
+    Goal={emigrant_to_cluster,Code,ArgV},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+translate_spy_goal({enqueue_resident_to_processor,Code,ArgV,Pgm},Goal,Pac,M,P,A) :- 
+    Goal={resident_to_processor,Code,ArgV,Pgm},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+translate_spy_goal({enqueue_emigrant_to_processor,Code,ArgV},Goal,Pac,M,P,A) :- 
+    Goal={emigrant_to_processor,Code,ArgV},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+translate_spy_goal({execute_self,Code,ArgV},Goal,Pac,M,P,A) :- 
+    Goal={internal,Code,ArgV},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+% END VPIM
+otherwise.  % apply
+translate_spy_goal({apply,{Code,ArgV}},Goal,Pac,M,P,A) :- 
+    Goal={apply,{Code,ArgV}},
+    code_to_predicate(Code,Mod,P,A,_),
+    module:get_module_name(Mod,Pac,M).
+otherwise.  % apply_tracing, apply_spying, create_shoen, create_profiling_shoen
+translate_spy_goal({Name,ArgV},       Goal,Pac,M,P,A) :- 
+    Goal={Name,ArgV}, Pac=0, M=0, P=0, A=[].

@@ -1,0 +1,239 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v295>Loader>comptop.kl1.2, 08-Nov-91 18:51:15, Edit by hori
+
+:- module compile.
+:- with_macro pimos.
+:- public go/0, go/1, usage/1.
+:- public translate/1.
+:- public compile/4.                    % For A'UM
+
+%%%%%%%%%% USAGE %%%%%%%%%%%%
+
+usage(Usage) :- true |
+    Usage = [{string#"Usage : compile([FileNameString, ...])~n",[]},
+             {string#"        compile(FileNameString)~n",[]},
+             {string#"        translate(FileNameString)~n",[]},
+             {string#"        compile      % Interactive Compile",[]}].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   GO/0 (Interactive Compile)   %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+go :- true |
+    message(MESG0),
+    kl1_library_variable_pool:compile(VP0,MESG0,MESG1),
+    shoen:raise(pimos_tag#task,get_std(in),STDIN),
+    MESG1 = [flush(Ready)|MESG2],
+    input_filenames(Ready,VP0,[],STDIN,MESG2,[],_).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   GO/1 (Batch Compile)    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+translate(FileNames) :- list(FileNames) |
+    message(MESG0),
+    kl1_library_variable_pool:compile(VP0,MESG0,MESG1),
+    VP0 = [get_module_table(MT0)|VP1],
+    MT0 = [get_code(pimos::kl1_compiler_distributer,open_and_compile,6,normal(Code))],
+    apply(Code,{FileNames,VP1,[],MESG1,[],Status}).
+translate(FileName) :- string(FileName,_,16) |
+    translate([FileName]).
+otherwise.
+translate(_) :- true | usage:go(compile).
+
+go(FileNames) :- list(FileNames) |
+    shoen:raise(pimos_tag#task,general_request,[timer(normal(TimerReq,_,_))]),
+    TimerReq = [create(normal(Timer,_,_))],
+    Timer = [get_count(normal(Start))|Timer1],
+    wait_and_go(Start,Timer1,FileNames).
+go(FileName) :- string(FileName,_,16) |
+    go([FileName]).
+otherwise.
+go(_) :- true | usage:go(compile).
+
+wait_and_go(Start,Timer,FileNames) :- integer(Start) |
+    message(MESG0),
+    kl1_library_variable_pool:compile(VP0,MESG0,MESG1),
+    start_compile(normal,FileNames,MESG1,VP0,Start,Timer).
+
+start_compile(normal,FileNames,MESG0,VP0,Start,Timer) :- true |
+    VP0 = [get_module_table(MT0)|VP1],
+    MT0 = [get_code(pimos::kl1_compiler_distributer,open_and_compile,6,normal(Code))],
+    apply(Code,{FileNames,VP1,[],MESG0,MESG1,Status}),
+    time_up(Status,Start,Timer,MESG1).
+otherwise.
+start_compile(_,_,MESG0,_,_,Timer) :- true |
+    MESG0 = [],
+    Timer = [].
+
+time_up(normal,Start,Timer,MESG) :- true |
+    Timer = [get_count(normal(End))],
+    CT := End - Start,
+    MESG = [message(string#"Compilation Time = ~t [MSEC]",[CT])].
+otherwise.
+time_up(_,Start,Timer,MESG) :- true |
+    Timer = [],
+    MESG = [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+%  Compiler Interface   %
+%%%%%%%%%%%%%%%%%%%%%%%%%
+
+compile(FileNames,STDOUT,STDMES,Status) :- list(FileNames) |
+    kl1_library_message:message(MESG0,STDOUT,STDMES),
+    kl1_library_variable_pool:compile(VP0,MESG0,MESG1),
+    VP0 = [get_module_table(MT0)|VP1],
+    MT0 = [get_code(pimos::kl1_compiler_distributer,open_and_compile,6,normal(Code))],
+    apply(Code,{FileNames,VP1,[],MESG1,[],Status}).
+
+%%%%%%%%%%%%
+%   ETC.   %
+%%%%%%%%%%%%
+
+message(MESG) :- true |
+    kl1_library_message:message(MESG0),
+    MESG0 = [message(string#"** KL1 Compiler **",[])|MESG].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+%   Input Files Name    %
+%%%%%%%%%%%%%%%%%%%%%%%%%
+
+input_filenames(end_of_compile,VP0,VP,IN0,MESG0,MESG,Ready) :- true |
+    VP0 = VP,
+    IN0 = [],
+    MESG0 = MESG,
+    Ready = ready.
+otherwise.
+input_filenames(Ready0,VP0,VP,IN0,MESG0,MESG,Ready) :- wait(Ready0) |
+    VP0 = [get_prompt(Prompt)|VP1],
+    IN0 = [prompt(Prompt),getl(Line)|IN1],
+    check_input(Line,VP1,VP2,IN1,IN2,MESG0,MESG1,Ready1),
+    input_filenames(Ready1,VP2,VP,IN2,MESG1,MESG,Ready).
+
+check_input(string#"",VP0,VP,STDIN0,STDIN,MESG0,MESG,Ready) :- true |
+    VP0 = VP,
+    STDIN0 = STDIN,
+%%    MESG0 = [info(string#"Input filename(s) to compile.  [? for help]",[]),flush(Ready)|MESG].
+    MESG0 = [flush(Ready)|MESG].
+check_input(Line,VP0,VP,STDIN0,STDIN,MESG0,MESG,Ready) :-
+    string_element(Line,0,#"#") |       % The line begin with "#" is assumed comment line
+    VP0 = VP,
+    STDIN0 = STDIN,
+    MESG0 = MESG,
+    Ready = ready.
+check_input(-1,VP0,VP,STDIN0,STDIN,MESG0,MESG,Ready) :- true |  % end_of_file
+    VP0 = VP,
+    STDIN0 = STDIN,
+    MESG0 = MESG,
+    Ready = end_of_compile.
+otherwise.
+check_input(string#"!!",VP0,VP,STDIN0,STDIN,MESG0,MESG,Ready) :-
+    VP0 = [get_compiled_filename(FileNames)|VP1],
+    STDIN0 = STDIN,
+    interactive_compile(FileNames,VP1,VP,MESG0,MESG1,Ready0),
+    MESG1 = [flush(Ready1)|MESG],
+    waits(Ready0,Ready1,Ready).
+check_input(Line,VP0,VP,STDIN0,STDIN,MESG0,MESG,Ready) :-
+    string(Line,Length,16), Length > 1,
+    string_element(Line,0,#"!") |
+    L1 := Length - 1,
+    builtin#substring(Line,1,L1,Line0,_),
+    compile_command_parser:parse(Line0,VP0,VP1,STDIN0,STDIN,[ComStr|Args]),
+    VP1 = [get_alias(ComStr,Command)|VP2],
+    command(Command,Args,VP2,VP,MESG0,MESG1,Ready0),
+    MESG1 = [flush(Ready1)|MESG],
+    waits(Ready0,Ready1,Ready).
+otherwise.
+check_input(Line,VP0,VP,STDIN0,STDIN,MESG0,MESG,Ready) :- string(Line,Length,_) |
+    compile_command_parser:parse(Line,VP0,VP1,STDIN0,STDIN,Command),
+    analyze_input(Command,VP1,VP,MESG0,MESG,Ready).
+check_input(Line,VP0,VP,STDIN0,STDIN,MESG0,MESG,Ready) :- integer(Line) |
+    VP0 = VP,
+    STDIN0 = STDIN,
+    MESG0 = [message(string#"Input Device Aborted",[])|MESG],
+    Ready = end_of_compile.
+
+analyze_input([Command|Tokens],VP0,VP,MESG0,MESG,Ready) :- true |
+    analyze_input(Command,Tokens,VP0,VP,MESG0,MESG,Ready).
+analyze_input([],VP0,VP,MESG0,MESG,Ready) :- true |
+    VP0 = VP,
+    MESG0 = [flush(Ready)|MESG].
+
+analyze_input(string#".",_,VP0,VP,MESG0,MESG,Ready) :- true |
+    MESG0 = [info(string#"Compiler Reset~n",[]),flush(Ready0)|MESG],
+    VP0 = [reset_loader_table(Ready1)|VP],
+    waits(Ready0,Ready1,Ready).
+analyze_input(string#"=",_,VP0,VP,MESG0,MESG,Ready) :- true |
+    VP0 = [get_compiled_filename(FileNames)|VP1],
+    interactive_compile(FileNames,VP1,VP,MESG0,MESG1,Ready0),
+    MESG1 = [flush(Ready1)|MESG],
+    waits(Ready0,Ready1,Ready).
+analyze_input(string#"?",Args,VP0,VP,MESG0,MESG,Ready) :- true |
+    command(string#"help",Args,VP0,VP,MESG0,MESG1,Ready0),
+    MESG1 = [flush(Ready1)|MESG],
+    waits(Ready0,Ready1,Ready).
+otherwise.
+analyze_input(Token,Rest,VP0,VP,MESG0,MESG,Ready) :- true |
+    coerce([Token|Rest],FileNames),
+    interactive_compile(FileNames,VP0,VP,MESG0,MESG1,Ready0),
+    MESG1 = [flush(Ready1)|MESG],
+    waits(Ready0,Ready1,Ready).
+
+command(string#"exit",_,VP0,VP,MESG0,MESG,Ready) :- true |
+    VP0 = VP,
+    MESG0 = MESG,
+    Ready = end_of_compile.
+command(string#"compile",Args,VP0,VP,MESG0,MESG,Ready) :- true |
+    coerce(Args,FileNames),
+    interactive_compile(FileNames,VP0,VP,MESG0,MESG,Ready).
+command(string#"take",[TakeFile0],VP0,VP,MESG0,MESG,Ready) :- true |
+    coerce(TakeFile0,TakeFile),
+    kl1_library_file_utility:open_files([TakeFile],[string#"com"],VP0,VP1,FSs,MESG0,MESG1,St),
+    take_0(St,FSs,VP1,VP,MESG1,MESG,Ready).
+otherwise.
+command(Command,Args,VP0,VP,MESG0,MESG,Ready) :- true |
+    kl1_compile_command:command(Command,Args,VP0,VP,MESG0,MESG,Ready).
+
+waits(end_of_compile,Wait1,Ready) :- wait(Wait1) | Ready = end_of_compile.
+waits(Wait0,end_of_compile,Ready) :- wait(Wait0) | Ready = end_of_compile.
+otherwise.
+waits(Wait0,Wait1,Ready) :- wait(Wait0), wait(Wait1) | Ready = ready.
+
+interactive_compile([],VP0,VP,MESG0,MESG,Done) :- true |
+    VP0 = VP,
+    MESG0 = MESG,
+    Done = done.
+interactive_compile(FileNames,VP0,VP,MESG0,MESG,Done) :- list(FileNames) |
+    VP0 = [get_module_table(MT0)|VP1],
+    MT0 = [get_code(pimos::kl1_compiler_distributer,open_and_compile,6,normal(Code))],
+    apply(Code,{FileNames,VP1,VP2,MESG0,MESG,Done}),
+    VP2 = [set_compiled_filename(FileNames,_)|VP].
+
+take_0(normal,FSs,VP0,VP,MESG0,MESG,Ready) :- list(FSs) |
+    take_1(FSs,VP0,VP,MESG0,MESG,Ready).
+otherwise.
+take_0(_,FSs,VP0,VP,MESG0,MESG,Ready) :- true |
+    close_all(FSs), 
+    VP0 = VP,
+    MESG0 = MESG,
+    Ready = ready.
+
+take_1([FS0|Rest],VP0,VP,MESG0,MESG,Ready) :- true |
+    buffer:input_filter(In0,FS0),
+    input_filenames(ready,VP0,VP1,In0,MESG0,MESG1,Ready0),
+    take_1(Rest,VP1,VP,MESG1,MESG,Ready1),
+    waits(Ready0,Ready1,Ready).
+take_1([],VP0,VP,MESG0,MESG,Ready) :- true |
+    VP0 = VP,
+    MESG0 = MESG,
+    Ready = ready.
+
+close_all([FS|Rest]) :- FS = [], close_all(Rest).
+close_all([]) :- true | true.
+
+coerce(In,Out) :- true | compile_command_parser:coerce(In,Out).

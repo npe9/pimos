@@ -1,0 +1,298 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_cmd_directory.
+:- public do_command/1.
+:- with_macro pimos.
+
+do_command(pwd) :- true | 
+    do_command(pwd(Pathname)),
+    listener_utility:out(OUT),
+    OUT=[putf(" ~s~n",[Pathname])].
+do_command(pwd(Pathname)) :- true |
+    listener_utility:genreq(GR),
+    GR=[getenv(task:directory,normal(Pathname))].
+
+% 94.4.8 for UNIX-FEP
+%do_command(listing) :- true | do_command(listing("*.*.*")).
+%do_command(listing(Wildcard)) :- string(Wildcard,_,_) |
+%    DIR=[listing(Wildcard,Status)],
+%    current_directory(listing,DIR),
+%    status(Status," ",
+%        [putf(" listing: ~s not found !!~n",[Wildcard])]).
+do_command(listing(WC,LS)) :- string(WC,_,_) | pathname:expandPathname(WC,LS).
+
+% 94.4.8 for UNIX-FEP
+do_command(delete(Wildcard)) :- string(Wildcard,_,_) |
+    DIR=[delete(Wildcard,Status)],
+    current_directory(delete,DIR),
+    status(Status,delete).
+
+do_command(undelete(Wildcard)) :- string(Wildcard,_,_) |
+    DIR=[deleted(Wildcard,Status),undelete(Wildcard,_)],
+    current_directory(undelete,DIR),
+    status(Status,undelete).
+
+do_command(deleted) :- true | do_command(deleted("*.*")).
+do_command(deleted(Wildcard)) :- string(Wildcard,_,_) |
+    DIR=[deleted(Wildcard,Status)],
+    current_directory(deleted,DIR),
+    status(Status,deleted).
+
+do_command(purge) :- true |
+    DIR=[purge("*.*",Status)],
+    current_directory(purge,DIR),
+    status(Status,purge).
+
+do_command(expunge) :- true |
+    DIR=[expunge(Status)],
+    current_directory(expunge,DIR),
+    status(Status,expunge).
+
+do_command(attributes(File)) :- true |
+    listener_utility:pathname(File,Pathname,_),
+    listener_utility:genreq([file(normal(FR,_,_))]),
+    FR=[open(Pathname,read(Result))],
+    listener_utility:out([do(Msg)]),
+    attributes(Result,Pathname,Msg).
+
+do_command(cd(OLD,NEW)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(task:directory,normal(OLD))],
+    do_command(cd(NEW)).
+
+do_command(cd     ) :- true | 
+    shoen:raise(pimos_tag#listener,resource,[environment(ENV)]),
+    ENV=[getenv(task:home,HD)],
+    cdToHome(HD).
+
+do_command(cd(Dir)) :- true |
+    listener_utility:pathname(Dir,Pathname,_),
+    listener_utility:genreq([file(normal(FR,_,_))]),
+    FR=[directory(Pathname,Status)],
+    listener_utility:out(Msg),
+    change_directory(Status,Pathname,Msg).
+
+do_command(dirs) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(directory_stack,STK)],
+    listener_utility:out([do(Msg)]),
+    dirs(STK,Msg).
+
+do_command(pushd) :- true |
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[get(directory_stack,STK),
+         set(directory_stack,NewSTK,_)|ENV1],
+    listener_utility:out([do(Msg)]),
+    pushd_0(STK,NewSTK,ENV1,Msg).
+
+do_command(pushd(N)) :- integer(N) |
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[get(directory_stack,STK)|ENV1],
+    listener_utility:out([do(Msg)]),
+    rotate(N,STK,ENV1,Msg).
+
+do_command(popd) :- true |
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[get(directory_stack,STK)|ENV1], 
+    listener_utility:out([do(Msg)]),
+    popd(STK,ENV1,Msg).
+
+do_command(def({(=),Atom,Path})) :- true| do_command(def(Atom,Path)).
+do_command(def(Atom,Path)) :- atom(Atom),string(Path,_,_) |
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[getenv(shell:logical_pathname,Status)|ENV1],
+    listener_utility:out(Msg),
+    def(Status,Atom,Path,ENV1,Msg).
+
+do_command(def) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(shell:logical_pathname,Status)],
+    listener_utility:out([do(Msg)]),
+    list_def(Status,Msg).
+
+do_command(con(Atom)) :- atom(Atom) |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[getenv(shell:logical_pathname,Status)],
+    con(Status,Atom).
+
+do_command(con(String)) :- string(String,_,_) | do_command(cd(String)).
+    
+otherwise.
+do_command(pushd(Dir)) :- true |
+    listener_utility:pathname(Dir,Pathname,_),
+    listener_utility:genreq([file(normal(FR,_,_))]),
+    FR=[directory(Pathname,Status)],
+    listener_utility:out([do(Msg)]),
+    pushd(Status,Pathname,Msg).
+
+otherwise.
+do_command(Goal) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(macro#module_name,"Illegal argument"),Goal).
+
+
+cdToHome(normal(H)) :- true| do_command(cd(H)).
+otherwise.
+cdToHome(_) :- true| 
+    listener_utility:out([putf(" The environment variable task:home not found!~n",[])]).
+
+change_directory(normal(Dir,_,_),_,Msg) :- true |
+    Dir=[pathname(normal(Pathname))],
+    Msg=[putf(" ~s~n",[Pathname])],
+    ENV=[setenv(task:directory,Pathname,_),
+         get(directory_stack,[_|STK]),
+         set(directory_stack,[Pathname|STK],_)],
+    listener_utility:resource([environment([do(ENV)])]).
+otherwise.
+change_directory(_,Pathname,Msg) :- true |
+    Msg=[putf(" ~s not found !!~n",[Pathname])].
+
+
+attributes(normal(F,_,_),_,Msg) :- 
+    F=[pathname(normal(Path)),
+       attributes(normal(Owner,Update,CDate,CTime,MDate,MTime,Link,FSize,RSize))],
+    Msg=[putf(" ~s~n",[Path]),
+         putf(" Owner        : ~t~n",        [Owner]),
+         putf(" Update user  : ~t~n",        [Update]),
+         putf(" Created      : ~t ~t~n",     [CDate,CTime]),
+         putf(" Modified     : ~t ~t~n",     [MDate,MTime]),
+         putf(" Link counter : ~t~n",        [Link]),
+         putf(" File size    : ~t byte(s)~n",[FSize]),
+         putf(" Record size  : ~t byte(s)~n",[RSize])].
+otherwise.
+attributes(_,         Path,Msg) :- 
+    Msg=[putf(" ~s not found !!~n",[Path])].
+
+con(normal(List),    Atom) :- list(List) |
+    search_pathname(List,Atom).
+con(non_existent,    Atom) :- true |
+    listener_utility:out(
+        [putf(" con: ~t not found !!~n",[Atom])]).
+% 92.7.2
+otherwise.
+con(_,_) :- true |
+    listener_utility:out(
+        [putf(" Sorry, shell:logical_pathname nonexistent !!~n",[])]).
+
+search_pathname([{Atom,Path}|_],Atom) :- do_command(cd(Path)).
+otherwise.
+search_pathname([_|L],Atom) :- search_pathname(L,Atom).
+otherwise.
+search_pathname(_,Atom) :- con(non_existent,Atom).
+
+
+def(normal(List),Atom,Path,ENV,Msg) :- list(List) |
+    ENV=[setenv(shell:logical_pathname,NewList,_)],
+    replace_def(List,Atom,Path,NewList),
+    ls_def([{Atom,Path}],Msg).
+otherwise.
+def(_,Atom,Path,ENV,Msg) :- 
+    ENV=[setenv(shell:logical_pathname,[{Atom,Path}],_)],
+    ls_def([{Atom,Path}],Msg).
+
+replace_def([{Atom,_}|L],Atom,Path,List) :- List=[{Atom,Path}|L].
+otherwise.
+replace_def([X|L],Atom,Path,List) :- 
+    List=[X|Y],
+    replace_def(L,Atom,Path,Y).
+otherwise.
+replace_def(_,Atom,Path,List) :- List=[{Atom,Path}].
+
+list_def(normal(List),Msg) :- list(List) | ls_def(List,Msg).
+otherwise.
+list_def(_,Msg) :- Msg=[].
+
+ls_def([{Atom,Path}|L],Msg) :- atom(Atom),string(Path,_,_) |
+    Msg=[putf(" def: ~t => ~t~n",[Atom,Path])|Msg1],   
+    ls_def(L,Msg1).
+otherwise.
+ls_def(_,Msg) :- Msg=[].
+
+
+pushd(normal(Dir,_,_),_,Msg) :- true |
+    Dir=[pathname(normal(Pathname))],
+    ENV=[get(directory_stack,STK),
+         set(directory_stack,[Pathname|STK],_),
+         setenv(task:directory,Pathname,_)],
+    listener_utility:resource([environment([do(ENV)])]),
+    dirs([Pathname|STK],Msg).
+otherwise.
+pushd(_,Pathname,Msg) :- true |
+    Msg=[putf(" ~s not found !!~n",[Pathname])].
+
+dirs([Path|L],Msg) :- string(Path,_,_) | Msg=[putf(" ~s~n",[Path])|Msg1], dirs(L,Msg1).
+dirs([],Msg) :- Msg=[].
+otherwise.
+dirs([Path|L],Msg) :- Msg=[putf(" ~t~n",[Path])|Msg1], dirs(L,Msg1).
+
+popd([_,Y|Z],ENV,Msg) :- 
+    ENV=[set(directory_stack,[Y|Z],_),
+         setenv(task:directory,Y,_)],
+    dirs([Y|Z],Msg).
+otherwise.
+popd(_,ENV,Msg) :- true | 
+    ENV=[],
+    Msg=[putf(" Directory-stack empty.~n",[])].
+
+
+rotate(0,_,ENV,Msg) :- ENV=[], Msg=[].
+rotate(N,STK,ENV,Msg) :- N>0 | 
+    rotate1(N,STK,STK1,NS),
+    rotate2(STK1,NS,ENV,Msg).
+rotate(N,_,ENV,Msg) :- N<0 |
+    ENV=[], 
+    Msg=[putf(" Unable to rotate directory.~n",[])].
+
+rotate1(0,[D|STK],STK1,NS) :- STK1=[D|STK], NS=[].
+rotate1(N,[D|STK],STK1,NS) :- N>0 | NS=[D|NS1], rotate1(~(N-1),STK,STK1,NS1).
+rotate1(_,[],STK,NS) :- STK=[], NS=[].
+
+rotate2([],_,ENV,Msg) :- 
+    ENV=[], 
+    Msg=[putf(" Unable to exchange directory.~n",[])].
+rotate2([D|STK],NS,ENV,Msg) :- 
+    listener_utility:prepend([D|STK],NS,NSTK),
+    ENV=[setenv(task:directory,D,_), 
+         set(directory_stack,NSTK,_)],
+    dirs(NSTK,Msg).
+
+pushd_0([X,Y|STK],NewSTK,ENV,Msg) :- 
+    NewSTK=[Y,X|STK],
+    dirs(NewSTK,Msg),
+    ENV=[setenv(task:directory,Y,_)].
+otherwise.
+pushd_0(STK,NewSTK,ENV,Msg) :- NewSTK=STK, ENV=[],
+    Msg=[putf(" Directory-stack empty.~n",[])].
+
+
+current_directory(Com,DIR) :- true |
+    listener_utility:genreq([file(FRS)]),
+    fileReq_status(FRS,Com,DIR).
+
+fileReq_status(normal(FR,_,_),_,DIR) :- true|
+    FR=[current_directory(normal(Pathname)),
+        directory(Pathname,normal(DIR,_,_))].
+otherwise.
+fileReq_status(Status,Com,_) :- true|
+    Info= "cannot make file_request_device",
+    shoen:raise(pimos_tag#error,'$PIMOS$'(Com,Info),Status).
+
+% 94.4.8
+status(normal(L),Name) :- true|
+    listener_utility:out([do(OUT)]),
+    print_files(L,Name,OUT).
+status(abnormal,Name) :- true|
+    listener_utility:out([do(OUT)]),
+    OUT=[putf(" ~t: Abnormal!!~n",[Name])].
+otherwise.
+status(_,_) :- true| true.
+
+print_files([F|Fs],Name,OUT) :- true|
+    OUT=[putf(" ~t: ~s~n",[Name,F])|OUT1],
+    print_files(Fs,Name,OUT1).
+print_files([],_,OUT) :- true| OUT=[].

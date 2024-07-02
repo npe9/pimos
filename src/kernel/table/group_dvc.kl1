@@ -1,0 +1,218 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module group_table_device.
+:- public driver/4.
+:- public group_table/2.
+:- public protection_filter/3.
+:- with_macro pimos.
+
+group_table(GID_TABLE,NAME_TABLE):-
+    true|
+    merge(GID_TABLE,Gid_table),
+    merge(NAME_TABLE,Name_table),
+    pool:keyed_sorted_set(ascending,Gid_table),
+    pool:keyed_set(Name_table,10).
+
+%% DRIVER
+driver(Status,Gid_table,Name_table,Users):-
+    vector_element(Users,2,UID)|
+    Status = normal(In0,_,[]),
+    protection_filter(UID,In0,In),
+    group_table(In,Gid_table,Name_table,1).
+
+%% GROUP_TABLE
+group_table([reset(Status)|In],GIDT,NT,MsgID):- true |
+    Status = normal(Abort,[],MsgID),
+    MsgID1 := MsgID + 1,
+    group_table(In,GIDT,NT,MsgID1).
+group_table([next_attention(Status)|In],GIDT,NT,MsgID):- true |
+    Status = normal([]),
+    group_table(In,GIDT,NT,MsgID).
+group_table([resend(MsgID0,Status)|In],GIDT,NT,MsgID):- true |
+    Status = normal,
+    group_table(In,GIDT,NT,MsgID).
+group_table([cancel(MsgID0,Status)|In],GIDT,NT,MsgID):- true |
+    Status = normal,
+    group_table(In,GIDT,NT,MsgID).
+
+group_table([set_up(Info,Status)|In],GIDT,NT,MsgID) :-
+    list(Info) |
+        GIDT = [get_all(_)|GIDT0],
+        NT   = [get_all(_)|NT0],
+        put_all_groups(Info,GIDT0,GIDT1,NT0,NT1,Status),
+        group_table(In,GIDT1,NT1,MsgID). 
+group_table([get_gid(GroupName,Status)|In],GIDT,NT,MsgID):-
+    string(GroupName,_,_)|
+        NT=[get_and_put_if_any(GroupName,GID,GID1,_)|NT1],
+        wait_group_table(GID,GID1,Status),
+        group_table(In,GIDT,NT1,MsgID).
+group_table([get_gids(UserName,Status)|In],GIDT,NT,MsgID):- true |
+    GIDT = [get_all(Info)|GIDT2],
+    gids_info(Info,UserName,GIDT2,GIDT1,Status),
+    group_table(In,GIDT1,NT,MsgID).
+group_table([get_all_info(Status)|In],GIDT,NT,MsgID):- true |
+    GIDT = [get_all(Out1)|GIDT1],
+    transform(Out1,Out,GIDT1,GIDT2),
+    Status = normal(Out),
+    group_table(In,GIDT2,NT,MsgID).
+group_table([get_users(GID,Status)|In],GIDT,NT,MsgID):- true |
+    GIDT = [get_and_put_if_any(GID,Info1,Info,_)|GIDT1],
+    users_info(Info1,Info,Status),
+    group_table(In,GIDT1,NT,MsgID).
+group_table([],GIDT,NT,MsgID):- true |
+    GIDT = [],
+    NT = [].
+    
+
+put_all_groups([Group|Rest],GIDT0,GIDT,NT0,NT,Status) :-
+    true|
+        put_group(Group,GIDT0,GIDT,NT0,NT,Rest,Status).
+otherwise.
+put_all_groups([],GIDT0,GIDT,NT0,NT,Status) :-
+    true |
+        GIDT0=GIDT,NT0=NT,Status = normal.
+
+put_group({GroupName,GID,UserList,CommentList},GIDT0,GIDT,NT0,NT,Rest,Status) :-
+    string(GroupName,_,_),
+    integer(GID),
+    list(CommentList),
+    list(UserList) |
+        GIDT0=[empty(GID,YorN)|GIDT1],
+        NT0=[empty(GroupName,YorN1)|NT1],
+        check_gid_and_groupname(YorN,YorN1,GID,GroupName,
+            {GroupName,UserList,CommentList}, % 0 = ref
+            GIDT1,GIDT,NT1,NT,Rest,Status).
+put_group({GroupName,GID,UserList,[]},GIDT0,GIDT,NT0,NT,Rest,Status) :-
+    string(GroupName,_,_),
+    integer(GID),
+    list(UserList) |
+        GIDT0=[empty(GID,YorN)|GIDT1],
+        NT0=[empty(GroupName,YorN1)|NT1],
+        check_gid_and_groupname(YorN,YorN1,GID,GroupName,
+            {GroupName,UserList,[]}, % 0 = ref
+            GIDT1,GIDT,NT1,NT,Rest,Status).
+otherwise.
+put_group(_,GIDT0,GIDT,NT0,NT,Rest,Status):-
+    true |
+        GIDT0 = [get_all(_)|GIDT],
+        NT0 = [get_all(_)|NT],
+        Status = abnormal.
+
+% if same gid/groupname exists, group device overwrites it.
+
+check_gid_and_groupname(yes,yes,Gid,GName,Info,GIDT0,GIDT,NT0,NT,Rest,Status) :-
+    true |
+        NT0=[put(GName,Gid,_)|NT1],
+        GIDT0=[put(Gid,Info,_)|GIDT1],
+        put_all_groups(Rest,GIDT1,GIDT,NT1,NT,Status).
+otherwise.
+check_gid_and_groupname(_,_,_,_,_,GIDT0,GIDT,NT0,NT,_,Status):-
+    true |
+    GIDT0 = [get_all(_)|GIDT],
+    NT0   = [get_all(_)|NT],
+    Status = abnormal.
+
+wait_group_table(GID,GID1,Status):-
+    vector(GID,0)|
+        GID1 = 0,
+        Status = abnormal.
+otherwise.
+wait_group_table({GID},GID1,Status):-
+    true|
+    GID = GID1,
+    Status = normal(GID).
+
+transform([],Out,GIDT1,GIDT2):-
+    true|
+    Out = [],
+    GIDT1 = GIDT2.
+otherwise.
+transform([{GID,{GN,UNS,COM}}|Rest],Out1,GIDT1,GIDT2):-
+    true|
+    copy:copy(COM,COM1,COM2),
+    copy:copy(UNS,UNS1,UNS2),
+    GIDT1 = [put(GID,{GN,UNS1,COM1},_)|GIDT11],
+    Out1 = [{GN,GID,UNS2,COM2}|Out11],
+    transform(Rest,Out11,GIDT11,GIDT2).
+
+users_info(Info1,Info,Status):-
+    vector(Info1,0)|
+    Info = 0,
+    Status = abnormal.
+otherwise.
+users_info({Info1},Info,Status):-
+    true|
+    set_vector_element(Info1,1,UList,UList1,Info),
+    copy:copy(UList,UList1,UList2),
+    Status = normal(UList2).
+
+gids_info(Info,UserName,GIDT1,GIDT,Status):-
+    true|
+    Status = normal(Result),
+    gids_info2(Info,UserName,GIDT1,GIDT,Result).
+
+gids_info2([],_,GIDT1,GIDT,Result):-
+    true|
+    GIDT1 = GIDT,
+    Result = [].
+gids_info2([{GID,GI}|Rest],UN,GIDT1,GIDT,Result):-
+    true|
+    set_vector_element(GI,1,UNS1,UNS,GI2),
+    GIDT1 = [put(GID,GI2,_)|GIDT2],
+    check_gids(UNS1,UNS,UN,GID,Result,Result2),
+    gids_info2(Rest,UN,GIDT2,GIDT,Result2).
+
+check_gids([],UNS,UN,_,R,R2):-
+    true|
+    UNS = [],
+    R = R2.
+check_gids([UN|UNS1],UNS,UN,GID,R1,R):-
+    true|
+    UNS = [UN|UNS1],
+    R1 = [GID|R].
+otherwise.
+check_gids([UN1|UNS1],UNS,UN,GID,R1,R):-
+    true|
+    UNS = [UN1|UNS0],
+    check_gids(UNS1,UNS0,UN,GID,R1,R).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%
+
+protection_filter(Uid,[set_up(Info,Status)|GroupIn],GroupOut) :-
+    Uid \= 0 |       % 
+        Status=abnormal,
+        protection_filter(Uid,GroupIn,GroupOut).
+protection_filter(0,[set_up(Info,Status)|GroupIn],GroupOut) :-
+    true |
+        GroupOut=[set_up(Info,Status)|GroupOut1],
+        protection_filter(0,GroupIn,GroupOut1).
+protection_filter(Uid,[get_gid(GroupName,Status)|GroupIn],GroupOut) :-
+    true |
+        GroupOut=[get_gid(GroupName,Status)|GroupOut1],
+        protection_filter(Uid,GroupIn,GroupOut1).
+protection_filter(Uid,[get_gids(UserName,Status)|GroupIn],GroupOut) :-
+    true |
+        GroupOut=[get_gids(UserName,Status)|GroupOut1],
+        protection_filter(Uid,GroupIn,GroupOut1).
+protection_filter(Uid,[get_users(UserName,Status)|GroupIn],GroupOut) :-
+    true |
+        GroupOut=[get_users(UserName,Status)|GroupOut1],
+        protection_filter(Uid,GroupIn,GroupOut1).
+protection_filter(Uid,[get_all_info(Status)|GroupIn],GroupOut) :-
+    Uid \= 0 |
+        Status=abnormal,
+        protection_filter(Uid,GroupIn,GroupOut).
+protection_filter(0,[get_all_info(Status)|GroupIn],GroupOut) :-
+    true |
+        GroupOut=[get_all_info(Status)|GroupOut1],
+        protection_filter(0,GroupIn,GroupOut1).
+
+protection_filter(_,[],Out):-
+    true|
+        Out = [].

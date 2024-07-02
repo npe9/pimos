@@ -1,0 +1,915 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Originaly coded by F.ITO
+% Modified R. KIYOHARA  1991/10/21
+
+:- module double_num.
+:- public add/6,subtract/6,multiply/6,xtod/3.
+:- with_macro pimos.
+:- include("pimos.h").
+
+:-switch(double_width_integer).
+:-case(yes).
+
+add(0,B,0,D,E,F):-
+        true|
+        add_extended(B, D, E, F).
+
+add(-1,B,-1,D,E,F):-
+        true|
+       E := -1 ,
+       add_extended(B, D, _, F).
+
+add(0, B, -1, D, E, F) :-
+       true|
+       add_extended(B, D,  E1, F), 
+       E := -(1 xor E1).
+
+add(-1, B, 0, D, E, F) :-
+       true|
+       add_extended(D, B,  E1, F), 
+       E := -(1 xor E1).
+
+otherwise.
+
+add(A,B,C,D,E,F) :- true|
+    add_extended(B,D,Carry, F),
+    E := A + C + Carry.
+
+
+subtract(0, B, 0, D, E, F):-
+    true|
+    subtract_extended(B, D, E1, F),
+    E := -E1.
+
+subtract(-1, B, -1, D, E, F):-
+    true|
+    subtract_extended(B, D, E1, F),
+    E := -E1.
+
+subtract(0, B, -1, D, E, F):-
+    true|
+    subtract_extended(B, D, _, F),
+    E := 0.
+
+subtract(-1, B, 0, D, E, F):-
+    true|
+    subtract_extended(B, D, _, F),
+    E := -1.
+
+
+otherwise.
+
+subtract(A,B,C,D,E,F) :-
+    true|
+    subtract_extended(B,D,Borrow, F),
+    E := A - C - Borrow.
+
+
+multiply(0,B, 0, D, E, F):-
+   true|
+   multiply_extended(B, D, E, F).
+
+
+xtod(A,B,L) :-
+        integer(A),
+        B0 := B >> 16 |
+    B1 := B /\ 65535,
+    mod_10000(A,B0,B1,[],L).
+
+mod_10000(0,0,0,L,M) :- true |
+    L = M.
+
+mod_10000(0,0,C,L,M) :-
+        C =\= 0 |
+    C0 := C / 10000,
+    C1 := C mod 10000,
+    mod_10000(0,0,C0,[C1|L],M).
+
+mod_10000(0,B,C,L,M) :-
+        B =\= 0 |
+    B0 := B / 10000,
+    B1 := B mod 10000,
+    B2 := B1 << 16,
+    B3 := B2 \/ C,
+    C0 := B3 / 10000,
+    C1 := B3 mod 10000,
+    mod_10000(0,B0,C0,[C1|L],M).
+
+mod_10000(A,B,C,L,M) :-
+        A =\= 0 |
+    A0 := A / 10000,
+    A1 := A mod 10000,
+    A2 := A1 << 16,
+    A3 := A2 \/ B,
+    B0 := A3 / 10000,
+    B1 := A3 mod 10000,
+    B2 := B1 << 16,
+    B3 := B2 \/ C,
+    C0 := B3 / 10000,
+    C1 := B3 mod 10000,
+    mod_10000(A0,B0,C0,[C1|L],M).
+
+:-default.
+
+add(A,B,C,D,E,F) :-
+        A = 0,
+        B >= 0,
+        B =< 16#"3fffffff",
+        C = 0,
+        D >= 0,
+        D =< 16#"3fffffff" |
+    E := 0,
+    F := B + D.
+
+add(A,B,C,D,E,F) :-
+        A = -1,
+        B < 0,
+        B >= 16#"c0000000",
+        C = -1,
+        D < 0,
+        D >= 16#"c0000000" |
+    E := -1,
+    F := B + D.
+
+add(A,B,C,D,E,F) :-
+        A = 0,
+        B >= 0,
+        C = -1,
+        D < 0,
+        F0 := B + D,
+        F0 >= 0 |
+    E := 0,
+    F := F0.
+
+add(A,B,C,D,E,F) :-
+        A = 0,
+        B >= 0,
+        C = -1,
+        D < 0,
+        F0 := B + D,
+        F0 < 0 |
+    E := -1,
+    F := F0.
+
+add(A,B,C,D,E,F) :-
+        A = -1,
+        B < 0,
+        C = 0,
+        D >= 0,
+        F0 := B + D,
+        F0 >= 0 |
+    E := 0,
+    F := F0.
+
+add(A,B,C,D,E,F) :-
+        A = -1,
+        B < 0,
+        C = 0,
+        D >= 0,
+        F0 := B + D,
+        F0 < 0 |
+    E := -1,
+    F := F0.
+
+otherwise.
+
+add(A,B,C,D,E,F) :-
+        integer(A),
+        integer(B),
+        integer(C),
+        integer(D) |
+    add_lower(B,D,F,Carry),
+    add_upper(A,B,C,D,Carry,E).
+
+add_lower(B,D,F,Carry) :-
+        B >= 0,
+        B =< 16#"3fffffff",
+        D >= 0,
+        D =< 16#"3fffffff" |
+    F := B + D,
+    Carry := 0.
+
+add_lower(B,D,F,Carry) :-
+        B < 0,
+        B >= 16#"c0000000",
+        D < 0,
+        D >= 16#"c0000000" |
+    F := B + D,
+    Carry := 1.
+
+add_lower(B,D,F,Carry) :-
+        B >= 0,
+        D < 0,
+        F0 := B + D,
+        F0 >= 0 |
+    F := F0,
+    Carry := 1.
+
+add_lower(B,D,F,Carry) :-
+        B >= 0,
+        D < 0,
+        F0 := B + D,
+        F0 < 0 |
+    F := F0,
+    Carry := 0.
+
+add_lower(B,D,F,Carry) :-
+        B < 0,
+        D >= 0,
+        F0 := B + D,
+        F0 >= 0 |
+    F := F0,
+    Carry := 1.
+
+add_lower(B,D,F,Carry) :-
+        B < 0,
+        D >= 0,
+        F0 := B + D,
+        F0 < 0 |
+    F := F0,
+    Carry := 0.
+
+otherwise.
+
+add_lower(B,D,F,Carry) :- true |
+    B1 := B >> 30,
+    B2 := B /\ 16#"3fffffff",
+    D1 := D >> 30,
+    D2 := D /\ 16#"3fffffff",
+    F3 := B2 + D2,
+    G1 := B1 + D1,
+    G2 := F3 >> 30,
+    F2 := F3 /\ 16#"3fffffff",
+    F1 := G1 + G2,
+    F0 := F1 << 30,
+    F := F0 \/ F2,
+    Carry := F1 >> 2.
+
+add_upper(A,_,C,_,Carry,E) :-
+        A >= 0,
+        A =< 16#"3fffffff",
+        C >= 0,
+        C =< 16#"3fffffff" |
+    E3 := A + C,
+    E := E3 + Carry.
+
+add_upper(A,_,C,_,Carry,E) :-
+        A < 0,
+        A >= 16#"c0000000",
+        C < 0,
+        C >= 16#"c0000000" |
+    E3 := A + C,
+    E := E3 + Carry.
+
+add_upper(A,_,C,_,Carry,E) :-
+        A >= 0,
+        C < 0 |
+    E3 := A + C,
+    E := E3 + Carry.
+
+add_upper(A,_,C,_,Carry,E) :-
+        A < 0,
+        C >= 0 |
+    E3 := A + C,
+    E := E3 + Carry.
+
+otherwise.
+
+add_upper(A,_,C,_,Carry,E) :-
+        A >= 0,
+        C >= 0,
+        A1 := A >> 30,
+        A2 := A /\ 16#"3fffffff",
+        C1 := C >> 30,
+        C2 := C /\ 16#"3fffffff",
+        E3 := A2 + C2,
+        E4 := E3 + Carry,
+        G1 := A1 + C1,
+        G2 := E4 >> 30,
+        E1 := G1 + G2,
+        E1 =< 16#"00000001" |
+    E2 := E4 /\ 16#"3fffffff",
+    E0 := E1 << 30,
+    E := E0 \/ E2.
+
+add_upper(A,B,C,D,Carry,E) :-
+        A >= 0,
+        C >= 0,
+        A1 := A >> 30,
+        A2 := A /\ 16#"3fffffff",
+        C1 := C >> 30,
+        C2 := C /\ 16#"3fffffff",
+        E3 := A2 + C2,
+        E4 := E3 + Carry,
+        G1 := A1 + C1,
+        G2 := E4 >> 30,
+        E1 := G1 + G2,
+        E1 >= 16#"00000002" |
+%    shoen:raise(pimos_tag#fatal_error,
+    shoen:raise(pimos_tag#error,
+                fatal(string#"double_num:add positive_overflow ~4t~n",[A,B,C,D]),
+                _).
+
+add_upper(A,_,C,_,Carry,E) :-
+        A < 0,
+        C < 0,
+        A1 := A >> 30,
+        A2 := A /\ 16#"3fffffff",
+        C1 := C >> 30,
+        C2 := C /\ 16#"3fffffff",
+        E3 := A2 + C2,
+        E4 := E3 + Carry,
+        G1 := A1 + C1,
+        G2 := E4 >> 30,
+        E1 := G1 + G2,
+        E1 >= 16#"00000006" |
+    E2 := E4 /\ 16#"3fffffff",
+    E0 := E1 << 30,
+    E := E0 \/ E2.
+
+add_upper(A,B,C,D,Carry,E) :-
+        A < 0,
+        C < 0,
+        A1 := A >> 30,
+        A2 := A /\ 16#"3fffffff",
+        C1 := C >> 30,
+        C2 := C /\ 16#"3fffffff",
+        E3 := A2 + C2,
+        E4 := E3 + Carry,
+        G1 := A1 + C1,
+        G2 := E4 >> 30,
+        E1 := G1 + G2,
+        E1 =< 16#"00000005" |
+%    shoen:raise(pimos_tag#fatal_error,
+    shoen:raise(pimos_tag#error,
+                fatal(string#"double_num:add negative_overflow ~4t~n",[A,B,C,D]),
+                _).
+
+subtract(A,B,C,D,E,F) :-
+        A = 0,
+        B >= 0,
+        B =< 16#"3fffffff",
+        C = -1,
+        D < 0,
+        D >= 16#"c0000000" |
+    E := 0,
+    F := B - D.
+
+subtract(A,B,C,D,E,F) :-
+        A = -1,
+        B < 0,
+        B >= 16#"c0000000",
+        C = 0,
+        D >= 0,
+        D =< 16#"3fffffff" |
+    E := -1,
+    F := B - D.
+
+subtract(A,B,C,D,E,F) :-
+        A = 0,
+        B >= 0,
+        C = 0,
+        D >= 0,
+        F0 := B - D,
+        F0 >= 0 |
+    E := 0,
+    F := F0.
+
+subtract(A,B,C,D,E,F) :-
+        A = 0,
+        B >= 0,
+        C = 0,
+        D >= 0,
+        F0 := B - D,
+        F0 < 0 |
+    E := -1,
+    F := F0.
+
+subtract(A,B,C,D,E,F) :-
+        A = -1,
+        B < 0,
+        C = -1,
+        D < 0,
+        F0 := B - D,
+        F0 >= 0 |
+    E := 0,
+    F := F0.
+
+subtract(A,B,C,D,E,F) :-
+        A = -1,
+        B < 0,
+        C = -1,
+        D < 0,
+        F0 := B - D,
+        F0 < 0 |
+    E := -1,
+    F := F0.
+
+otherwise.
+
+subtract(A,B,C,D,E,F) :-
+        integer(A),
+        integer(B),
+        integer(C),
+        integer(D) |
+    subtract_lower(B,D,F,Carry),
+    subtract_upper(A,B,C,D,Carry,E).
+
+subtract_lower(B,D,F,Carry) :-
+        B >= 0,
+        B =< 16#"3fffffff",
+        D < 0,
+        D >= 16#"c0000000" |
+    F := B - D,
+    Carry := 1.
+
+subtract_lower(B,D,F,Carry) :-
+        B < 0,
+        B >= 16#"c0000000",
+        D >= 0,
+        D =< 16#"3fffffff" |
+    F := B - D,
+    Carry := 0.
+
+subtract_lower(B,D,F,Carry) :-
+        B >= 0,
+        D >= 0,
+        F0 := B - D,
+        F0 >= 0 |
+    F := F0,
+    Carry := 0.
+
+subtract_lower(B,D,F,Carry) :-
+        B >= 0,
+        D >= 0,
+        F0 := B - D,
+        F0 < 0 |
+    F := F0,
+    Carry := 1.
+
+subtract_lower(B,D,F,Carry) :-
+        B < 0,
+        D < 0,
+        F0 := B - D,
+        F0 >= 0 |
+    F := F0,
+    Carry := 0.
+
+subtract_lower(B,D,F,Carry) :-
+        B < 0,
+        D < 0,
+        F0 := B - D,
+        F0 < 0 |
+    F := F0,
+    Carry := 1.
+
+otherwise.
+
+subtract_lower(B,D,F,Carry) :- true |
+    B1 := B >> 30,
+    B2 := B /\ 16#"3fffffff",
+    D1 := D >> 30,
+    D2 := D /\ 16#"3fffffff",
+    F3 := B2 - D2,
+    G1 := B1 - D1,
+    G2 := F3 >> 31,
+    F2 := F3 /\ 16#"3fffffff",
+    F1 := G1 - G2,
+    F0 := F1 << 30,
+    F := F0 \/ F2,
+    Carry := F1 >> 31.
+
+subtract_upper(A,_,C,_,Carry,E) :-
+        A >= 0,
+        A =< 16#"3fffffff",
+        C < 0,
+        C >= 16#"c0000000" |
+    E3 := A - C,
+    E := E3 - Carry.
+
+subtract_upper(A,_,C,_,Carry,E) :-
+        A < 0,
+        A >= 16#"c0000000",
+        C >= 0,
+        C =< 16#"3fffffff" |
+    E3 := A - C,
+    E := E3 - Carry.
+
+subtract_upper(A,_,C,_,Carry,E) :-
+        A >= 0,
+        C >= 0 |
+    E3 := A - C,
+    E := E3 - Carry.
+
+subtract_upper(A,_,C,_,Carry,E) :-
+        A < 0,
+        C < 0 |
+    E3 := A - C,
+    E := E3 - Carry.
+
+otherwise.
+
+subtract_upper(A,_,C,_,Carry,E) :-
+        A >= 0,
+        C < 0,
+        A1 := A >> 30,
+        A2 := A /\ 16#"3fffffff",
+        C1 := C >> 30,
+        C2 := C /\ 16#"3fffffff",
+        E3 := A2 - C2,
+        E4 := E3 - Carry,
+        G1 := A1 - C1,
+        G2 := E3 >> 31,
+        E1 := G1 - G2,
+        E1 =< 16#"fffffffd" |
+    E2 := E4 /\ 16#"3fffffff",
+    E0 := E1 << 30,
+    E := E0 \/ E2.
+
+subtract_upper(A,B,C,D,Carry,E) :-
+        A >= 0,
+        C < 0,
+        A1 := A >> 30,
+        A2 := A /\ 16#"3fffffff",
+        C1 := C >> 30,
+        C2 := C /\ 16#"3fffffff",
+        E3 := A2 - C2,
+        E4 := E3 - Carry,
+        G1 := A1 - C1,
+        G2 := E4 >> 31,
+        E1 := G1 - G2,
+        E1 >= 16#"fffffffe" |
+%    shoen:raise(pimos_tag#fatal_error,
+    shoen:raise(pimos_tag#error,
+                fatal(string#"double_num:subtract positive_overflow ~4t~n",
+                      [A,B,C,D]),
+                _).
+
+subtract_upper(A,_,C,_,Carry,E) :-
+        A < 0,
+        C >= 0,
+        A1 := A >> 30,
+        A2 := A /\ 16#"3fffffff",
+        C1 := C >> 30,
+        C2 := C /\ 16#"3fffffff",
+        E3 := A2 - C2,
+        E4 := E3 - Carry,
+        G1 := A1 - C1,
+        G2 := E4 >> 31,
+        E1 := G1 - G2,
+        E1 >= 16#"00000002" |
+    E2 := E4 /\ 16#"3fffffff",
+    E0 := E1 << 30,
+    E := E0 \/ E2.
+
+subtract_upper(A,B,C,D,Carry,E) :-
+        A < 0,
+        C >= 0,
+        A1 := A >> 30,
+        A2 := A /\ 16#"3fffffff",
+        C1 := C >> 30,
+        C2 := C /\ 16#"3fffffff",
+        E3 := A2 - C2,
+        E4 := E3 - Carry,
+        G1 := A1 - C1,
+        G2 := E4 >> 31,
+        E1 := G1 - G2,
+        E1 =< 16#"00000001" |
+%    shoen:raise(pimos_tag#fatal_error,
+    shoen:raise(pimos_tag#error,
+                fatal(string#"double_num:subtract negative_overflow ~4t~n",
+                      [A,B,C,D]),
+                _).
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B1 := B >> 15,
+        B1 = 0,
+        C = 0,
+        D1 := D >> 15,
+        D1 = 0 |
+    E := 0,
+    F := B * D.
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B1 := B >> 15,
+        B1 = 0,
+        C = 0,
+        D1 := D >> 15,
+        D1 =\= 0,
+        D0 := D1 >> 15,
+        D0 = 0 |
+    D2 := D /\ 32767,
+    G := B * D2,
+    G1 := G >> 15,
+    H := B * D1,
+    I := G1 + H,
+    E := I >> 17,
+    F1 := I << 15,
+    F2 := G /\ 32767,
+    F := F1 \/ F2.
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B1 := B >> 15,
+        B1 = 0,
+        C = 0,
+        D0 := D >> 30,
+        D0 =\= 0 |
+    D3 := D >> 15,
+    D1 := D3 /\ 32767,
+    D2 := D /\ 32767,
+    G := B * D2,
+    G1 := G >> 15,
+    H := B * D1,
+    I := G1 + H,
+    I1 := I >> 15,
+    I2 := I /\ 32767,
+    J := B * D0,
+    K := I1 + J,
+    E := K >> 2,
+    F0 := K << 30,
+    F1 := I2 << 15,
+    F2 := G /\ 32767,
+    F3 := F0 \/ F1,
+    F := F2 \/ F3.
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B1 := B >> 15,
+        B1 =\= 0,
+        B0 := B1 >> 15,
+        B0 = 0,
+        C = 0,
+        D1 := D >> 15,
+        D1 = 0 |
+    B2 := B /\ 32767,
+    G := B2 * D,
+    G1 := G >> 15,
+    H := B1 * D,
+    I := G1 + H,
+    E := I >> 17,
+    F1 := I << 15,
+    F2 := G /\ 32767,
+    F := F1 \/ F2.
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B1 := B >> 15,
+        B1 =\= 0,
+        B0 := B1 >> 15,
+        B0 = 0,
+        C = 0,
+        D1 := D >> 15,
+        D1 =\= 0,
+        D0 := D1 >> 15,
+        D0 = 0 |
+    B2 := B /\ 32767,
+    D2 := D /\ 32767,
+    G := B2 * D2,
+    G1 := G >> 15,
+    H := B1 * D2,
+    I := G1 + H,
+    J := B2 * D1,
+    K := I + J,
+    K1 := K >> 15,
+    K2 := K /\ 32767,
+    L := B1 * D1,
+    M := K1 + L,
+    E := M >> 2,
+    F0 := M << 30,
+    F1 := K2 << 15,
+    F2 := G /\ 32767,
+    F3 := F0 \/ F1,
+    F := F2  \/ F3.
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B1 := B >> 15,
+        B1 =\= 0,
+        B0 := B1 >> 15,
+        B0 = 0,
+        C = 0,
+        D0 := D >> 30,
+        D0 =\= 0 |
+    B2 := B /\ 32767,
+    D3 := D >> 15,
+    D1 := D3 /\ 32767,
+    D2 := D /\ 32767,
+    G := B2 * D2,
+    G1 := G >> 15,
+    H := B1 * D2,
+    I := G1 + H,
+    J := B2 * D1,
+    K := I + J,
+    K1 := K >> 15,
+    K2 := K /\ 32767,
+    L := B1 * D1,
+    M := K1 + L,
+    N := B2 * D0,
+    O := M + N,
+    O1 := O >> 2,
+    P := B1 * D0,
+    P1 := P << 13,
+    E := P1 + O1,
+    F0 := O << 30,
+    F1 := K2 << 15,
+    F2 := G /\ 32767,
+    F3 := F0 \/ F1,
+    F := F2 \/ F3.
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B0 := B >> 30,
+        B0 =\= 0,
+        C = 0,
+        D1 := D >> 15,
+        D1 = 0 |
+    B3 := B >> 15,
+    B1 := B3 /\ 32767,
+    B2 := B /\ 32767,
+    G := B2 * D,
+    G1 := G >> 15,
+    H := B1 * D,
+    I := G1 + H,
+    I1 := I >> 15,
+    I2 := I /\ 32767,
+    J := B0 * D,
+    K := I1 + J,
+    E := K >> 2,
+    F0 := K << 30,
+    F1 := I2 << 15,
+    F2 := G /\ 32767,
+    F3 := F0 \/ F1,
+    F := F2 \/ F3.
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B0 := B >> 30,
+        B0 =\= 0,
+        C = 0,
+        D1 := D >> 15,
+        D1 =\= 0,
+        D0 := D1 >> 15,
+        D0 = 0 |
+    B3 := B >> 15,
+    B1 := B3 /\ 32767,
+    B2 := B /\ 32767,
+    D2 := D /\ 32767,
+    G := B2 * D2,
+    G1 := G >> 15,
+    H := B1 * D2,
+    I := G1 + H,
+    J := B2 * D1,
+    K := I + J,
+    K1 := K >> 15,
+    K2 := K /\ 32767,
+    L := B0 * D2,
+    M := K1 + L,
+    N := B1 * D1,
+    O := M + N,
+    O1 := O >> 2,
+    P := B0 * D1,
+    P1 := P << 13,
+    E := P1 + O1,
+    F0 := O << 30,
+    F1 := K2 << 15,
+    F2 := G /\ 32767,
+    F3 := F0 \/ F1,
+    F := F2 \/ F3.
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B0 := B >> 30,
+        B0 =\= 0,
+        C = 0,
+        D0 := D >> 30,
+        D0 =\= 0,
+        B3 := B >> 15,
+        B1 := B3 /\ 32767,
+        B2 := B /\ 32767,
+        D3 := D >> 15,
+        D1 := D3 /\ 32767,
+        D2 := D /\ 32767,
+        G := B2 * D2,
+        G1 := G >> 15,
+        H := B1 * D2,
+        I := G1 + H,
+        J := B2 * D1,
+        K := I + J,
+        K1 := K >> 15,
+        K2 := K /\ 32767,
+        L := B0 * D2,
+        M := K1 + L,
+        N := B1 * D1,
+        O := M + N,
+        P := B2 * D0,
+        Q := O + P,
+        Q1 := Q >> 2,
+        R := B0 * D1,
+        R1 := R << 13,
+        S := Q1 + R1,
+        T := B1 * D0,
+        T1 := T << 13,
+        U := S + T1,
+        V := B0 * D0,
+        V1 := V << 28,
+        E0 := U + V1,
+        E0 >= 0 |
+    E := E0,
+    F0 := Q << 30,
+    F1 := K2 << 15,
+    F2 := G /\ 32767,
+    F3 := F0 \/ F1,
+    F := F2 \/ F3.
+
+multiply(A,B,C,D,E,F) :-
+        A = 0,
+        B0 := B >> 30,
+        B0 =\= 0,
+        C = 0,
+        D0 := D >> 30,
+        D0 =\= 0,
+        B3 := B >> 15,
+        B1 := B3 /\ 32767,
+        B2 := B /\ 32767,
+        D3 := D >> 15,
+        D1 := D3 /\ 32767,
+        D2 := D /\ 32767,
+        G := B2 * D2,
+        G1 := G >> 15,
+        H := B1 * D2,
+        I := G1 + H,
+        J := B2 * D1,
+        K := I + J,
+        K1 := K >> 15,
+        K2 := K /\ 32767,
+        L := B0 * D2,
+        M := K1 + L,
+        N := B1 * D1,
+        O := M + N,
+        P := B2 * D0,
+        Q := O + P,
+        Q1 := Q >> 2,
+        R := B0 * D1,
+        R1 := R << 13,
+        S := Q1 + R1,
+        T := B1 * D0,
+        T1 := T << 13,
+        U := S + T1,
+        V := B0 * D0,
+        V1 := V << 28,
+        E0 := U + V1,
+        E0 < 0 |
+%    shoen:raise(pimos_tag#fatal_error,
+    shoen:raise(pimos_tag#error,
+                fatal(string#"double_num:multiply positive_overflow ~4t~n",
+                      [A,B,C,D]),
+                _).
+
+xtod(A,B,L) :-
+        integer(A),
+        B0 := B >> 16 |
+    B1 := B /\ 65535,
+    mod_10000(A,B0,B1,[],L).
+
+mod_10000(0,0,0,L,M) :- true |
+    L = M.
+
+mod_10000(0,0,C,L,M) :-
+        C =\= 0 |
+    C0 := C / 10000,
+    C1 := C mod 10000,
+    mod_10000(0,0,C0,[C1|L],M).
+
+mod_10000(0,B,C,L,M) :-
+        B =\= 0 |
+    B0 := B / 10000,
+    B1 := B mod 10000,
+    B2 := B1 << 16,
+    B3 := B2 \/ C,
+    C0 := B3 / 10000,
+    C1 := B3 mod 10000,
+    mod_10000(0,B0,C0,[C1|L],M).
+
+mod_10000(A,B,C,L,M) :-
+        A =\= 0 |
+    A0 := A / 10000,
+    A1 := A mod 10000,
+    A2 := A1 << 16,
+    A3 := A2 \/ B,
+    B0 := A3 / 10000,
+    B1 := A3 mod 10000,
+    B2 := B1 << 16,
+    B3 := B2 \/ C,
+    C0 := B3 / 10000,
+    C1 := B3 mod 10000,
+    mod_10000(A0,B0,C0,[C1|L],M).
+
+:-end_switch.

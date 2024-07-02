@@ -1,0 +1,483 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%
+%%  History Manipulator
+%%      1992.2.5  for heap
+%%
+
+class history_manipulator has
+attribute win,mem;
+%% create(+,+font,-)
+:create(C,F,Obj):-
+    :new(C,Obj),
+    :adjust_position(#screen_checker,history,APX,APY),
+    :create(#as_history_window,[size(482,300),
+            title(" History manipulator"),
+            %position(660,535),%%%%xxx
+            position(APX,APY),
+            permission(show),
+            border_flag(off),margin_flag(off)],Win),
+    :set_out_font(Win,F),
+    Obj!window:=Win,
+    :create(#list_index_buffer,Buf),
+    Obj!buffer:=Buf,
+    :create(#list_index,TagBuf),
+    Obj!tag_buffer:=TagBuf,
+    :create(#input_file_name_window,Win,[size(400,124),
+        border_flag(off),margin_flag(off)],FW),
+    C!mem:=Obj,
+    Obj!file_window:=FW,
+    :create(#time_graph,APX,APY,TagBuf,TG),
+    Obj!time_graph:=TG;
+:create(C,Obj):-
+%    :create(#font,">sys>csp>FONT.DIR>test_11.font",F),
+    :create(#font,"font:test_11.font",F),
+    :create(C,F,Obj);
+:go(Class):-
+    :create(#standard_io_window,[size(300,200),
+        position(500,0)],T),
+    (:activate(T);:kill(T),fail),
+    Class!win:=T,
+    L=[{1,"1bscde"},{2,"2qwerweqr"},{3,"3pouipoi"},
+       {4,"4ttrrr"},{5,"5uuuumm"},  {6,"6AAQQQ"},
+       {7,"4ttrrr"},{8,"5uuuumm"},  {9,"6AAQQQ"},
+       {10,"4ttrrr"},{11,"5uuuumm"},  {12,"6AAQQQ"},
+       {13,"4ttrrr"},{14,"5uuuumm"},  {15,"6AAQQQ"}],
+    :create(Class,W),
+    Class!mem:=W,
+    (:activate(W);:kill(W),fail),
+    :draw(W),
+    :add_items(W,L),
+    repeat,
+    :read(W!window,C),
+    :putt(T,C),:putl(T),
+    (C==remove,!,:remove(W,W!selectId);
+     C==previous_page,!,:previous_page(W);
+     C==next_page,!,:next_page(W);
+     C==previous_one,!,:previous_one(W);
+     C==next_one,!,:next_one(W);
+     C==renew,!,:clear_items(W);
+     C==load,!,:load(W,File),:putt(T,File),:putl(T);
+     C==save,!,:save(W,File),:putt(T,File),:putl(T);
+     C==scroll_top,!,:top_page(W);
+     C==scroll_bottom,!,:bottom_page(W);
+     C==plot,!,:plot(W);
+     integer(C),!,:get_hid(W,C,Hid),:set_item(W,Hid);
+     true),
+    C==exit,!,
+    :kill(T),
+    :kill(W);
+instance
+attribute   window,
+            file_window,
+            selectId:=nil,
+            selectPos,
+            buffer,
+            tag_buffer,       %% keep history-Tag
+            last_select:=nil, %% last return history ID
+            time_graph,
+            psize,  %% page size
+            ptop,   %% page top pointer
+            length, %% one line character number
+            bsize;  %% buffer size
+:activate(Obj):-
+    :activate(Obj!window);
+:deactivate(Obj):-
+    :deactivate(Obj!window);
+:kill(Obj):-
+    :kill(Obj!window),
+    %:current_buffer(Obj!file_window!child,EB),
+    %:get_name(EB,N),
+    %:resign(EB),
+    %:kill(#editor_text_buffer,N),
+    :kill(Obj!file_window),
+    Obj!window:=0,
+    Obj!buffer:=0;
+:draw(Obj):-
+    :draw(Obj!window),
+    :get_info(Obj!window,_,_,Wi,_,Max),
+    Obj!psize:=Max,
+    Obj!length:=Wi/11;
+:set_position(W,X,Y):-
+    :set_position(W!window,X,Y);
+:get_size(W,X,Y):-
+    :get_position(W!window,X,Y);
+:add_items(Obj,L):-
+    %:activate(Obj!window),
+    :clear_items(Obj),
+    (L==[],!,TP=0;TP=1),
+    Obj!ptop:=TP,
+    (L=[{_,_}|_],!,
+     set_string(Obj!buffer,Obj!length,L);
+     set_string(Obj!buffer,Obj,Obj!length,L)),
+    :count(Obj!buffer,BS),
+    Obj!bsize:=BS,
+    get_top_page(Obj!buffer,Obj!psize,L1),
+    :redraw_inside(Obj!window,L1),
+    true;
+    %:deactivate(Obj!window);
+:add_item(Obj,{Hid,String}):-!,
+    string_form(String,Hid,Obj!length,NewString),
+    :add_first(Obj!buffer,NewString,Hid),
+    (Obj!ptop==0,!,
+     Obj!ptop:=1,
+     Obj!bsize:=1,
+     :top(Obj!window,NewString);
+     Obj!ptop==1,!,
+     Obj!bsize:=Obj!bsize+1,
+     :down(Obj!window),
+     :top(Obj!window,NewString);
+     Obj!ptop>1,!);
+:add_item(Obj,{Hid,String,Tag,Time,Pe}):-!, %%% 7/24
+    string_form(String,Hid,Tag,Obj!length,NewString),
+    :add_first(Obj!buffer,NewString,Hid),
+    add_tag(Obj,Hid,Tag,Time,Pe),
+    (Obj!ptop==0,!,
+     Obj!ptop:=1,
+     Obj!bsize:=1,
+     :top(Obj!window,NewString);
+     Obj!ptop==1,!,
+     Obj!bsize:=Obj!bsize+1,
+     :down(Obj!window),
+     :top(Obj!window,NewString);
+     Obj!ptop>1,!);
+:remove(Obj,Hid):-
+    Hid=\=nil,!,
+    (:remove_at(Obj!tag_buffer,_,Hid),!;true), %%% 7/24
+    (:remove_num(Obj!buffer,Hid,Num),!,
+     (Obj!selectId=\=Hid,!;
+      Obj!selectId:=nil,
+      Obj!selectPos:=0),
+     (disp_check(Obj,Num,Num1),!,
+      up(Obj,Num,Num1);
+      true),
+     Obj!bsize:=Obj!bsize-1,
+     (Obj!ptop==1,Obj!bsize==0,!,Obj!ptop:=0;true),%;
+    (Obj!ptop=<Obj!bsize,!;%
+     P=Obj!ptop-Obj!psize, %
+     (P>0,!,Obj!ptop:=P;   %
+      Obj!ptop:=1),        %
+     :flash(Obj));         %
+     true);
+:set_item(Obj,Hid):-
+    (:search_num(Obj!buffer,Hid,_,Num),!,
+     (Obj!selectPos=\=0,!,
+      :reverse(Obj!window,Obj!selectPos);
+      true),
+     Obj!selectPos:=0,
+     (disp_check(Obj,Num,Num1),!,
+      Obj!selectPos:=Num1,
+      :reverse(Obj!window,Num1);
+      true),
+     Obj!selectId:=Hid,
+     Obj!last_select:=Hid; %%% 7/29
+     true);
+:clear_items(Obj):-
+    :clear(Obj!buffer),
+    :clear(Obj!tag_buffer),
+    :inside_clear(Obj!window),
+    Obj!bsize:=0,
+    Obj!ptop:=0,
+    Obj!selectId:=nil,
+    Obj!last_select:=nil, %%% 7/29
+    Obj!selectPos:=0;
+:get_hid(Obj,C,Hid):-
+    integer(C),
+    :get_partial_contents(Obj!buffer,Obj!ptop-1+C-1,1,[{_,Hid}]),!;
+
+:previous_page(W):-
+    (W!ptop==1,!;
+     W!ptop-W!psize<1,!,
+     W!ptop:=1,
+     :flash(W);
+     W!ptop:=W!ptop-W!psize,
+     :flash(W));
+:previous_one(W):-
+    (W!ptop==1,!;
+     W!ptop:=W!ptop-1,
+     :get_partial_contents(W!buffer,W!ptop-1,1,[{S,K}]),
+     :down(W!window),
+     :top(W!window,S),
+     update_pos(W,K,1,1));
+:next_page(W):-
+    (W!ptop+W!psize-1>=W!bsize,!;
+     W!ptop:=W!ptop+W!psize,
+     :flash(W));
+:next_one(W):-
+    B=W!bsize,
+    %Mon= #history_manipulator!win,
+    %:putt(Mon,(B,W!ptop,W!psize)),:putl(Mon),
+
+    (W!ptop==B,!;
+
+     B>=W!ptop+W!psize,!,
+     W!ptop:=W!ptop+1,
+     :get_partial_contents(W!buffer,W!ptop+W!psize-2,1,[{S,K}]),
+     %:putb(Mon,S,15),:putl(Mon),
+     :up(W!window),
+     :bottom(W!window,S),
+     update_pos(W,K,W!psize,-1);
+
+     B==W!ptop+W!psize-1,!,
+     W!ptop:=W!ptop+1,
+     (W!selectPos==nil,!;
+      up_down_pos(W,-1)),
+     :up(W!window),
+     :bottom(W!window);
+
+     (W!selectPos==nil,!;
+      up_down_pos(W,-1)),
+     W!ptop:=W!ptop+1,
+     :up(W!window));
+
+:top_page(W):-
+    (W!ptop=<1,!;
+     W!ptop:=1,
+     :flash(W));
+:bottom_page(W):-
+    Top0=W!bsize+1-W!psize,
+    (Top0<1,!,Top=1;Top=Top0),
+    W!ptop:=Top,
+    :flash(W);
+
+:flash(W):-!,
+    :get_partial_contents(W!buffer,W!ptop-1,W!psize,L1),
+    L1=\=[],!,%%% ?? 12/5
+    get_st(L1,L),
+    (mem(L1,W!selectId,1,Num),!;Num=nil),
+    W!selectPos:=Num,
+    :redraw_inside(W!window,L),
+    (Num==nil,!;
+     :reverse(W!window,Num));
+
+:load(W,Name):-!,
+    :get_position(W!window,X0,Y0),
+    cal_pos(W!window!width,W!window!height,X0,Y0,X,Y),
+    :set_position(W!file_window,X,Y),
+    :activate(W!file_window," LOAD"),
+    :get(W!file_window,Name),
+    (Name=="",!,:deactivate(W!file_window);
+     :put_load_mes(W!file_window)),
+    %%:deactivate(W!file_window);
+    true;
+:save(W,Name):-!,
+    :get_position(W!window,X0,Y0),
+    cal_pos(W!window!width,W!window!height,X0,Y0,X,Y),
+    :set_position(W!file_window,X,Y),
+    :activate(W!file_window," SAVE"),
+    :get(W!file_window,Name),
+    (Name=="",!,:deactivate(W!file_window);
+     :put_save_mes(W!file_window)),
+    %%:deactivate(W!file_window);
+    true;
+:loaded(W,Status):-!,
+    %:get_atom_string(#symbolizer,Status,St),
+    %:confirm(#messenger,St),
+    :put_file_mes(W!file_window,Status),
+    :deactivate(W!file_window);
+:saved(W,Status):-!,
+    :put_file_mes(W!file_window,Status),
+    :deactivate(W!file_window);
+
+:read(W,Com):-!,
+    %:get_activity(W!file_window,Active),    %%%
+    %(Active==0,!;                           %%%
+    %:put_file_mes(W!file_window,normal),  %%%
+    %:deactivate(W!file_window)),           %%%
+    repeat,
+    :read(W!window,C),
+    (C==remove,!,W!bsize>0,Hid=W!selectId,
+        :remove(W,Hid),Com=remove(Hid);
+     C==previous_page,!,W!bsize>0,:previous_page(W);
+     C==next_page,!,W!bsize>0,:next_page(W);
+     C==previous_one,!,W!bsize>0,:previous_one(W);
+     C==next_one,!,W!bsize>0,:next_one(W);
+     C==renew,!,Com=renew;
+     C==load,!,:load(W,File),File=\="",Com=load(File);
+     C==save,!,W!bsize>0,integer(W!selectId),
+        :save(W,File),File=\="",Com=save(W!selectId,File);
+     C==scroll_top,!,:top_page(W);
+     C==scroll_bottom,!,:bottom_page(W);
+     C==plot,!,:plot(W);
+     integer(C),!,W!bsize>0,:get_hid(W,C,Hid),:set_item(W,Hid);
+     C==exit,!,history(W,Com)),
+    bound(Com),
+    (Com=history(LastHid),!,
+     W!last_select:=LastHid;
+     true),!;
+
+:get_tag(Obj,{Hid,Tag,Time,Pe}):-
+    Hid=Obj!last_select,
+    (Hid==nil,!;
+     :get_at(Obj!tag_buffer,Hv,Hid),!,
+     vector_element(Hv,0,Tag),
+     vector_element(Hv,1,Time),
+     vector_element(Hv,2,Pe);
+     Tag=goal,Time=(?));
+
+:plot(Obj):-
+    :go(Obj!time_graph,Obj!selectId);
+
+local
+
+update_pos(Obj,K,UD,D):-
+    (Obj!selectPos==nil,!,
+     (Obj!selectId=\=K,!;
+      Obj!selectPos:=UD,
+      :reverse(Obj!window,UD));
+     up_down_pos(Obj,D));
+
+up_down_pos(Obj,D):-
+    X=Obj!selectPos+D,
+    (X<1,!,Y=nil;
+     X>Obj!psize,!,Y=nil;
+     Y=X),
+    Obj!selectPos:=Y;
+
+mem([{_,F}|L],F,N,N):-!;
+mem([_|L],F,C,N):-
+    mem(L,F,C+1,N);
+
+history(Obj,_):-
+    Obj!selectId==nil,Obj!bsize>0,!;
+history(Obj,history(nil)):-
+    Obj!bsize==0,!;
+history(Obj,history(Obj!selectId)):-!;
+
+get_top_page(Buf,PSize,L):-!,
+    :get_partial_contents(Buf,0,PSize,L1),
+    get_st(L1,L);
+
+get_st([],[]):-!;
+get_st([{S,_}|L],[S|L1]):-
+    get_st(L,L1);
+
+set_string(Buf,Len,[]):-!;
+set_string(Buf,Len,[{K,S}|L]):-!,
+    string_form(S,K,Len,NS),
+    :add_last(Buf,NS,K),
+    set_string(Buf,Len,L);
+
+set_string(Buf,Obj,Len,[]):-!;
+set_string(Buf,Obj,Len,[{K,S,Tag,Time,Pe}|L]):-!,
+    string_form(S,K,Tag,Len,NS),
+    :add_last(Buf,NS,K),
+    add_tag(Obj!tag_buffer,K,Tag,Time,Pe),
+    set_string(Buf,Obj,Len,L);
+
+string_form(String,Num,Len,St):-!,
+    string(String,Len0,_),
+    new_string(St,Len,16),
+    set_string_element(St,3,#":"),
+    set_num(St,Num),
+    (Len==Len0+4,!,
+     set_substring(St,4,Len0,String);
+     Len<Len0+4 ,!,
+     set_substring(St,4,Len-4,String);
+     Len>Len0+4 ,!,
+     set_substring(St,4,Len0,String),
+     sp(St,Len0+4,Len-Len0-4));
+string_form(String,Num,Tag,Len,St):-!,
+    string(String,Len0,_),
+    new_string(St,Len,16),
+    set_string_element(St,3,#":"),
+    set_num(St,Num),
+    set_tag(St,Tag),
+    (Len==Len0+8,!,
+     set_substring(St,8,Len0,String);
+     Len<Len0+8 ,!,
+     set_substring(St,8,Len-8,String);
+     Len>Len0+8 ,!,
+     set_substring(St,8,Len0,String),
+     sp(St,Len0+8,Len-Len0-8));
+
+sp(S,_,0):-!;
+sp(S,C,N):-
+    set_string_element(S,C,#" "),
+    sp(S,C+1,N-1);
+
+set_num(S,N):-
+    N<1000,!,
+    A=N mod 10,
+    B=(N/10) mod 10,
+    C=(N/100) mod 10,
+    (C==0,
+     B==0,!,
+     set_substring(S,0,2,"  "),
+     set_k(S,2,A);
+     C==0,!,
+     set_substring(S,0,1," "),
+     set_k(S,1,B),
+     set_k(S,2,A);
+     set_k(S,0,C),
+     set_k(S,1,B),
+     set_k(S,2,A));
+
+set_k(S,P,N):-
+    table(N,C),
+    set_string_element(S,P,C);
+
+table(X,C):-X==0,!,C= #"0";
+table(X,C):-X==1,!,C= #"1";
+table(X,C):-X==2,!,C= #"2";
+table(X,C):-X==3,!,C= #"3";
+table(X,C):-X==4,!,C= #"4";
+table(X,C):-X==5,!,C= #"5";
+table(X,C):-X==6,!,C= #"6";
+table(X,C):-X==7,!,C= #"7";
+table(X,C):-X==8,!,C= #"8";
+table(X,C):-X==9,!,C= #"9";
+
+disp_check(Obj,Num,Num1):-
+    S=Obj!ptop,
+    E=S+Obj!psize,
+    Num<E,
+    Num>=S,!,
+    Num1=Num-S+1;
+
+up(Obj,Num,Num1):-!,
+    %W= #history_manipulator!win,
+    %:putt(W,(Num,Num1)),
+    %:putl(W),
+    S=Obj!ptop,
+    P=Obj!psize,
+    E=S+P,
+    BS=Obj!bsize,
+    (E-1<BS,!,
+     :get_partial_contents(Obj!buffer,E-2,1,[{X,Key}]),
+     %:putt(W,Key),:putl(W),
+     :part(Obj!window,Num1),
+     :bottom(Obj!window,X),
+     (Obj!selectId=\=Key,!;
+      Obj!selectPos:=P,
+      :reverse(Obj!window,P));
+     E-1==BS,!,
+     :part(Obj!window,Num1),
+     :bottom(Obj!window);
+     E-1>BS,!,
+     :part(Obj!window,Num1));
+
+cal_pos(W,H,X0,Y0,X,Y):-
+    :get_size(#screen,SW,SH),
+    (X0+W+W/2>SW,!,X=SW-W;X=X0+W-W/2-1),
+    (Y0+H+124/2>SH,!,Y=SH-124;Y=Y0+H-124/2-1);
+
+
+set_tag(St,Tag):-
+    (Tag==goal,!,Code= #"p";
+     Tag==msg ,!,Code= #"m";
+     Tag==pe  ,!,Code= #"n";
+     Tag==event,!,Code= #"e";
+     Tag==heap,!,Code= #"h";
+     Tag==act ,!,Code= #"a"),
+    set_string_element(St,4,#"{"),
+    set_string_element(St,5,Code),
+    set_string_element(St,6,#"}"),
+    set_string_element(St,7,#" ");
+
+add_tag(Buf,Hid,Tag,Time,Pe):-
+    new_heap_vector(Hv,3),
+    set_subvector(Hv,0,3,{Tag,Time,Pe}),
+    :add_at(Buf,Hv,Hid);
+
+end.

@@ -1,0 +1,518 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_cmd_basic.
+:- with_macro pimos.
+:- public execute/3.
+
+execute(WS,WS1,help) :- true |
+        WS=[
+        putf(string#"~n~s~n",[string#" help basic   -- inspect,fork,help,commands,exit,..."]),
+        putf(string#"~s~n",  [string#" help insp    -- me,show,down,up,..."]),
+        putf(string#"~s~n",  [string#" help monitor -- monitor,monitored_terms,..."]),
+        putf(string#"~s~n",  [string#" help env     -- print_depth,print_length,..."]),
+        putf(string#"~s~n",  [string#" help varpool -- name,list,..."]),
+        putf(string#"~s~2n", [string#" help all     -- Print all help messages."])|WS1].
+
+execute(WS,WS1,help_shell) :- true |
+        F=string#"~s~n",
+        WS=[nl,
+        putf(F,[string#"*** INSPECTOR COMMANDS FROM SHELL ***"]),
+        putf(F,[string#"   All INSPECTIVE COMMANDS except show, push_root."]),
+        putf(F,[string#"   All ENVIRONMENT COMMANDS."]),
+        putf(F,[string#"   All VARIABLE POOL COMMANDS."]),nl,
+        putf(F,[string#" help basic   -- help,commands,exit."]),
+        putf(F,[string#" help insp    -- me,down,up,..."]),
+        putf(F,[string#" help env     -- print_depth,print_length,..."]),
+        putf(F,[string#" help varpool -- name,list,..."]),
+        putf(F,[string#" help all     -- Print all help messages available on shell."]),nl|WS1].
+
+execute(WS,WS1,help_monitor) :- true |
+        F=string#"~s~n",
+        WS=[nl,
+        putf(F,[string#"*** INSPECTOR COMMANDS FOR MONITORING PROCESSES ***"]),
+        putf(F,[string#"   All BASIC COMMANDS except inspect."]),
+        putf(F,[string#"   All INSPECTIVE COMMANDS except push_root."]),
+        putf(F,[string#"   All MONITORING COMMANDS."]),
+        putf(F,[string#"   All ENVIRONMENT COMMANDS."]),
+        putf(F,[string#"   All VARIABLE POOL COMMANDS."]),nl,
+        putf(F,[string#" help basic   -- fork,set_title,help,commands,<cr>,exit."]),
+        putf(F,[string#" help insp    -- me,down,up,..."]),
+        putf(F,[string#" help monitor -- monitor,monitored_terms,..."]),
+        putf(F,[string#" help env     -- print_depth,print_length,..."]),
+        putf(F,[string#" help varpool -- name,list,..."]),
+        putf(F,[string#" help all     -- Print all help messages for monitoring."]),nl|WS1].
+
+execute(WS,WS1,help(Type)) :- true | help(WS,WS1,Type).
+execute(WS,WS1,help_shell(Type)) :- true | help_shell(WS,WS1,Type).
+execute(WS,WS1,help_monitor(Type)) :- true | help_monitor(WS,WS1,Type).
+
+execute(WS,WS1,commands) :- true |
+        WS=[
+        putf(string#"~n~s~n",[string#" commands basic"]),
+        putf(string#"~s~n",  [string#" commands insp"]),
+        putf(string#"~s~n",  [string#" commands monitor"]),
+        putf(string#"~s~n",  [string#" commands env"]),
+        putf(string#"~s~n",  [string#" commands varpool"]),
+        putf(string#"~s~2n", [string#" commands all"])|WS1].
+
+execute(WS,WS1,commands_shell) :- true |
+        F=string#"~s~n",
+        WS=[nl,
+        putf(F,[string#"*** INSPECTOR COMMANDS FROM SHELL ***"]),
+        putf(F,[string#"   All INSPECTIVE COMMANDS"]),
+        putf(F,[string#"            except show, push_root."]),
+        putf(F,[string#"   All ENVIRONMENT COMMANDS."]),
+        putf(F,[string#"   All VARIABLE POOL COMMANDS."]),nl,
+        putf(F,[string#" commands basic"]),
+        putf(F,[string#" commands insp"]),
+        putf(F,[string#" commands env"]),
+        putf(F,[string#" commands varpool"]),
+        putf(F,[string#" commands all"]),nl|WS1].
+
+execute(WS,WS1,commands_monitor) :- true |
+        F=string#"~s~n",
+        WS=[nl,
+        putf(F,[string#"*** INSPECTOR COMMANDS FOR MONITORING PROCESSES ***"]),
+        putf(F,[string#"   All BASIC COMMANDS except inspect."]),
+        putf(F,[string#"   All INSPECTIVE COMMANDS except push_root."]),
+        putf(F,[string#"   All MONITORING COMMANDS."]),
+        putf(F,[string#"   All ENVIRONMENT COMMANDS."]),
+        putf(F,[string#"   All VARIABLE POOL COMMANDS."]),nl,
+        putf(F,[string#" commands basic"]),
+        putf(F,[string#" commands insp"]),
+        putf(F,[string#" commands monitor"]),
+        putf(F,[string#" commands env"]),
+        putf(F,[string#" commands varpool"]),
+        putf(F,[string#" commands all"]),nl|WS1].
+
+execute(WS,WS1,commands(Type)) :- true | com(WS,WS1,Type).
+execute(WS,WS1,commands_shell(Type)) :- true | com_shell(WS,WS1,Type).
+execute(WS,WS1,commands_monitor(Type)) :- true | com_monitor(WS,WS1,Type).
+
+execute(WS,WS1,version) :- true |
+        inspector_version:get_version(String),
+        WS=[putf(string#"~s~n",[String])|WS1].
+
+execute(WS,WS1,set_title(T)) :- true |
+        WS=[wrap(T,WT)|WS0],
+        set_title(WS0,WS1,WT).
+
+execute(WS,WS1,bigger) :- true |
+        WS=[bigger|WS1].
+execute(WS,WS1,a_little_bigger) :- true |
+        WS=[a_little_bigger|WS1].
+
+set_title(WS,WS1,string(Str)) :- true |
+        WS=[set_title(Str)|WS1].
+otherwise.
+set_title(WS,WS1,WT) :- true |
+        WS=[error(wrapped_illegal_param(WT))|WS1].
+
+
+help(WS,WS3,insp) :- true |
+        WS=[nl|WS1],
+        output_help(insp,WS1,WS2),
+        WS2=[nl|WS3].
+help(WS,WS3,monitor) :- true |
+        WS=[nl|WS1],
+        output_help(monitor,WS1,WS2),
+        WS2=[nl|WS3].
+help(WS,WS3,basic) :- true |
+        WS=[nl|WS1],
+        output_help(basic,WS1,WS2),
+        WS2=[nl|WS3].
+help(WS,WS3,env) :- true |
+        WS=[nl|WS1],
+        output_help(env,WS1,WS2),
+        WS2=[nl|WS3].
+help(WS,WS3,varpool) :- true |
+        WS=[nl|WS1],
+        output_help(varpool,WS1,WS2),
+        WS2=[nl|WS3].
+help(WS,WS7,all) :- true |
+        WS=[nl|WS1],
+        output_help(basic,WS1,WS2),
+        output_help(insp,WS2,WS3),
+        output_help(monitor,WS3,WS4),
+        output_help(env,WS4,WS5),
+        output_help(varpool,WS5,WS6),
+        WS6=[nl|WS7].
+alternatively.
+help(WS,WS1,Type) :- true |
+        WS=[error(unwrapped_illegal_param(Type))|WS1].
+
+help_shell(WS,WS3,insp) :- true |
+        WS=[nl|WS1],
+        output_help_shell(insp,WS1,WS2),
+        WS2=[nl|WS3].
+help_shell(WS,WS3,basic) :- true |
+        WS=[nl|WS1],
+        output_help_shell(basic,WS1,WS2),
+        WS2=[nl|WS3].
+help_shell(WS,WS3,env) :- true |
+        WS=[nl|WS1],
+        output_help(env,WS1,WS2),
+        WS2=[nl|WS3].
+help_shell(WS,WS3,varpool) :- true |
+        WS=[nl|WS1],
+        output_help_shell(varpool,WS1,WS2),
+        WS2=[nl|WS3].
+help_shell(WS,WS6,all) :- true |
+        WS=[nl|WS1],
+        output_help_shell(basic,WS1,WS2),
+        output_help_shell(insp,WS2,WS3),
+        output_help(env,WS3,WS4),
+        output_help_shell(varpool,WS4,WS5),
+        WS5=[nl|WS6].
+alternatively.
+help_shell(WS,WS1,Type) :- true |
+        WS=[error(unwrapped_illegal_param(Type))|WS1].
+
+help_monitor(WS,WS3,insp) :- true |
+        WS=[nl|WS1],
+        output_help_monitor(insp,WS1,WS2),
+        WS2=[nl|WS3].
+help_monitor(WS,WS3,monitor) :- true |
+        WS=[nl|WS1],
+        output_help(monitor,WS1,WS2),
+        WS2=[nl|WS3].
+help_monitor(WS,WS3,basic) :- true |
+        WS=[nl|WS1],
+        output_help_monitor(basic,WS1,WS2),
+        WS2=[nl|WS3].
+help_monitor(WS,WS3,env) :- true |
+        WS=[nl|WS1],
+        output_help(env,WS1,WS2),
+        WS2=[nl|WS3].
+help_monitor(WS,WS3,varpool) :- true |
+        WS=[nl|WS1],
+        output_help(varpool,WS1,WS2),
+        WS2=[nl|WS3].
+help_monitor(WS,WS7,all) :- true |
+        WS=[nl|WS1],
+        output_help_monitor(basic,WS1,WS2),
+        output_help_shell(insp,WS2,WS3),
+        output_help(monitor,WS3,WS4),
+        output_help(env,WS4,WS5),
+        output_help(varpool,WS5,WS6),
+        WS6=[nl|WS7].
+alternatively.
+help_monitor(WS,WS1,Type) :- true |
+        WS=[error(unwrapped_illegal_param(Type))|WS1].
+
+
+output_help(insp,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[INSPECTIVE COMMANDS]"]),
+        putf(F,[string#" me <M,N>                   -- Show N elements, after M-th element on."]),
+        putf(F,[string#" down[] <M>                 -- Down M-th element."]),
+        putf(F,[string#" up[u] <N>                  -- Up N levels."]),
+        putf(F,[string#" history <N>                -- Show history of N downs."]),
+        putf(F,[string#" show[sh] TERM              -- Show specified TERM."]),
+        putf(F,[string#" push_root[pu] TERM         -- Make TERM to be the root for inspection."]),
+        putf(F,[string#" length[len]                -- Show length of the term."])|WS1].
+output_help(monitor,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[MONITORING COMMANDS]"]),
+        putf(F,[string#" monitor[m] M <NAME>        -- Monitor M-th element."]),
+        putf(F,[string#" monitor_and_fork[mf] M <NAME>"]),
+        putf(F,[string#"                            -- Monitor M-th element and fork window."]),
+        putf(F,[string#" cmonitor[cm] M TERM <NAME> -- Generate conditional monitor."]),
+        putf(F,[string#" cmonitor_and_fork[cmf] M TERM <NAME>"]),
+        putf(F,[string#"                            -- Generate conditional monitor and fork window."]),
+        putf(F,[string#" change_condition [cc] TERM  -- Change condition."]),
+        putf(F,[string#" monitored_terms[mt]        -- Show monitored terms list."]),
+        putf(F,[string#" stream_auto_mode[sam]      -- Change stream_auto_mode."]),
+        putf(F,[string#" query_mode[qm]             -- Change query_mode."]),
+        putf(F,[string#" silent_mode[sm] PARAM      -- Change silent_mode."]),
+        putf(F,[string#"                       PARAM is all_on,all_off,window_on,window_off."])|WS1].
+output_help(basic,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[BASIC COMMANDS]"]),
+        putf(F,[string#" inspect[i] TERM            -- Invoke inspector."]),
+        putf(F,[string#" fork[f]                    -- Switch inspector output to a new window."]),
+        putf(F,[string#" set_title STRING           -- Set title of the window to STRING."]),
+        putf(F,[string#" bigger[big]                -- Make the window bigger."]),
+        putf(F,[string#" a_little_bigger[lbig]      -- Make the window a little bigger."]),
+        putf(F,[string#" help[he,h] <TYPE>          -- Print commands list of TYPE in detail."]),
+        putf(F,[string#" commands[com] <TYPE>       -- Print commands list of TYPE."]),
+        putf(F,[string#"                               TYPE is insp,monitor,basic,env,varpool,all."]),
+        putf(F,[string#" exit[ex]                   -- Exit inspector."])|WS1].
+output_help(env,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[ENVIRONMENT COMMANDS]"]),
+        putf(F,[string#" print_depth[pd] <D>        -- Change print depth."]),
+        putf(F,[string#" print_length[pl] <L>       -- Change print length."]),
+        putf(F,[string#" print_string_length[psl] <L>- Change print string length."]),
+        putf(F,[string#" print_atom_length[pal] <L> -- Change print atom length."]),
+        putf(F,[string#" print_string_mode[psm]     -- Change print mode for string."]),
+        putf(F,[string#" print_mode[pm]             -- Change print mode."]),
+        putf(F,[string#" environment[env]           -- Print values of environment."])|WS1].
+output_help(varpool,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[VARIABLE POOL COMMANDS]"]),
+        putf(F,[string#" name[n] NAME               -- Give variable name NAME to current data."]),
+        putf(F,[string#" list[ls] <TYPE>            -- List up registered variable."]),
+        putf(F,[string#"                               TYPE is local,listener,all."]),
+        putf(F,[string#" .                          -- Clear inspector local variable pool."])|WS1].
+
+output_help_shell(insp,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[INSPECTIVE COMMANDS]"]),
+        putf(F,[string#" me <M,N>                   -- Show N elements, after M-th element on."]),
+        putf(F,[string#" down[] <M>                 -- Down M-th element."]),
+        putf(F,[string#" up[u] <N>                  -- Up N levels."]),
+        putf(F,[string#" history <N>                -- Show history of N downs."]),
+        putf(F,[string#" length[len]                -- Show length of the term."])|WS1].
+
+output_help_shell(basic,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[BASIC COMMANDS]"]),
+        putf(F,[string#" help[he,h] <TYPE>          -- Print commands list of TYPE in detail."]),
+        putf(F,[string#" commands[com] <TYPE>       -- Print commands list of TYPE."]),
+        putf(F,[string#"                               TYPE is insp,basic,env,varpool,all."]),
+        putf(F,[string#" exit[ex]                   -- Exit inspector."])|WS1].
+
+output_help_shell(varpool,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[VARIABLE POOL COMMANDS]"]),
+        putf(F,[string#" name[n] NAME               -- Give variable name NAME to current data."]),
+        putf(F,[string#" list[ls]                   -- List up registered variable."]),
+        putf(F,[string#" .                          -- Clear inspector local variable pool."])|WS1].
+
+output_help_monitor(insp,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[INSPECTIVE COMMANDS]"]),
+        putf(F,[string#" me <M,N>                   -- Show N elements, after M-th element on."]),
+        putf(F,[string#" down[] <M>                 -- Down M-th element."]),
+        putf(F,[string#" up[u] <N>                  -- Up N levels."]),
+        putf(F,[string#" history <N>                -- Show history of N downs."]),
+        putf(F,[string#" show[sh] TERM              -- Show specified TERM."]),
+        putf(F,[string#" length[len]                -- Show length of the term."])|WS1].
+
+output_help_monitor(basic,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[BASIC COMMANDS]"]),
+        putf(F,[string#" fork[f]                    -- Switch monitor output to a new window."]),
+        putf(F,[string#" set_title STRING           -- Set title of the window to STRING."]),
+        putf(F,[string#" bigger[big]                -- Make the window bigger."]),
+        putf(F,[string#" a_little_bigger[lbig]      -- Make the window a little bigger."]),
+        putf(F,[string#" help[he,h] <TYPE>          -- Print commands list of TYPE in detail."]),
+        putf(F,[string#" commands[com] <TYPE>       -- Print commands list of TYPE."]),
+        putf(F,[string#"                               TYPE is insp,monitor,basic,env,varpool,all."]),
+        putf(F,[string#" <cr>                       -- Exit monitoring."]),
+        putf(F,[string#" exit[ex]                   -- Exit monitoring."])|WS1].
+
+
+com(WS,WS3,insp) :- true |
+        WS=[nl|WS1],
+        output_com(insp,WS1,WS2),
+        WS2=[nl|WS3].
+com(WS,WS3,monitor) :- true |
+        WS=[nl|WS1],
+        output_com(monitor,WS1,WS2),
+        WS2=[nl|WS3].
+com(WS,WS3,basic) :- true |
+        WS=[nl|WS1],
+        output_com(basic,WS1,WS2),
+        WS2=[nl|WS3].
+com(WS,WS3,env) :- true |
+        WS=[nl|WS1],
+        output_com(env,WS1,WS2),
+        WS2=[nl|WS3].
+com(WS,WS3,varpool) :- true |
+        WS=[nl|WS1],
+        output_com(varpool,WS1,WS2),
+        WS2=[nl|WS3].
+com(WS,WS7,all) :- true |
+        WS=[nl|WS1],
+        output_com(basic,WS1,WS2),
+        output_com(insp,WS2,WS3),
+        output_com(monitor,WS3,WS4),
+        output_com(env,WS4,WS5),
+        output_com(varpool,WS5,WS6),
+        WS6=[nl|WS7].
+alternatively.
+com(WS,WS1,Type) :- true |
+        WS=[error(unwrapped_illegal_param(Type))|WS1].
+
+com_shell(WS,WS3,insp) :- true |
+        WS=[nl|WS1],
+        output_com_shell(insp,WS1,WS2),
+        WS2=[nl|WS3].
+com_shell(WS,WS3,basic) :- true |
+        WS=[nl|WS1],
+        output_com_shell(basic,WS1,WS2),
+        WS2=[nl|WS3].
+com_shell(WS,WS3,env) :- true |
+        WS=[nl|WS1],
+        output_com(env,WS1,WS2),
+        WS2=[nl|WS3].
+com_shell(WS,WS3,varpool) :- true |
+        WS=[nl|WS1],
+        output_com_shell(varpool,WS1,WS2),
+        WS2=[nl|WS3].
+com_shell(WS,WS6,all) :- true |
+        WS=[nl|WS1],
+        output_com_shell(basic,WS1,WS2),
+        output_com_shell(insp,WS2,WS3),
+        output_com(env,WS3,WS4),
+        output_com_shell(varpool,WS4,WS5),
+        WS5=[nl|WS6].
+alternatively.
+com_shell(WS,WS1,Type) :- true |
+        WS=[error(unwrapped_illegal_param(Type))|WS1].
+
+com_monitor(WS,WS3,insp) :- true |
+        WS=[nl|WS1],
+        output_com_monitor(insp,WS1,WS2),
+        WS2=[nl|WS3].
+com_monitor(WS,WS3,monitor) :- true |
+        WS=[nl|WS1],
+        output_com(monitor,WS1,WS2),
+        WS2=[nl|WS3].
+com_monitor(WS,WS3,basic) :- true |
+        WS=[nl|WS1],
+        output_com_monitor(basic,WS1,WS2),
+        WS2=[nl|WS3].
+com_monitor(WS,WS3,env) :- true |
+        WS=[nl|WS1],
+        output_com(env,WS1,WS2),
+        WS2=[nl|WS3].
+com_monitor(WS,WS3,varpool) :- true |
+        WS=[nl|WS1],
+        output_com(varpool,WS1,WS2),
+        WS2=[nl|WS3].
+com_monitor(WS,WS7,all) :- true |
+        WS=[nl|WS1],
+        output_com_monitor(basic,WS1,WS2),
+        output_com_shell(insp,WS2,WS3),
+        output_com(monitor,WS3,WS4),
+        output_com(env,WS4,WS5),
+        output_com(varpool,WS5,WS6),
+        WS6=[nl|WS7].
+alternatively.
+com_monitor(WS,WS1,Type) :- true |
+        WS=[error(unwrapped_illegal_param(Type))|WS1].
+
+
+output_com(insp,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[INSPECTIVE COMMANDS]"]),
+        putf(F,[string#"  me <M,N>"]),
+        putf(F,[string#"  down[] <M>"]),
+        putf(F,[string#"  up[u] <N>"]),
+        putf(F,[string#"  history <N>"]),
+        putf(F,[string#"  show[sh] TERM"]),
+        putf(F,[string#"  push_root[pu] TERM"]),
+        putf(F,[string#"  length[len]"])|WS1].
+output_com(monitor,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[MONITORING COMMANDS]"]),
+        putf(F,[string#"  monitor[m] M <NAME>"]),
+        putf(F,[string#"  monitor_and_fork[mf] M <NAME>"]),
+        putf(F,[string#"  cmonitor[cm] M TERM <NAME>"]),
+        putf(F,[string#"  cmonitor_and_fork[cmf] M TERM <NAME>"]),
+        putf(F,[string#"  change_condition [cc] TERM"]),
+        putf(F,[string#"  monitored_terms[mt]"]),
+        putf(F,[string#"  stream_auto_mode[sam]"]),
+        putf(F,[string#"  query_mode[qm]"]),
+        putf(F,[string#"  silent_mode[sm] PARAM"])|WS1].
+
+output_com(basic,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[BASIC COMMANDS]"]),
+        putf(F,[string#"  inspect[i] TERM"]),
+        putf(F,[string#"  fork[f]"]),
+        putf(F,[string#"  set_title STRING"]),
+        putf(F,[string#"  bigger[big]"]),
+        putf(F,[string#"  a_little_bigger[lbig]"]),
+        putf(F,[string#"  help[he,h] <TYPE>"]),
+        putf(F,[string#"  commands[com] <TYPE>"]),
+        putf(F,[string#"  exit[ex]"])|WS1].
+output_com(env,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[ENVIRONMENT COMMANDS]"]),
+        putf(F,[string#"  print_depth[pd] <D>"]),
+        putf(F,[string#"  print_length[pl] <L>"]),
+        putf(F,[string#"  print_string_length[psl] <L>"]),
+        putf(F,[string#"  print_atom_length[pal] <L>"]),
+        putf(F,[string#"  print_string_mode[psm]"]),
+        putf(F,[string#"  print_mode[pm]"]),
+        putf(F,[string#"  environment[env]"])|WS1].
+output_com(varpool,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[VARIABLE POOL COMMANDS]"]),
+        putf(F,[string#"  name[n] NAME"]),
+        putf(F,[string#"  list[ls] <TYPE>"]),
+        putf(F,[string#"  ."])|WS1].
+
+output_com_shell(insp,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[INSPECTIVE COMMANDS]"]),
+        putf(F,[string#"  me <M,N>"]),
+        putf(F,[string#"  down[] <M>"]),
+        putf(F,[string#"  up[u] <N>"]),
+        putf(F,[string#"  history <N>"]),
+        putf(F,[string#"  length[len]"])|WS1].
+
+output_com_shell(basic,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[BASIC COMMANDS]"]),
+        putf(F,[string#"  help[he,h] <TYPE>"]),
+        putf(F,[string#"  commands[com] <TYPE>"]),
+        putf(F,[string#"  exit[ex]"])|WS1].
+
+output_com_shell(varpool,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[VARIABLE POOL COMMANDS]"]),
+        putf(F,[string#"  name[n] NAME"]),
+        putf(F,[string#"  list[ls]"]),
+        putf(F,[string#"  ."])|WS1].
+
+output_com_monitor(insp,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[INSPECTIVE COMMANDS]"]),
+        putf(F,[string#"  me <M,N>"]),
+        putf(F,[string#"  down[] <M>"]),
+        putf(F,[string#"  up[u] <N>"]),
+        putf(F,[string#"  history <N>"]),
+        putf(F,[string#"  show[sh] TERM"]),
+        putf(F,[string#"  length[len]"])|WS1].
+
+output_com_monitor(basic,WS,WS1) :- true |
+        F=string#"~s~n",
+        WS=[
+        putf(F,[string#"[BASIC COMMANDS]"]),
+        putf(F,[string#"  fork[f]"]),
+        putf(F,[string#"  set_title STRING"]),
+        putf(F,[string#"  bigger[big]"]),
+        putf(F,[string#"  a_little_bigger[lbig]"]),
+        putf(F,[string#"  help[he,h] <TYPE>"]),
+        putf(F,[string#"  commands[com] <TYPE>"]),
+        putf(F,[string#"  <cr>"]),
+        putf(F,[string#"  exit[ex]"])|WS1].
+

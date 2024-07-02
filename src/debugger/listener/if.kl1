@@ -1,0 +1,244 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_if_command.
+:- public go/6.
+:- with_macro pimos.
+
+go(If,NA,PA,NB,PB,Att) :- 
+    translate(If,Guard,[]),
+    execute_guard(Guard,success,Status),
+    if(Status,NA,PA,NB,PB,Att).
+
+execute_guard([G|C],success,S) :- 
+    is_guard(G,YorN),
+    do_guard(G,YorN,success,S1),
+    execute_guard(C,S1,S).
+otherwise.
+execute_guard(_,    Status, S) :- S=Status.
+
+if(success,NA,[],_, _, _  ) :-            listener_trace_driver:apply_goals(NA).
+if(success,NA,PA,_, _, Att) :- list(PA) | listener_profiler:go(NA,PA,Att).
+if(fail,   _, _, NB,[],_  ) :-            listener_trace_driver:apply_goals(NB).
+if(fail,   _, _, NB,PB,Att) :- list(PB) | listener_profiler:go(NB,PB,Att).
+otherwise.
+if(unknown(G),_,_,_,_,_) :-
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(if,"Unknown guard"),G).
+
+
+is_guard(true,                                  YorN) :- YorN=yes.
+is_guard(fail,                                  YorN) :- YorN=yes.
+is_guard(unify(_,_),                            YorN) :- YorN=yes.
+is_guard(wait(_),                               YorN) :- YorN=yes.
+is_guard(atom(_),                               YorN) :- YorN=yes.
+is_guard(integer(_),                            YorN) :- YorN=yes.
+is_guard(floating_point(_),                     YorN) :- YorN=yes.
+is_guard(list(_),                               YorN) :- YorN=yes.
+is_guard(less_than(_,_),                        YorN) :- YorN=yes.
+is_guard(not_less_than(_,_),                    YorN) :- YorN=yes.
+is_guard(equal(_,_),                            YorN) :- YorN=yes.
+is_guard(not_equal(_,_),                        YorN) :- YorN=yes.
+is_guard(diff(_,_),                             YorN) :- YorN=yes.
+%is_guard(vector(_,_),                          YorN) :- YorN=yes.
+%is_guard(string(_,_,_),                        YorN) :- YorN=yes.
+%is_guard(module(_,_),                          YorN) :- YorN=yes.
+%is_guard(code(_,_,_,_),                        YorN) :- YorN=yes.
+%is_guard(floating_point_less_than(_,_),        YorN) :- YorN=yes.
+%is_guard(floating_point_not_less_than(_,_),    YorN) :- YorN=yes.
+%is_guard(floating_point_equal(_,_),            YorN) :- YorN=yes.
+%is_guard(floating_point_not_equal(_,_),        YorN) :- YorN=yes.
+%is_guard(add(_,_,_),                           YorN) :- YorN=yes.
+%is_guard(subtract(_,_,_),                      YorN) :- YorN=yes.
+%is_guard(multiply(_,_,_),                      YorN) :- YorN=yes.
+%is_guard(divide(_,_,_),                        YorN) :- YorN=yes.
+%is_guard(modulo(_,_,_),                        YorN) :- YorN=yes.
+%is_guard(shift_left(_,_,_),                    YorN) :- YorN=yes.
+%is_guard(shift_right(_,_,_),                   YorN) :- YorN=yes.
+%is_guard(and(_,_,_),                           YorN) :- YorN=yes.
+%is_guard(or(_,_,_),                            YorN) :- YorN=yes.
+%is_guard(exclusive_or(_,_,_),                  YorN) :- YorN=yes.
+%is_guard(floating_point_add(_,_,_),            YorN) :- YorN=yes.
+%is_guard(floating_point_subtract(_,_,_),       YorN) :- YorN=yes.
+%is_guard(floating_point_multiply(_,_,_),       YorN) :- YorN=yes.
+%is_guard(floating_point_divide(_,_,_),         YorN) :- YorN=yes.
+%is_guard(floating_point_to_integer(_,_),       YorN) :- YorN=yes.
+%is_guard(integer_to_floating_point(_,_),       YorN) :- YorN=yes.
+%is_guard(vector_element(_,_,_),                YorN) :- YorN=yes.
+%is_guard(string_element(_,_,_),                YorN) :- YorN=yes.
+%is_guard(string_less_than(_,_),                 YorN) :- YorN=yes.
+%is_guard(string_not_less_than(_,_),             YorN) :- YorN=yes.
+%is_guard(read_console(_),                      YorN) :- YorN=yes.
+%is_guard(display_console(_),                   YorN) :- YorN=yes.
+%is_guard(get_console(_),                       YorN) :- YorN=yes.
+%is_guard(put_console(_),                       YorN) :- YorN=yes.
+%is_guard(system_timer(_,_),                    YorN) :- YorN=yes.
+otherwise.
+is_guard(_,                                     YorN) :- YorN=no.
+
+do_guard(G,                                     no, _,S ) :- S=unknown(G).
+otherwise.
+do_guard(true,                                  _,  S,S1) :- true                               | S1=S.
+do_guard(unify(A,B),                            _,  S,S1) :- A=B                                | S1=S.
+do_guard(wait(A),                               _,  S,S1) :- wait(A)                            | S1=S.
+do_guard(atom(A),                               _,  S,S1) :- atom(A)                            | S1=S.
+do_guard(integer(A),                            _,  S,S1) :- integer(A)                         | S1=S.
+do_guard(floating_point(A),                     _,  S,S1) :- floating_point(A)                  | S1=S.
+do_guard(list(A),                               _,  S,S1) :- list(A)                            | S1=S.
+do_guard(less_than(A,B),                        _,  S,S1) :- less_than(A,B)                     | S1=S.
+do_guard(not_less_than(A,B),                    _,  S,S1) :- not_less_than(A,B)                 | S1=S.
+do_guard(equal(A,B),                            _,  S,S1) :- equal(A,B)                         | S1=S.
+do_guard(not_equal(A,B),                        _,  S,S1) :- not_equal(A,B)                     | S1=S.
+do_guard(diff(A,B),                             _,  S,S1) :- A\=B                               | S1=S.
+%do_guard(vector(A,B),                           _,  S,S1) :- vector(A,B)                        | S1=S.
+%do_guard(string(A,B,C),                         _,  S,S1) :- string(A,B,C)                      | S1=S.
+%do_guard(module(A,B),                           _,  S,S1) :- module(A,B)                        | S1=S.
+%do_guard(code(A,B,C,D),                         _,  S,S1) :- code(A,B,C,D)                      | S1=S.
+%do_guard(floating_point_less_than(A,B),         _,  S,S1) :- floating_point_less_than(A,B)      | S1=S.
+%do_guard(floating_point_not_less_than(A,B),     _,  S,S1) :- floating_point_not_less_than(A,B)  | S1=S.
+%do_guard(floating_point_equal(A,B),             _,  S,S1) :- floating_point_equal(A,B)          | S1=S.
+%do_guard(floating_point_not_equal(A,B),         _,  S,S1) :- floating_point_not_equal(A,B)      | S1=S.
+%do_guard(add(A,B,C),                            _,  S,S1) :- add(A,B,C)                         | S1=S.
+%do_guard(subtract(A,B,C),                       _,  S,S1) :- subtract(A,B,C)                    | S1=S.
+%do_guard(multiply(A,B,C),                       _,  S,S1) :- multiply(A,B,C)                    | S1=S.
+%do_guard(divide(A,B,C),                         _,  S,S1) :- divide(A,B,C)                      | S1=S.
+%do_guard(modulo(A,B,C),                         _,  S,S1) :- modulo(A,B,C)                      | S1=S.
+%do_guard(shift_left(A,B,C),                     _,  S,S1) :- shift_left(A,B,C)                  | S1=S.
+%do_guard(shift_right(A,B,C),                    _,  S,S1) :- shift_right(A,B,C)                 | S1=S.
+%do_guard(and(A,B,C),                            _,  S,S1) :- and(A,B,C)                         | S1=S.
+%do_guard(or(A,B,C),                             _,  S,S1) :- or(A,B,C)                          | S1=S.
+%do_guard(exclusive_or(A,B,C),                   _,  S,S1) :- or(A,B,C)                          | S1=S.
+%do_guard(floating_point_add(A,B,C),             _,  S,S1) :- floating_point_add(A,B,C)          | S1=S.
+%do_guard(floating_point_subtract(A,B,C),        _,  S,S1) :- floating_point_subtract(A,B,C)     | S1=S.
+%do_guard(floating_point_multiply(A,B,C),        _,  S,S1) :- floating_point_multiply(A,B,C)     | S1=S.
+%do_guard(floating_point_divide(A,B,C),          _,  S,S1) :- floating_point_divide(A,B,C)       | S1=S.
+%do_guard(floating_point_to_integer(A,B),        _,  S,S1) :- floating_point_to_integer(A,B)     | S1=S.
+%do_guard(integer_to_floating_point(A,B),        _,  S,S1) :- integer_to_floating_point(A,B)     | S1=S.
+%do_guard(vector_element(A,B,C),                 _,  S,S1) :- vector_element(A,B,C)              | S1=S.
+%do_guard(string_element(A,B,C),                 _,  S,S1) :- string_element(A,B,C)              | S1=S.
+%do_guard(string_less_than(A,B),                 _,  S,S1) :- string_less_than(A,B)              | S1=S.
+%do_guard(string_not_less_than(A,B),             _,  S,S1) :- string_not_less_than(A,B)          | S1=S.
+%do_guard(read_console(A),                       _,  S,S1) :- read_console(A)                    | S1=S.
+%do_guard(display_console(A),                    _,  S,S1) :- display_console(A)                 | S1=S.
+%do_guard(get_console(A),                        _,  S,S1) :- get_console(A)                     | S1=S.
+%do_guard(put_console(A),                        _,  S,S1) :- put_console(A)                     | S1=S.
+%do_guard(system_timer(A,B),                     _,  S,S1) :- system_timer(A,B)                  | S1=S.
+otherwise.
+do_guard(_,                                     _,  _,S1) :- S1=fail.
+
+
+translate((A,B),Guard,Guard2) :-
+    translate(A,Guard,Guard1),
+    translate(B,Guard1,Guard2).
+translate((A\=B),Guard,Guard1) :- Guard=[diff(A,B)|Guard1].
+translate((A=B),Guard,Guard1) :- Guard=[unify(A,B)|Guard1].
+translate((A=:=B),Guard,Guard1) :- Guard=[equal(A,B)|Guard1].
+translate((A=\=B),Guard,Guard1) :- Guard=[not_equal(A,B)|Guard1].
+%translate((A$=:=B),Guard,Guard1) :- Guard=[floating_point_equal(A,B)|Guard1].
+%translate((A$=\=B),Guard,Guard1) :- Guard=[floating_point_not_equal(A,B)|Guard1].
+%translate((A:=B),Guard,Guard2) :-
+%    int_exp(B,Guard,Guard1,X),
+%    Guard1=[unify(A,X)|Guard2].
+%translate((A$:=B),Guard,Guard2) :-
+%    float_exp(B,Guard,Guard1,X),
+%    Guard1=[unify(A,X)|Guard2].
+translate((A<B),Guard,Guard1) :-
+    Guard=[less_than(A,B)|Guard1].
+translate((A>B),Guard,Guard1) :-
+    Guard=[less_than(B,A)|Guard1].
+translate((A=<B),Guard,Guard1) :-
+    Guard=[not_less_than(B,A)|Guard1].
+translate((A>=B),Guard,Guard1) :-
+    Guard=[not_less_than(A,B)|Guard1].
+%translate((A$<B),Guard,Guard1) :-
+%    Guard=[floating_point_less_than(A,B)|Guard1].
+%translate((A$>B),Guard,Guard1) :-
+%    Guard=[floating_point_less_than(B,A)|Guard1].
+%translate((A$=<B),Guard,Guard1) :-
+%    Guard=[floating_point_not_less_than(B,A)|Guard1].
+%translate((A$>=B),Guard,Guard1) :-
+%    Guard=[floating_point_not_less_than(A,B)|Guard1].
+%translate((A&<B),Guard,Guard1) :-
+%    Guard=[string_less_than(A,B)|Guard1].
+%translate((A&>B),Guard,Guard1) :-
+%    Guard=[string_less_than(B,A)|Guard1].
+%translate((A&=<B),Guard,Guard1) :-
+%    Guard=[string_not_less_than(B,A)|Guard1].
+%translate((A&>=B),Guard,Guard1) :-
+%    Guard=[string_not_less_than(A,B)|Guard1].
+otherwise.
+translate(A,Guard,Guard1) :- Guard=[A|Guard1].
+
+int_exp((A+B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[add(Xa,Xb,X)|G0].
+int_exp((A-B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[subtract(Xa,Xb,X)|G0].
+int_exp((A*B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[multiply(Xa,Xb,X)|G0].
+int_exp((A/B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[divide(Xa,Xb,X)|G0].
+int_exp((A mod B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[modulo(Xa,Xb,X)|G0].
+int_exp((A /\ B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[and(Xa,Xb,X)|G0].
+int_exp((A \/ B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[or(Xa,Xb,X)|G0].
+int_exp((A xor B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[exclusive_or(Xa,Xb,X)|G0].
+int_exp((A << B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[shift_left(Xa,Xb,X)|G0].
+int_exp((A >> B),G,G0,X) :-
+    int_exp(A,G, G1,Xa),
+    int_exp(B,G1,G2,Xb),
+    G2=[shift_right(Xa,Xb,X)|G0].
+int_exp(int(A),G,G0,X) :-
+    float_exp(A,G,G1,Xa),
+    G1=[floating_point_to_integer(Xa,X)|G0].
+otherwise.
+int_exp(A,G,G0,X) :- X=A, G0=G.
+
+float_exp((A+B),G,G0,X) :-
+    float_exp(A,G, G1,Xa),
+    float_exp(B,G1,G2,Xb),
+    G2=[floating_point_add(Xa,Xb,X)|G0].
+float_exp((A-B),G,G0,X) :-
+    float_exp(A,G, G1,Xa),
+    float_exp(B,G1,G2,Xb),
+    G2=[floating_point_subtract(Xa,Xb,X)|G0].
+float_exp((A*B),G,G0,X) :-
+    float_exp(A,G, G1,Xa),
+    float_exp(B,G1,G2,Xb),
+    G2=[floating_point_multiply(Xa,Xb,X)|G0].
+float_exp((A/B),G,G0,X) :-
+    float_exp(A,G, G1,Xa),
+    float_exp(B,G1,G2,Xb),
+    G2=[floating_point_divide(Xa,Xb,X)|G0].
+float_exp(float(A),G,G0,X) :-
+    int_exp(A,G,G1,Xa),
+    G1=[integer_to_floating_point(Xa,X)|G0].
+otherwise.
+float_exp(A,G,G0,X) :- X=A, G0=G.
+
+

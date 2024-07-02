@@ -1,0 +1,177 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module convert.
+:- with_macro pimos.
+%:- public int16_to_str8/2.
+:- public int32_to_str8/2.
+:- public str16_to_str8/2.
+%:- public int16_from_str8/3.
+:- public int32_from_str8/3.
+:- public str16_from_str8/4.
+:- public int32_to_str16/2.
+:- public int32_cv_str16/2.
+:- public copy_str_to_str/3.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% str16_to_str8/2.
+%% int16_to_str8/2.
+%% int32_to_str8/2.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+str16_to_str8(Str,NewStr):- string(Str,Size,16) |
+                NewSize:=Size*2,
+                new_string(TmpStr,NewSize,8),
+                convert_16_to_8(Str,TmpStr,Size,NewStr0),
+                Mod:= NewSize mod 4,
+                padding(Mod,NewStr0,NewStr).
+
+padding(0,NewStr0,NewStr):- true | NewStr0=NewStr.
+otherwise.
+padding(Mod,NewStr0,NewStr):- true |
+                PadSize:= 4 - Mod,
+                new_string(PadStr,PadSize,8),
+                builtin#append_string(NewStr0,PadStr,NewStr).
+
+convert_16_to_8(Str,TmpStr,Size,NewStr):- true |
+                convert_16_to_8(Str,TmpStr,Size,0,NewStr).
+
+convert_16_to_8(_,TmpStr,Size,Number,NewStr):- Size=Number | TmpStr=NewStr.
+convert_16_to_8(Str,TmpStr,Size,Number,NewStr):- Size>Number |
+                string_element(Str,Number,Element,Str2),
+                Left:=Element>>8,Left2:=Left/\16#"000000FF",
+                Right:=Element/\16#"000000FF",
+                LeftPos:=Number*2,RightPos:=LeftPos+1,
+                set_string_element(TmpStr,LeftPos,Left2,TmpStr2),
+                set_string_element(TmpStr2,RightPos,Right,NextStr),
+                NewNum:=Number+1,
+                convert_16_to_8(Str2,NextStr,Size,NewNum,NewStr).
+                
+
+%int16_to_str8(Int,Str):- integer(Int) |
+%                new_string(TmpStr,2,8),        
+%                Left:= Int>>8,Left2:= Left/\16#"000000FF",
+%                Right:= Int/\16#"000000FF",
+%                set_string_element(TmpStr,0,Left2,TmpStr2),
+%                set_string_element(TmpStr2,1,Right,Str).
+
+
+int32_to_str8(Int,Str):- integer(Int) |
+                new_string(TmpStr,4,8),        
+                A:= Int>>24,A2:= A/\16#"000000FF",
+                B:= Int>>16,B2:= B/\16#"000000FF",
+                C:= Int>>8 ,C2:= C/\16#"000000FF",
+                D:= Int/\16#"000000FF",
+                set_string_element(TmpStr,0,A2,TmpStr2),
+                set_string_element(TmpStr2,1,B2,TmpStr3),
+                set_string_element(TmpStr3,2,C2,TmpStr4),
+                set_string_element(TmpStr4,3,D,Str).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% str16_from_str8/4.
+%% int16_from_str8/3.
+%% int32_from_str8/3.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+str16_from_str8(Str,Pos,Len,NewStr):- string(Str,_,8) |
+                builtin#substring(Str,Pos,Len,SubStr,_),
+                Size:=Len/2,
+                new_string(TmpStr,Size,16),
+                convert_8_to_16(SubStr,TmpStr,Len,NewStr).
+
+
+convert_8_to_16(Str,TmpStr,Size,NewStr):- true |
+                convert_8_to_16(Str,TmpStr,Size,0,NewStr).
+
+convert_8_to_16(_,TmpStr,Size,Number,NewStr):- Size=Number | TmpStr=NewStr.
+convert_8_to_16(Str,TmpStr,Size,Number,NewStr):- Size>Number |
+                string_element(Str,Number,Element,Str2),
+                Number2:=Number+1,
+                string_element(Str2,Number2,Element2,Str3),
+                Left:=Element<<8,
+                NewElement:= Left+Element2,
+                Pos:= Number/2,
+                set_string_element(TmpStr,Pos,NewElement,NextStr),
+                NewNum:=Number2+1,
+                convert_8_to_16(Str3,NextStr,Size,NewNum,NewStr).
+
+
+%int16_from_str8(Str,Pos,Int):- string(Str,_,8) |
+%                builtin#substring(Str,Pos,2,SubStr,_),
+%                string_element(SubStr,0,Left,SubStr2),
+%                string_element(SubStr2,1,Right,_),
+%                Left2:= Left<<8,
+%                Int:= Left2+Right.
+
+
+int32_from_str8(Str,Pos,Int):- string(Str,_,8) |
+                builtin#substring(Str,Pos,4,SubStr,_),
+                string_element(SubStr,0,A,SubStr2),
+                string_element(SubStr2,1,B,SubStr3),
+                string_element(SubStr3,2,C,SubStr4),
+                string_element(SubStr4,3,D,_),
+                A2:=A<<24,B2:=B<<16,C2:=C<<8,
+                Int:= A2+B2+C2+D.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% int32_to_str16/2.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+int32_to_str16(Int,Str):- integer(Int) |
+                new_string(TmpStr,2,16),        
+                A:= Int>>16,A2:= A/\16#"0000FFFF",
+                B:= Int/\16#"0000FFFF",
+                set_string_element(TmpStr,0,A2,TmpStr2),
+                set_string_element(TmpStr2,1,B,Str).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% int32_cv_str16/2.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+int32_cv_str16(0,Str):- true | Str="0".
+otherwise.
+int32_cv_str16(Int,Str):- integer(Int) |
+                S:= Int/10,A:= Int mod 10,
+                setchar(A,C),
+                int32_cv_str16(S,Str,C).
+                
+int32_cv_str16(0,Str,Tmp):- string(Tmp,_,16) | Str=Tmp.
+otherwise.
+int32_cv_str16(Int,Str,Tmp):- string(Tmp,_,16) |
+                S:= Int/10,A:= Int mod 10,
+                setchar(A,C),
+                builtin#append_string(C,Tmp,C2),
+                int32_cv_str16(S,Str,C2).
+                
+setchar(0,C):- true | C="0".
+setchar(1,C):- true | C="1".
+setchar(2,C):- true | C="2".
+setchar(3,C):- true | C="3".
+setchar(4,C):- true | C="4".
+setchar(5,C):- true | C="5".
+setchar(6,C):- true | C="6".
+setchar(7,C):- true | C="7".
+setchar(8,C):- true | C="8".
+setchar(9,C):- true | C="9".
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% copy_str_to_str/3.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+copy_str_to_str(S1,S2,NewS):- string(S1,Size,N),string(S2,_,N) |
+                copy_str_to_str(S1,S2,NewS,0,Size).
+
+copy_str_to_str(S1,S2,NewS,Pos,Size):- Pos<Size |
+                string_element(S1,Pos,Element,NS1),
+                set_string_element(S2,Pos,Element,NS2),
+                Pos2:= Pos+1,
+                copy_str_to_str(NS1,NS2,NewS,Pos2,Size).
+copy_str_to_str(S1,S2,NewS,Pos,Size):- Pos=:=Size | S2=NewS.

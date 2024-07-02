@@ -1,0 +1,1051 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% protection filter for resounrce tree
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% filter for general request stream
+%                (filter top level)
+% It contains three kinds of messages.
+%        (1) query the status /  suicide
+%        (2) set/get environment variable
+%        (3) messages to get device request streams
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+genreq_filter = stream(genreq_command)##general_request.
+
+winreq_filter = -rscstream(winreq_command)##window_request.
+filereq_filter = -rscstream(filereq_command)##file_request.
+timerreq_filter = -rscstream(timerreq_command)##timer_request.
+string_io_req_filter = -rscstream(strioreq_command)##string_io_request.
+socreq_filter = -rscstream(socreq_command)##socket_request.
+modulereq_filter = -rscstream(modulereq_command)##module_request.
+atomreq_filter = -rscstream(atomreq_command)##atom_request.
+userreq_filter = -rscstream(userreq_command)##user_request.
+
+timer_filter = -rscstream(timer_command)##timer.
+
+stdwin_filter = stream(window_command).
+stdrfile_filter = stream(rfile_command).
+stdwfile_filter = stream(wfile_command).
+stdafile_filter = stream(wfile_command).
+
+stdstring_io_filter = stream(strio_command).
+
+genreq_command = ask_task_command & {
+        execute(execode# , argv# , initrsc_or_list# ,-task)# ; 
+        execute_super(modulename# , predname#,arity#,argv# , initrsc_or_list# ,-task)# ; 
+        profile(execode# , argv# , initrsc_or_list# ,-task)# ; 
+        execute(execode# , argv# , taskname# , minprio# , maxprio# ,tag# ,initrsc_or_list# ,-task)# ; 
+        execute(execode# , argv# , taskname# , minprio# , maxprio# , tag# , -task)# ; 
+        profile(execode# , argv# , taskname# , minprio# , maxprio# ,tag# ,initrsc# ,-task)# ; 
+        profile(execode# , argv# , taskname# , minprio# , maxprio# , tag# , -task)# ; 
+  execute_remote(execode#, argv#, taskname#, minprio#, maxprio#,tag#,initrsc#,
+                    fepnodeno#,ruser#,rpassword#,-task)# ; 
+  execute_remote(execode#, argv#, taskname#, minprio#, maxprio#, tag#,
+                    fepnodeno#,ruser#,rpassword#,-task)# ; 
+  execute_super(modulename#,predname#,arity#,argv#,taskname#,
+                                minprio#,maxprio#,tag#,initrsc#,-task)#; 
+  execute_super(modulename#,predname#,arity#, argv#, taskname#,
+                                minprio#, maxprio#, tag#, -task)# ; 
+  execute_user(execode#, argv#, taskname#, minprio#, maxprio#,
+                                        tag#,initrsc#,userid#,-task)# ; 
+  execute_user(execode#, argv#, taskname#, minprio#, maxprio#, tag#, user#, -task)#; 
+  execute_user(execode#, argv#, taskname#, minprio#, maxprio#,tag#,initrsc#,user#,
+                fepnodeno#,ruser#,rpassword#,-task)# ; 
+  execute_user(execode#, argv#, taskname#, minprio#, maxprio#, tag#, user#,
+                fepnodeno#,ruser#,rpassword#,-task)# ;
+  execute_user_with_proc(execode#, argv#, taskname#, minprio#, maxprio#,
+                         integer,integer,tag#,initrsc#,userid#,-task)# ; 
+
+        suicide(-status)# ;
+        abort(rscpath# , -status)# ;
+        number_of_feps(-status(integer))# ;
+
+        ipl_versions(-status(list(version)))# ;
+
+%        fep_attributes(-status(code,os,host,fepver,dir,filever,comme))# ;
+        fep_attributes(-status(integer , string , string , string , string , string , string))# ;
+
+        setenv(envname# , value#, -status)# ;
+        getenv(envname# , -status(value))# ;
+        getenv(-status(envs))# ;
+        unsetenv(envname, -status)# ;
+
+        get_puid(-status(uid))# ;
+        connection(-status(node_name))#;
+        get_gid(-status(uid))# ;
+        set_gid(integer, -status)# ;
+
+        register(atom#,vector([uid,gid,integer]),-register_status##register)# ;
+        request(atom#, any, -status_any0##request)# ;
+        request_anyway(atom#, any, -status_any0##request_anyway)# ;
+
+        window(any)# ;        
+        file(any)# ;
+        timer(any)# ;
+        string_io(any)# ;
+        socket(any)# ;        
+        module(any)# ;
+        atom(any)# ;
+        user(any)#
+}.
+
+version = vector([string,version_contents]).
+version_contents = string & {[]}.
+
+status_any0 = {abnormal#; aborted#; normal(any)#}.
+
+initrsc_or_list = vector([integer,integer]) &
+                  list(task_init_command).
+
+task_init_command =
+     { resource(integer,integer);
+       stdio(list(stdio_param),-status(integer,list(stdio_result)));
+       io_node(ground);
+       remote(string,string);
+       uid(integer);
+       user(string,string);
+       name(string);
+       node(integer,integer);
+       prio(integer,integer);
+       tag(integer)}.
+
+stdio_param = { in(stdio_param_body)#;
+                out(stdio_param_body)#;
+                inter(stdio_param_body)#;
+                in_out(stdio_param_body)#;
+                in_inter(stdio_param_body)#;
+                out_inter(stdio_param_body)#;
+                in_out_inter(stdio_param_body)# }.
+
+stdio_param_body = vector([atom,ground,-ground]).
+
+%stdio_result = { in(status)#;
+%                out(status)#;
+%                inter(status)#;
+%                in_out(status)#;
+%                in_inter(status)#;
+%                out_inter(status)#;
+%                in_out_inter(status)# }.
+
+stdio_result = { in(ground)#;
+                out(ground)#;
+                inter(ground)#;
+                in_out(ground)#;
+                in_inter(ground)#;
+                out_inter(ground)#;
+                in_out_inter(ground)# }.
+
+register_att = { []#;
+                 attention(register_att)#}.
+
+register_command = 
+     { get_request(code,ground,-request_out)# }.
+
+request_out = 
+     {general_request(-stream(server_control)##server_control,
+                       any, ground, ground,-ground,any);
+      standard_io(stream(std_control)##std_control,atom,ground);
+      abnormal;
+      aborted}.
+
+register_status = {abnormal;
+                   aborted;
+                   normal(-stream(register_command),-any,register_att)}.
+
+server_control = {add_resource(atom,ground,-server_control_status)#;
+                  change_comment(ground,-status);
+                  absolute_id(-status(list(integer)))}.
+
+server_control_status =
+     {abnormal; aborted; normal(-stream(server_control),any)#}.
+
+std_control =
+    {open(vector([atom,ground,-ground]),
+          {switch(-stream(server_control),any)#},
+          {io(-stream(server_control),any)})#;
+     request(any,integer,any,-ground)#;
+     make_branch(stream(std_subcontrol),any,ground,ground)#}.
+
+std_subcontrol =
+    {open(vector([atom,-ground]),
+          {switch(-stream(server_control),any)#},
+          {io(-stream(server_control),any)})#;
+     request(any,integer,any,-ground)#;
+     make_branch(stream(std_subcontrol),any,ground,ground)#}.
+
+
+ask_task_command = {
+        id(-status(integer))# ;
+        absolute_id(-status(rscpath))# ;
+        status(rscpath# , rsckind# , verbosity# , -status(rscinfo))# 
+}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% filter for common messages
+%                abort / attention
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+aa_command = {                
+        reset(-status(-abort, attention# , msgid# ))# ;
+        next_attention( -status(attention))# ;
+        resend( msgid# , -status)# ;
+        cancel( msgid# , -status)#
+}.
+
+% task
+
+task = {
+        normal( -control##control_stream, -report##report_stream ) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% device request stream filters
+%
+%        (1)  window
+%        (2)  file
+%        (3)  timer
+%        (4)  string_io
+%        (5)  socket
+%        (6)  code
+%        (7)  atom
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% window request stream
+
+winreq_command = aa_command & {
+        create( -rscstream(window_command)##window)# ;
+        create( buffername# , -rscstream(window_command)##window)# ;
+        get_max_size( x# , y# , pathname# , -status(charnum, linenum))# 
+}.
+
+% file request stream
+        
+filereq_command = aa_command & {
+        open( pathname# , 
+        {read(-rscstream(rfile_command)##read_file_text)# ; 
+            read_text(-rscstream(rfile_command)##read_file_text)# ; 
+            write_text(-rscstream(wfile_command)##write_file_text)# ; 
+            append_text(-rscstream(wfile_command)##append_file_text)# ; 
+            read_binary(-rscstream(rfile_command_bin)##read_file_binary)# ; 
+            write_binary(-rscstream(wfile_command_bin)##write_file_binary)# ; 
+            append_binary(-rscstream(wfile_command_bin)##append_file_binary)# ; 
+                write(-rscstream(wfile_command)##write_file_text)# ; 
+                append(-rscstream(wfile_command)##append_file_text)# }#file_mode )# ;
+        directory( pathname# , -rscstream(dir_command)##directory)# ;
+        make_directory( pathname# , -rscstream(dir_command)##directory)# ;
+        current_directory(-status(string))# ;
+        set_current_directory(string#pathname, -status)#
+}.
+
+% timer request stream
+
+/*
+timerreq_command = aa_command & {
+        create( timer_id#, -rscstream(timer_command)##timer)# ;
+        create(-rscstream(timer_command)##timer)# 
+}.
+*/
+timerreq_command = aa_command & {
+        create( timer_id#, any)# ;
+        create(any)#
+}.
+
+timer_id = integer & {fep}.
+
+% string_io request stream
+
+strioreq_command = aa_command & {
+        create( devicename# , -rscstream(strio_command)##string_io)#
+}.
+
+% socket request stream
+
+socreq_command = aa_command & {
+%        create( -rscstream(socket_command)##socket)#
+        connect( address_host# , -rscstream(socket_command_client)##socket)# ;
+        listen( address# , backlog# , -rscstream(socket_command_server)##socket)#
+}.
+
+% code request stream
+
+modulereq_command = aa_command & {
+        create( -rscstream(module_command)##module_device)#
+}.
+
+% atom request stream
+
+atomreq_command = aa_command & {
+        create( -rscstream(atom_command)##atom_device)#
+}.
+
+% user request stream
+
+userreq_command = aa_command & {
+        create({user(-rscstream(user_command)##user_device);
+                group(-rscstream(group_command)##group_device);
+                login(-rscstream(login_command)##login_device)}#user_mode)# }.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% filters for device streams
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+input_command = {
+        getb( blocksize# , -eofstatus(string))# ;
+        ungetb( string#ungetb , -status)# ;
+        prompt( string#prompt, -status)# ;
+        getb_noecho( blocksize# , -eofstatus(string))#
+}.
+
+output_command = {
+        putb( string#put_data, -status)# ;
+        flush( -status)#
+}.
+
+% window filter
+
+window_command = input_command & output_command & common_command &
+                 aa_command & {
+        beep( -status)# ;
+
+        set_size( winsize# , -status)# ;
+        set_position( winpos# , -status)# ;
+        set_title( title# , -status)# ;
+        reshape( winpos# , winsize# , -status)# ;
+        set_font( pathname# , -status)# ;
+        select_buffer( buffername# , -status)# ;
+
+        activate( -status)# ;
+        deactivate( -status)# ;
+        show( -status)# ;
+        hide( -status)# ;
+        clear( -status)# ;
+        get_char_size( -status(charnum, linenum))# ;
+        get_position( -status(x,y))# ;
+        get_title( -status(title))# ;
+        get_font( -status(pathname))# ;
+        get_buffer_name( -status(buffername))#
+}.
+
+% file common filter
+
+cfile_command = {
+        pathname(-status(pathname))# ;
+        attributes(-file_attributes)#
+}.
+
+file_attributes = {
+        normal(owner,updateuser,cdate,ctime,mdate,mtime,linkcnt,fsize,rsize) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+%} & file_attributes2.
+%file_attributes2 = {
+%        normal(ownergroup,dummy,cdate,ctime,mdate,mtime,linkcnt,fsize,rsize)
+%}.
+
+% read file filter
+
+rfile_command = cfile_command & input_command & common_command &
+                aa_command & {
+        end_of_file( -status(eof))# ;       % for vpimos
+        flush( -status)#
+}.
+
+% write file filter
+
+wfile_command = cfile_command & aa_command & common_command &
+        output_command.
+
+dir_command = aa_command & {
+        pathname(-status(pathname))# ;
+        listing( wildcard# , -status(list(filename)))# ;
+        delete( wildcard# , -status)# ;
+        undelete( wildcard# , -status)# ;
+        kill( wildcard# , -status)# ;
+        deleted( wildcard# , -status(list(filename)))# ;
+        purge( wildcard# , -status)# ;
+        expunge( -status)#
+}.
+
+% timer filter
+
+timer_command = aa_command & { 
+        get_count( -status(count))# ;
+        on_at( count# , -status(now))# ;
+        on_after( count# , -status(now))# ;
+        get_date_time( -status(date_count, time_count))# ;
+        where( -status(timer_id))# ;
+        set_time_unit( time_unit#, -status)# ;
+        get_time_unit( -status(time_unit)#)
+}.
+
+time_unit = { sec ; msec ; msec16 ; usec ; usec15}.
+
+% string_io filter
+
+strio_command = input_command & output_command & common_command &
+                aa_command & {
+        io( io_command# , tofepstring# , -status(fromfepstring))#
+}.
+
+% socket filter
+
+socket_command_client = input_command & output_command & common_command &
+                        aa_command & {
+        set_option( socoption# , -status)# ;
+        send( string#put_data, -status)# ;
+        receive( blocksize# , -soc_receive_status)# ;
+        send_timeout( timeout# , -status)# ;
+        receive_timeout( timeout# , -status)#
+%        flush( -status)#
+}.
+socket_command_server = input_command & output_command & common_command &
+                        aa_command & {
+        accept( -accept_status)# ;
+        set_option( socoption# , -status)# ;
+        receive_timeout( timeout# , -status)#
+}.
+
+% module filter
+
+module_command = aa_command & {
+%%        get_code( modulename, predname,arity,-retrieval_status(code,ground)) ;
+%%        get_module( modulename, -retrieval_status(module,atom)) ;
+%%        update_module( modulename, module, -status) ;
+%%        remove_module( modulename, -status) ;
+%%        get_all_modules( -status(moduleinfo)) ;
+    %%%%%%%% package protocol (written by Hori 5/22) %%%%%%%%
+        define_package( packagename# , packagename# , protection# , -retrieval_status )# ;
+        set_package_owner( packagename# , owner_info# , -retrieval_status )# ;
+%%        set_package_protection( packagename# , protection# , -retrieval_status )# ;
+        protect_package( packagename# , protection# , -retrieval_status )# ;%% HORI 7/19
+        get_package_info( packagename# , -retrieval_status(protectionInfo) )# ;
+        get_super_package( packagename# , -retrieval_status( packagename ) )# ;
+        get_all_packages( -packageInfoList )# ;
+        remove_package( packagename# , -retrieval_status_1 )# ;
+        get_module_info( packagename# , modulename# , -module_status_1 )# ;
+        get_module( packagename# , modulename# , -module_status_2 )# ;
+        get_module_in_the_package( packagename# , modulename# , -module_status_2 )# ;
+        get_all_modules( packagename# , -module_status_3 )# ;
+        get_all_modules( -module_status_4 )# ;
+        get_code( packagename# , modulename# , predname# , arity# , -module_status_5 )# ;
+        update_module( packagename# , modulename# , module#update_module, -retrieval_status_1 )# ;
+        remove_module( packagename# , modulename# , -retrieval_status_1 )
+}.
+
+packageInfoList = {
+        normal( list( packageInfo ) ) ;
+        protection_violation ;
+        abnormal }.
+
+owner_info = vector([uid,gid]).
+
+packageInfo = vector( [ packagename, packageInfo1, packageInfo2 ] ).
+packageInfo1 = retrieval_status( packagename ). 
+packageInfo2 = retrieval_status( ground ).
+packageInfo3 = vector( [ packagename, module_status_3 ] ).
+
+module_status_1 = {
+        normal( packagename, module, moduleSize ) ;
+        non_existent ;
+        protection_violation ;
+        abnormal }.
+
+module_status_2 = {
+        normal( module ) ;
+        non_existent ;
+        protection_violation ;
+        abnormal }.
+
+module_status_3 = {
+        normal( moduleInfoList ) ;
+        non_existent ;
+        protection_violation ;
+        abnormal }.
+
+module_status_4 = {
+        normal( list( packageInfo3 ) ) ;
+        protection_violation ;
+        abnormal }.
+
+module_status_5 = {
+        normal( code ) ;
+        non_existent ;
+        non_existent( ground ) ;
+        protection_violation ;
+        abnormal }.
+
+retrieval_status = {
+        normal ;
+        protection_violation ;
+        abnormal ;
+        aborted ;
+        non_existent }.
+
+retrieval_status(x) = {
+        normal(x) ;
+        protection_violation ;
+        abnormal ;
+        aborted ;
+        non_existent }.
+
+retrieval_status_1 = {
+        normal ;
+        protection_violation ;
+        abnormal ;
+        aborted ;
+        non_existent( ground ) }.
+
+%%protectionInfo = vector( [ protinfo2, protection ]) .
+protectionInfo = vector( [ ground, protection ]) .
+%%protinfo2 = vector( [ userid, groupidlist]).
+%%groupidlist = list( groupid ).
+moduleInfoList = list( moduleInfo ).
+moduleInfo = vector( [ modulename, module, size ] ).
+moduleSize = integer.
+%%userid = integer.
+%%groupid = integer.
+userid = ground.
+groupid = ground.
+size = integer.
+protection = integer.
+
+
+% atom filter
+
+atom_command = aa_command & {
+        get_atom(atomname# , -retrieval_status(atom,dkey))# ;
+        get_atom_name(atom# , -retrieval_status(atomname,dkey))# ;
+        intern(atomname# , -status(atom))# ;
+        get_all_atoms(-status(atominfo))#        %% 1990.5.10 susaki
+}.
+
+% user filter
+
+user_command = aa_command & {
+        set_up(list(user_all_info),-status)#;
+        authenticate(user_name#,password#,-status)#;
+        get_uid(user_name#,-status(uid))#;
+        get_info(uid#,-status(user_info))#;
+        status(uid#,-status(change_count))#;
+        get_all_info(-status(list(user_all_info)))#;
+        change_password(uid#,old_password#,new_password#,-status)#
+}.
+
+old_password = password.
+new_password = password.
+
+user_name = string.
+password = string.
+uid = integer.
+priority = integer.
+directory_name = string & {*}.
+entry_point = {':'({'::'(packagename,modulename)},predicate)}.
+
+predicate = atom & vector(ground).
+comment_list = list(string).
+%comment_list = list(string) & {[]}.
+pe_number = integer & {*}.
+
+change_count = integer.
+
+user_all_info = vector([user_name,password,uid,priority,
+                    directory_name,pe_number,entry_point,comment_list]).
+user_info = vector([user_name,priority,directory_name,
+                    pe_number,entry_point,comment_list]).
+
+% group filter
+
+group_command = aa_command & {
+        set_up(list(group_info),-status)#;
+        get_gid(group_name#,-status(gid))#;
+        get_gids(uid#,-status(list(gid)))#;
+        get_users(gid#,-status(group_members))#;
+        get_all_info(-status(list(group_info)))#
+}.
+
+gid = integer.
+group_name = string.
+group_members = list(uid).
+group_info = vector([group_name,gid,group_members,comment_list]).
+
+% login filter
+
+login_command = aa_command & {
+        login(user_name#,login_info#,-status(lid))#;
+        logout(lid#,-status)#;
+        get_info(lid#,-status(login_info))#;
+        get_login(user_name#,-status(list(lid)))#;
+        get_all_info(-status(list(vector([user_name,lid,login_info]))))#
+}.
+
+lid = integer.
+login_info = ground.
+node_name = fepnodeno.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% task filter
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% control filter
+
+control = stream(control_command).
+
+control_command = ask_task_command & aa_command & {
+        stop ;
+        allow_resource_report ;
+        statistics ;
+        profile ;
+        abort(rscpath# , -status)# ;
+        abort(-status)# ;                
+        add_resource(hrsc# ,lrsc# )# 
+}.
+
+%%%%%% report stream filter
+
+report = -stream(report_command).
+
+report_command = {
+        statistics_started ;
+        resource_report_allowed ;
+        resource_added ;
+        resource_low ;
+        aborted ;
+        terminated ;
+        exception(exckind, excinfo, -ncode# , -nargv# )# ;
+        statistics(hstat,lstat) ;
+        return_resource(hrsc,lrsc) ;
+        profiling_information(profile_node, profile_type, profile_depth, profile_data) ;
+        profiling_started ;
+        profiling_rejected ;
+        profiling_completed ;
+        stopped( -reason_stream# , -cancel# )#
+}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% common routines to check elements of messages
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+rscpath = {[rscid | rscpath];
+            *               ;
+            []  
+         }.
+rscid = integer & { * }.
+rsckind = rscname.
+%rsckind = rscname & { 
+%        * }.
+rscname = atom.
+/*
+rscname = {
+        general_request ;
+        window_request ;
+        file_request ;
+        timer_request ;
+        string_io_request ;
+        socket_request ;
+        module_request ;
+        atom_request ;
+        user_request ;
+        task ;
+        window ;
+        file ;
+        timer ;
+        string_io ;
+        socket ;
+        module ;
+        atom   ;
+        directory;
+        user ;
+        login ;
+        group
+}.
+*/
+verbosity = {
+        brief ;
+        detail
+}.
+reason_stream = stream(atom).
+rscinfo = list(rscinfo2).
+rscinfo2 = other_info & brief_info & detail_info.
+brief_info = vector([rscid, rscname, ground, rscinfo]).
+other_info = vector([rscid,rscinfo]).
+detail_info = vector([rscid, ground, task_status, limit, consume, rscinfo]).
+task_status = vector([atom, stops]).
+%cond = {
+%        normal ;
+%        terminating ;
+%        resource_low ;
+%        shut_terminating ;
+%        unknown
+%}.
+stops = list(stopreason).
+stopreason = {stop(atom)}.
+binfo2 = brief_info & other_brief_info.
+dinfo2 = detail_info & other_detail_info.
+bchildren = list(binfo2).
+dchildren = list(dinfo2).
+msgid = integer.
+winpos = {
+        mouse ;
+        at(x,y)
+}.
+winsize = {
+        mouse ;
+        char(charnum, linenum) 
+}.
+%%moduleinfo = list(moduleinfo2).       %% deleted by Hori 1990.5.22
+%%moduleinfo2 = vector([atom,module]).  %% deleted by Hori 1990.5.22
+now = {wake_up; aborted}.
+attention = {attention ; []}.
+
+atominfo = list(atominfo2).             %% for get_all_atoms   1990.5.10
+atominfo2 = vector([atom,string]).      %% for get_all_atoms   1990.5.10
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% These rules derive the basic protocols 
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+excargv = any.
+cancel = ground.
+hstat = integer.
+lstat = integer.
+%nargv = vector(any).   % 1989.8.29  susaki
+%ncode = code.          % 1989.8.29  susaki
+nargv = any.
+ncode = any.
+exccode = any.
+excinfo = vector(any).
+exckind = atom.
+term1 = any.
+term2 = any.
+rtype = any.
+info = any.
+execode = code.
+argv = vector(any).
+taskname = string.
+minprio = integer.
+maxprio = integer.
+tag = integer.
+hrsc = integer.
+lrsc = integer.
+
+envname = ground.
+value = ground.
+
+abort = any.
+
+buffername = string.
+x = integer.
+y = integer.
+pathname = string.
+devicename = string.
+
+fepno = integer.
+blocksize = integer.
+charnum = integer.
+linenum = integer.
+title = string.
+filename = string.
+wildcard = string.
+%owner = string.
+%updateuser = string.
+cdate = string.
+ctime = string.
+mdate = string.
+mtime = string.
+linkcnt = integer.
+fsize = integer.
+rsize = integer.
+count = integer & bignum.
+date_count = integer & bignum.
+time_count = integer & bignum.
+io_command = integer.
+tofepstring = string.
+fromfepstring = string.
+modulename = atom.
+packagename = atom.
+predname = atom.
+arity = integer.
+dkey = atom & string.
+atomname = string.
+
+bignum = vector([spec,sign,numer]).
+spec = {'$bignum'}.
+sign = integer.
+numer = string.
+
+limit = vector([hrsc,lrsc]).
+consume = vector([hrsc,lrsc]) & {unknown}.
+initrsc = vector([hrsc,lrsc]).
+name = string.
+eof = {yes ;
+        no
+}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                  %
+%   added by Fujise                %
+                                   %
+                                   %
+                                   %
+envs = list(env).                  %
+                                   %
+env = vector([envname,value]).     %
+                                   %
+user = integer.
+ruser = string.
+rpassword = string.
+fepnodeno = integer & string.
+nodeno = string.
+
+profile_node = vector(integer).   %modified by Kiyohara
+profile_type = integer.
+profile_depth = integer.
+profile_data = ground.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% parameterized protocol 
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+rscstream(p) = {
+        normal(-stream(p), -abort, attention) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+status = {
+        normal ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+status(p) = {
+        normal(p) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+status(x,y) = {
+        normal(x,y) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+status(x,y,z) = {
+        normal(x,y,z) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+status(a,b,c,d,e,f,g) = {
+        normal(a,b,c,d,e,f,g) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+retrieval_status(x,y) = {
+        normal(x) ;
+        protection_violation ;
+        abnormal ;
+        aborted ;
+        non_existent(y)
+}.
+eofstatus(p) = {
+        normal(p) ;
+        abnormal ;
+        aborted ;
+        end_of_file ;
+        disconnected
+}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% Added by M.Matsuo
+%%%%%%%%%%%%%%%%%%%% Stdio filter definition %%%%%%%%%%%%%%%%%%%%
+
+std_in_filter = stream( std_in_command ).
+std_out_filter = stream( std_out_command ).
+std_inter_filter = stream( std_inter_command ).
+std_io_filter = stream( std_io_command ).
+std_switch_filter = stream( std_switch_command ).
+
+std_in_command = aa_command & input_command & common_command .
+std_out_command = aa_command & output_command & common_command .
+std_inter_command = aa_command & interaction_command & common_command
+    & stdio_special_command .
+std_io_command = aa_command & input_command & output_command
+    & interaction_command & stdio_special_command & common_command_dest .
+std_switch_command = {
+    attach( switch_no#, -attach_status#, -detect# )# ;
+    attach( -attach_status#, -detect# )# ;
+    detach( switch_no#, -detach_status# )# ;
+    detach( -detach_status# )# ;
+    kill( switch_no_with_all#, -kill_status# )# ;
+    kill( -kill_status# )#
+}.
+
+switch_no = integer.
+switch_no_with_all = integer & { all }.
+attach_status = atom.
+detect = atom.
+detach_status = atom.
+kill_status = atom.
+
+common_command = {
+    get_attributes( -status(device_type#, list(device_attribute#)) )#
+}.
+
+common_command_dest = {
+    get_attributes( dest#, -status(device_type#, list(device_attribute#)) )#
+}.
+
+dest = { in ; out ; inter }.
+device_type = atom.
+device_attribute = ground.
+
+interaction_command = {
+    igetb( blocksize#, -eofstatus( string ) )# ;
+    igetb_noecho( blocksize#, -eofstatus( string ) )# ;
+    iungetb( string#ungetb , -status)# ;
+    iprompt( string#prompt, -status )# ;
+    iputb( string#put_data, -status )# ;
+    iflush( -status )#
+}.
+
+stdio_special_command = {
+    switch( -status )# ;
+    am_I_there( -status)#
+}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% in use only socket
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+address = address1 & address2.
+address_host = address2 & address3. 
+address1 = vector([ip,port]).
+address2 = vector([port]).
+address3 = vector([ip2,port]).
+ip = vector([integer,integer,integer,integer]).
+ip2 = vector([integer,integer,integer,integer]) & string.
+port = integer.
+backlog = integer.
+timeout = integer.
+%socoption = socoption1 & socoption2 & socoption3.
+%socoption1 = vector([socoption_val]).
+%socoption2 = vector([socoption_val,socoption_val]).
+%socoption3 = vector([socoption_val,socoption_val,socoption_val]).
+socoption = list(socoption_val).
+socoption_val = {
+    debug ;
+    reuseaddr ;
+    keepalive 
+}.
+accept_status = {
+        normal( address, -stream(socket_command_client)##socket, -abort, attention) ;
+%        normal( address, -stream(socket_command)##socket) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+soc_receive_status = {
+%        normal(integer,string) ;
+        normal(string) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% telnet server protocols
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+telreq_filter = -rscstream2(telreq_command)##telnet_request.
+
+% telnet request stream
+
+telreq_command = {
+        create( ground , -rscstream2(telnet_command)##telnet)#
+}.
+
+% telnet filter
+
+telnet_command = aa_command & input_command & output_command &
+                 common_command .
+
+rscstream2(p) = {
+        normal(-stream(p)) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% file device for UNIX
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%code = integer.
+%os = string.
+%host = string.
+%fepver = string.
+%dir = string.
+%filever = string.
+%comme = string.
+
+owner = string & vector([string,string]).
+updateuser = string & {[]}.
+%ownergroup = vector([string,string]).
+%dummy = {[]}.
+
+rfile_command_bin = cfile_command & input_command & aa_command &
+                    common_command & read & {
+        end_of_file( -status(eof))# ;
+        flush( -status)#
+}.
+
+wfile_command_bin = cfile_command & aa_command & common_command &
+                    write & output_command.
+
+read = { read( bytesize# , -eofstatus(string))# }.
+write = { write( string#write_data, -status)# }.
+
+bytesize = integer.

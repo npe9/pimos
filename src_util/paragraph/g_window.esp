@@ -1,0 +1,351 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+class g_window has
+ nature as_draw_predicate;
+
+   :create(Class,Obj,Attribute,ViewSelect,Display,ViewMode):-
+      :new(Class,Obj),
+      set_attribute(Attribute,Obj),
+      Obj!color := Display,
+      Obj!view_mode := ViewMode,
+      :create(#profiler_view_window,
+              [size(Obj!x_size,Obj!y_size),
+               position(Obj!x,Obj!y),margin_flag(off),border_flag(off)],Win),
+      Obj!window := Win,
+      ( Display == color,!,
+        create_pairs(Win,ViewMode);
+        true ),
+      :create(#font,"font:tiny_7.font",Font_7),
+      Obj!font := Font_7,
+      :create(#font,"font:test_11.font",Font_11),
+      Obj!font_11 := Font_11,
+      :set_title(Win,Obj!title),
+      :set_wid(Win,Obj!w_id),
+      ( ViewMode == act,!,
+        :set_view(Win,pe_view) ;
+        :set_gid(Win,Obj!g_id),
+        :set_view(Win,Obj!view) ),
+      :assign_window(Win),
+      :draw_frame(Win),
+      :draw(Win),
+      :set_permission(Win,show),
+      :activate(Win),
+      :regist(ViewSelect,Win,Obj!w_id,Obj!g_id);
+
+ instance
+   attribute window,
+             x_size := 300,
+             y_size := 300,
+             x := 30,
+             y := 0,
+             font,
+             font_11,
+             title := "test",
+             w_id,
+             g_id,
+             view,
+             scale_mode := all,
+             color ,
+             view_mode,
+             pre_width,
+             pre_height,
+             type;
+   
+
+  :draw(Obj,List):-
+     :execute_graphics_command(Obj!window,List);
+
+  :clear(Obj):-
+     Win = Obj!window,
+     View = Obj!view,
+     ViewMode = Obj!view_mode,
+     :assign_window(Win),
+     :inside_clear(Win),
+     ( ViewMode == act,!,
+       :set_view(Win,pe_view) ;
+       :set_view(Win,View) ),
+     ( Obj!color = color,!,
+       create_pairs(Win,ViewMode),
+       :set_color(Obj!window,1);
+       true ),
+     :draw(Win);
+
+  :set_title(Obj,T):-
+     :set_title(Obj!window,T);
+
+  :get_size(Obj,W,H):-
+     :get_area(Obj!window,W,H);
+
+
+  :draw_list(Obj,X,Y,List,F0):-!,
+     ( F0 = font_11 ,!,
+       Obj!font_11 = F ;
+       Obj!font = F ),
+     :get_size(Obj,Width,Height),
+     L = Width - X - 60 ,
+     StringNum = L/11,
+     Obj!window =Win,
+      ( Obj!view = overall_what_where,!,
+       (Obj!color = color,!,
+        ( Obj!type == rs,!,
+          draw_list_cb2(X,Y,DL,F,Height,Win);
+          draw_list_cb(X,Y,1,List,DL,F,StringNum,Height,Win));
+        ( Obj!type == rs,!,
+          draw_list_b2(X,Y,DL,F,Height);
+          draw_list_b(X,Y,1,List,DL,F,StringNum,Height)));
+       Obj!view = overall_what_when,
+       (Obj!color = color,!,
+        ( Obj!type == rs,!,
+          draw_list_cl2(X,Y,DL,F,Height,Win);
+          draw_list_cl(X,Y,1,List,DL,F,StringNum,Height,Win));
+        ( Obj!type == rs,!,
+          draw_list_l2(X,Y,DL,F,Height);
+          draw_list(X,Y,1,List,DL,F,StringNum,Height)));
+         draw_list(X,Y,1,List,DL,F,StringNum,Height)),
+     ( Obj!color = color,!,
+       :set_color(Obj!window,1);
+       true ),
+     :execute_graphics_command(Obj!window,DL);
+    
+
+ local
+
+
+  create_pairs(Win,act):-!,
+      :set_color_pair(Win,0,{{65535,65535,65535},{0,0,0}}),
+      :set_color_pair(Win,2,{{0,55000,30000},{65535,65535,0}}),
+      :set_color_pair(Win,4,{{60000,30000,40000},{65535,30000,0}}),
+      :set_color_pair(Win,6,{{65535,0,65535},{65535,0,0}}),
+      :set_color_pair(Win,8,{{0,65535,0},{65535,65535,51200}}),
+      :set_color_pair(Win,10,{{51200,65535,65535},{10000,10000,65535}});
+  create_pairs(Win,_):-!,  %%% Blue_Orange_Red V 
+      :set_color_pair(Win,0,{{65535,65535,65535},{0,0,0}}),%white,black
+      :set_color_pair(Win,2, {{10000,0,55535},{0,0,64256}}),
+      :set_color_pair(Win,4, {{0,30000,64256},{20000,50000,20000}}),
+      :set_color_pair(Win,6, {{40000,60000,10000},{58880,60000,20000}}),
+      :set_color_pair(Win,8, {{65000,30000,10000},{65000,20000,0}}),
+      :set_color_pair(Win,10,{{65535,0,5000},{0,0,32000}});
+
+%%%%%%%% standard,   mono line %%%%%%  
+    draw_list(X,Y,C,[],DL,F,L,Height):-!;
+    draw_list(X,Y,C,[A|R],DL,F,L,Height):-
+        Y >= Height-50 ,!,
+        draw_list(X,Y,C+1,R,DL,F,L,Height);
+    draw_list(X,Y,C,[N|Name],DL,F,Length,Height):-
+        string(N,L,_),!,
+        make_sub_string(N,0,L,Length,String,String1),
+        :get_number_string(#symbolizer,C,C1),
+        :append(#string,[C1," ",String],String0),
+        ( C < 10,!,
+          X1 = X+11 ; X1 = X ),
+          DL = [{draw_string,{X1,Y,String0,F,set}},
+                {draw_string,{X+44,Y+18,String1,F,set}}|R],
+        draw_list(X,Y+36,C+1,Name,R,F,Length,Height);
+    draw_list(X,Y,C,[N|Name],DL,F,Length,Height):-
+        :get_number_string(#symbolizer,C,C1),
+       (  integer(N),!,
+          :get_number_string(#symbolizer,N,P1);
+          atom(N),!,
+          :get_atom_string(#symbolizer,N,P1)),!,
+        string(P1,L,_),
+        ( L =< Length, !,
+          PredString0 = P1 ;
+          substring(P1,0,Length,PredString0) ),
+        :append(#string,[C1," ",PredString0],PredString),
+        ( C < 10,!,
+          X1 = X+11 ; X1 = X ),
+        DL = [{draw_string,{X1,Y,PredString,F,set}}|R],
+        draw_list(X,Y+18,C+1,Name,R,F,Length,Height);
+ 
+%%%%%%%%  mono bar  %%%%%%%%%%
+    draw_list_b(X,Y,C,[],DL,F,L,Height):-!;
+    draw_list_b(X,Y,C,[A|R],DL,F,L,Height):-
+        Y >= Height-50 ,!,
+        draw_list_b(X,Y,C+2,R,DL,F,L,Height);
+    draw_list_b(X,Y,C,[Pattern|RList],DL,F,Length,Height):-
+        RList = [N|Name],
+        string(N,L,_),!,
+        make_sub_string(N,0,L,Length,String,String1),
+          DL = [{draw_filled_rectangle,{X,Y+3,17,13,1,Pattern,set}},
+                {draw_string,{X+23,Y,String,F,set}},
+                {draw_string,{X+33,Y+18,String1,F,set}}|R],
+        draw_list_b(X,Y+36,C+2,Name,R,F,Length,Height);
+    draw_list_b(X,Y,C,[Pattern|RList],DL,F,Length,Height):-
+         RList = [N|Name],
+       (  integer(N),!,
+          :get_number_string(#symbolizer,N,P1);
+          atom(N),!,
+          :get_atom_string(#symbolizer,N,P1)),!,
+%          X1 = X+5,
+         string(P1,L,_),
+        ( L =< Length, !,
+          PredString = P1 ;
+          substring(P1,0,Length,PredString) ),
+        DL = [{draw_filled_rectangle,{X,Y+3,17,11,1,Pattern,set}},
+              {draw_string,{X+23,Y,PredString,F,set}}|R],
+        draw_list_b(X,Y+18,C+2,Name,R,F,Length,Height);
+
+%%%%%%%%%%  color bar  %%%%%%%%
+    draw_list_cb(X,Y,C,[],DL,F,L,Height,Win):-!;
+    draw_list_cb(X,Y,C,[A|R],DL,F,L,Height,Win):-
+        Y >= Height-50 ,!,
+        draw_list_cb(X,Y,C+2,R,DL,F,L,Height,Win);
+    draw_list_cb(X,Y,C,[Pattern|RList],DL,F,Length,Height,Win):-
+        RList = [N|Name],
+        string(N,L,_),!,
+        make_sub_string(N,0,L,Length,String,String1),
+        :set_color(Win,Pattern),
+        :draw_filled_rectangle(Win,X,Y+3,17,13,0,fix,set),
+          DL = [{draw_string,{X+23,Y,String,F,set}},
+                {draw_string,{X+33,Y+18,String1,F,set}}|R],
+        draw_list_cb(X,Y+36,C+2,Name,R,F,Length,Height,Win);
+    draw_list_cb(X,Y,C,[Pattern|RList],DL,F,Length,Height,Win):-
+         RList = [N|Name],
+       (  integer(N),!,
+          :get_number_string(#symbolizer,N,P1);
+          atom(N),!,
+          :get_atom_string(#symbolizer,N,P1)),!,
+          X1 = X+5,
+         :set_color(Win,Pattern),
+         :draw_filled_rectangle(Win,X,Y+3,17,13,0,fix,set),
+         string(P1,L,_),
+        ( L =< Length, !,
+          PredString = P1 ;
+          substring(P1,0,Length,PredString) ),
+        DL = [{draw_string,{X+23,Y,PredString,F,set}}|R],
+        draw_list_cb(X,Y+18,C+2,Name,R,F,Length,Height,Win);
+
+%%%%%%%%%   color bar 2 %%%%%%% 
+   draw_list_cb2(X,Y,DL,F,Height,Win):-
+        Y >= Height-50,!;
+    draw_list_cb2(X,Y,DL,F,Height,Win):-
+        :set_color(Win,2),
+        :draw_filled_rectangle(Win,X,Y+3,17,13,0,fix,set),
+        :set_color(Win,5),
+        :draw_filled_rectangle(Win,X,Y+39,17,13,0,fix,set),
+        :set_color(Win,4),
+        :draw_filled_rectangle(Win,X,Y+75,17,13,0,fix,set),
+          DL = [{draw_string,{X+23,Y,"r",F,set}},
+                {draw_string,{X+23,Y+36,"s",F,set}},
+                {draw_string,{X+23,Y+72,"&",F,set}}|R];
+
+%%%%%%%%    mono bar 2 %%%%%%%%
+    draw_list_b2(X,Y,DL,F,Height):-
+        Y >= Height-50 ,!;
+    draw_list_b2(X,Y,DL,F,Height):-
+        DL = [{draw_filled_rectangle,{X,Y+3,17,13,1,light_paint,set}},
+              {draw_filled_rectangle,{X,Y+39,17,13,1,rough_dotted,set}},
+              {draw_filled_rectangle,{X,Y+75,17,13,1,right_hatch,set}},
+              {draw_string,{X+23,Y,"r",F,set}},
+              {draw_string,{X+23,Y+36,"s",F,set}},
+              {draw_string,{X+23,Y+72,"&",F,set}}];
+  
+%%%%%%%    color line %%%%%%%%%
+    draw_list_cl(X,Y,C,[],DL,F,L,Height,Win):-!;
+    draw_list_cl(X,Y,C,[A|R],DL,F,L,Height,Win):-
+        Y >= Height-50 ,!,
+        draw_list_cb(X,Y,C+2,R,DL,F,L,Height,Win);
+    draw_list_cl(X,Y,C,[Pattern|RList],DL,F,Length,Height,Win):-
+        RList = [N|Name],
+        string(N,L,_),!,
+        make_sub_string(N,0,L,Length,String,String1),
+        :set_color(Win,Pattern),
+        :draw_line(Win,X+16,Y+2,X+4,Y+16,3,solid,set),
+        :draw_line(Win,X,Y+9,X+4,Y+15,3,solid,set),
+          DL = [{draw_string,{X+23,Y,String,F,set}},
+                {draw_string,{X+33,Y+18,String1,F,set}}|R],
+        draw_list_cl(X,Y+36,C+2,Name,R,F,Length,Height,Win);
+    draw_list_cl(X,Y,C,[Pattern|RList],DL,F,Length,Height,Win):-
+         RList = [N|Name],
+       (  integer(N),!,
+          :get_number_string(#symbolizer,N,P1);
+          atom(N),!,
+          :get_atom_string(#symbolizer,N,P1)),!,
+          X1 = X+5,
+         :set_color(Win,Pattern),
+        :draw_line(Win,X+16,Y+2,X+4,Y+16,3,solid,set),
+        :draw_line(Win,X,Y+9,X+4,Y+15,3,solid,set),
+        string(P1,L,_),
+        ( L =< Length, !,
+          PredString = P1 ;
+          substring(P1,0,Length,PredString) ),
+        DL = [{draw_string,{X+23,Y,PredString,F,set}}|R],
+        draw_list_cl(X,Y+18,C+2,Name,R,F,Length,Height,Win);
+
+%%%%%%%%% color line2 %%%%%%%
+    draw_list_cl2(X,Y,DL,F,Height,Win):-
+        Y >= Height-50 ,!;
+    draw_list_cl2(X,Y,DL,F,Height,Win):-
+        :set_color(Win,2),
+        :draw_line(Win,X+16,Y+2,X+4,Y+16,3,solid,set),
+        :draw_line(Win,X,Y+9,X+4,Y+15,3,solid,set),
+        :set_color(Win,5),
+        :draw_line(Win,X+16,Y+38,X+4,Y+52,3,solid,set),
+        :draw_line(Win,X,Y+45,X+4,Y+51,3,solid,set),
+        DL = [{draw_string,{X+23,Y,"r",F,set}},
+              {draw_string,{X+23,Y+36,"s",F,set}}];
+  
+%%%%%%%%  mono line2 %%%%%%%
+    draw_list_l2(X,Y,DL,F,Height):-
+        Y >= Height-50 ,!;
+    draw_list_l2(X,Y,DL,F,Height):-
+        DL = [{draw_line,{X+16,Y+2,X+4,Y+16,3,solid,set}},
+              {draw_line,{X,Y+9,X+4,Y+15,3,solid,set}},
+              {draw_line,{X+4,Y+54,X+17,Y+37,3,dotted,set}},
+              {draw_line,{X-1,Y+45,X+4,Y+54,3,dotted,set}},
+              {draw_string,{X+23,Y,"r",F,set}},
+              {draw_string,{X+23,Y+36,"s",F,set}}];
+   
+   make_sub_string(S,L,L,Length,String,String1):-
+      ( L =< Length, !,
+        String = S ;
+        substring(S,0,Length,String) ),
+      String1 = "";
+   make_sub_string(S,C,L,Length,String,String1):-
+      string_element(S,C,Elm1),
+      Elm1 = 8487,
+      string_element(S,C+1,Elm2),
+      Elm2 = 8487,!,
+      make_sub_string(S,C+2,L,Length,String,String1);
+   make_sub_string(S,C,L,Length,String,String1):-
+      string_element(S,C,Elm1),
+      %% 8487 = ":" %%
+      Elm1 = 8487,
+      ( C+1 =< Length,!,
+        substring(S,0,C+1,String);
+        substring(S,0,Length,String) ),
+      ( L-C-1 =< Length-1,!,
+        substring(S,C+1,L-C-1,String1);
+        substring(S,C+1,Length-1,String1) );
+   make_sub_string(S,C,L,Length,String,String1):-
+      make_sub_string(S,C+1,L,Length,String,String1);
+
+   set_attribute([],Obj):-!;
+   set_attribute([size(X,Y)|R],Obj):- !,
+      Obj!x_size := X,
+      Obj!y_size := Y,
+      set_attribute(R,Obj);
+   set_attribute([position(X,Y)|R],Obj):- !,
+      Obj!x := X,
+      Obj!y := Y,
+      set_attribute(R,Obj);
+   set_attribute([title(T)|R],Obj):- !,
+      Obj!title := T,
+      set_attribute(R,Obj);
+   set_attribute([w_id(I)|R],Obj):- !,
+      Obj!w_id := I,
+      set_attribute(R,Obj);
+   set_attribute([g_id(I)|R],Obj):- !,
+      Obj!g_id := I,
+      set_attribute(R,Obj);
+   set_attribute([view(V)|R],Obj):- !,
+      Obj!view := V,
+      set_attribute(R,Obj);
+   set_attribute([H|R],Obj):-
+      set_attribute(R,Obj);
+
+   count([],N,N):-!;
+   count([H|T],Count,N):-
+    count(T,Count+1,N);
+
+end.

@@ -1,0 +1,321 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module socket_request_device.
+:- with_macro pimos.
+:- public driver/7.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver(DRS,F,CAbort,CInfo,Conf,SCont,SAbort)
+%%      DRS     :: Input stream from the client task
+%%      F       :: Output stream to scsi_fep_module (vector stream)
+%%      CAbort  :: Termination variable from the client task
+%%                 = abort ; []
+%%      CInfo   :: User information
+%%                 = {Fep,IONode,Uid,RUser,RPass,Gids}
+%%      Conf    :: Output stream to the confirmation device
+%%      SCont   :: Server control stream
+%%      SAbort  :: Server control abortion variable
+
+driver(DRS,F,CAbort,CInfo,Conf,SCont,SAbort) :- true |
+        id_table:id_table(T),
+        If={CInfo,Conf,SCont,SAbort},
+        driver_0(CAbort,DRS,F,T,If,A,A,dummy_attention,_).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_0(CAb,DRS,F,T,If,A,A1,AtF,Att)
+
+driver_0(CAb,_,F,T,If,_,_,_,_) :- wait(CAb) |
+        device_driver:abort(If,F,T,fep#normal,_).
+alternatively.
+driver_0(CAb,[reset(Args)|DRS],F,T,If,A,A1,AtF,Att) :- true |
+        F={fep#reset,AbF1,AtF1,S,F1},
+        wait_01(CAb,DRS,F1,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S).
+driver_0(_,[close(S)|_],F,T,If,A,A1,_,Att) :- true |
+        device_driver:terminate(If,S,F,T,Att,_,A,A1).
+driver_0(CAb,[Req|DRS],F,T,If,A,A1,AtF,Att) :- 
+    vector_element(Req,0,MsgName),MsgName\=reset,MsgName\=close |
+        A1=[Req|A2],
+        driver_0(CAb,DRS,F,T,If,A,A2,AtF,Att).
+driver_0(_,[],F,T,If,A,A1,_,Att) :- true |
+        device_driver:terminate(If,_,F,T,Att,_,A,A1).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_01(CAb,DRS,F,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S)
+
+wait_01(CAb,DRS,F,T,If,A,A1,_,Att,Args,AtF1,AbF1,fep#normal) :- true |
+        Att=[],
+        A1=[],
+        T=[put_with_new_id(ID,A)|T1],
+        Args=normal(Ab1,Att1,ID),
+        driver_1(CAb,DRS,F,T1,If,Ab1,B,B,AtF1,Att1,AbF1).
+wait_01(CAb,DRS,F,T,If,A,A1,AtF,Att,Args,_,AbF1,fep#abnormal) :- true |
+        Args=abnormal,
+        AbF1=fep#nil,
+        driver_0(CAb,DRS,F,T,If,A,A1,AtF,Att).
+wait_01(CAb,DRS,F,T,If,A,A1,_,Att,Args,_,AbF1,fep#disconnected) :- true |
+        Args=disconnected,
+        AbF1=fep#nil,
+        device_driver:disconnected(CAb,DRS,F,T,If,A,A1,Att,_).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF)
+
+driver_1(CAb,_,F,T,If,_,_,_,_,_,AbF) :- wait(CAb) |
+        device_driver:abort(If,F,T,fep#normal,AbF).
+driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF) :- wait(Ab) |
+        AbF=fep#abort,
+        driver_0(CAb,DRS,F,T,If,A,A1,AtF,Att).
+alternatively.
+driver_1(CAb,[Req|DRS],F,T,If,Ab,A,A1,AtF,Att,AbF) :- true |
+        io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req).
+driver_1(_,[],F,T,If,_,A,A1,_,Att,AbF) :- true |
+        device_driver:terminate(If,_,F,T,Att,AbF,A,A1).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req)
+
+io_req(CAb,DRS,F,T,If,_,A,A1,AtF,Att,AbF,{reset,Args}) :- true |
+        AbF=fep#abort,
+%        F={fep#reset,AbF1,AtF1,S,F1},                              % patch for fep
+%        wait_01(CAb,DRS,F1,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S).
+        fep_patch(CAb,DRS,F,T,If,_,A,A1,AtF,Att,_,Args).
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{next_attention,Args}) :- true |
+        Att=[],
+        Args=normal(Att1),
+        driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att1,AbF).
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{resend,ID,S}) :- true |
+        device_driver:resend(DRS,DRS1,T,T1,ID,S),
+        driver_1(CAb,DRS1,F,T1,If,Ab,A,A1,AtF,Att,AbF).
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{cancel,ID,S}) :- true |
+        device_driver:cancel(T,T1,ID,S),
+        driver_1(CAb,DRS,F,T1,If,Ab,A,A1,AtF,Att,AbF).
+
+/*
+% never receives from NEW resource tree
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{change_processor,PE,S}) :- true |
+        change_processor(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,S)@processor(PE).
+*/
+
+io_req(_,_,F,T,If,_,A,A1,_,Att,AbF,{close,S}) :- true |
+        device_driver:terminate(If,S,F,T,Att,AbF,A,A1).
+
+otherwise.
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req) :- true |
+        send_message(Req,Req1,If,If1,F,Val,S,F1),
+        driver_2(CAb,DRS,F1,T,If1,Ab,A,A1,AtF,Att,AbF,Req1,Val,S).
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% change_processor(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,S)
+
+change_processor(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,S) :- true |
+        S=normal,
+        driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF).
+*/
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_2(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,S)
+
+driver_2(CAb,_,F,T,If,_,_,_,_,_,AbF,_,Val,S) :- wait(CAb) |
+        device_driver:if_close_fepvar(Val),
+        device_driver:abort(If,F,T,S,AbF).
+driver_2(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,S) :- wait(Ab) |
+        AbF=fep#abort,
+        wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,S).
+alternatively.
+driver_2(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,fep#normal) :- true |
+        return_values(CAb,Req,Val,If,If1),
+        driver_1(CAb,DRS,F,T,If1,Ab,A,A1,AtF,Att,AbF).
+driver_2(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,fep#abnormal) :- true |
+        device_driver:return_ab_status(Req,Val,abnormal),
+        driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF).
+driver_2(CAb,DRS,F,T,If,_,A,A1,_,Att,AbF,Req,Val,fep#disconnected) :- true |
+        device_driver:return_ab_status(Req,Val,disconnected),
+        device_driver:disconnected(CAb,DRS,F,T,If,A,A1,Att,AbF).
+driver_2(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,fep#aborted) :- true |
+        device_driver:if_close_fepvar(Val),
+        A1=[Req|A2],
+        driver_1(CAb,DRS,F,T,If,Ab,A,A2,AtF,Att,AbF).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,S)
+
+wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,fep#normal) :- true |
+        return_values(CAb,Req,Val,If,If1),
+        driver_0(CAb,DRS,F,T,If1,A,A1,AtF,Att).
+wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,fep#abnormal) :- true |
+        device_driver:return_ab_status(Req,Val,abnormal),
+        driver_0(CAb,DRS,F,T,If,A,A1,AtF,Att).
+wait_20(CAb,DRS,F,T,If,A,A1,_,Att,Req,Val,fep#disconnected) :- true |
+        device_driver:return_ab_status(Req,Val,disconnected),
+        device_driver:disconnected(CAb,DRS,F,T,If,A,A1,Att,_).
+wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,fep#aborted) :- true |
+        device_driver:if_close_fepvar(Val),
+        A1=[Req|A2],
+        driver_0(CAb,DRS,F,T,If,A,A2,AtF,Att).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% send_message(Req,Req1,If,If1,F,Val,S,F1)
+
+%send_message({create,Args},Req,If,If1,F,Val,S,F1) :- true |
+%        device_driver:device_info(ruser,If,If0,RUser,RUser),
+%        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+%        F0={fep#create_socket,RUser,RPass,FDS,S,F1},
+%        wait_and_send(F,F0),
+%        Req={create,Args},
+%        Val={out(FDS)}.
+send_message({connect,Address,Args},Req,If,If1,F,Val,S,F1) :- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        F0={fep#create_socket,RUser,RPass,FDS,S,F1},
+        wait_and_send(F,F0),
+        Req={connect,Address,Args},
+        Val={out(FDS)}.
+send_message({listen,Address,Backlog,Args},Req,If,If1,F,Val,S,F1) :- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        F0={fep#create_socket,RUser,RPass,FDS,S,F1},
+        wait_and_send(F,F0),
+        Req={listen,Address,Backlog,Args},
+        Val={out(FDS)}.
+
+wait_and_send(F,F0) :- vector_element(F0,1,E),vector_element(F0,2,E2),
+    wait(E),wait(E2) | F=F0.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_values(CAb,Req,Val,If,If1)
+%%      CAb     :: Termination variable from the client task
+%%      Req     :: io_request message
+%%      Val     :: Values from fep (vector)
+%%      If,If1  :: ={CInfo,Conf,SCont,SAbort}
+
+%return_values(CAb,{create,Args},{out(F)},If,If1) :- true |
+%        device_driver:device_info(scont,If,If0,SCont,SCont1),
+%        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+%        SCont=[add_resource(socket,"socket",Res)|SCont1],
+%        create(CAb,Args,F,Conf,Res).
+return_values(CAb,{connect,Address,Args},{out(F)},If,If1) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(socket,"socket",Res)|SCont1],
+        create_client(CAb,Address,Args,F,Conf,Res).
+return_values(CAb,{listen,Address,Backlog,Args},{out(F)},If,If1) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(socket,"socket",Res)|SCont1],
+        create_server(CAb,Address,Backlog,Args,F,Conf,Res).
+otherwise.
+return_values(_,Req,Val,If,If1) :- true |
+        If=If1,
+        device_driver:return_values_req(Req,Val).
+
+%create(CAb,Args,F,Conf,normal(SCont,SAb)) :- true |
+%        Args=normal(DS),
+%        socket_device:driver(CAb,DS,F,{0,Conf,SCont,SAb}).
+%otherwise.
+%create(_,Args,F,Conf,S) :- true |
+%        Args=S,F=fep#nil,Conf=[].
+
+create_client(CAb,Address,Args,F,Conf,normal(SCont,SAb)) :- true |
+%        DS=[reset(Reset),connect(Address,Con)|DSN],
+        DS=[reset(Reset)|DSN],
+%        create_client_2(CAb,Reset,Con,Args,DSN),
+        create_client_2(CAb,Reset,Address,Args,DSN),
+%        Args=normal(DS),
+        socket_device:driver(CAb,DS,F,{0,Conf,SCont,SAb}).
+otherwise.
+create_client(_,Address,Args,F,Conf,S) :- true |
+        Args=S,F=fep#nil,Conf=[].
+
+create_client_2(CAb,Reset,Address,Args,DS):- wait(CAb) |
+        DS=[].
+alternatively.
+create_client_2(CAb,normal(_,_,_),Address,Args,DS):- true |
+        DS=[connect(Address,Con)|DSN],
+        create_client_3(CAb,Con,Args,DSN).
+create_client_2(CAb,abnormal,Address,Args,DS):- true |
+        Args=abnormal,DS=[].
+create_client_2(CAb,aborted,Address,Args,DS):- true |
+        Args=aborted,DS=[].
+create_client_2(CAb,disconnected,Address,Args,DS):- true |
+        Args=disconnected,DS=[].
+
+create_client_3(CAb,Con,Args,DS):- wait(CAb) |
+        DS=[].
+alternatively.
+create_client_3(CAb,normal,Args,DS):- true |
+        Args=normal(DS).
+create_client_3(CAb,abnormal,Args,DS):- true |
+        Args=abnormal,DS=[].
+create_client_3(CAb,aborted,Args,DS):- true |
+        Args=aborted,DS=[].
+create_client_3(CAb,disconnected,Args,DS):- true |
+        Args=disconnected,DS=[].
+
+create_server(CAb,Address,Backlog,Args,F,Conf,normal(SCont,SAb)) :- true |
+%        DS=[reset(Reset),bind(Address,Bind),listen(Backlog,Lis)|DSN],
+%        create_server_2(CAb,Reset,Bind,Lis,Args,DSN),
+        DS=[reset(Reset)|DSN],
+        create_server_2(CAb,Reset,Address,Backlog,Args,DSN),
+%        Args=normal(DS),
+        socket_device:driver(CAb,DS,F,{0,Conf,SCont,SAb}).
+otherwise.
+create_server(_,Address,Backlog,Args,F,Conf,S) :- true |
+        Args=S,F=fep#nil,Conf=[].
+
+create_server_2(CAb,Reset,Address,Log,Args,DS):- wait(CAb) |
+        DS=[].
+alternatively.
+create_server_2(CAb,normal(_,_,_),Address,Log,Args,DS):- true |
+        DS=[bind(Address,Bind)|DSN],
+        create_server_3(CAb,Bind,Log,Args,DSN).
+create_server_2(CAb,abnormal,Address,Log,Args,DS):- true |
+        Args=abnormal,DS=[].
+create_server_2(CAb,aborted,Address,Log,Args,DS):- true |
+        Args=aborted,DS=[].
+create_server_2(CAb,disconnected,Address,Log,Args,DS):- true |
+        Args=disconnected,DS=[].
+
+create_server_3(CAb,Bind,Log,Args,DS):- wait(CAb) |
+        DS=[].
+alternatively.
+create_server_3(CAb,normal,Log,Args,DS):- true |
+        DS=[listen(Log,Lis)|DSN],
+        create_server_4(CAb,Lis,Args,DSN).
+create_server_3(CAb,abnormal,Log,Args,DS):- true |
+        Args=abnormal,DS=[].
+create_server_3(CAb,aborted,Log,Args,DS):- true |
+        Args=aborted,DS=[].
+create_server_3(CAb,disconnected,Log,Args,DS):- true |
+        Args=disconnected,DS=[].
+
+create_server_4(CAb,Lis,Args,DS):- wait(CAb) |
+        DS=[].
+alternatively.
+create_server_4(CAb,normal,Args,DS):- true |
+        Args=normal(DS).
+create_server_4(CAb,abnormal,Args,DS):- true |
+        Args=abnormal,DS=[].
+create_server_4(CAb,aborted,Args,DS):- true |
+        Args=aborted,DS=[].
+create_server_4(CAb,disconnected,Args,DS):- true |
+        Args=disconnected,DS=[].
+
+
+fep_patch(CAb,DRS,F,T,If,_,A,A1,AtF,Att,_,Args) :- true |
+        F={fep#next_attention,AtF1,S,F1},
+        now_reset(CAb,DRS,F1,T,If,_,A,A1,AtF,Att,_,Args,S).
+
+now_reset(CAb,DRS,F,T,If,_,A,A1,AtF,Att,_,Args,S) :- wait(S) |
+        F={fep#reset,AbF1,AtF1,S1,F1},
+        wait_01(CAb,DRS,F1,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S1).

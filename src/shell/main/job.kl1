@@ -1,0 +1,427 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%  This is 'job' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module job.
+:- public create/6.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%   JobInfo = createJob(GoalInfoX, IoCont, StdIo).                      %
+%%%%%   AnalizedInfo = {GoalInfo, StdInInfo, StdOutInfo, IoCont, StdIo}.    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create(job(Stat, GoalInfo, StdMes),
+             Cnt, Rpt, JobNo, ID, Info) :- Info = {PE, Min, Max, Inc} |
+    create1(job(Stat, GoalInfo, StdMes,
+                {Min, Max, Inc}), Cnt, Rpt, JobNo, ID)@node(PE).
+
+create1(job(Stat, GoalInfo, StdMes, Info),
+            Cnt, Rpt, JobNo, ID) :- Info = {Min, Max, Inc} |
+%    stdio:create(StdIo, NStdIo, IoCont),
+%    shellUtils:valve(NewStdIo, NStdIo, Shut),
+    shellUtils:valve(NStdMes, StdMes, Shut),
+    shellParser:tosParser(GoalInfo, TosInfo, StdInInfo, StdOutInfo),
+    buffer:character_pool(IO),
+    variable:wrap(GoalInfo, {_, WGoal}, 100, 100),
+    IO = [putb(string#"Job_"), putt(JobNo), nl, flush(_), getl(Name),
+            abandon_pool, putwt(WGoal), nl, flush(_), getl(JobName)],
+    getCode(module#tosMaker, makeTos, 3, Goal),
+    shoen:raise(pimos_tag#task, general_request, General),
+    make_stdio(StdInInfo, StdOutInfo, Param, ID, StdIoStat),
+    General = [execute(Goal, {TosInfo, NStdMes, {Min, Max}}, Name, 0, 4095,
+                shell_tag#job, Param, normal(JobCnt, JobRpt))],
+    addResource(StdIoStat,Inc,JobCnt,Snd),
+    ignoreResourceLow(JobRpt, NJobRpt),
+    waitStat(Stat, NJobRpt, NNJobRpt),
+    Rpt = [jobCreated(JobNo) | NewRpt],
+    checkStdIo(StdIoStat,JobNo,Rcv,NNJobRpt),
+    job(Cnt, NewRpt, Snd, Rcv, JobNo, Shut, End, running, Inc, JobName, ID).
+
+addResource(Stat,Inc,In,Out) :- wait(Stat) |
+    ( Stat = normal -> calcInc(Inc, High, Low),
+        In = [add_resource(High,Low),allow_resource_report|Out] ;
+     otherwise ;
+      true -> In = Out ).
+
+checkStdIo(Stat,JobNo,In,Out) :- true |
+    ( Stat = normal -> In = Out ;
+     otherwise ;
+      true -> In = [illegal_stdio(JobNo)|Out] ).
+
+make_stdio(In, Out, Param, NID, Stat) :- true |
+    ( In = shell, Out = shell -> Stat = normal,
+          Param = [stdio([], normal(ID,ELSE))] ;
+      In = shell, Out \=shell ->
+          Param = [stdio([out(OutInfo)], normal(ID,ELSE))],
+          make_stdio_info(Out, OutInfo, Stat) ;
+      In \=shell, Out = shell ->
+          Param = [stdio([in(InInfo)], normal(ID,ELSE))],
+          make_stdio_info(In, InInfo, Stat) ;
+      In \=shell, Out \=shell ->
+          Param = [stdio([in(InInfo), out(OutInfo)], normal(ID,ELSE))],
+          make_stdio_info(In,InInfo,Stat1),
+          make_stdio_info(Out,OutInfo,Stat2),
+          status2(Stat1,Stat2,Stat) ),
+    wait_stdio_create(ELSE, ID, NID).
+
+status2(Stat1, Stat2, Stat) :- wait(Stat1), wait(Stat2) |
+    ( Stat1=normal, Stat2=normal -> Stat=normal ;
+     otherwise ;
+      true -> Stat=abnormal ).
+
+%make_stdio(In,Out,Param,ID) :- true |
+%    make_stdio([in(In),out(Out)],Param,ID,[]).
+%make_stdio([],Param,NID,STK) :- true |
+%    Param = [stdio(STK,normal(ID,ELSE))],
+%    wait_stdio_info(ELSE,ID,NID).
+%make_stdio([{Mode,IO}|REM],Param,ID,STK) :- true |
+%    ( IO = shell -> make_stdio(REM,Param,ID,STK) ;
+%     otherwise ;
+%      true -> make_stdio_info(IO,IOInfo),
+%        make_stdio(REM,Param,ID,[{Mode,IOInfo}|STK]) ).
+
+wait_stdio_create([], ID, NID) :- true | ID = NID.
+wait_stdio_create([{_,Stat}|ELSE], ID, NID) :- wait(Stat) |
+    wait_stdio_create(ELSE, ID, NID).
+
+make_stdio_info(In, Out, Stat) :- true |
+    ( In = file(File) -> Out={file_request, File, Stat} ;
+      In = window(Window) -> Out={window_request, Window, Stat} ;
+      In = window(Window,X1,X2) ->
+          Out={window_request, {Window, X1, X2}, Stat} ;
+      In = window(Window,X1,X2,X3) ->
+          Out={window_request,{Window,X1,X2,X3},Stat} ;
+      In = window(Window,X1,X2,X3,X4) ->
+          Out={window_request,{Window,X1,X2,X3,X4},Stat} ;
+      In = window(Window,X1,X2,X3,X4,X5) ->
+          Out={window_request,{Window,X1,X2,X3,X4,X5},Stat} ;
+     otherwise ;
+      true -> Out = {dummy,"dummy",_}, Stat=abnormal ).
+
+waitStat(Stat, Old, New) :- wait(Stat) | Old = New.
+
+ignoreResourceLow([], Out) :- true | Out = [].
+ignoreResourceLow([resource_low | In], Out) :- true | In = Out.
+otherwise.
+ignoreResourceLow([M | In], Out) :- true | Out = [M | NOut],
+    ignoreResourceLow(In, NOut).
+
+calcInc(infinite, High, Low) :- true | High = 0, Low = 1000000000.
+calcInc(Inc, High, Low) :- integer(Inc) | High = 0, Low = Inc.
+calcInc({High, Low}, IHigh, ILow) :-
+            integer(High), integer(Low), High >= 0, Low >= 0 |
+    IHigh = High, ILow = Low.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% job(+[+Mes | Cnt], +[-Mes | Rpt], +[-Mes | Snd], +[+Mes | Rcv], JobNo) %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% job handling message %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+job([], Rpt, Snd, Rcv, JobNo, Shut, End, _, _, _, IO_NO) :- true |
+    End = end, Shut = shut, Snd = [],
+    Rpt = [jobTerminated(JobNo,IO_NO) | Rcv].
+job([io_no(Terget,NO)|Cnt],
+        Rpt,Snd,Rcv,JobNo,Shut,End,Stat,Inc,JobName,IO_NO) :- true |
+    ( Terget = JobNo -> NO = IO_NO, NRpt = Rpt ;
+      Terget \= JobNo -> Rpt = [io_no(Terget, NO) | NRpt] ),
+    job(Cnt, NRpt, Snd, Rcv, JobNo, Shut, End, Stat, Inc, JobName, IO_NO).
+job([jobStatus(Status, Cdr, CmdStat) | Cnt],
+            Rpt,Snd,Rcv,JobNo,Shut,End,Stat,Inc,JobName,IO_NO) :- true |
+    statusChecker(Stat, NewStat, Inc, NInc),
+    Cdr = [{JobNo, NewStat, JobName} | NewCdr],
+    Rpt = [jobStatus(Status, NewCdr, CmdStat) | NewRpt],
+    job(Cnt, NewRpt, Snd, Rcv, JobNo, Shut, End, Stat, NInc, JobName, IO_NO).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% controlling message to job %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+job([killJob|Cnt],Rpt,Snd,Rcv,JobNo,Shut,End,_,Inc,JobName,IO_NO) :- true |
+    Shut = abort, Snd = [abort([], _)],
+    job(Cnt, Rpt, _, Rcv, JobNo, _, End, terminate, Inc, JobName, IO_NO).
+job([killJob(ID)|Cnt],Rpt,Snd,Rcv,JobNo,Shut,End,Stat,Inc,JobName,IO_NO) :-
+    true |
+    ( ID = JobNo -> Shut = abort, Snd = [abort([], _)],
+        job(Cnt, Rpt, _, Rcv, JobNo, _, End, terminate, Inc, JobName, IO_NO) ;
+      ID = all -> Rpt = [killJob(all) | NRpt], Shut=abort, Snd=[abort([], _)],
+        job(Cnt, NRpt, _, Rcv, JobNo, _, End, terminate, Inc, JobName, IO_NO) ;
+     otherwise;
+      true -> Rpt = [killJob(ID) | NRpt],
+        job(Cnt,NRpt,Snd,Rcv,JobNo,Shut,End,Stat,Inc,JobName,IO_NO) ).
+job([stopJob(ID) | Cnt], Rpt, Snd, Rcv,
+            JobNo, Shut, End, Stat, Inc, JobName, IO_NO) :- true |
+    ( ID = JobNo, atom(Stat), Stat \= stopping 
+        -> Snd = [stop | NSnd], Rpt = NRpt, NStat = stopping ;
+      ID = JobNo, atom(Stat), Stat = stopping
+        -> Snd = NSnd, Rpt = [jobAlreadyStopped(JobNo) | NRpt], NStat = Stat ;
+      ID = JobNo, vector_element(Stat, 0, V0), V0 = stop
+        -> Snd = NSnd, Rpt = [jobAlreadyStopped(JobNo) | NRpt], NStat = Stat ;
+    otherwise;
+      true -> Snd = NSnd, Rpt = [stopJob(ID) | NRpt], NStat = Stat ),
+    job(Cnt, NRpt, NSnd, Rcv, JobNo, Shut, End, NStat, Inc, JobName, IO_NO).
+job([stopJob|Cnt],Rpt,Snd,Rcv,JobNo,Shut,End,Stat,Inc,JobName,IO_NO) :-
+    true |
+    ( atom(Stat), Stat \= stopping
+        -> Snd = [stop | NSnd], Rpt = NRpt, NStat = stopping ;
+      atom(Stat), Stat = stopping
+        -> Snd = NSnd, Rpt = [jobAlreadyStopped(JobNo) | NRpt], NStat = Stat ;
+      vector_element(Stat, 0, V0), V0 = stop
+        -> Snd = NSnd, Rpt = [jobAlreadyStopped(JobNo) | NRpt], NStat = Stat ),
+    job(Cnt, NRpt, NSnd, Rcv, JobNo, Shut, End, NStat, Inc, JobName, IO_NO).
+job([startJob(ID) | Cnt], Rpt, Snd, Rcv,
+            JobNo, Shut, End, Stat, Inc, JobName, IO_NO) :- true|
+    ( ID = all
+        -> releaseStop(Stat), Rpt = [startJob(all) | NRpt], NStat = running ;
+      ID = JobNo, vector_element(Stat, 0, V0), V0 = stop
+        -> releaseStop(Stat), Rpt = [jobStarted(JobNo)|NRpt], NStat=running;
+      ID = JobNo, atom(Stat)
+        -> Rpt = [jobNotStopped(JobNo) | NRpt], NStat = Stat ;
+    otherwise;
+      true -> Rpt = [startJob(ID) | NRpt], NStat = Stat ),
+    job(Cnt, NRpt, Snd, Rcv, JobNo, Shut, End, NStat, Inc, JobName, IO_NO).
+job([startJob|Cnt],Rpt,Snd,Rcv,JobNo,Shut,End,Stat,Inc,JobName,IO_NO) :-
+        true|
+    ( vector_element(Stat, 0, V0), V0 = stop
+        -> releaseStop(Stat), Rpt = [jobStarted(JobNo) | NRpt], NStat=running;
+      atom(Stat)
+        -> Rpt = [jobNotStopped(JobNo) | NRpt], NStat = Stat ),
+    job(Cnt, NRpt, Snd, Rcv, JobNo, Shut, End, NStat, Inc, JobName, IO_NO).
+job([addResource(all) | Cnt], Rpt, Snd, Rcv,
+            JobNo, Shut, End, Stat, I, JobName, IO_NO) :- true |
+%%%%%  On the condition of RESOURCE_LOW  %%%%%
+    ( I = low(Inc), integer(Inc) -> NInc = Inc,
+        Snd = [add_resource(0, Inc), allow_resource_report | NSnd] ;
+      I = low({High, Low}), integer(High), integer(Low) -> NInc = {High, Low},
+        Snd = [add_resource(High, Low), allow_resource_report | NSnd] ;
+      I = low(Inc), Inc = infinite -> NInc = Inc,
+        Snd = [add_resource(0, 1000000000), allow_resource_report | NSnd] ;
+%%%%%  On the condition of NOT resource_low  %%%%%
+      integer(I) -> Snd = NSnd, NInc = I ;
+      I = {High,Low},integer(High),integer(Low) -> Snd=NSnd, NInc={High,Low} ;
+      I = infinite -> Snd = NSnd, NInc = infinite ),
+    Rpt = [addResource(all) | NRpt],
+    job(Cnt, NRpt, NSnd, Rcv, JobNo, Shut, End, Stat, NInc, JobName, IO_NO).
+job([addResource(ID) | Cnt], Rpt, Snd, Rcv,
+            JobNo, Shut, End, Stat, I, JobName, IO_NO) :- ID \= all |
+%%%%%  On the condition of RESOURCE_LOW  %%%%%
+    ( ID = JobNo, I = low(Inc), integer(Inc)
+        -> Snd = [add_resource(0, Inc), allow_resource_report | NSnd],
+            Rpt = [resourceAdded(JobNo, Inc) | NRpt], NInc = Inc ;
+      ID = JobNo, I = low({High, Low}), integer(High),integer(Low)
+        -> Snd = [add_resource(High, Low), allow_resource_report | NSnd],
+            Rpt = [resourceAdded(JobNo, {High, Low}) | NRpt], NInc={High,Low};
+      ID = JobNo, I = low(Inc), Inc = infinite
+        -> Snd = [add_resource(0, 1000000000), allow_resource_report | NSnd],
+            Rpt = [resourceAdded(JobNo, Inc) | NRpt], NInc = infinite ;
+%%%%%  On the condition of NOT resource_low  %%%%%
+      ID = JobNo, integer(I)
+        -> Snd = NSnd, Rpt = NRpt, NInc = I ;
+      ID = JobNo, I = {High, Low}, integer(High), integer(Low)
+        -> Snd = NSnd, Rpt = NRpt, NInc = {High, Low} ;
+      ID = JobNo, I = infinite
+        -> Snd = NSnd, Rpt = NRpt, NInc = infinite ;
+    otherwise ;     %% ID \= JobNo
+        true -> Snd = NSnd, Rpt = [addResource(ID) | NRpt], NInc = I ),
+    job(Cnt, NRpt, NSnd, Rcv, JobNo, Shut, End, Stat, NInc, JobName, IO_NO).
+job([addResource | Cnt], Rpt, Snd, Rcv,
+            JobNo, Shut, End, Stat, I, JobName, IO_NO) :- true |
+%%%%%  On the condition of RESOURCE_LOW  %%%%%
+    ( I = low(Inc), integer(Inc)
+        -> Snd = [add_resource(0, Inc), allow_resource_report | NSnd],
+            Rpt = [resourceAdded(JobNo, Inc) | NRpt], NInc = Inc ;
+      I = low({High, Low}), integer(High), integer(Low)
+        -> Snd = [add_resource(High, Low), allow_resource_report | NSnd],
+            Rpt = [resourceAdded(JobNo, {High, Low}) | NRpt], NInc={High,Low};
+      I = low(Inc), Inc = infinite
+        -> Snd = [add_resource(0, 1000000000), allow_resource_report | NSnd],
+            Rpt = [resourceAdded(JobNo, Inc) | NRpt], NInc = infinite ;
+%%%%%  On the condition of NOT resource_low  %%%%%
+      integer(I)
+        -> Snd = NSnd, Rpt = NRpt, NInc = I ;
+      I = {High, Low}, integer(High), integer(Low)
+        -> Snd = NSnd, Rpt = NRpt, NInc = {High, Low} ;
+      I = infinite
+        -> Snd = NSnd, Rpt = NRpt, NInc = infinite ),
+    job(Cnt, NRpt, NSnd, Rcv, JobNo, Shut, End, Stat, NInc, JobName, IO_NO).
+job([set_rscinc(ID, Inc) | Cnt], Rpt, Snd, Rcv,
+                JobNo, Shut, End, Stat, I, JobName, IO_NO) :- true |
+%%%%%  On the condition of RESOURCE_LOW  %%%%%
+    (ID = JobNo, integer(I)                     -> NInc = Inc, NRpt = Rpt ;
+     ID = JobNo, I = {High, Low}, integer(High), integer(Low)
+                                                -> NInc = Inc, NRpt = Rpt ;
+     ID = JobNo, I = infinite                   -> NInc = Inc, NRpt = Rpt ;
+%%%%%  On the condition of NOT resource_low  %%%%%
+     ID = JobNo, I = low(OInc), integer(OInc)   -> NInc = low(Inc), NRpt=Rpt ;
+     ID = JobNo, I = low({High, Low}), integer(High), integer(Low)
+                                                -> NInc = low(Inc), NRpt=Rpt ;
+     ID = JobNo, I = low(infinite)              -> NInc = low(Inc), NRpt=Rpt ;
+    otherwise;
+     true -> NInc = I, Rpt = [set_rscinc(ID, Inc) | NRpt] ),
+    job(Cnt, NRpt, Snd, Rcv, JobNo, Shut, End, Stat, NInc, JobName, IO_NO).
+job([get_rscinc(ID, CmdStat) | Cnt], Rpt, Snd, Rcv,
+                JobNo, Shut, End, Stat, I, JobName, IO_NO) :- true |
+%%%%%  On the condition of NOT resource_low  %%%%%
+    (ID = JobNo, integer(I) -> NInc = I,
+        Rpt = [jobResourceIncrement(JobNo, I, CmdStat) | NRpt] ;
+     ID = JobNo, I = {High,Low},integer(High),integer(Low) -> NInc={High,Low},
+        Rpt = [jobResourceIncrement(JobNo, {High, Low}, CmdStat) | NRpt] ;
+     ID = JobNo, I = infinite -> NInc = infinite,
+        Rpt = [jobResourceIncrement(JobNo, infinite, CmdStat) | NRpt] ;
+%%%%%  On the condition of RESOURCE_LOW  %%%%%
+     ID = JobNo, I = low(Inc), integer(Inc) -> NInc = low(Inc),
+        Rpt = [jobResourceIncrement(JobNo, Inc, CmdStat) | NRpt] ;
+     ID = JobNo, I = low({High,Low}),integer(High),integer(Low) ->
+        NInc = low({High, Low}),
+        Rpt = [jobResourceIncrement(JobNo, {High, Low}, CmdStat) | NRpt] ;
+     ID = JobNo, I = low(infinite) -> NInc = low(infinite),
+        Rpt = [jobResourceIncrement(JobNo, infinite, CmdStat) | NRpt] ;
+    otherwise;
+     true -> Rpt = [get_rscinc(ID, CmdStat) | NRpt], NInc = I ),
+    job(Cnt, NRpt, Snd, Rcv, JobNo, Shut, End, Stat, NInc, JobName, IO_NO).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Abnormally message detected %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+job([Command|Cnt],Rpt,Snd,Rcv,JobNo,Shut,End,Stat,Inc,JobName,IO_NO) :-
+        atom(Command), Command \= addResource, Command \= stopJob,
+                       Command \= startJob, Command \= killJob |
+    Rpt = [Command | NRpt],
+    job(Cnt, NRpt, Snd, Rcv, JobNo, Shut, End, Stat, Inc, JobName, IO_NO).
+job([Command|Cnt],Rpt,Snd,Rcv,JobNo,Shut,End,Stat,Inc,JobName,IO_NO) :-
+        vector_element(Command, 0, V0),
+            V0 \= jobStatus, V0 \= addResource, V0 \= killJob, V0 \= io_no,
+            V0 \= stopJob, V0 \= startJob, V0 \= set_rscinc, V0 \= get_rscinc |
+    Rpt = [Command | NRpt],
+    job(Cnt, NRpt, Snd, Rcv, JobNo, Shut, End, Stat, Inc, JobName, IO_NO).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% reporting message from job %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+job(Cnt, Rpt, Snd, [], JobNo, Shut, End, Stop, _, _, IO_NO) :- true |
+        releaseStop(Stop), End = end, Shut = shut, Snd = [],
+        Rpt = [jobTerminated(JobNo,IO_NO) | Cnt].
+job(Cnt, Rpt, Snd, [Mes | Rcv],
+        JobNo, Shut, End, Stat, Inc, JobName, IO_NO) :- atom(Mes) |
+    (Mes = aborted ->
+        Rpt = [jobAborted(JobNo) | NRpt], NSnd = Snd, NInc = Inc, NStat=Stat ;
+     Mes = terminated ->
+        Snd = [], NRpt = Rpt, NSnd = _, NInc = Inc, NStat = zombi ;
+     Mes = resource_report_allowed ->
+        NRpt = Rpt, NSnd = Snd, NInc = Inc, NStat = Stat ;
+     Mes = resource_added ->
+        NRpt = Rpt, NSnd = Snd, NInc = Inc, NStat = Stat ;
+     Mes = resource_low, Inc = infinite -> NRpt = Rpt, NInc = Inc, NStat=Stat,
+        Snd = [add_resource(0, 1000000000), allow_resource_report | NSnd] ;
+     Mes = resource_low, Inc = {High, Low}, integer(High), integer(Low) ->
+        NSnd = Snd, NInc = low({High, Low}), NStat = Stat,
+        Rpt = [resourceLow(JobNo,IO_NO) | NRpt] ;
+     Mes = resource_low, integer(Inc) -> NSnd = Snd, NInc = low(Inc),
+        NStat = Stat, Rpt = [resourceLow(JobNo,IO_NO) | NRpt] ;
+    otherwise ;
+     true -> NSnd = Snd, NInc = Inc, NStat = Stat, NRpt = Rpt ),
+    job(Cnt, NRpt, NSnd, Rcv, JobNo, Shut, End, NStat, NInc, JobName, IO_NO).
+job(Cnt, Rpt, Snd, [return_resource(_, _) | Rcv],
+            JobNo, Shut, End, Stat, Inc, JobName, IO_NO) :- true |
+    job(Cnt, Rpt, Snd, Rcv, JobNo, Shut, End, Stat, Inc, JobName, IO_NO).
+job(Cnt, Rpt, Snd, [stopped(Reason, Release) | Rcv],
+                JobNo, Shut, End, _, Inc, JobName, IO_NO) :- true |
+    Reason = [stopped_by_shell],
+    Stat = stop(Release),
+    Rpt = [jobStopped(JobNo) | NRpt],
+    job(Cnt, NRpt, Snd, Rcv, JobNo, Shut, End, Stat, Inc, JobName, IO_NO).
+job(Cnt, Rpt, Snd, [exception(ExpType, ExpArgv, NC, NA) | Rcv],
+                JobNo, Shut, End, Stat, Inc, JobName, IO_NO) :- true |
+    ( ExpType = raised, ExpArgv = {_,attention_detected,_} ->
+        Rpt = [attention(JobNo, IO_NO) | NRpt],
+        getCode(module#shellUtils, terminate, 0, NC), NA = {},
+        job(Cnt, NRpt, Snd, Rcv, JobNo, Shut, End, Stat, Inc, JobName, IO_NO) ;
+     otherwise ;
+      true ->
+        waitIoClose(JobNo, Rpt, NRpt, Snd, [abort([], _)], Shut),
+        NRpt = [exception(JobNo, ExpType, ExpArgv) | NNRpt],
+        getCode(module#shellUtils, terminate, 0, NC), NA = {},
+        job(Cnt,NNRpt,_,Rcv,JobNo,_,End,terminate,Inc,JobName,IO_NO) ).
+job(Cnt, Rpt, Snd, [illegal_stdio(JobNo) | Rcv],
+                JobNo, Shut, End, Stat, Inc, JobName, IO_NO) :- true |
+    waitIoClose(JobNo, Rpt, NRpt, Snd, [abort([], _)], Shut),
+    NRpt = [illegal_stdio(JobNo) | NNRpt],
+    getCode(module#shellUtils, terminate, 0, NC), NA = {},
+    job(Cnt,NNRpt,_,Rcv,JobNo,_,End,terminate,Inc,JobName,IO_NO).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Abnormally message detected %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+job(Cnt, Rpt, Snd, [M | Rcv], JobNo, Shut, End, Stat, Inc, JobName, IO_NO) :-
+    vector_element(M, 0, V), V \= return_resource, V \= stopped, V \= exception,
+        V \= illegal_stdio |
+    job(Cnt, Rpt, Snd, Rcv, JobNo, Shut, End, Stat, Inc, JobName, IO_NO).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+getCode(Module, Pred, Arity, Goal) :- true |
+    predicate_to_code(Module, Pred, Arity, Goal).
+
+waitIoClose(JobNo, Rpt, NRpt, Snd, NSnd, Shut) :- true |
+    Rpt = [closeIo(JobNo, Status) | NRpt],
+    waitIoClose1(Status, Snd, NSnd, Shut).
+waitIoClose1(Status, Old, New, Shut) :- wait(Status) | Old = New, Shut = abort.
+
+releaseStop(Stop) :- Stop = stop(Release) | Release = release.
+otherwise.
+releaseStop(_) :- true | true.
+
+statusChecker(Stat, NStat, Inc, NInc) :- true |
+    (atom(Stat), Inc = low(I) ->
+        copyInc(I, Inc1), NInc = low(Inc1), NStat = rsc_low(Stat) ;
+     atom(Stat), vector_element(Inc, 0, V0), V0 \= low ->
+        copyInc(Inc, NInc), NStat = Stat ;
+     atom(Stat), atom(Inc) -> Inc = NInc, NStat = Stat ;
+     atom(Stat), integer(Inc) -> Inc = NInc, NStat = Stat ;
+     vector_element(Stat, 0, stop), Inc = low(I) ->
+        copyInc(I, Inc1), NInc = low(Inc1), NStat = rsc_low ;
+     vector_element(Stat, 0, stop),
+                vector_element(Inc, 0, V0), V0 \= low ->
+        copyInc(Inc, NInc), NStat = stopped ;
+     vector_element(Stat, 0, stop), atom(Inc) ->
+        Inc = NInc, NStat = stopped ;
+     vector_element(Stat, 0, stop), integer(Inc) ->
+        Inc = NInc, NStat = stopped ;
+    otherwise ;
+     Inc = low(I) ->
+        copyInc(Inc, Inc1), NInc = low(Inc1), NStat = abnormal ;
+     vector_element(Inc, 0, V0), V0 \= low ->
+            copyInc(Inc, NInc), NStat = abnormal ;
+     atom(Inc) -> Inc = NInc, NStat = abnormal ;
+     integer(Inc) -> Inc = NInc, NStat = abnormal).
+
+copyInc(Inc, NInc) :- integer(Inc) | NInc = Inc.
+copyInc(Inc, NInc) :- atom(Inc) | NInc = Inc.
+copyInc(Inc, NInc) :- vector(Inc, L) |
+    new_vector(NV, L), copyElement(Inc, NV, NInc, 0, L).
+
+copyElement(_, NV, NInc, L, L) :- true | NInc = NV.
+otherwise.
+copyElement(Inc, NV, NInc, C, L) :- vector_element(Inc, C, Elmnt) |
+    set_vector_element(NV, C, _, Elmnt, NNV),
+    add(C, 1, NC),
+    copyElement(Inc, NNV, NInc, NC, L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                        %%%%%
+%%%%%  End of 'job' module.  %%%%%
+%%%%%                        %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+

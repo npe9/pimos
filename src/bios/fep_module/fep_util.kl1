@@ -1,0 +1,98 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module fep_utility.
+:- with_macro pimos.
+:- public set_value/2,
+          device_abnormal/1,
+          str8_to_str16/2,
+          close_device/2.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% set_value(Receive, ^Result)
+%%      Receive   ::  value of I/O message
+%%      Result    ::  variables of I/O message
+
+set_value(Receive, Result) :-
+    vector(Receive, Size0),
+    vector(Result, Size1),
+    vector_element(Receive, 0, ID0),
+    vector_element(Result, 0, ID1),
+    vector_element(Receive, 1, Status0),
+    vector_element(Result, 1, Status1),
+    ID0 =:= ID1,
+    Size0 =:= Size1,
+    Status0 = fep#normal |
+        Status1 = fep#normal,
+        set_value1(2, Size0, Receive, Result).
+otherwise.
+set_value(Receive, Result) :-
+    vector(Result, Size),
+    vector_element(Receive, 0, ID0),
+    vector_element(Result, 0, ID1),
+    vector_element(Receive, 1, Status0),
+    vector_element(Result, 1, Status1),
+    ID0 =:= ID1 |
+        Status1 = Status0,
+        set_value2(2, Size, fep#nil, Result).
+
+
+set_value1(N, N, _, _) :-
+    true |
+        true.
+otherwise.
+set_value1(M, N, Receive, Result) :- 
+    true |
+        vector_element(Receive, M, Val, Receive1),
+        vector_element(Result, M, Var, Result1),
+        Var = Val,
+        set_value1(~(M+1), N, Receive1, Result1).
+
+
+set_value2(N, N, _, _) :-
+    true |
+        true.
+otherwise.
+set_value2(M, N, Value, Result) :- 
+    true |
+        vector_element(Result, M, Var, Result1),
+        Var = Value,
+        set_value2(~(M+1), N, Value, Result1).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% device_abnormal(Result)
+%%      Result    ::  variables of I/O message
+
+device_abnormal(Result) :-
+    vector(Result, Size) |
+        set_vector_element(Result, 1, fep#abnormal, fep#abnormal, Result1),
+        set_value2(2, Size, fep#nil, Result1).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% str8_to_str16(Str, NStr)
+%%      Str        ::  8bit string
+%%      NStr       ::  16bit string
+
+str8_to_str16(Str, NStr) :-
+    string(Str, _, 8) |
+        change_element_size(Str, 16, NStr).
+str8_to_str16(X, Y) :-
+    integer(X) |
+        Y = X.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% close_device(Attention, Send)
+%%      Attention  ::  Attention Line from FEP
+%%      Send       ::  send message for SCSI DRIVER
+
+close_device(fep#attention, Send) :-
+    true |
+        Send = [].
+close_device(fep#nil, Send) :-
+    true |
+        Send = [].

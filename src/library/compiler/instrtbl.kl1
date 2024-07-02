@@ -1,0 +1,162 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_instr.
+:- public convert_instrs/3.
+
+:- local_implicit code:oldnew.
+convert_instrs([Instr|Rest]) --> true |
+    convert_instr(Instr),
+    convert_instrs(Rest).
+convert_instrs([]) --> true | true.
+
+% wait_XXX
+convert_instr(wait_variable(X, Y)) --> true |
+    &code <<= [put_value(Y, X)].
+%wait_value
+%wait_list
+%wait_vector
+
+%put_list
+%put_vector
+convert_instr(put_structured_constant(X, '$SCNST'(Lab0))) --> true |
+  {{unwrap(Lab0, Lab)}},
+    &code <<= [put_structured_constant(X,'$SCNST'(Lab))].
+convert_instr(put_struatured_constant(X, '$MODULE'(Mod))) --> true |
+    &code <<= [put_structured_constant(X, '$MODULE'(Mod))].
+% put_variable
+% put_value
+convert_instr(put_value(X, Y)) --> true |
+    &code <<= [put_value(Y,X)].
+convert_instr(put_marked_value(X,Y)) --> true |
+    &code <<= [put_marked_value(Y,X)].
+convert_instr(trans_value(X, Y)) --> true |
+    &code <<= [put_value(Y,X)].
+%get_value
+convert_instr(get_list_value(List, X)) --> true |
+    &code <<= [get_bound_value(X, List)].
+convert_instr(get_vector_value(Vect, X)) --> true |
+    &code <<= [get_bound_value(X, Vect)].
+%read_variable
+%read_value
+%
+% write
+%write_variable(X)
+%write_value(X)
+
+%set
+convert_instr(set_value(X, G)) --> true |
+    &code <<= [set_value(G, X)].
+convert_instr(set_variable(X, G)) --> true |
+    &code <<= [set_variable(G, X)].
+convert_instr(set_marked_variable(X, G)) --> true |
+    &code <<= [set_marked_variable(G, X)].
+convert_instr(set_marked_value(X, G)) --> true |
+    &code <<= [set_marked_value(G, X)].
+
+%create_goal is deleted
+convert_instr(create_goal(_,_)) --> true | true.
+convert_instr(create_ext(_,_,_)) --> true | true.
+convert_instr(create_with_priority(_, _, _)) --> true | true.
+convert_instr(create_to_processor(_, _, _)) --> true | true.
+convert_instr(create_with_priority_to_processor(_, _, _)) --> true | true.
+convert_instr(create_ext_with_priority(_, _, _)) --> true | true.
+convert_instr(collect_stack) --> true | true.
+% enqueue
+%%convert_instr(enqueue_goal(Pred/Ari)) --> true |
+%%    &code <<= [enqueue_goal(Ari, Pred/Ari)].
+convert_instr(enqueue_with_priority(Ari, Label, Pri)) --> true |
+    &code <<= [enqueue_goal_with_priority(Pri, Label, Ari)].
+convert_instr(enqueue_to_processor(Ari, Label, Proc)) --> true |
+    &code <<= [enqueue_goal_to_processor(Proc, Label, Ari)].
+% not supported
+convert_instr(enqueue_with_priority_to_processor(Pred/N, Pri, Proc)) --> true |
+    &code <<= [enqueue_goal_with_priority_to_processor(Pri, Proc, Pred, N)].
+convert_instr(enqueue_ext(A, Lab, Mod)) --> true |
+    &code <<= [enqueue_goal_external(A, Mod:Lab)].
+%execute
+convert_instr(execute(Pred/N)) --> true |
+    &code <<= [execute(N, Pred/N)].
+convert_instr(execute_ext(Pred/N, Mod)) --> true |
+    &code <<= [execute_external(N, Mod:Pred/N)].
+%proceed
+convert_instr(suspend(Pred/N)) --> true |
+    &code <<= [suspend(N,Pred/N)].
+convert_instr(otherwise(Pred/N)) --> true |
+    &code <<= [otherwise(N, Pred/N)].
+% constants
+%%convert_instr(wait_constant(X, C)) --> C >= 16#"FFFF8000", C =< 16#"00007FFF" |
+%%    C1 := C /\ 16#"0000FFFF",
+%%    &code <<= [wait_integer(X, C1)].
+convert_instr(wait_constant(X, [])) --> true |
+    &code <<= [wait_nil(X)].
+%%convert_instr(put_constant(C, X)) --> C >= 16#"FFFF8000", C =< 16#"00007FFF" |
+%%    C1 := C /\ 16#"0000FFFF",
+%%    &code <<= [put_integer(X, C1)].
+convert_instr(put_constant([], X)) --> true |
+    &code <<= [put_nil(X)].
+%%convert_instr(read_constant(C)) --> C >= 16#"FFFF8000", C =< 16#"00007FFF" | 
+%%    C1 := C /\ 16#"0000FFFF",
+%%    &code <<= [read_integer(C1)].
+convert_instr(read_constant([])) --> true |
+    &code <<= [read_nil].
+%%convert_instr(write_constant(C)) --> C >= 16#"FFFF8000", C =< 16#"00007FFF" |
+%%    C1 := C /\ 16#"0000FFFF",
+%%    &code <<= [write_integer(C1)].
+convert_instr(write_constant([])) --> true |
+    &code <<= [write_nil].
+%%convert_instr(get_constant(C, X)) --> C >= 16#"FFFF8000", C=< 16#"00007FFF" |
+%%    C1 := C /\ 16#"0000FFFF",
+%%    &code <<= [get_integer(X, C1)].
+convert_instr(get_constant([], X)) --> true |
+    &code <<= [get_nil(X)].
+%%convert_instr(set_constant(C, G)) --> C >= 16#"FFFF8000", C=< 16#"00007FFF" |
+%%    C1 := C /\ 16#"0000FFFF",
+%%    &code <<= [set_integer(G, C1)].
+convert_instr(set_constant([], G)) --> true |
+    &code <<= [set_nil(G)].
+convert_instr(not_unified(X,Y)) --> true |
+    &code <<= [diff(X,Y)].
+otherwise.
+convert_instr(wait_constant(X, C)) --> atom(C) |
+    &code <<= [wait_atom(X, C)].
+convert_instr(put_constant(C, X)) --> atom(C) |
+    &code <<= [put_atom(X, C)].
+convert_instr(read_constant(X)) --> atom(X) |
+    &code <<= [read_atom(X)].
+convert_instr(write_constant(X)) --> atom(X) |
+    &code <<= [write_atom(X)].
+convert_instr(get_constant(C, X)) --> atom(C) |
+    &code <<= [get_atom(X, C)].
+convert_instr(set_constant(C, G)) --> atom(C) |
+    &code <<= [set_atom(G, C)].
+otherwise.
+convert_instr(put_constant(C, X)) --> true |
+    &code <<= [put_constant(X, C)].
+convert_instr(get_constant(C, X)) --> true |
+    &code <<= [get_constant(X, C)].
+convert_instr(set_constant(C, G)) --> true |
+    &code <<= [set_constant(G, C)].
+otherwise.
+convert_instr(Instr) --> true |
+    &code <<= [Instr].    
+
+unwrap(vector(Vect0), Vect) :- vector(Vect0, N) |
+   unwrap(0, N, Vect0, Vect).
+unwrap(list([Car|Cdr]), List) :- true |
+   unwrap(Car, NewCar),
+   unwrap(Cdr, NewCdr),
+   List=[NewCar|NewCdr].
+otherwise.
+unwrap({_,Arg0}, Arg) :- true |
+   Arg0=Arg.
+
+unwrap(A, N, Vect0, Vect) :- A<N |
+   set_vector_element(Vect0, A, Arg0, Arg, Vect1),
+   unwrap(Arg0, Arg),
+   A1 := A+1,
+   unwrap(A1, N, Vect1, Vect).
+unwrap(N, N, Vect0, Vect) :- true | Vect0=Vect.

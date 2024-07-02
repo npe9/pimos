@@ -1,0 +1,357 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%% 1991.8.8 for PSI-UX
+
+%% meke dummy
+%% class profiler_mono_selector_image has end. %%
+%% class profiler_color_selector_image has end.  %% for 64 colors
+%%class profiler_8_selector_image has end.
+%%class profiler_256_selector_image has end.
+
+class view_select_image has
+attribute
+    (color:=F :- color_check(F));
+
+:restore(C,Win):-
+    (C!color==off,    %% for mono
+     !,
+     :get(#profiler_mono_selector_image,S),
+     :restore_image(Win,S,0,0,384,238);
+
+     C!color==64,     %% 5/8
+     !,
+     :get(#profiler_color_selector_image,S),
+     :restore_full_color_image(Win,S,0,0,384,238);
+
+     C!color==8,      %% 3/1 for color 8
+     !,
+     :get(#profiler_8_selector_image,S),            %%3/1
+     :restore_full_color_image(Win,S,0,0,384,238);  %%3/1
+
+     C!color==16,      %% 5/8
+     !,
+     :get(#profiler_16_selector_image,S),          %%5/8
+     :restore_full_color_image(Win,S,0,0,384,238);  %%5/8
+
+     C!color==256,    %% 5/8
+     !,
+     :get(#profiler_256_selector_image,S),         %%5/8
+     :restore_full_color_image(Win,S,0,0,384,238)); %%5/8
+
+%% :write(+,+ImageString,+FileNameString,+ClassNameAtom)
+
+:write(_,S,F,Name):-
+    :get_atom_string(#symbolizer,Name,ClassNS),
+    :append(#string,["class ",ClassNS," has"],Head),
+    :create(#standard_output_file,Out,F),
+    :putl(Out,Head),
+    :putl(Out,":get(_,S):-"),
+    :putb(Out,"S= ",3),
+    :putt(Out,S),
+    :putl(Out),
+    :putc(Out,#";"),
+    :putl(Out),
+    :putb(Out,"end.",4),
+    :putl(Out),
+    :close_output(Out),
+    :create(#library_utility,Lib),
+    :catalogue(Lib,[F],_);
+
+:go(C):-
+    Mode=C!color,
+     :draw(#view_select_image_maker,St),
+    (Mode==off,!,
+     F="p_m_menu.esp",N=profiler_mono_selector_image;
+     Mode==64,!,
+     F="p_c_menu.esp",N=profiler_color_selector_image;
+     Mode==8,!,
+     F="p_8_menu.esp",N=profiler_8_selector_image;
+     Mode==16,!,
+     F="p_16_menu.esp",N=profiler_16_selector_image;
+     Mode==256,!,
+     F="p_256_menu.esp",N=profiler_256_selector_image),
+    :write(C,St,F,N);
+
+:go(C,Path):-
+    :draw(#view_select_image_maker,St),
+    (C!color==off,!,
+     F="p_m_menu.esp",N=profiler_mono_selector_image;
+     C!color==16,!,
+     F="p_16_menu.esp",N=profiler_16_selector_image;
+     C!color==256,!,
+     F="p_256_menu.esp",N=profiler_256_selector_image;
+     C!color==8,!,
+     F="p_8_menu.esp",N=profiler_8_selector_image;
+     C!color==64,!,
+     F="p_c_menu.esp",N=profiler_color_selector_image),
+    :append(#string,[Path,F],F1),
+    :write(C,St,F1,N);
+
+:go(C,Path,Num):-
+    MC= #view_select_image_maker,
+    MC!make_mode:=Num,
+    :draw(MC,St),
+    MC!make_mode:=0,
+    (Num==off,!, %%% 5/8   2 --> off
+     F="p_m_menu.esp",N=profiler_mono_selector_image;
+     Num==8,!,
+     F="p_8_menu.esp",N=profiler_8_selector_image;
+     Num==16,!,
+     F="p_16_menu.esp",N=profiler_16_selector_image;
+     Num==64,!,
+     F="p_c_menu.esp",N=profiler_color_selector_image;
+     Num==256,!,
+     F="p_256_menu.esp",N=profiler_256_selector_image),
+    :append(#string,[Path,F],F1),
+    :write(C,St,F1,N);
+
+local
+
+color_check(Mode):-
+    %:get_parameter(#ipl,bmm_size,Dev),
+    %(Dev==16#"07FF",!,Mode=off;
+    % Dev==16#"0FFF",!,Mode=8;
+    % Dev==16#"17FF",!,Mode=64;
+    % Dev==16#"1FFF",!,Mode=256;
+    % Mode=off);
+    :get_plane_count(#bitmap,N),    %%% 5/8
+    (N==1,!,Mode=off;               %%% 5/8
+     N==3,!,Mode=8;                 %%% 5/8
+     N==4,!,Mode=16;                %%% 5/8
+     N==6,!,Mode=64;                %%% 5/8
+     N==8,!,Mode=256);              %%% 5/8
+
+end.
+
+%%%%%
+
+class view_select_image_maker has
+nature labeled_sash,as_mouse_input,as_graphics,inferior_window;
+attribute (font:=F :- :create(#font,"font:test_11.font",F)),
+          design_mode,
+          trace_mode:=off,
+          make_mode;
+
+:draw(Class,GString):-
+
+    :create(Class,[size(400,400),border_flag(off),
+        margin_flag(off),title(" View selector")],Win),
+    (Class!trace_mode==off,!;
+     :activate(Win)),
+    Win!font:=Class!font,
+
+    WY=216,
+    WH=60,
+
+%% adjust
+
+    ADJ1=6,
+    ADJ2=10+ADJ1*6, %% 46
+
+    :draw_filled_rectangle(Win,0,0,383,400,0,fix,set),
+    :draw_filled_rectangle(Win,0,0,383,400,0,light_paint,reset),
+
+    draw_up_box(Win,0,  0,  248,217-ADJ2+3),
+    draw_up_box(Win,248,0,  128+7,217-ADJ2+3),
+    draw_up_box(Win,0,  218-ADJ2+3,383,48-10),
+
+TADJ=10,
+
+%% r 
+    :draw_filled_rectangle(Win,260+5,38-TADJ*1,20,30,0,fix,reset),
+    :draw_string(Win,264+5,42-TADJ*1,"r", Class!font,set),
+    draw_up_box(Win,260+5,38-TADJ*1,20,30),
+%% s
+    :draw_filled_rectangle(Win,260+5,91-TADJ*2,20,30,0,fix,reset),
+    :draw_string(Win,264+5,95-TADJ*2,"s", Class!font,set),
+    draw_up_box(Win,260+5,91-TADJ*2,20,30),
+%% &
+    :draw_filled_rectangle(Win,260+5,144-TADJ*3,20,30,0,fix,reset),
+    :draw_string(Win,264+5,148-TADJ*3,"&",Class!font,set),
+    draw_up_box(Win,260+5,144-TADJ*3,20,30),
+
+%% Num To Window
+
+% draw traiangle
+
+    draw_up_tra(Win,310, 28+6-TADJ*1,17,20-6),
+    draw_up_tra(Win,310, 96+6-TADJ*2,17,20-6),
+    %draw_up_tra(Win,310,164+6-TADJ*3,17,20-6),
+
+    draw_down_tra(Win,310, 71-8-TADJ*1,17,20-6),
+    draw_down_tra(Win,310,138-8-TADJ*2,17,20-6),
+    %draw_down_tra(Win,310,207-8-TADJ*3,17,20-6),
+
+% Box
+
+    :draw_filled_rectangle(Win,331, 38-TADJ*1,34,22,0,fix,reset),
+    :draw_filled_rectangle(Win,331,106-TADJ*2,34,22,0,fix,reset),
+    :draw_filled_rectangle(Win,331,174-TADJ*3,34,22,0,fix,reset),
+
+    draw_down_box(Win,329, 36-TADJ*1,35,24),
+    draw_down_box(Win,329,104-TADJ*2,35,24),
+    draw_down_box(Win,329,172-TADJ*3,35,24),
+
+    box(12,12-ADJ1*1+2,224,22,"WhatxWhen",Win),
+    box(12,46-ADJ1*2+2,224,22,"Overall WhatxWhen",Win),
+    box(12,80-ADJ1*3+2,224,22,"WhatxWhere",Win),
+    box(12,114-ADJ1*4+2,224,22,"Overall WhatxWhere",Win),
+    box(12,148-ADJ1*5+2,224,22,"WhenxWhere",Win),
+    box(12,182-ADJ1*6+2,224,22,"Result",Win),
+
+    box(12 ,230-ADJ2,80,22,"do_it",Win),
+    box(97 +1,230-ADJ2,80,22,"new_win",Win),
+    box(182+2,230-ADJ2,80,22,"What",Win),
+    box(267+3,230-ADJ2,80,22,"History" ,Win),
+
+    %draw_up_box(Win,352,230-ADJ2-2,24,24),
+    %draw_up_box(Win,352+6,230-ADJ2+5,11,11),
+
+    draw_down_frame(Win,352+8,230-ADJ2-2+7,13,13),
+
+    :draw_label(Win,"Num",   310,  4-4,WY+4,WH-10),
+    :draw_label(Win,"To",    310, 72-6-TADJ*1,WY+4,WH-10),
+    :draw_label(Win,"Window",302, 140-6-TADJ*2,WY+4,WH-10),
+
+    :set_size(Win,384,238),
+
+    :activate(Win),
+
+    (Class!make_mode==0,!,color_check(Mode),
+     ( Mode==off,!,Col=1;
+       Mode==64,!,Col=6;
+       Mode==8,!,Col=3;
+       Mode==16,!,Col=4;
+       Mode==256,!,Col=8
+      ),!,
+      new_string(GString,(384/16)*238*Col,16),
+      :save_image(Win,GString,0,0,(384/16)*16,238);
+
+     Mode=Class!make_mode,
+     ( Mode==off,!,Col=1;
+       Mode==64,!,Col=6;
+       Mode==8,!,Col=3;
+       Mode==16,!,Col=4;
+       Mode==256,!,Col=8
+      ),!,
+      new_string(GString0,(384/16)*238,16),
+      :save_image(Win,GString0,0,0,(384/16)*16,238),
+      new_string(GString,(384/16)*238*Col,16),
+      set_substring(GString,0,(384/16)*238,GString0)),
+
+    (Class!design_mode==0,!;
+     :read(Win,_)),
+
+    :kill(Win);
+
+:go(Class,St):-
+    :create(Class,[size(384,238),border_flag(off),
+        margin_flag(off),title(" TEST")],Win),
+    :activate(Win),
+    (color_check(off),!,
+     :restore_image(Win,St,0,0,(384/16)*16,238),
+     :restore_full_color_image(Win,St,0,0,(384/16)*16,238)),
+    :read(Win,_),
+    :kill(Win);
+
+:design(Class):-
+    Class!design_mode:=on,
+    :draw(Class,_),
+    Class!design_mode:=0;
+
+:trace(Class):-
+    Class!trace_mode:=on,
+    :design(Class),
+    Class!trace_mode:=off;
+
+instance
+
+attribute font;
+
+:draw_label(Obj,S,X,Y,WY,WH):-
+    :draw_label(#draw_l,Obj,S,X,Y,WY,WH);
+
+local
+
+color_check(Mode):-
+    %:get_parameter(#ipl,bmm_size,Dev),
+    %(Dev==16#"07FF",!,Mode=off;
+    % Dev==16#"0FFF",!,Mode=8;
+    % Dev==16#"17FF",!,Mode=64;
+    % Dev==16#"1FFF",!,Mode=256;
+    % Mode=off);
+    :get_plane_count(#bitmap,N),
+    (N==1,!,Mode=off;
+     N==3,!,Mode=8;
+     N==4,!,Mode=16;
+     N==6,!,Mode=64;
+     N==8,!,Mode=256);
+
+draw_up_box(Win,X,Y,W,H):-
+
+    :draw_line(Win,X,  Y+1,X+W-1,Y+1,  2,solid,reset),
+    %:draw_line(Win,X+1,Y,  X+1,  Y+H-1,2,solid,reset),
+    :draw_line(Win,X,Y,  X,  Y+H-1,2,solid,reset),
+
+    :draw_line(Win,X,    Y+H  ,X+W-1,Y+H, 1,solid,set),
+    :draw_line(Win,X+1,  Y+H-1,X+W-1,Y+H-1,1,solid,set),
+    :draw_line(Win,X+W,  Y,    X+W,  Y+H,1,solid,set),
+    :draw_line(Win,X+W-1,Y+1,  X+W-1,Y+H,1,solid,set);
+
+draw_down_box(Win,X,Y,W,H):-
+
+    :draw_line(Win,X,  Y+1,X+W-1,Y+1,  2,solid,set),
+    :draw_line(Win,X,Y,  X,  Y+H-1,2,solid,set);
+
+%%
+
+draw_up_tra(Win,X,Y,W0,H0):-
+    W1=W0/2,
+    H=H0-1,
+    W=W0-1,
+
+    :draw_line(Win,X,     Y,    X-W1-1,Y+H-1,1,solid,reset),
+    :draw_line(Win,X,     Y+1,  X-W1-1,Y+H,  1,solid,reset),
+    :draw_line(Win,X-W1-2,Y+H-1,X+W1-1,Y+H-1,1,solid,set),
+    :draw_line(Win,X-W1-1,Y+H,  X+W1,  Y+H,  1,solid,set),
+    :draw_line(Win,X+1,   Y,    X+W1,  Y+H-1,1,solid,set),  
+    :draw_line(Win,X+1,   Y+1,  X+W1,  Y+H,  1,solid,set);
+
+draw_down_tra(Win,X,Y,W0,H0):-
+    W1=W0/2,
+    H=H0-1,
+    W=W0-1,
+
+    :draw_line(Win,X+W1,  Y-H,  X+1,   Y-1,1,solid,set),
+    :draw_line(Win,X+W1,  Y-H+1,X+1,   Y,1,solid,set),
+    :draw_line(Win,X-W1-1,Y-H,  X,     Y-1,1,solid,reset),
+    :draw_line(Win,X-W1-1,Y-H+1,X,     Y,1,solid,reset),
+    :draw_line(Win,X-W1-1,Y-H,  X+W1,  Y-H,1,solid,reset),
+    :draw_line(Win,X-W1-1,Y-H+1,X+W1-1,Y-H+1,1,solid,reset);
+
+box(X,Y,W,H,St,Win):-
+    Class= #view_select_image_maker,
+    :draw_filled_rectangle(Win,X-1,Y-1,W+2,H+2,0,fix,reset),
+    :draw_line(Win,X,Y-1,X+W-1,Y-1,2,solid,reset),
+    :draw_line(Win,X,Y-1,X,Y+H,2,solid,reset),
+
+    :draw_line(Win,X,Y+H,X+W,Y+H,1,solid,set),
+    :draw_line(Win,X+1,Y+H-1,X+W,Y+H-1,1,solid,set),
+
+    :draw_line(Win,X+W,Y-1,X+W,Y+H,1,solid,set),
+    :draw_line(Win,X+W-1,Y,X+W-1,Y+H,1,solid,set),
+
+    string(St,Len,_),
+    :draw_string(Win,X+2+(W-4-Len*11)/2,Y+1,St,Class!font,set);
+
+draw_down_frame(Win,X,Y,W,H):-
+    :draw_line(Win,X,Y+1,X+W,Y+1,2,solid,set),
+    :draw_line(Win,X,Y,X,Y+H,2,solid,set),
+
+    :draw_line(Win,X,Y+H,X+W,Y+H,1,solid,reset),
+    :draw_line(Win,X+1,Y+H-1,X+W,Y+H-1,1,solid,reset),
+
+    :draw_line(Win,X+W,Y,X+W,Y+H,1,solid,reset),
+    :draw_line(Win,X+W-1,Y+1,X+W-1,Y+H,1,solid,reset);
+
+end.

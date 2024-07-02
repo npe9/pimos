@@ -1,0 +1,866 @@
+% icpsi523::>sys>user>pimos>RELEASE>src>vm>DKSF.kl1.2, 18-Dec-92 13:56:54, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>user>yashiro>DISK_SIM>v1>DKSF.kl1.3, 02-Apr-92 17:03:50, Edit by yashiro
+%---------------------------%
+% PIMOS disk_simulator file %
+%---------------------------%
+
+%---------%
+% history %
+%---------%
+%-----------%
+% version 1 %
+%-----------%
+%  This module provides the functions to save and restore contents of a disk_simulator.
+%  After you restore contents from your "disk_simulator file", you can recreate a disk_simulator
+% process which comprises the same data as you had saved.
+
+%-------------------------------%
+% disk_simulator file structure %
+%-------------------------------%
+
+% 1. header part
+% 2. data part
+
+:- module disk_simulator_file.
+:- with_macro pimos.
+
+:- public   save/4,
+            restore/2.
+
+%========%
+% save/4 %
+%========%
+% Arguments
+% 1.    Pathname                a 16bit-string.
+% 2.    MediaStructure          simulator(BlockSize, CylinderSize, VolumeSize).
+%           BlockSize               an integer greater than or equal to 1.(bytes)
+%           CylinderSize            an integer greater than or equal to 1.(blocks)
+%           DiskSize                an integer greater than or equal to 1.(cylinders)
+% 3.    Contents                a vector whose size must be CylinderSize * DiskSize.
+% 4.   ^Status                  Result.
+%           normal
+%           abnormal(Error)     Error is one of the followings.
+%               illegal_parameter(Parameter)    Parameter is one of the followings.
+%                       pathname(Pathname)
+%                       media_structure(MediaStructure)
+%                       contents(Contents)
+%               file_device_creation_failure
+%               make_failure
+%               output_failure
+
+
+save(Pathname, MediaStructure, Contents, Status):-
+        dksf_arguments:save(Pathname, MediaStructure, Contents, ArgsStatus),
+        save1(ArgsStatus, Pathname, MediaStructure, Contents, Status).
+
+%---------%
+% save1/5 %
+%---------%
+save1(abnormal(ArgError), _, _, _, Status):-
+    true |
+        Status = abnormal(ArgError).
+save1(normal, Pathname, MediaStructure, Contents, Status):-
+    true |
+        shoen:raise(pimos_tag#task, general_request, GeneralRequestDevice),
+        GeneralRequestDevice = [file(GRDStatus)],
+        save2(GRDStatus, Pathname, MediaStructure, Contents, Status).
+
+%---------%
+% save2/5 %
+%---------%
+save2(abnormal, _, _, _, Status):-
+    true |
+        Status = abnormal(file_device_creation_failure).
+save2(normal(FileRequest, _, _), Pathname, MediaStructure, Contents, Status):-
+    true |
+        FileRequest = [open(Pathname, write(OpenStatus))],
+        save3(OpenStatus, MediaStructure, Contents, Status).
+
+%---------%
+% save3/4 %
+%---------%
+save3(abnormal, _, _, Status):-
+    true |
+        Status = abnormal(make_failure).
+save3(normal(File, Abort, _), MediaStructure, Contents, Status):-
+    vector(Contents, VolumeSize),
+        VolumeSize >= 2 |
+        MediaStructure = simulator(BlockSize, _, _),
+        atom_table:cache_table(AtomDev),
+        header(MediaStructure, Records, Records1),
+        vector_element(Contents, 0, Condition, Contents1),
+        approve(Condition, BlockSize, AtomDev, AtomDev1, ApprovedCondition, PreCondition),
+        record_header(ApprovedCondition, Records1, FinalCount, Records2),
+%        records(Abort, PreCondition, 1, VolumeSize, Contents1, BlockSize, AtomDev1, 0, Stop, FinalCount, [], Records2) @processor(0),
+%        output(Stop, Records, Contents, Abort, File, OutputStatus) @processor(1),
+        records(Abort, PreCondition, 1, VolumeSize, Contents1, BlockSize, AtomDev1, 0,
+                                                                Stop, FinalCount, [], Records2),
+        output(Stop, Records, Contents, Abort, File, OutputStatus),
+        save_status(OutputStatus, Status).
+otherwise.
+save3(normal(File, Abort, _), MediaStructure, Contents, Status):-
+    true |
+        MediaStructure = simulator(BlockSize, _, _),
+        header(MediaStructure, Records, Records1),
+        atom_table:cache_table(AtomDev),
+        vector_element(Contents, 0, Condition, Contents1),
+        approve(Condition, BlockSize, AtomDev, [], ApprovedCondition, _),
+        record_header(ApprovedCondition, Records1, FinalCount, Records2),
+        a_record(Abort, ApprovedCondition, Stop, FinalCount, Records2),
+        output(Stop, Records, Contents1, Abort, File, OutputStatus),
+        save_status(OutputStatus, Status).
+
+%----------%
+% header/3 %
+%----------%
+header(simulator(BlockSize, CylinderSize, DiskSize), Records, RecordsTail):-
+    true |
+%        new_string(Header0, 4, 32),
+%        DKSF := ((( c#"D" << 24 ) \/ ( c#"K" << 16 )) \/ ( c#"S" << 8 )) \/ c#"F",
+%        change_element_size(ascii#"DKSF", 32, DKSF32),
+%        string_element(DKSF32, 0, DKSF, _),
+%        set_string_element(Header0, 0, DKSF, Header1),
+%        set_string_element(Header1, 1, BlockSize, Header2),
+%        set_string_element(Header2, 2, CylinderSize, Header3),
+%        set_string_element(Header3, 3, DiskSize, Header),
+        new_string(DKSF0, 2, 16),
+        set_string_element(DKSF0, 0, ~( ( c#"D" << 8 ) \/ c#"K" ), DKSF1),
+        set_string_element(DKSF1, 1, ~( ( c#"S" << 8 ) \/ c#"F" ), DKSF),
+        new_string(Header0, 3, 32),
+        set_string_element(Header0, 0, BlockSize, Header1),
+        set_string_element(Header1, 1, CylinderSize, Header2),
+        set_string_element(Header2, 2, DiskSize, Header),
+        Records = [DKSF, Header|RecordsTail].
+
+%-----------%
+% approve/6 %
+%-----------%
+approve(Condition, BlockSize, AtomDev, AtomDevTail, ApprovedCondition, PreCondition):-
+    string(Condition, BlockSize, 8) |
+        ApprovedCondition = string(Condition),
+        PreCondition = {},
+        AtomDev = AtomDevTail.
+approve(0, _, AtomDev, AtomDevTail, ApprovedCondition, PreCondition):-
+    true |
+        ApprovedCondition = 0,
+        PreCondition = ApprovedCondition,
+        AtomDev = AtomDevTail.
+approve(Condition, _, AtomDev, AtomDevTail, ApprovedCondition, PreCondition):-
+    Condition =\= 0 |
+        ApprovedCondition = integer(Condition),
+        PreCondition = Condition,
+        AtomDev = AtomDevTail.
+approve(Condition, _, AtomDev, AtomDevTail, ApprovedCondition, PreCondition):-
+    atom(Condition) |
+        AtomDev = [get_atom_name(Condition, AtomStatus)|AtomDevTail],
+        approve_atom(AtomStatus, Condition, ApprovedCondition, PreCondition).
+otherwise.
+approve(Condition, _, AtomDev, AtomDevTail, ApprovedCondition, PreCondition):-
+    true |
+        ApprovedCondition = none(Condition),
+        PreCondition = ApprovedCondition,
+        AtomDev = AtomDevTail.
+
+%----------------%
+% approve_atom/4 %
+%----------------%
+approve_atom(normal(AtomName), Atom, ApprovedAtom, PreCondition):-
+    string(AtomName, Length, 16) |
+        ApprovedAtom = atom(AtomName, Length),
+        PreCondition = Atom.
+otherwise.
+approve_atom(_, Atom, ApprovedAtom, PreCondition):-
+    true |
+        ApprovedAtom = none(Atom),
+        PreCondition = ApprovedAtom.
+
+%-----------------%
+% record_header/4 %
+%-----------------%
+record_header(string(String), Records, FinalCount, RecordsTail):-
+    true |
+        data_header(String, Records, FinalCount, RecordsTail).
+record_header(0, Records, FinalCount, RecordsTail):-
+    true |
+        new_string(RHeader, 1, 32),
+        set_string_element(RHeader, 0, ~(16#"80000000"\/FinalCount), RecordHeader),
+        Records = [RecordHeader|RecordsTail].
+record_header(integer(Condition), Records, FinalCount, RecordsTail):-
+    true |
+        new_string(RHeader1, 3, 32),
+%        set_string_element(RHeader0, 0, 0, RHeader1),
+        set_string_element(RHeader1, 1, FinalCount, RHeader2),
+        set_string_element(RHeader2, 2, Condition, RecordHeader),
+        Records = [RecordHeader|RecordsTail].
+record_header(atom(AtomName, Length), Records, FinalCount, RecordsTail):-
+    true |
+        atom_header(AtomName, Length, Records, FinalCount, RecordsTail).
+otherwise.
+record_header(_, Records, _, RecordsTail):-
+    true |
+        Records = RecordsTail.
+        
+%---------------%
+% data_header/4 %
+%---------------%
+data_header(Condition, Records, FinalCount, RecordsTail):-
+                                            
+    true |
+        new_string(RHeader, 1, 32),
+        set_string_element(RHeader, 0, FinalCount, RecordHeader),
+        Records = [RecordHeader, Condition|RecordsTail].
+
+%------------%
+% a_record/5 %
+%------------%
+a_record(abort, _, Stop, FinalCount, Records):-
+    true |
+        Stop = [],
+        FinalCount = 0,
+        Records = [].
+alternatively.
+a_record(Abort, none(Condition), Stop, FinalCount, Records):-
+    true |
+        Abort = abort,
+        Stop = [stop(0, Condition)],
+        FinalCount = 0,
+        Records = [stop(0, Condition)].
+a_record(_, string(_), Stop, FinalCount, Records):-
+    true |
+        Stop = [],
+        FinalCount = 1,
+        Records = [].
+a_record(_, 0, Stop, FinalCount, Records):-
+    true |
+        Stop = [],
+        FinalCount = 1,
+        Records = [].
+a_record(_, integer(_), Stop, FinalCount, Records):-
+    true |
+        Stop = [],
+        FinalCount = 1,
+        Records = [].
+a_record(_, atom(_, _), Stop, FinalCount, Records):-
+    true |
+        Stop = [],
+        FinalCount = 1,
+        Records = [].
+
+%---------------%
+% atom_header/5 %
+%---------------%
+atom_header(AtomName, AtomLength, Records, FinalCount, RecordsTail):-
+    true |
+        new_string(RHeader1, 3, 32),
+%        set_string_element(RHeader0, 0, 0, RHeader1),
+        set_string_element(RHeader1, 1, ~(16#"80000000"\/FinalCount), RHeader2),
+        set_string_element(RHeader2, 2, AtomLength, FirstHalf),
+        Records = [FirstHalf, AtomName|RecordsTail].
+
+%------------%
+% records/12 %
+%------------%
+records(abort, _, _, _, _, _, AtomDev, Count, Stop, FinalCount, StopTail, Records):-
+    true |
+        AtomDev = [],
+        FinalCount = Count,
+        Stop = StopTail,
+        Records = [].
+alternatively.
+
+records(Abort, none(Condition), Position, _, _, _, AtomDev, Count, Stop, FinalCount,
+                                                                           StopTail, Records):-
+    ErrorPosition := Position - 1 |
+        Abort = abort,
+        Stop = [stop(ErrorPosition, Condition)|StopTail],
+        AtomDev = [],
+        FinalCount = Count,
+        Records = [stop(ErrorPosition, Condition)].
+alternatively.
+
+records(Abort, PreCondition, Position, End, Contents, BlockSize, AtomDev, Count,
+                                                              Stop, FinalCount, StopTail, Records):-
+    true |
+        records1(Abort, PreCondition, Position, End, Contents, BlockSize, AtomDev, Count,
+                                                              Stop, FinalCount, StopTail, Records).
+
+%-------------%
+% records1/12 %
+%-------------%
+records1(_, _, Position, End, _, _, AtomDev, Count, Stop, FinalCount, StopTail, Records):-
+    Position >= End |
+        AtomDev = [],
+        FinalCount := Count + 1,
+        Stop = StopTail,
+        Records = [].
+% otherwise.
+% continuous strings %
+records1(Abort, {}, Position, End, Contents, BlockSize, AtomDev, Count,
+                                                              Stop, FinalCount, StopTail, Records):-
+    Position < End,
+    vector_element(Contents, Position, Condition),
+    string(Condition, Size, ElementSize) |
+        data(Size, BlockSize, ElementSize, Condition, Position, End, Contents, AtomDev, Count, Abort,
+                                                              Stop, FinalCount, StopTail, Records).
+        % data/12 calls records/12 in its body.
+% continuous integers/atoms %
+records1(Abort, PreCondition, Position, End, Contents, BlockSize, AtomDev, Count,
+                                                              Stop, FinalCount, StopTail, Records):-
+    Position < End,
+    vector_element(Contents, Position, Condition),
+    PreCondition = Condition,
+    CurrentCount := Count + 1,
+    NextPosition := Position + 1 |
+        records(Abort, Condition, NextPosition, End, Contents, BlockSize, AtomDev, CurrentCount,
+                                                              Stop, FinalCount, StopTail, Records).
+otherwise.
+% a different type of data %
+records1(Abort, _, Position, End, Contents, BlockSize, AtomDev, Count,
+                                                              Stop, FinalCount, StopTail, Records):-
+%    Position < End,
+    vector_element(Contents, Position, Condition),
+%    PreCondition \= Condition,
+    NextPosition := Position + 1 |
+        FinalCount := Count + 1,
+        approve(Condition, BlockSize, AtomDev, AtomDevTail, ApprovedCondition, NextPreCondition),
+        record_header(ApprovedCondition, Records, NextFinalCount, RecordsTail),
+        records(Abort, NextPreCondition, NextPosition, End, Contents, BlockSize,
+                                                            AtomDevTail, 0, Stop, NextFinalCount, 
+                                                                        StopTail, RecordsTail).
+
+%---------%
+% data/14 %
+%---------%
+data(Size, BlockSize, 8, Data, Position, End, Contents, AtomDev, Count, Abort,
+                                                            Stop, FinalCount, StopTail, Records):-
+    Size =:= BlockSize,
+    CurrentCount := Count + 1,
+    NextPosition := Position + 1 |
+        Records = [Data|RecordsTail],
+        records(Abort, string(Data), NextPosition, End, Contents, BlockSize, AtomDev, CurrentCount,
+                                                            Stop, FinalCount, StopTail, RecordsTail).
+otherwise.
+data(_, _, _, Condition, Position, _, _, AtomDev, Count, Abort, Stop, FinalCount, StopTail, Records):-
+    true |
+        Abort = abort,
+        Stop = [stop(Position, Condition)|StopTail],
+        AtomDev = [],
+        FinalCount = Count,
+        Records = [].
+
+%----------%
+% output/6 %
+%----------%
+output([stop(Position, Condition)|_], _, Contents, Abort, File, Status):-
+    true |
+        Abort = abort,
+        File = [],
+        Status = [abnormal(contents(Contents, Position, Condition))].
+alternatively.
+output(_, [stop(Position, Condition)], Contents, Abort, File, Status):-
+    true |
+        Abort = abort,
+        File = [],
+        Status = [abnormal(contents(Contents, Position, Condition))].
+output(_, [], _, _, File, Status):-
+    true |
+        File = [],
+        Status = [].
+output(Stop, [Record|Records], Contents, Abort, File, Status):-
+    true |
+        change_element_size(Record, 16, Buffer),
+        File = [putb(Buffer, OutputStatus)|FileTail],
+        Status = [OutputStatus|StatusTail],
+        output(Stop, Records, Contents, Abort, FileTail, StatusTail).
+
+%---------------%
+% save_status/2 %
+%---------------%
+save_status([abnormal(Error)], Status):-
+    true |
+        Status = abnormal(Error).
+save_status([abnormal|_], Status):-
+    true |
+        Status = abnormal(output_failure).
+save_status([aborted|OutputStatus], Status):-
+    true |
+        save_status(OutputStatus, Status).
+save_status([normal|OutputStatus], Status):-
+    true |
+        save_status(OutputStatus, Status).
+save_status([], Status):-
+    true |
+        Status = normal.
+
+%===========%
+% restore/2 %
+%===========%
+% Arguments
+% 1.    Pathname                a 16bit-string.
+% 2.   ^Status                  Result.
+%           normal(MediaStructure, Contents)
+%               MediaStructure      simulator(BlockSize, CylinderSize, DiskSize)
+%                   BlockSize       (bytes)
+%                   CylinderSize    (blocks)
+%                   DiskSize        (cylinders)
+%               Contents            restored contents of fisk_simulator.
+%           abnormal(Error)     Error is one of the followings.
+%               illegal_parameter(Parameter)    Parameter is one of the followings.
+%                       pathname(Pathname)
+%               file_device_creation_failure
+%               nonexistent                     The file of "Pathname" does not exists.
+%               input_failure
+%               invalid_header                  
+%               inconsistent_file_contents
+
+%-----------%
+% restore/2 %
+%-----------%
+restore(Pathname, Status):-
+    true |
+        dksf_arguments:restore(Pathname, ArgsStatus),
+        restore1(ArgsStatus, Pathname, Status).
+
+%------------%
+% restore1/3 %
+%------------%
+restore1(abnormal(ArgError), _, Status):-
+    true |
+        Status = abnormal(ArgError).
+restore1(normal, Pathname, Status):-
+    true |
+        shoen:raise(pimos_tag#task, general_request, GeneralRequestDevice),
+        GeneralRequestDevice = [file(GRDStatus)],
+        restore2(GRDStatus, Pathname, Status).
+
+%------------%
+% restore2/3 %
+%------------%
+restore2(abnormal, _, Status):-
+    true |
+        Status = abnormal(file_device_creation_failure).
+restore2(normal(FileRequest, _, _), Pathname, Status):-
+    true |
+        FileRequest = [open(Pathname, read(OpenStatus))],
+        restore3(OpenStatus, Status).
+
+%------------%
+% restore3/2 %
+%------------%
+restore3(normal(File, _, _), Status):-
+    true |
+        read_header(File, FileTail, HeaderStatus),
+        restore4(HeaderStatus, FileTail, Status).
+otherwise.
+restore3(_, Status):-
+    true |
+        Status = abnormal(nonexistent).
+
+%---------------%
+% read_header/3 %
+%---------------%
+read_header(File, FileTail, HeaderStatus):-
+    true |
+        File = [getb(8, InputStatus)|FileTail],
+        read_header1(InputStatus, HeaderStatus).
+
+%----------------%
+% read_header1/2 %
+%----------------%
+read_header1(normal(Header0), HeaderStatus):-
+    string(Header0, 8, 16) |
+        builtin#substring(Header0, 0, 2, Label0, Header1),
+        change_element_size(Label0, 8, Label),
+        decode_label(Label, Header1, HeaderStatus).
+read_header1(abnormal, HeaderStatus):-
+    true |
+        HeaderStatus = abnormal(input_failure).
+otherwise.
+read_header1(_, HeaderStatus):-
+    true |
+        HeaderStatus = abnormal(invalid_header).
+
+%----------------%
+% decode_label/3 %
+%----------------%
+decode_label(Label, Header, HeaderStatus):-
+    string_element(Label, 0, c#"D"),
+    string_element(Label, 1, c#"K"),
+    string_element(Label, 2, c#"S"),
+    string_element(Label, 3, c#"F") |
+        builtin#substring(Header, 2, 6, LatterHalf, _),
+        change_element_size(LatterHalf, 32, Structure0),
+        string_element(Structure0, 0, BlockSize, Structure1),
+        string_element(Structure1, 1, CylinderSize, Structure2),
+        string_element(Structure2, 2, DiskSize, _),
+        VolumeSize := CylinderSize * DiskSize,
+        decode_label1(VolumeSize, BlockSize, CylinderSize, DiskSize, HeaderStatus).
+otherwise.
+decode_label(_, _, HeaderStatus):-
+    true |
+        HeaderStatus = abnormal(invalid_header).
+
+%-----------------%
+% decode_label1/5 %
+%-----------------%
+decode_label1(VolumeSize, BlockSize, CylinderSize, DiskSize, HeaderStatus):-
+    VolumeSize >= 1,
+    BlockSize  >= 1 |
+        HeaderStatus = normal(BlockSize, CylinderSize, DiskSize).
+otherwise.
+decode_label1(_, _, _, _, HeaderStatus):-
+    true |
+        HeaderStatus = abnormal(invalid_header).
+
+%------------%
+% restore4/3 %
+%------------%
+restore4(normal(BlockSize, CylinderSize, DiskSize), File, Status):-
+    true |
+        MediaStructure = simulator(BlockSize, CylinderSize, DiskSize),
+        VolumeSize := CylinderSize * DiskSize,
+        new_vector(Contents, VolumeSize),
+        atom_table:cache_table(AtomDev),
+%        decode(normal, BlockSize, AtomDev, File, Stop, Blocks) @processor(1),
+%        restore5(Stop, Blocks, 0, VolumeSize, Contents, MediaStructure, Status) @processor(0).
+        decode(normal, BlockSize, AtomDev, File, Stop, Blocks),
+        restore5(Stop, Blocks, 0, VolumeSize, Contents, MediaStructure, Status).
+restore4(abnormal(HeaderError), File, Status):-
+    true |
+        File = [],
+        Status = abnormal(HeaderError).
+
+%----------%
+% decode/6 %
+%----------%
+%decode(abort, _, _, AtomDev, File, _, Blocks):-
+%    true |
+%        AtomDev = [],
+%        File = [],
+%        Blocks = [].
+%alternatively.
+decode(abnormal, _, AtomDev, File, _, Blocks):-
+    true |
+        AtomDev = [],
+        File = [],
+        Blocks = [].
+decode(normal, BlockSize, AtomDev, File, Stop, Blocks):-
+    true |
+        record_header(File, Stop, HeaderStatus),
+        decode1(HeaderStatus, BlockSize, Stop, AtomDev, Blocks, Decode1Status),
+        decode(Decode1Status, BlockSize, Stop).
+
+%----------%
+% decode/3 %
+%----------%
+decode(abnormal(AtomDev, File, Blocks), _, _):-
+    true |
+        AtomDev = [],  
+        File = [],
+        Blocks = [].
+decode(normal_end(AtomDev, File, Blocks), _, _):-
+    true |
+        AtomDev = [],  
+        File = [],
+        Blocks = [].
+decode(normal(AtomDev, File, Blocks), BlockSize, Stop):-
+    true |
+        decode(normal, BlockSize, AtomDev, File, Stop, Blocks).
+
+%-----------------%
+% record_header/3 %
+%-----------------%
+record_header(File, Stop, Status):-
+    true |
+        File = [getb(2, InputStatus)|File1],
+        record_header1(InputStatus, File1, Stop, Status).
+
+%------------------%
+% record_header1/4 %
+%------------------%
+record_header1(normal(First0), File, Stop, Status):-
+    string(First0, 2, 16) |
+        change_element_size(First0, 32, FirstS),
+        string_element(FirstS, 0, First, _),
+        record_header2(First, File, Stop, Status).
+record_header1(end_of_file, File, _, Status):-
+    true |
+        Status = normal_end(File).
+record_header1(abnormal, File, Stop, Status):-
+    true |
+        Stop = stop(input_failure),
+        Status = abnormal(File).
+otherwise.
+record_header1(_, File, Stop, Status):-
+    true |
+        Stop = stop(inconsistent_file_contents),
+        Status = abnormal(File).
+
+%------------------%
+% record_header2/4 %
+%------------------%
+record_header2(First, File, _, Status):-
+    First > 0 |
+        Status = normal(string, First, File).
+record_header2(First, File, _, Status):-
+    First < 0 |
+        N := 16#"7FFFFFFF" /\ First,
+        Status = normal(0, N, File). 
+record_header2(0, File, Stop, Status):-
+    true |
+        File = [getb(2, InputStatus)|FileTail],
+        record_header3(InputStatus, FileTail, Stop, Status).
+
+%------------------%
+% record_header3/4 %
+%------------------%
+record_header3(normal(Second0), File, Stop, Status):-
+    string(Second0, 2, 16) |
+        change_element_size(Second0, 32, SecondS),
+        string_element(SecondS, 0, Second, _),
+        record_header4(Second, File, Stop, Status).
+record_header3(abnormal, File, Stop, Status):-
+    true |
+        Stop = stop(input_failure),
+        Status = abnormal(File).
+otherwise.
+record_header3(_, File, Stop, Status):-
+    true |
+        Stop = stop(inconsistent_file_contents),
+        Status = abnormal(File).
+
+%------------------%
+% record_header4/4 %
+%------------------%
+record_header4(Second, File, _, Status):-
+    Second > 0 |
+        Status = normal(integer, Second, File).
+record_header4(Second, File, _, Status):-
+    Second < 0 |
+        N := 16#"7FFFFFFF" /\ Second,
+        Status = normal(atom, N, File).
+otherwise.
+record_header4(_, File, Stop, Status):-
+    true |
+        Stop = stop(inconsistent_file_contents),
+        Status = abnormal(File).
+
+%-----------%
+% decode1/6 %
+%-----------%
+decode1(abnormal(File), _, _, AtomDev, Blocks, Status):-
+    true |
+        Status = abnormal(AtomDev, File, Blocks).
+decode1(normal_end(File), _, _, AtomDev, Blocks, Status):-
+    true |
+        Status = normal_end(AtomDev, File, Blocks).
+decode1(normal(string, N, File), BlockSize, Stop, AtomDev, Blocks, Status):-
+    true |
+        R := BlockSize mod 2,
+        to_length(R, BlockSize, Length),
+        string(0, N, R, Length, File, Blocks, Stop, StringStatus),
+        decode1_status(StringStatus, AtomDev, Status).
+decode1(normal(0, N, File), _, _, AtomDev, Blocks, Status):-
+    true |
+        Blocks = [{0, N}|BlocksTail],
+        Status = normal(AtomDev, File, BlocksTail).
+decode1(normal(integer, N, File), _, Stop, AtomDev, Blocks, Status):-
+    true |
+        File = [getb(2, InputStatus)|FileTail],
+        integer(InputStatus, N, AtomDev, FileTail, Blocks, Stop, Status).
+decode1(normal(atom, N, File), _, Stop, AtomDev, Blocks, Status):-
+    true |
+        File = [getb(2, InputStatus)|FileTail],
+        atom(InputStatus, N, AtomDev, FileTail, Blocks, Stop, Status).
+
+%-------------%
+% to_length/3 %
+%-------------%
+to_length(0, BlockSize, Length):-
+    true |
+        Length := BlockSize >> 1.
+to_length(1, BlockSize, Length):-
+    true |
+        Length := BlockSize >> 1 + 1.
+
+%------------------%
+% decode1_status/3 %
+%------------------%
+decode1_status(normal(File, Blocks), AtomDev, Status):-
+    true |
+        Status = normal(AtomDev, File, Blocks).
+decode1_status(abnormal(File, Blocks), AtomDev, Status):-
+    true |
+        Status = abnormal(AtomDev, File, Blocks).
+
+%-----------%
+% integer/7 %
+%-----------%
+integer(normal(Integer0), N, AtomDev, File, Blocks, Stop, Status):-
+    string(Integer0, 2, 16) |
+        change_element_size(Integer0, 32, IntegerS),
+        string_element(IntegerS, 0, Integer, _),
+        integer1(Integer, N, AtomDev, File, Blocks, Stop, Status).
+integer(abnormal, _, AtomDev, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(input_failure),
+        Status = abnormal(AtomDev, File, Blocks).
+otherwise.
+integer(_, _, AtomDev, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(inconsistent_file_contents),
+        Status = abnormal(AtomDev, File, Blocks).
+
+%------------%
+% integer1/7 %
+%------------%
+integer1(0, _, AtomDev, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(inconsistent_file_contents),
+        Status = abnormal(AtomDev, File, Blocks).
+otherwise.
+integer1(Integer, N, AtomDev, File, Blocks, _, Status):-
+        Blocks = [{Integer, N}|BlocksTail],
+        Status = normal(AtomDev, File, BlocksTail).
+
+%--------%
+% atom/7 %
+%--------%
+atom(normal(Length0), N, AtomDev, File, Blocks, Stop, Status):-
+    string(Length0, 2, 16) |
+        change_element_size(Length0, 32, LengthS),
+        string_element(LengthS, 0, Length, _),
+        File = [getb(Length, InputStatus)|FileTail],
+        atom1(InputStatus, Length, N, AtomDev, FileTail, Blocks, Stop, Status).
+atom(abnormal, _, AtomDev, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(input_failure),
+        Status = abnormal(AtomDev, File, Blocks).
+otherwise.
+atom(_, _, AtomDev, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(inconsistent_file_contents),
+        Status = abnormal(AtomDev, File, Blocks).
+
+%---------%
+% atom1/8 %
+%---------%
+atom1(normal(AtomName), Length, N, AtomDev, File, Blocks, Stop, Status):-
+    string(AtomName, Length, 16) |
+        AtomDev = [get_atom(AtomName, AtomStatus)|AtomDevTail],
+        atom2(AtomStatus, N, AtomDevTail, File, Blocks, Stop, Status).
+atom1(abnormal, _, _, AtomDev, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(input_failure),
+        Status = abnormal(AtomDev, File, Blocks).
+otherwise.
+atom1(_, _, _, AtomDev, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(inconsistent_file_contents),
+        Status = abnormal(AtomDev, File, Blocks).
+
+%---------%
+% atom2/5 %
+%---------%
+atom2(normal(Atom), N, AtomDev, File, Blocks, _, Status):-
+    true |
+        Blocks = [{Atom, N}|BlocksTail],
+        Status = normal(AtomDev, File, BlocksTail).
+otherwise.
+atom2(_, _, AtomDev, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(inconsistent_file_contents),
+        Status = abnormal(AtomDev, File, Blocks).
+
+%----------%
+% string/8 %
+%----------%
+%string(abort, _, _, _, _, File, Blocks, _, Status):-
+%    true |
+%        Status = abnormal(File, Blocks).
+%alternatively.
+string(Position, N, _, _, File, Blocks, _, Status):-
+    Position >= N |
+        Status = normal(File, Blocks).
+%otherwise.
+string(Position, N, R, Length, File, Blocks, Stop, Status):-
+    Position < N |
+        File = [getb(Length, InputStatus)|FileTail],
+        string1(InputStatus, R, Length, Position, N, FileTail, Blocks, Stop, Status).
+                                                            
+%-----------%
+% string1/9 %
+%-----------%
+string1(normal(String0), 0, Length, Position, N, File, Blocks, Stop, Status):-
+    string(String0, Length, 16),
+    NextPosition := Position + 1 |
+        change_element_size(String0, 8, Block),
+        Blocks = [Block|BlocksTail],
+        string(NextPosition, N, 0, Length, File, BlocksTail, Stop, Status).
+string1(normal(String0), 1, Length, Position, N, File, Blocks, Stop, Status):-
+    string(String0, Length, 16),
+    NextPosition := Position + 1 |
+        change_element_size(String0, 8, Block0),
+        BlockSize := Length << 1 - 1,
+        builtin#substring(Block0, 0, BlockSize, Block, _),
+        Blocks = [Block|BlocksTail],
+        string(NextPosition, N, 1, Length, File, BlocksTail, Stop, Status).
+string1(abnormal, _, _, _, _, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(input_failure),
+        Status = abnormal(File, Blocks).
+otherwise.
+string1(_, _, _, _, _, File, Blocks, Stop, Status):-
+    true |
+        Stop = stop(inconsistent_file_contents),
+        Status = abnormal(File, Blocks).
+
+%------------%
+% restore5/7 %
+%------------%
+restore5(stop(Error), _, _, _, _, _, Status):-
+    true |
+        Status = abnormal(Error).
+alternatively.
+restore5(_, [], Position, End, _, _, Status):-
+    Position =\= End |
+%        Abort = abort,
+        Status = abnormal(inconsistent_file_contents).
+restore5(_, Blocks, End, End, _, _, Status):-
+    Blocks \= [] |
+%        Abort = abort,
+        Status = abnormal(inconsistent_file_contents).
+
+restore5(_, [], End, End, Contents, MediaStructure, Status):-
+    true |
+        Status = normal(MediaStructure, Contents).
+restore5(Stop, [{Condition, N}|Blocks], Position, End, Contents, MediaStructure, Status):-
+    Position < End,
+    NextPosition := Position + N |
+        restore6(Position, NextPosition, Condition, Contents, CurrentContents),
+        restore5(Stop, Blocks, NextPosition, End, CurrentContents, MediaStructure, Status).
+restore5(Stop, [String|Blocks], Position, End, Contents, MediaStructure, Status):-
+    string(String, _, _),
+    Position < End,
+    NextPosition := Position + 1 |
+        set_vector_element(Contents, Position, _, String, CurrentContents),
+        restore5(Stop, Blocks, NextPosition, End, CurrentContents, MediaStructure, Status).
+
+%------------%
+% restore6/5 %
+%------------%
+restore6(Position, End, _, Contents, NewContents):-
+    Position >= End |
+        NewContents = Contents.
+otherwise.
+restore6(Position, End, Condition, Contents, NewContents):-
+    NextPosition := Position + 1 |
+        set_vector_element(Contents, Position, _, Condition, CurrentContents),
+        restore6(NextPosition, End, Condition, CurrentContents, NewContents).
+

@@ -1,0 +1,118 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_cmd_varpool.
+:- public do_command/1.
+:- with_macro pimos.
+
+%do_command(remember(OLD,NEW)) :-
+%    ENV=[environment([get(remembrance,OLD)])],
+%    listener_utility:resource(ENV),
+%    do_command(remember(NEW)).
+do_command(remember) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(remembrance,on,_)].
+do_command(forget) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[set(remembrance,off,_)].
+do_command(forget(all)) :- true |
+    listener_utility:resource([variable(VAR)]),
+    VAR=[forget(_)].
+do_command(forget(Name)) :- string(Name,_,_) |
+    listener_utility:resource([variable(VAR)]),
+    VAR=[forget(Name,_)].
+
+do_command(list) :- true |
+    shoen:raise(pimos_tag#listener,list_variables,_).
+do_command(value) :- true |
+    listener_utility:resource([command([event_number(Num)]),variable(VAR)]),
+    listener_utility:buffer(BUF),
+    VAR=[get_variables(Num,List)],
+    BUF=[do(Msg)],
+    listener_execution_query:display_var(List,Msg,[]).
+
+do_command(display_variables) :- true |
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[get(display_variables,DV)|ENV1],
+    listener_utility:inter([do(IN)]),
+    IN=[putf(" Display variables: ~t => ",[DV]), getl(Line)|IN1],
+    listener_utility:string_to_term(Line,NDV),
+    (
+    NDV=end_of_file -> ENV1=[], IN1=[];
+    NDV=all         -> ENV1=[set(display_variables,all,_)],  IN1=[];
+    NDV=used        -> ENV1=[set(display_variables,used,_)], IN1=[];
+    NDV=new         -> ENV1=[set(display_variables,new,_)],  IN1=[];
+    NDV=no          -> ENV1=[set(display_variables,no,_)],   IN1=[];
+    NDV=user        -> ENV1=[set(display_variables,user,_)], IN1=[];
+    otherwise;
+    true ->
+        ENV1=[],
+        IN1=[putf(" Unknown mode>> ~t~n",[NDV]),
+             putf(" Available modes are 'all','used','new' and 'no'.~n",[])]
+    ).
+do_command(display_variables(DV)) :- atom(DV) |
+    listener_utility:resource([environment(ENV)]),
+    (
+    DV=all  -> ENV=[set(display_variables,all,_)];
+    DV=used -> ENV=[set(display_variables,used,_)];
+    DV=new  -> ENV=[set(display_variables,new,_)];
+    DV=no   -> ENV=[set(display_variables,no,_)];
+    DV=user -> ENV=[set(display_variables,user,_)];
+    otherwise;
+    true ->
+        ENV=[],
+        listener_utility:out([do(
+            [putf(" Unknown mode>> ~t~n",[DV]),
+             putf(" Available modes are 'all','used','new' and 'no'.~n",[])])])
+    ).
+do_command(display_variables(OLD,NEW)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(display_variables,OLD)],
+    do_command(display_variables(NEW)).
+
+do_command(query) :- true |
+    listener_utility:resource([environment([do(ENV)])]),
+    ENV=[get(query,DV)|ENV1],
+    listener_utility:inter([do(IN)]),
+    IN=[putf(" Query mode: ~t => ",[DV]), getl(Line)|IN1],
+    listener_utility:string_to_term(Line,NDV),
+    (
+    NDV=end_of_file -> ENV1=[], IN1=[];
+    NDV=all         -> ENV1=[set(query,all,_)],  IN1=[];
+    NDV=used        -> ENV1=[set(query,used,_)], IN1=[];
+    NDV=new         -> ENV1=[set(query,new,_)],  IN1=[];
+    NDV=no          -> ENV1=[set(query,no,_)],   IN1=[];
+    otherwise;
+    true ->
+        ENV1=[],
+        IN1=[putf(" Unknown mode>> ~t~n",[NDV]),
+             putf(" Available modes are 'all','used','new' and 'no'.~n",[])]
+    ).
+do_command(query(DV)) :- atom(DV) |
+    listener_utility:resource([environment(ENV)]),
+    (
+    DV=all  -> ENV=[set(query,all,_)];
+    DV=used -> ENV=[set(query,used,_)];
+    DV=new  -> ENV=[set(query,new,_)];
+    DV=no   -> ENV=[set(query,no,_)];
+    otherwise;
+    true ->
+        ENV=[],
+        listener_utility:out([do(
+            [putf(" Unknown mode>> ~t~n",[DV]),
+             putf(" Available modes are 'all','used','new' and 'no'.~n",[])])])
+    ).
+do_command(query(OLD,NEW)) :- true |
+    listener_utility:resource([environment(ENV)]),
+    ENV=[get(query,OLD)],
+    do_command(query(NEW)).
+
+
+otherwise.
+do_command(Goal) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(macro#module_name,"Illegal argument"),Goal).

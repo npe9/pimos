@@ -1,0 +1,120 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>LIBRARY>new_timer.kl1.11, 18-Dec-90 16:08:05, Edit by yashiro
+:- with_macro pimos.
+:- module '$plib$timer'.
+:- public get_date_count/2, on_at/2, on_after/2,
+          get_date_count/5, on_at/5, on_after/5.
+
+get_date_count(Date,Time) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[timer(St)|GR1],
+        check_timer_request(St,GR1,Date,Time,plib_get_date_time).
+
+get_date_count(Node,Username,Password,Date,Time) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_get_date_time,1,_,_,NNode),
+        '$plib$error':string(Username,plib_get_date_time,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_get_date_time,3,_,_,NPassword),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[timer(St)|GR1],
+        check_timer_request(St,GR1,Date,Time,plib_get_date_time).
+
+on_at(Count,Now) :-
+    true |
+        '$plib$error':integer(Count,plib_on_at,1,NCount),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[timer(St)|GR1],
+        check_timer_request1(St,GR1,NCount,Now,plib_on_at).
+
+on_at(Node,Username,Password,Count,Now) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_on_at,1,_,_,NNode),
+        '$plib$error':string(Username,plib_on_at,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_on_at,3,_,_,NPassword),
+        '$plib$error':integer(Count,plib_on_at,4,NCount),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[timer(St)|GR1],
+        check_timer_request1(St,GR1,NCount,Now,plib_on_at).
+
+on_after(Count,Now) :-
+    true |
+        '$plib$error':integer(Count,plib_on_after,1,NCount),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[timer(St)|GR1],
+        check_timer_request1(St,GR1,NCount,Now,plib_on_after).
+
+on_after(Node,Username,Password,Count,Now) :-
+    true |
+        '$plib$error':string_or_integer(Node,plib_on_after,1,_,_,NNode),
+        '$plib$error':string(Username,plib_on_after,2,_,_,NUsername),
+        '$plib$error':string(Password,plib_on_after,3,_,_,NPassword),
+        '$plib$error':integer(Count,plib_on_after,4,NCount),
+        shoen:raise(pimos_tag#task,general_on_request(NNode,NUsername,NPassword),GR),
+        GR=[timer(St)|GR1],
+        check_timer_request1(St,GR1,NCount,Now,plib_on_after).
+
+%% get_date_time
+check_timer_request(normal(TR,_,_),GR,Date,Time,ID) :-
+    true |
+        GR=[],
+        TR=[create(St)],
+        check_timer(St,Date,Time,ID).
+otherwise.
+check_timer_request(_,GR,_,_,ID) :-
+    true |
+        GR=[connection(St)],
+        '$plib$error':check_connection(St,ID).
+
+%% on_at and on_after
+check_timer_request1(normal(TR,_,_),GR,Count,Now,ID) :-
+    true |
+        GR=[],
+        TR=[create(St)],
+        check_timer1(St,Count,Now,ID).
+otherwise.
+check_timer_request1(_,GR,_,_,ID) :-
+    true |
+        GR=[connection(St)],
+        '$plib$error':check_connection(St,ID).
+
+%% get_date_time
+check_timer(normal(T,_,_),Date,Time,ID) :-
+    true |
+        T=[get_date_time(St)],
+        check_date_time(St,Date,Time,ID).
+otherwise.
+check_timer(_,_,_,ID) :- 
+    true |
+        '$plib$error':error(ID,string#"cannot create timer",[]).
+
+%% on_at and on_after
+check_timer1(normal(T,_,_),Count,Now,plib_on_at) :-
+    true |
+        T=[on_at(Count,St)],
+        check_on_at(St,Now,ID).
+check_timer1(normal(T,_,_),Count,Now,plib_on_after) :-
+    true |
+        T=[on_after(Count,St)],
+        check_on_at(St,Now,ID).
+otherwise.
+check_timer1(_,_,_,ID) :- 
+    true |
+        '$plib$error':error(ID,string#"cannot create timer",[]).
+
+check_date_time(normal(Date,Time),NDate,NTime,_) :-
+    true |
+        Date=NDate,Time=NTime.
+otherwise.
+check_date_time(_,_,_,ID) :-
+    true |
+        '$plib$error':error(ID,string#"abnormal end",[]).
+
+check_on_at(normal(Now),NNow,_) :-
+    true |
+        Now = NNow.
+otherwise.
+check_on_at(_,_,ID) :-
+    true |
+        '$plib$error':error(ID,string#"abnormal end",[]).

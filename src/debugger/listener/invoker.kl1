@@ -1,0 +1,112 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_invoker.
+:- public create/7, invoker/3, invoker_mon/3, listener_mon/2.   % ,filter/2.
+:- with_macro pimos.
+
+create(Pos,Size,Font,Tit,File,Macro,Mes) :- true|
+    predicate_to_code(module#listener_invoker,invoker,3,Cde),
+    Tag := pimos_tag#task,
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[execute(Cde,{File,Macro,Mes},
+           [stdio(STDIO,Status),
+            name("ListenerInvoker"),
+            prio(0,4000),
+            tag(Tag),
+            resource(0,16#"FFFFFFFF")],
+                TskStatus)],
+    STDIO=[{in_out_inter,RSC}],
+    RSC={window_request,{Tit,Pos,Size,Font},OutInfo},
+    invoker_mon(OutInfo,Status,TskStatus).
+
+invoker_mon(normal,normal(_,_),normal(Ctr,Rpt) ) :- true| 
+    listener_monitor:monitor(Rpt,Ctr,_IO,_Att,_Go,invoker).
+otherwise.
+invoker_mon(OutInfo,Status,    normal(Ctr,_)  ) :- true|
+    Ctr=[],
+    shoen:raise(pimos_tag#error,
+     '$PIMOS$'(illegal_parameter_of_listener_window,
+      "Check position, size, font, ..."),
+       [windowServerResult(OutInfo),stdioResult(Status)]).
+otherwise.
+% 92.7.2
+invoker_mon(OutInfo,Status,    Abnormal        ) :- true|
+    shoen:raise(pimos_tag#error,
+      '$PIMOS$'(listener_window_creater,
+        "Sorry, cannot create ListenerInvoker task."),
+          [windowServerResult(OutInfo),stdioResult(Status),taskStatus(Abnormal)]).
+
+
+invoker(File,Macro,Mes) :- true|
+    predicate_to_code(module#listener,main,3,Cde),
+    Tag := pimos_tag#task\/pimos_tag#shell,
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[execute(Cde,{File,Macro,Mes},
+           [name("Listener"),
+            prio(0,4000),
+            tag(Tag),
+            resource(0,16#"FFFFFFFF")],
+                TskStatus)],
+    shoen:raise(pimos_tag#task,get_std(io),IO),
+    merge(IO1,IO),
+    listener_mon(TskStatus,IO1).
+
+listener_mon(normal(Ctr,Rpt),IO) :- true | 
+    listener_monitor:monitor(Rpt,Ctr,IO,_Att,_Go,invoker).
+otherwise.
+listener_mon(Abnormal,IO) :- true |
+    IO=[],
+    shoen:raise(pimos_tag#error,
+      '$PIMOS$'(listener_invoker,
+        "Sorry, cannot create Listener task."),taskStatus(Abnormal)).
+
+%filter([get_position(X)|U],O) :- 
+%    O=[get_position(X1)|O1],
+%    listener_utility:ground_unify(X1,X),
+%    filter(U,O1).
+%filter([get_char_size(X)|U],O) :- 
+%    O=[get_char_size(X1)|O1],
+%    listener_utility:ground_unify(X1,X),
+%    filter(U,O1).
+%filter([get_font(X)|U],O) :- 
+%    O=[get_font(X1)|O1],
+%    listener_utility:ground_unify(X1,X),
+%    filter(U,O1).
+%filter([set_position(at(X,Y),S)|U],O) :- X>=0, Y>=0 |
+%    O=[set_position(at(X,Y),S1)|O1],
+%    listener_utility:ground_unify(S1,S),
+%    filter(U,O1).
+%filter([set_position(mouse,S)|U],O) :-
+%    O=[set_position(mouse,S1)|O1],
+%    listener_utility:ground_unify(S1,S),
+%    filter(U,O1).
+%filter([set_size(char(X,Y),S)|U],O) :- X>0, Y>0 |
+%    O=[set_size(char(X,Y),S1)|O1],
+%    listener_utility:ground_unify(S1,S),
+%    filter(U,O1).
+%filter([set_size(mouse,S)|U],O) :-
+%    O=[set_size(mouse,S1)|O1],
+%    listener_utility:ground_unify(S1,S),
+%    filter(U,O1).
+%filter([set_font(X,S)|U],O) :- string(X,_,_) |
+%    O=[set_font(X,S1)|O1],
+%    listener_utility:ground_unify(S1,S),
+%    filter(U,O1).
+%filter([set_title(X,S)|U],O) :- string(X,_,_) |
+%    O=[set_title(X,S1)|O1],
+%    listener_utility:ground_unify(S1,S),
+%    filter(U,O1).
+%filter([hide(S)|U],O) :-
+%    O=[hide(S1)|O1],
+%    listener_utility:ground_unify(S1,S),
+%    filter(U,O1).
+%filter([do(List)|US],OS) :-
+%    merge(List,List1),
+%    listener_utility:prepend(List1,US,US1),
+%    filter(US1,OS).
+%filter([],OS) :- OS=[].

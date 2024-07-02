@@ -1,0 +1,64 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+
+:- with_macro pimos.
+
+:- switch(user_defined_macro).
+:- case(yes).
+:- module pimos_util_predname_pool.
+:- end_switch.
+
+:- public create/6.
+
+:- local_implicit atom_tbl:stream,db:shared.
+
+create(Util,Kind,Name,PP) --> true |
+        {{merge(PP,PP1)}},
+        &atom_tbl <<= [get_atom_name(Name,normal(NS)),get_atom_name(Util,normal(US))],
+        {{get_pre_name(US,&db,NS,PreS)}},
+        {{pool:keyed_bag(P,32)}},
+        put_reserved_predname(NS,PreS,PP1,P,Kind,Name).
+
+get_pre_name(UtilS,0,NameS,PreStr) :- true |
+        builtin#append_string(["$",UtilS,"$",NameS,"$"],PreStr).
+get_pre_name(UtilS,1,NameS,PreStr) :- true |
+        builtin#append_string(["$",UtilS,"_debug$",NameS,"$"],PreStr).
+
+:- local_implicit atom_tbl:stream,db:shared,namestr:shared,prestr:shared.
+
+put_reserved_predname(In,Out,_,_) --> &db=0 |
+        ppool(In,Out).
+put_reserved_predname(In,Out,Kind,Name) --> &db=1 |
+        Out=[put(Kind,Name)|Out1],
+        ppool(In,Out1).
+
+ppool([atom(A,W)|In],Out) --> true |
+        Out=[get_if_any_and_put(A,Old,New)|Out1],
+        W=atom(New),
+        atom(A,Old,New),
+        ppool(In,Out1).
+ppool([atom_util_call(A,W)|In],Out) --> true |
+        Out=[get_if_any_and_put(A,Old,New)|Out1],
+        W=atom(New),
+        atom_util_call(A,Old,New),
+        ppool(In,Out1).
+ppool([],Out) --> true | Out=[].
+
+atom(A,{},New) --> true |
+        &atom_tbl <<= [get_atom_name(A,normal(AS)),intern(AS1,normal(New))],
+        {{builtin#append_string(&prestr,AS,AS1)}}.
+atom(_,{A},New) --> true |
+        A=New.
+
+atom_util_call(A,{},New) --> true |
+        &atom_tbl <<= [get_atom_name(A,normal(AS)),intern(AS1,normal(New))],
+        {{get_pre_name(AS,&db,&namestr,AS1)}}.
+atom_util_call(_,{A},New) --> true |
+        A=New.
+

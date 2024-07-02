@@ -1,0 +1,254 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Unloader>load.kl1.7, 30-Apr-92 16:52:03, Edit by hori
+
+:- module load.
+:- public go/0, go/1, usage/1.
+:- public comment/2.
+:- public do/4.
+:- public load/4, load/6.
+:- public load_file_stream/6.
+:- public auto_load/3.
+:- with_macro pimos.
+
+usage(Usage) :- true |
+    Usage = [{string#"Usage : load([FileNameString .. ])~n",[]},
+             {string#"        load(FileNameString)~n",[]}].
+
+go :- true | usage:go(load).
+
+go(FileNameList) :- true |
+    kl1_library_message:message(MESG0),
+    load(FileNameList,MESG0,MESG1,Status),
+    check_status(Status,MESG1).
+
+do(FileNames,STDOUT,STDMES,Status) :- true |
+    kl1_library_message:message(MESG,STDOUT,STDMES),
+    load(FileNames,MESG,[],Status).
+
+comment(FileName,Comment) :-
+    string(FileName,Length,16), Length > 0,
+    string(Comment,_,16) |
+    kl1_unloaded_file:comment(FileName,Comment).
+
+load(FileNames,MESG0,MESG,Status) :- list(FileNames) |
+    shoen:raise(pimos_tag#task,general_request,
+        [getenv(task:package,DP),getenv(library:original_package,LF)]),
+    default_package(DP,DefaultPackage),
+    load_flag(LF,LoadFlag),
+    loader_module_table:module_table(ModTbl),
+    atom_table:cache_table(CT),
+    EXTs = [string#"sav",string#"SAV"], % Default Filename Extension
+    kl1_library_file_utility:open_files(FileNames,EXTs,FSs,MESG0,MESG1,binary,St),
+    load_files(FSs,ModTbl,[],CT,MESG1,MESG,DefaultPackage,LoadFlag,St,Status).
+load(FileName,MESG0,MESG,Status) :- string(FileName,_,16) |
+    load([FileName],MESG0,MESG,Status).
+otherwise.
+load(FileNames,MESG0,MESG,Status) :- true |
+    MESG0 = MESG,
+    Status = usage,
+    usage:go(load).
+
+check_status(normal(_),MESG) :- true |
+    MESG = [message(string#"Load Succeeded",[])].
+check_status(usage,MESG) :- true |
+    MESG = [].
+otherwise.
+check_status(_,MESG) :- true |
+    MESG = [message(string#"Load Failed",[])].
+
+auto_load(FS,ModDev0,Status) :- true |
+    atom_table:cache_table(CT0),
+    auto_loader_link_table:link_table(ModTbl0,ModDev0),
+    date_time(Date,Time),
+    kl1_library_message:null(MESG0),
+    load_file(FS,ModTbl0,ModTbl1,CT0,[],MESG0,[],Date,Time,pimos,off,Status0),
+    ModTbl1 = [auto_load_flush(Status0,Status)].
+
+load_files([FS|Rest],ModTbl0,ModTbl,CT0,MESG0,MESG,DP,LF,Status0,Status) :- true |
+    date_time(Date,Time),
+    load_file(FS,ModTbl0,ModTbl1,CT0,CT1,MESG0,MESG1,Date,Time,DP,LF,Status1),
+    set_status(Status0,Status1,Status2),
+    load_files(Rest,ModTbl1,ModTbl,CT1,MESG1,MESG,DP,LF,Status2,Status)@priority(*,3500).
+load_files([],ModTbl0,ModTbl,CT,MESG0,MESG,_,_,normal,Status) :- true |
+    CT = [],
+    ModTbl0 = [flush(MESG0,MESG,Status)|ModTbl].
+load_files([],ModTbl0,ModTbl,CT,MESG0,MESG,_,_,abnormal,Status) :- true |
+    CT = [],
+    ModTbl0 = ModTbl,
+    MESG0 = MESG,
+    Status = abnormal.
+
+load(FileNames,VP0,VP,MESG0,MESG,Status) :- 
+    VP0 = [get_loader_table(ModTbl0,ModTbl),
+           get_atom_table(AT),
+           get_module_table(MT),
+           get_package(DP),
+           get_original_package(LF),
+           get_auto_link(AL)|VP1],
+    EXTs = [string#"sav",string#"SAV"],
+    kl1_library_file_utility:open_files(FileNames,EXTs,VP1,VP2,FSs,MESG0,MESG1,binary,St),
+    load_files_0(FSs,ModTbl0,ModTbl,AT,MT,MESG1,MESG,DP,LF,AL,VP2,VP,St,Status).
+
+load_file_stream(FS,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = [get_loader_table(ModTbl0,ModTbl),
+           get_atom_table(CT),
+           get_package(DP),
+           get_original_package(LF),
+           get_date_time(Date,Time)|VP],
+    load_file(FS,ModTbl0,ModTbl,CT,[],MESG0,MESG,Date,Time,DP,LF,Status).
+
+load_files_0([FS|Rest],ModTbl0,ModTbl,AT0,MT0,MESG0,MESG,DP,LF,AL,VP0,VP,Status0,Status) :- true |
+    VP0 = [get_date_time(Date,Time)|VP1],
+    load_file(FS,ModTbl0,ModTbl1,AT0,AT1,MESG0,MESG1,Date,Time,DP,LF,Status1),
+    set_status(Status0,Status1,Status2),
+    load_files_0(Rest,ModTbl1,ModTbl,AT1,MT0,MESG1,MESG,DP,LF,AL,VP1,VP,Status2,Status)
+                                                                            @priority(*,3500).
+load_files_0([],ModTbl0,ModTbl,AT0,MT0,MESG0,MESG,_,_,on,VP0,VP,normal,Status) :- true |
+    VP0 = [get_link_error(LE)|VP],
+    AT0 = [],
+    ModTbl0 = [flush(LE,MT0,MESG0,MESG,Status)|ModTbl].
+otherwise.
+load_files_0([],ModTbl0,ModTbl,AT0,MT0,MESG0,MESG,_,_,_,VP0,VP,Status0,Status) :- true |
+    AT0 = [],
+    MT0 = [],
+    ModTbl0 = ModTbl,
+    MESG0 = MESG,
+    VP0 = VP,
+    Status = Status0.
+
+set_status(normal,normal,Status) :- true |
+    Status = normal.
+otherwise.
+set_status(_,_,Status) :- true |
+    Status = abnormal.
+
+load_file(FS0,ModTbl0,ModTbl,CT0,CT,MESG0,MESG,Date,Time,DP,LF,Status) :- true |
+    FS0 = [pathname(normal(FileName))|FS1],
+    MESG0 = [message(string#"Load File : ~s",[FileName])|MESG1],
+    double_buffer(FS1,DB0),
+    read_unload_file(UNLFS,0,"",0,DB0,MESG1,MESG2,normal,Status1),
+    kl1_unloaded_atom_table:decode(AT0,CT0,CT),
+    decode(UNLFS,AT0,ModList,Date,Time,MESG3,MESG4,Status2)@priority(*,3500),
+    check_load(Status1,Status2,Status3,MESG2,MESG3,MESG4,MESG5),
+    load(Status3,ModList,MESG5,MESG,ModTbl0,ModTbl,DP,LF,Status).
+
+decode(UNLFS,AT0,ModList,Date,Time,MESG0,MESG,Status) :- true |
+    kl1_unloaded_file_decoder:decode(UNLFS,AT0,ModList,Date,Time,MESG0,MESG,Status).
+
+check_load(abnormal,_,Status,MESG2,MESG3,MESG4,MESG) :- true |
+    Status = abnormal,
+    MESG2 = MESG.
+check_load(normal,Status2,Status,MESG2,MESG3,MESG4,MESG) :- true |
+    Status = Status2,
+    MESG2 = MESG3,
+    MESG4 = MESG.
+
+load(normal,[{Mod,OriginalPackage,Package}|Rest],MESG0,MESG,ModTbl0,ModTbl,
+                    DefaultPackage,LoadFlag,Status) :- true |
+    default_package(LoadFlag,DefaultPackage,OriginalPackage,Package,TruePackage),
+    kl1_loader:load(Mod,TruePackage,_,MESG0,MESG1,ModTbl0,ModTbl1,Status1),
+    load(Status1,Rest,MESG1,MESG,ModTbl1,ModTbl,DefaultPackage,LoadFlag,Status)@priority(*,3500).
+load(normal,[],MESG0,MESG,ModTbl0,ModTbl,_,_,Status) :- true |
+    MESG0 = MESG,
+    ModTbl0 = ModTbl,
+    Status = normal.
+otherwise.
+load(_,_,MESG0,MESG,ModTbl0,ModTbl,_,_,Status) :- true |
+    MESG0 = MESG,
+    ModTbl0 = ModTbl,
+    Status = abnormal.
+
+default_package(_,DefaultPackage,OriginalPackage,Package,TruePackage) :- atom(Package) |
+    TruePackage = Package.
+default_package(on,DefaultPackage,OriginalPackage,0,TruePackage) :- atom(OriginalPackage) |
+    TruePackage = OriginalPackage.
+default_package(off,DefaultPackage,OriginalPackage,0,TruePackage) :- true |
+    TruePackage = DefaultPackage.
+
+read_unload_file([Word|UNLFS],P,Buff,CheckSum,DB,MESG0,MESG,normal,Status) :-
+    string(Buff,Length,16), P < Length |
+    string_element(Buff,P,Word,NewBuff),
+    P1 := P + 1,
+    CheckSum1 := CheckSum xor Word,
+    read_unload_file(UNLFS,P1,NewBuff,CheckSum1,DB,MESG0,MESG,normal,Status).
+read_unload_file([],P,Buff,CheckSum,DB,MESG0,MESG,normal,Status) :-
+    string(Buff,Length,16), P < Length |
+    DB = [],
+    string_element(Buff,P,Word,NewBuff),
+    CheckSum1 := CheckSum xor Word,
+    end_of_unloaded_file(CheckSum1,MESG0,MESG,Status).
+read_unload_file(UNLFS,P,Buff,CheckSum,DB,MESG0,MESG,abnormal,Status) :- true |
+    MESG0 = MESG,
+    Status = abnormal,
+    DB = [],
+    error_on_unloaded_file(UNLFS).
+otherwise.
+read_unload_file(UNLFS,P,Buff,CheckSum,DB,MESG0,MESG,normal,Status) :-
+    string(Buff,Length,16), P >= Length |
+    DB = [get(Buff0,MESG0,MESG1,Status0)|DB0],
+    read_unload_file(UNLFS,0,Buff0,CheckSum,DB0,MESG1,MESG,Status0,Status).
+
+double_buffer(FS0,DB) :- true |
+    kl1_unloader_version:buffer_size(BuffSize),
+    FS0 = [getb(BuffSize,Result0),getb(BuffSize,Result1)|FS1],
+    double_buffer(DB,Result0,Result1,FS1).
+
+double_buffer([get(Buffer,MESG0,MESG,Status)|DB],normal(Buff),Result0,FS0) :- true |
+    Buffer = Buff,
+    MESG0 = MESG,
+    Status = normal,
+    kl1_unloader_version:buffer_size(BuffSize),
+    FS0 = [getb(BuffSize,Result1)|FS1],
+    double_buffer(DB,Result0,Result1,FS1).
+double_buffer([],_,_,FS0) :- true |
+    FS0 = [].
+otherwise.
+double_buffer([get(Buffer,MESG0,MESG,Status)|DB],end_of_file,_,FS0) :- true |
+    MESG0 = [error(string#"unexpected end-of-file",[])|MESG],
+    Status = abnormal,
+    FS0 = [].
+otherwise.
+double_buffer([get(Buffer,MESG0,MESG,Status)|DB],_,_,FS0) :- true |
+    MESG0 = [error(string#"unloaded file read error",[])|MESG],
+    Status = abnormal,
+    FS0 = [].
+
+end_of_unloaded_file(0,MESG0,MESG,Status) :- true |
+    MESG0 = MESG,
+    Status = normal.
+otherwise.
+end_of_unloaded_file(_,MESG0,MESG,Status) :- true |
+    MESG0 = [error(string#"illegal unloaded file (Checksum Error)",[])|MESG],
+    Status = abnormal.
+
+error_on_unloaded_file([Word|UNLFS]) :- true |
+    Word = -1,
+    error_on_unloaded_file(UNLFS).
+error_on_unloaded_file([]) :- true | true.
+
+%%%%%%%%%%%%%%%%%
+%   utilities   %
+%%%%%%%%%%%%%%%%%
+
+default_package(normal(DP),DefaultPackage) :- atom(DP) |
+    DefaultPackage = DP.
+otherwise.
+default_package(_,DefaultPackage) :- true |
+    DefaultPackage = work.
+
+load_flag(normal(on),LoadFlag) :- true |
+    LoadFlag = on.
+otherwise.
+load_flag(_,LoadFlag) :- true |
+    LoadFlag = off.
+
+date_time(Date,Time) :- true |
+    shoen:raise(pimos_tag#task,general_request,[timer(normal(TimerReq,_,_))]),
+    TimerReq = [create(normal(Timer,_,_))],
+    Timer = [get_date_time(normal(Date,Time))].

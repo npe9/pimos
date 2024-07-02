@@ -1,0 +1,1101 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Util>libvar.kl1.6, 17-Sep-92 22:00:13, Edit by hori
+
+:- module kl1_library_variable_pool.
+:- with_macro pimos.
+:- public compile/3.
+:- public unwrap/4.
+
+compile(In0,MESG0,MESG) :- true |
+    pool:keyed_set(VP0,100),
+    shoen:raise(pimos_tag#task,general_request,
+                    [file(FileRequest),
+                     timer(TimeRequest)]),
+    check_FR_status(FileRequest,FR),
+    check_TR_status(TimeRequest,TD),
+    loader_module_table:module_table(ModTbl),
+    atom_table:cache_table(AT0),
+    merge({AT1,AT2},AT0),
+    module_table:cache_table(MT0),
+    merge(MT1,MT0),
+    pool:keyed_set(AP0),
+    set_default_alises(AP0,AP1),
+    pool:keyed_set(PP0),
+    pool:keyed_set(PA0),
+    pool:keyed_set(UP0),
+    pool:keyed_set(CP0),
+    pool:keyed_set(ID0),
+    set_default_preprocessors(PP0,PP1,PA0,PA1,UP0,UP1,CP0,CP1),
+    pool:keyed_set(UV0),
+    buffer:character_pool([atom_table(AT1)],Buf0),
+    VP0 = [put('$LINK_TABLE$',ModTbl,_),
+           put('$ATOM_TABLE$',AT2,_),
+           put('$MODULE_TABLE$',MT1,_),
+           put('$FILE_REQUEST$',FR,_),
+           put('$TIMER_DEVICE$',TD,_),
+           put('$ALIAS_POOL$',AP1,_),
+           put('$PRE_PROC$',PP1,_),
+           put('$PARSER$',PA1,_),
+           put('$UNPARSER$',UP1,_),
+           put('$VERIFIER$',CP1,_),
+           put('$USER_POOL$',UV0,_),
+           put('$BUFFER$',Buf0,_),
+           put('$IF_DEF$',ID0,_)|VP1],
+    init(VP1,VP2),
+    revert(VP2,VP3,MESG0,MESG,_),
+    convert_new(VP3,VP4),
+    libvar_0(In0,VP4).
+
+%%%% INITIALIZE %%%%
+
+init(VP0,VP) :- true |
+    init_0(VP0,VP).
+
+init_0(VP0,VP) :- true |
+    shoen:raise(pimos_tag#task,general_request,[
+                     getenv(task:directory,CD),
+                     getenv(task:package,DP),
+%%                     getenv(compile:assemble_mode,AM),
+                     getenv(compile:auto_link,AL),
+%%                     getenv(compile:compile_mode,CM),
+%%                     getenv(compile:profile,DM),
+                     getenv(compile:default_file_extension,DFE),
+                     getenv(compile:distribution,PEs),
+                     getenv(compile:link_error,LE),
+                     getenv(compile:ls_column,LC),
+                     getenv(compile:more_prompt,MPS),
+                     getenv(compile:original_package,OP),
+                     getenv(compile:parallel,PN),
+                     getenv(compile:path,Path),
+                     getenv(compile:prompt,PS),
+%%                     getenv(compile:structure_mode,SM),
+                     getenv(compile:top_modules,TM),
+                     getenv(compile:working_packages,WP),
+                     getenv(compile:message,MesgMode)|GR]),
+    wait_current_directory(CD,Dir),
+    wait_default_package(DP,DefaultPackage),
+%%    wait_assemble_mode(AM,AsmMode),
+    wait_auto_link(AL,AutoLink),
+%%    wait_compile_mode(CM,CompMode),
+%%    wait_profile(DM,Profile),
+    wait_file_extension(DFE,Extension),
+    wait_processors(PEs,Distribution,Processors),
+    wait_link_error(LE,LinkError),
+    wait_ls_column(LC,LsColumn),
+    wait_original_package_flag(OP,OriginalPackage),
+    wait_path(Path,SearchPath),
+    wait_prompt(PS,MPS,Prompt,MorePrompt),
+%%    wait_structure_mode(SM,StMode),
+    wait_top_modules(TM,TopModules),
+    wait_working_packages(WP,DefaultPackage,WorkingPackage),
+    wait_parallel(PN,Parallel),
+    wait_message_mode(MesgMode,MM),
+    VP0 = [put(directory,Dir,_),
+           put(package,DefaultPackage,_),
+           put(path,SearchPath,_),
+           put(extension,Extension,_),
+           put(prompt,Prompt,_),
+           put(more_prompt,MorePrompt,_),
+%%           put(assemble_mode,AsmMode,_),
+%%           put(compile_mode,CompMode,_),
+%%           put(profile,Profile,_),
+%%           put(structure_mode,StMode,_),
+           put(working_packages,WorkingPackage,_),
+           put(original_package,OriginalPackage,_),
+           put(loaded_modules,[],_),
+           put(processor,Processors,_),
+           put(distribution,Distribution,_),
+           put(top_modules,TopModules,_),
+           put(auto_link,AutoLink,_),
+           put(ls_column,LsColumn,_),
+           put(link_error,LinkError,_),
+           put(compiled_filename,[],_),
+           put(parallel,Parallel,_),
+           put(message_mode,MM,_)|VP1],
+    init_1(GR,VP1,VP).
+
+init_1(GR,VP0,VP) :- true |
+    GR = [getenv(compile:preprocessors,PreProcs),
+          getenv(compile:parsers,Parsers),
+          getenv(compile:unparsers,Unparsers),
+          getenv(compile:defines,DF),
+          getenv(compile:options,LanguageOptions),
+          getenv(compile:verifiers,Verifiers)],
+    wait_preprocessors(PreProcs,PP0,PP),
+    wait_parsers(Parsers,PA0,PA),
+    wait_unparsers(Unparsers,UP0,UP),
+    wait_verifiers(Verifiers,CP0,CP),
+    wait_define(DF,ID0,ID),
+    wait_language_options(LanguageOptions,LO0,LO),
+    VP0 = [get_and_put('$PRE_PROC$',PP0,PP),
+           get_and_put('$PARSER$',PA0,PA),
+           get_and_put('$UNPARSER$',UP0,UP),
+           get_and_put('$VERIFIER$',CP0,CP),
+           get_and_put('$IF_DEF$',ID0,ID),
+           get_and_put('$USER_POOL$',LO0,LO)|VP].
+
+revert(VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = [get_and_put('$FILE_REQUEST$',FR0,FR)|VP1],
+    FR0 = [open("compile.param",read(FS))|FR1],
+    check_current_dir(FS,FR1,FR,VP1,VP,MESG0,MESG,Status).
+
+check_current_dir(normal(FS0,_,_),FR0,FR,VP0,VP,MESG0,MESG,Status) :- true |
+    FR0 = FR,
+    FS0 = [pathname(normal(ParamFile))|FS1],
+    buffer:input_filter(F,FS1),
+    VP0 = [put(param_file,ParamFile,_)|VP1],
+    MESG0 = [message(string#"Parameter File : ~t~n",[ParamFile])|MESG1],
+    set_values_0(F,VP1,VP,MESG1,MESG,Status).
+otherwise.
+check_current_dir(_,FR0,FR,VP0,VP,MESG0,MESG,Status) :- true |
+    shoen:raise(pimos_tag#task,general_request,[getenv(task:home,St)]),
+    check_home_dir_0(St,FR0,FR,VP0,VP,MESG0,MESG,Status).
+
+check_home_dir_0(normal(Home),FR0,FR,VP0,VP,MESG0,MESG,Status) :- true |
+    builtin#append_string([Home,string#">",string#"compile.param"],FileName),
+    FR0 = [open(FileName,read(FS))|FR],
+    check_home_dir(FS,VP0,VP,MESG0,MESG,Status).
+otherwise.
+check_home_dir_0(_,FR0,FR,VP0,VP,MESG0,MESG,Status) :- true |
+    FR0 = FR,
+    VP0 = [put(param_file,'(none)',_)|VP1],
+    init(VP1,VP),
+    MESG0 = MESG,
+    Status = normal.
+
+check_home_dir(normal(FS0,_,_),VP0,VP,MESG0,MESG,Status) :- true |
+    FS0 = [pathname(normal(ParamFile))|FS1],
+    buffer:input_filter(F,FS1),
+    VP0 = [put(param_file,ParamFile,_)|VP1],
+    MESG0 = [message(string#"Parameter File : ~t~n",[ParamFile])|MESG1],
+    set_values_0(F,VP1,VP,MESG1,MESG,Status).
+otherwise.
+check_home_dir(_,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = [put(param_file,'(none)',_)|VP1],
+    init(VP1,VP),
+    MESG0 = MESG,
+    Status = normal.
+
+set_values_0(F0,VP0,VP,MESG0,MESG,Status) :- true |
+    F0 = [getwt(Term)|F1],
+    set_values_1(Term,F1,VP0,VP,MESG0,MESG,Status).
+
+set_values_1(normal(wrap#(version(300))),F0,VP0,VP,MESG0,MESG,Status) :- true |
+    F0 = [getwt(Term)|F1],
+    set_values_2(Term,F1,VP0,VP,MESG0,MESG,Status).
+otherwise.
+set_values_1(Term,F0,VP0,VP,MESG0,MESG,Status) :- true |
+    MESG0 = [info(string#"!WARNING! compile parameter file is old version",[])|MESG1],
+    set_values_2(Term,F0,VP0,VP,MESG1,MESG,Status).
+
+set_values_2(normal(wrap#({(=),Param,WValue})),F0,VP0,VP,MESG0,MESG,Status) :-
+    Param = atom(Key) |
+    unwrap(WValue,Value,normal,St),
+    VP0 = [empty(Key,YorN)|VP1],
+    set_value(St,YorN,Key,Value,VP1,VP2,MESG0,MESG1),
+    F0 = [getwt(Term)|F1],
+    set_values_2(Term,F1,VP2,VP,MESG1,MESG,Status).
+set_values_2(normal(wrap#({(<),Param,AllValue})),F0,VP0,VP,MESG0,MESG,Status) :-
+    Param = atom(Pool) |
+    unwrap(AllValue,Values,normal,St),
+    VP0 = [empty(Pool,YorN)|VP1],
+    put_all(St,YorN,Pool,Values,VP1,VP2,MESG0,MESG1),
+    F0 = [getwt(Term)|F1],
+    set_values_2(Term,F1,VP2,VP,MESG1,MESG,Status).
+set_values_2(normal(end_of_file),F0,VP0,VP,MESG0,MESG,Status) :- true |
+    F0 = [],
+    VP0 = [get_and_put(distribution,Distribution,Distribution),
+           put(processor,Processors,_)|VP],
+    current_node(CPE,Max),
+    parse_processor_0(Distribution,Max,Processors),
+    MESG0 = MESG,
+    Status = normal.
+otherwise.
+set_values_2(_,F0,VP0,VP,MESG0,MESG,Status) :- true |
+    F0 = [],
+    VP0 = VP,
+    MESG0 = [info(string#"a syntax error found in parameter file",[])|MESG],
+    Status = abnormal.
+
+set_value(normal,no,Key,Value,VP0,VP,MESG0,MESG) :- true |
+    VP0 = [put(Key,Value,_)|VP],
+    MESG0 = MESG.
+set_value(abnormal,no,Key,Value,VP0,VP,MESG0,MESG) :- true |
+    VP0 = VP,
+    MESG0 = [info(string#"illegal compile parameter value : ~t = ~t",[Key,Value])|MESG].
+set_value(_,yes,Key,_,VP0,VP,MESG0,MESG) :- true |
+    VP0 = VP,
+    MESG0 = MESG.
+
+put_all(normal,no,Pool,Values,VP0,VP,MESG0,MESG) :- true |
+    VP0 = [get_and_put(Pool,[],AP)|VP],
+    pool:keyed_set(AP0),
+    put_all(Values,AP0,AP),
+    MESG0 = MESG.
+put_all(abnormal,no,Key,Values,VP0,VP,MESG0,MESG) :- true |
+    VP0 = VP,
+    MESG0 = [info(string#"illegal compile parameter value : ~t = ~t",[Key,Values])|MESG].
+put_all(_,yes,Key,_,VP0,VP,MESG0,MESG) :- true |
+    VP0 = VP,
+    MESG0 = MESG.
+
+put_all([{Key,Value}|Rest],AP0,AP) :- true |
+    AP0 = [put(Key,Value,_)|AP1],
+    put_all(Rest,AP1,AP).
+put_all([],AP0,AP) :- true |
+    AP0 = AP.
+
+libvar_0([do(In0)|In2],VP0) :- true |
+    merge(In0,In1),
+    libvar_do(In1,VP0,VP1),
+    libvar_0(In2,VP1).
+libvar_0([],VP0) :- true |
+    VP0 = [get('$LINK_TABLE$',[]),
+           get('$ATOM_TABLE$',[]),
+           get('$MODULE_TABLE$',[]),
+           get('$FILE_REQUEST$',[]),
+           get('$TIMER_DEVICE$',[]),
+           get('$ALIAS_POOL$',[]),
+           get('$PRE_PROC$',[]),
+           get('$PARSER$',[]),
+           get('$UNPARSER$',[]),
+           get('$VERIFIER$',[]),
+           get('$USER_POOL$',[]),
+           get('$BUFFER$',[]),
+           get('$IF_DEF$',[])].
+otherwise.
+libvar_0([Message|In],VP0) :- true |
+    libvar(Message,VP0,VP1),
+    libvar_0(In,VP1).
+
+libvar_do([do(In0)|In2],VP0,VP) :- true |
+    merge(In0,In1),
+    libvar_do(In1,VP0,VP1),
+    libvar_do(In2,VP1,VP).
+libvar_do([],VP0,VP) :- true | VP0 = VP.
+otherwise.
+libvar_do([Message|In],VP0,VP) :- true |
+    libvar(Message,VP0,VP1),
+    libvar_do(In,VP1,VP).
+
+libvar(get_prompt(Prompt),VP0,VP) :- true |
+    VP0 = [get_and_put(prompt,Prompt,Prompt)|VP].
+libvar(get_more_prompt(Prompt),VP0,VP) :- true |
+    VP0 = [get_and_put(more_prompt,Prompt,Prompt)|VP].
+libvar(set_prompt(Prompt,Status),VP0,VP) :- string(Prompt,Length,16) |
+    create_more_prompt(0,Length,Prompt,MorePrompt),
+    VP0 = [put(prompt,Prompt,_),put(more_prompt,MorePrompt,_)|VP],
+    Status = normal.
+%%libvar(get_compile_option(Optimize,AsmMode,Profile,Struct),VP0,VP) :- true |
+%%    VP0 = [get_and_put(compile_mode,Optimize,Optimize),
+%%           get_and_put(assemble_mode,AsmMode,AsmMode),
+%%           get_and_put(profile,Profile,Profile),
+%%           get_and_put(structure_mode,Struct,Struct)|VP].
+%%libvar(set_compile_mode(CompMode,Status),VP0,VP) :- wait(CompMode) |
+%%    VP0 = [put(compile_mode,CompMode,_)|VP],
+%%    Status = normal.
+%%libvar(set_assemble_mode(AsmMode,Status),VP0,VP) :- wait(AsmMode) |
+%%    VP0 = [put(assemble_mode,AsmMode,_)|VP],
+%%    Status = normal.
+libvar(get_link_error(LinkError),VP0,VP) :- true |
+    VP0 = [get_and_put(link_error,LinkError,LinkError)|VP].
+libvar(set_link_error(LinkError,Status),VP0,VP) :- wait(LinkError) |
+    VP0 = [put(link_error,LinkError,_)|VP],
+    Status = normal.
+libvar(get_auto_link(AutoLink),VP0,VP) :- true |
+    VP0 = [get_and_put(auto_link,AutoLink,AutoLink)|VP].
+libvar(set_auto_link(AutoLink,Status),VP0,VP) :- wait(AutoLink) |
+    VP0 = [put(auto_link,AutoLink,_)|VP],
+    Status = normal.
+libvar(get_package(Package),VP0,VP) :- true |
+    VP0 = [get_and_put(package,Package,Package)|VP].
+libvar(set_package(Package,Status),VP0,VP) :- wait(Package) |
+    VP0 = [put(package,Package,_),
+           get_and_put('$MODULE_TABLE$',ModTbl0,ModTbl)|VP],
+    ModTbl0 = [set_default_package(Package,Status)|ModTbl].
+libvar(get_directory(Directory),VP0,VP) :- true |
+    VP0 = [get_and_put(directory,Directory,Directory)|VP].
+libvar(set_directory(Directory,Status),VP0,VP) :- wait(Directory) |
+    shoen:raise(pimos_tag#task,general_request,[setenv(task:directory,Directory,Status)]),
+    VP0 = [get_and_put('$FILE_REQUEST$',FR0,FR),put(directory,Directory,_)|VP],
+    FR0 = [set_current_directory(Directory,_)|FR].
+libvar(get_last_loaded_modules(ModuleList),VP0,VP) :- true |
+    VP0 = [get_and_put(loaded_modules,ModuleList,ModuleList)|VP].
+libvar(set_last_loaded_modules(ModuleList,Status),VP0,VP) :- wait(ModuleList) |
+    VP0 = [put(loaded_modules,ModuleList,_)|VP],
+    Status = normal.
+libvar(get_working_packages(WP),VP0,VP) :- true |
+    VP0 = [get_and_put(working_packages,WP,WP)|VP].
+libvar(set_working_packages(WP,Status),VP0,VP) :- wait(WP) |
+    VP0 = [put(working_packages,WP,_)|VP],
+    Status = normal.
+libvar(get_original_package(OP),VP0,VP) :- true |
+    VP0 = [get_and_put(original_package,OP,OP)|VP].
+libvar(set_original_package(OP,Status),VP0,VP) :- wait(OP) |
+    VP0 = [put(original_package,OP,_)|VP],
+    Status = normal.
+libvar(get_top_modules(Modules),VP0,VP) :- true |
+    VP0 = [get_and_put(top_modules,Modules,Modules)|VP].
+libvar(set_top_modules(Modules,Status),VP0,VP) :- wait(Modules) |
+    VP0 = [put(top_modules,Modules,_)|VP],
+    Status = normal.
+libvar(get_loader_table(ModTbl0,ModTbl1),VP0,VP) :- true |
+    VP0 = [get_and_put('$LINK_TABLE$',ModTbl0,ModTbl1)|VP].
+libvar(reset_loader_table(Done),VP0,VP) :- true |
+    ModTbl0 = [reset|ModTbl1],
+    VP0 = [get_and_put('$LINK_TABLE$',ModTbl0,ModTbl1),
+           put(loaded_modules,[],_)|VP],
+    Done = done.
+libvar(get_atom_table(AtomTbl0),VP0,VP) :- true |
+    VP0 = [get_and_put('$ATOM_TABLE$',AtomTbl1,AtomTbl2)|VP],
+    AtomTbl1 = {AtomTbl0,AtomTbl2}.
+libvar(get_module_table(ModTbl0),VP0,VP) :- true |
+    VP0 = [get_and_put('$MODULE_TABLE$',ModTbl1,ModTbl2)|VP],
+    ModTbl1 = {ModTbl0,ModTbl2}.
+libvar(get_file_request(FR0),VP0,VP) :- true |
+    VP0 = [get_and_put('$FILE_REQUEST$',FR1,FR2)|VP],
+    FR1 = {FR0,FR2}.
+libvar(get_path(Path),VP0,VP) :- true |
+    VP0 = [get_and_put(path,Path,Path)|VP].
+libvar(set_path(Path,Status),VP0,VP) :- wait(Path) |
+    VP0 = [put(path,Path,_)|VP],
+    Status = normal.
+libvar(revert(MESG0,MESG,Status),VP0,VP) :- true |
+    revert(VP0,VP,MESG0,MESG,Status).
+libvar(keep(MESG0,MESG,Done),VP0,VP) :- true |
+    VP0 = [get_and_put('$FILE_REQUEST$',FR0,FR)|VP1],
+    FR0 = [open(string#"compile.param",write(FS))|FR],
+    keep(FS,VP1,VP,MESG0,MESG,Done).
+libvar(get_next_processor(PE),VP0,VP) :- true |
+    VP0 = [get_and_put(processor,Old,New)|VP],
+    get_next_processor(Old,PE,New).
+libvar(get_processors(ProcessorList),VP0,VP) :- true |
+    VP0 = [get_and_put(processor,Proc,Proc)|VP],
+    Proc = {_,ProcessorList}.
+libvar(get_distribution(Distribution),VP0,VP) :- true |
+    VP0 = [get_and_put(distribution,Distribution,Distribution)|VP].
+libvar(set_distribution(Status),VP0,VP) :- true |
+    current_node(CPE,Max),
+    VP0 = [put(distribution,[],_),
+           put(processor,CPE,_)|VP],
+    Status = normal.
+libvar(set_distribution(Distribution,Status),VP0,VP) :- true |
+    VP0 = [put(distribution,Distribution,_),
+           put(processor,Processors,_)|VP],
+    current_node(CPE,Max),
+    parse_processor_0(Distribution,Max,Processors),
+    Status = normal.
+libvar(get_ls_column(Column),VP0,VP) :- true |
+    VP0 = [get_and_put(ls_column,Column,Column)|VP].
+libvar(set_ls_column(Column,Status),VP0,VP) :- true |
+    VP0 = [put(ls_column,Column,_)|VP],
+    Status = normal.
+libvar(get_compiled_filename(FileNames),VP0,VP) :- true |
+    VP0 = [get_and_put(compiled_filename,FileNames,FileNames)|VP].
+libvar(set_compiled_filename(FileNames,Status),VP0,VP) :- true |
+    VP0 = [put(compiled_filename,FileNames,_)|VP],
+    Status = normal.
+libvar(set_alias(Command,NewCommand,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$ALIAS_POOL$',AP0,AP)|VP],
+    AP0 = [put(Command,NewCommand,_)|AP],
+    Status = normal.
+libvar(get_alias(Command,NewCommand),VP0,VP) :- true |
+    VP0 = [get_and_put('$ALIAS_POOL$',AP0,AP)|VP],
+    AP0 = [empty(Command,YorN)|AP1],
+    get_alias(YorN,Command,NewCommand,AP1,AP).
+libvar(get_aliases(Aliases),VP0,VP) :- true |
+    VP0 = [get_and_put('$ALIAS_POOL$',AP0,AP)|VP],
+    AP0 = [carbon_copy(Aliases)|AP].
+libvar(remove_alias(Command,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$ALIAS_POOL$',AP0,AP)|VP],
+    AP0 = [get_if_any(Command,Removed)|AP],
+    Status = normal(Removed).
+libvar(set_pp(InLang,OutLang,PreProcs,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$PRE_PROC$',PP0,PP)|VP],
+    PP0 = [put(InLang,{OutLang,PreProcs},_)|PP],
+    Status = normal.
+libvar(remove_pp(InLang,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$PRE_PROC$',PP0,PP)|VP],
+    PP0 = [get_if_any(InLang,Removed)|PP],
+    Status = normal(Removed).
+libvar(get_pp(InLang,OutLang,PreProcs),VP0,VP) :- true |
+    VP0 = [get_and_put('$PRE_PROC$',PP0,PP)|VP],
+    PP0 = [empty(InLang,YorN)|PP1],
+    get_pp(YorN,InLang,OutLang,PreProcs,PP1,PP).
+libvar(get_pps(PPs),VP0,VP) :- true |
+    VP0 = [get_and_put('$PRE_PROC$',PP0,PP)|VP],
+    PP0 = [carbon_copy(PPs)|PP].
+libvar(set_parser(Lang,Parser,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$PARSER$',PP0,PP)|VP],
+    PP0 = [put(Lang,Parser,_)|PP],
+    Status = normal.
+libvar(remove_parser(Lang,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$PARSER$',PP0,PP)|VP],
+    PP0 = [get_if_any(Lang,Parser)|PP],
+    Status = normal(Parser).
+libvar(get_parser(Lang,ModuleName),VP0,VP) :- true |
+    VP0 = [get_and_put('$PARSER$',PP0,PP)|VP],
+    PP0 = [empty(Lang,YorN)|PP1],
+    get_parser(YorN,PP1,PP,Lang,ModuleName).
+libvar(get_parsers(PAs),VP0,VP) :- true |
+    VP0 = [get_and_put('$PARSER$',PA0,PA)|VP],
+    PA0 = [carbon_copy(PAs)|PA].
+libvar(set_unparser(Lang,Unparser,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$UNPARSER$',PP0,PP)|VP],
+    PP0 = [put(Lang,Unparser,_)|PP],
+    Status = normal.
+libvar(remove_unparser(Lang,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$UNPARSER$',PP0,PP)|VP],
+    PP0 = [get_if_any(Lang,Unparser)|PP],
+    Status = normal(Unparser).
+libvar(get_unparser(Lang,ModuleName),VP0,VP) :- true |
+    VP0 = [get_and_put('$UNPARSER$',PP0,PP)|VP],
+    PP0 = [empty(Lang,YorN)|PP1],
+    get_parser(YorN,PP1,PP,Lang,ModuleName).
+libvar(get_unparsers(UPs),VP0,VP) :- true |
+    VP0 = [get_and_put('$UNPARSER$',UP0,UP)|VP],
+    UP0 = [carbon_copy(UPs)|UP].
+libvar(set_verifier(Lang,Verifier,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$VERIFIER$',CP0,CP)|VP],
+    CP0 = [put(Lang,Verifier,_)|CP],
+    Status = normal.
+libvar(remove_verifier(Lang,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$VERIFIER$',CP0,CP)|VP],
+    CP0 = [get_if_any(Lang,Verifier)|CP],
+    Status = normal(Verifier).
+libvar(get_verifier(Lang,ModuleName),VP0,VP) :- true |
+    VP0 = [get_and_put('$VERIFIER$',CP0,CP)|VP],
+    CP0 = [empty(Lang,YorN)|CP1],
+    get_parser(YorN,CP1,CP,Lang,ModuleName).
+libvar(get_verifiers(CKs),VP0,VP) :- true |
+    VP0 = [get_and_put('$VERIFIER$',CP0,CP)|VP],
+    CP0 = [carbon_copy(CKs)|CP].
+libvar(set(Key,NewValue,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$USER_POOL$',UP0,UP)|VP],
+    UP0 = [empty(Key,YorN)|UP1],
+    set_user_pool(YorN,UP1,UP,Key,NewValue,Status).
+libvar(reset(Key,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$USER_POOL$',UP0,UP)|VP],
+    UP0 = [empty(Key,YorN)|UP1],
+    reset_user_pool(YorN,UP1,UP,Key,Status).
+libvar(get(Key,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$USER_POOL$',UP0,UP)|VP],
+    UP0 = [empty(Key,YorN)|UP1],
+    get_user_pool(YorN,UP1,UP,Key,Status).
+libvar(get_all(All),VP0,VP) :- true |
+    VP0 = [get_and_put('$USER_POOL$',UP0,UP)|VP],
+    UP0 = [carbon_copy(All)|UP].
+libvar(get_ext(EXT),VP0,VP) :- true |
+    VP0 = [get_and_put(extension,EXT,EXT)|VP].
+libvar(set_ext(EXT,Status),VP0,VP) :- true |
+    VP0 = [put(extension,EXT,_)|VP],
+    Status = normal.
+libvar(get_parallel(PN),VP0,VP) :- true |
+    VP0 = [get_and_put(parallel,PN,PN)|VP].
+libvar(set_parallel(PN,Status),VP0,VP) :- true |
+    VP0 = [put(parallel,PN,_)|VP],
+    Status = normal.
+libvar(get_buffer(Buf),VP0,VP) :- true |
+    VP0 = [get_and_put('$BUFFER$',CP0,CP)|VP],
+    buffer(Buf,CP0,CP).
+libvar(get_date_time(Date,Time),VP0,VP) :- true |
+    VP0 = [get_and_put('$TIMER_DEVICE$',TR0,TR)|VP],
+    TR0 = [get_date_time(normal(Date,Time))|TR].
+%%libvar(set_profile(OnOff,Status),VP0,VP) :- true |
+%%    VP0 = [put(profile,OnOff,_)|VP],
+%%    Status = normal.
+%%libvar(get_profile(OnOff),VP0,VP) :- true |
+%%    VP0 = [get_and_put(profile,OnOff,OnOff)|VP].
+libvar(define(Key,Value,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$IF_DEF$',ID0,ID)|VP],
+    ID0 = [put(Key,Value,_)|ID],
+    Status = normal.
+libvar(defined(All),VP0,VP) :- true |
+    VP0 = [get_and_put('$IF_DEF$',ID0,ID)|VP],
+    ID0 = [carbon_copy(All)|ID].
+libvar(undefine(Key,Status),VP0,VP) :- true |
+    VP0 = [get_and_put('$IF_DEF$',ID0,ID)|VP],
+    ID0 = [get_if_any(Key,_)|ID],
+    Status = normal.
+libvar(get_message_mode(Mode),VP0,VP) :- true |
+    VP0 = [get_and_put(message_mode,Mode,Mode)|VP].
+libvar(set_message_mode(Mode,Status),VP0,VP) :- true |
+    VP0 = [put(message_mode,Mode,_)|VP],
+    Status = normal.
+libvar(get_param_file(ParamFile),VP0,VP) :- true |
+    VP0 = [get_and_put(param_file,ParamFile,ParamFile)|VP].
+
+%%%% To keep upward compatibility ...
+
+convert_new(VP0,VP) :- true |
+%%    VP0 = [get_and_put('$PRE_PROC$',PP0,PP),
+%%           get_and_put(compile_mode,Opt0,Opt)|VP],
+    VP0 = [get_and_put('$PRE_PROC$',PP0,PP)|VP],
+    PP0 = [get_all(PPs)|PP1],
+    convert_pp(PPs,PP1,PP).
+%%    convert_indexing(Opt0,Opt).
+
+convert_pp([{InLang,PPs}|Rest],PP0,PP) :- list(PPs) |
+    PP0 = [put(InLang,{string#"pkl1",PPs},_)|PP1],
+    convert_pp(Rest,PP1,PP).
+convert_pp([{InLang,PPs}|Rest],PP0,PP) :- atom(PPs) |
+    PP0 = [put(InLang,{string#"pkl1",[PPs]},_)|PP1],
+    convert_pp(Rest,PP1,PP).
+convert_pp([{InLang,PPs}|Rest],PP0,PP) :-
+    PPs = {(::),Package,ModName},
+    atom(Package), atom(ModName) |
+    PP0 = [put(InLang,{string#"pkl1",[PPs]},_)|PP1],
+    convert_pp(Rest,PP1,PP).
+convert_pp([{InLang,{OutLang,PPs}}|Rest],PP0,PP) :- list(PPs) |
+    PP0 = [put(InLang,{OutLang,PPs},_)|PP1],
+    convert_pp(Rest,PP1,PP).
+convert_pp([{InLang,{OutLang,PPs}}|Rest],PP0,PP) :- atom(PPs) |
+    PP0 = [put(InLang,{OutLang,[PPs]},_)|PP1],
+    convert_pp(Rest,PP1,PP).
+convert_pp([{InLang,{OutLang,PPs}}|Rest],PP0,PP) :- 
+    PPs = {(::),Package,ModName},
+    atom(Package), atom(ModName) |
+    PP0 = [put(InLang,{OutLang,[PPs]},_)|PP1],
+    convert_pp(Rest,PP1,PP).
+convert_pp([],PP0,PP) :- true | PP0 = PP.
+
+%%convert_indexing(3,Opt) :- true | Opt = no_indexing.
+%%convert_indexing(4,Opt) :- true | Opt = indexing.
+%%convert_indexing(on,Opt) :- true | Opt = indexing.
+%%convert_indexing(off,Opt) :- true | Opt = no_indexing.
+
+%%%% PARSER / UNPARSER / VERIFIER
+
+get_parser(yes,PP0,PP,Lang,ModuleName) :- true |
+    PP0 = PP,
+    ModuleName = [].
+get_parser(no,PP0,PP,Lang,ModuleName) :- true |
+    PP0 = [get_and_put(Lang,ModuleName,ModuleName)|PP].
+
+%%%% PRE_PROC
+
+get_pp(yes,InLang,OutLang,PreProc,PP0,PP) :- true |
+    PreProc = non_existent(InLang),
+    OutLang = [],
+    PP0 = PP.
+get_pp(no,InLang,OutLang,PreProc,PP0,PP) :- true |
+    PP0 = [get_and_put(InLang,Old,New)|PP],
+    get_pp_0(Old,New,OutLang,PreProc).
+
+get_pp_0({Lang,PP},New,OutLang,PreProc) :- true |
+    New = {Lang,PP},
+    OutLang = Lang,
+    PreProc = PP.
+otherwise.
+get_pp_0(PP,New,OutLang,PreProc) :- true |
+    New = {OutLang,PP},
+    OutLang = string#"pkl1",
+    PreProc = PP.
+
+set_default_preprocessors(PP0,PP,PA0,PA,UP0,UP,CP0,CP) :- true |
+    PP0 = [put(string#"aya",{string#"kl1",[aya]},_),
+           put(string#"mac",{string#"pkl1",[kl1_macro_preprocessor]},_),
+           put(string#"kl1",{string#"pkl1",[kl1_macro_expander]},_),
+           put(string#"pkl1",{string#"pkl1",[kl1_standard_preprocessor]},_)|PP],
+    PA0 = [put(string#"aya",ayaparse,_),
+           put(string#"mac",kl1_macro_preprocessor,_),
+           put(string#"kl1",kl1_standard_preprocessor,_)|PA],
+    UP0 = [put(string#"pkl1",kl1_standard_preprocessor,_)|UP],
+    CP0 = [put(string#"pkl1",kl1_standard_preprocessor,_)|CP].
+
+%%%% USER_POOL
+
+set_user_pool(yes,UP0,UP,Key,NewValue,Status) :- true |
+    UP0 = [put(Key,NewValue,_)|UP],
+    Status = normal.
+set_user_pool(no,UP0,UP,Key,NewValue,Status) :- true |
+    UP0 = [get_and_put(Key,OldValue,NewValue)|UP],
+    Status = normal(OldValue).
+
+reset_user_pool(yes,UP0,UP,Key,Status) :- true |
+    UP0 = UP,
+    Status = abnormal.
+reset_user_pool(no,UP0,UP,Key,Status) :- true |
+    UP0 = [get(Key,OldValue)|UP],
+    Status = normal(OldValue).
+
+get_user_pool(yes,UP0,UP,Key,Status) :- true |
+    UP0 = UP,
+    Status = non_existent.
+get_user_pool(no,UP0,UP,Key,Status) :- true |
+    UP0 = [get_and_put(Key,OldValue,OldValue)|UP],
+    Status = normal(OldValue).
+
+%%%% ALIAS
+
+get_alias(yes,Command,NewCommand,AP0,AP) :- true |
+    AP0 = AP,
+    NewCommand = Command.
+get_alias(no,Command,NewCommand,AP0,AP) :- true |
+    AP0 = [get_and_put(Command,NewCommand,NewCommand)|AP].
+
+set_default_alises(AP0,AP) :- true |
+    AP0 = [put(string#"dstr",string#"distribute",_),
+           put(string#"indx",string#"indexing",_),
+           put(string#"orgp",string#"original_package",_),
+           put(string#"pkg",string#"package",_),
+           put(string#"tm",string#"top_modules",_),
+           put(string#"pp",string#"preprocessor",_),
+           put(string#"wp",string#"working_packages",_)|AP].
+
+%%%% GET_NEXT_PROCESSOR
+
+get_next_processor({[],[]},PE,New) :- true |
+    current_node(CPE,Max),
+    PE = CPE,
+    New = {[CPE],[CPE]}.    
+get_next_processor({[],ProcessorList},PE,New) :- ProcessorList = [NextPE|Rest] |
+    PE = NextPE,
+    New = {Rest,ProcessorList}.
+get_next_processor({[PE0|Rest],ProcessorList},PE,New) :- true |
+    PE = PE0,
+    New = {Rest,ProcessorList}.
+
+%%%% KEEP Parameters
+
+keep(normal(FS0,_,_),VP0,VP,MESG0,MESG,Done) :- true |
+    FS0 = [pathname(normal(ParamFile))|FS],
+    buffer:output_filter(F0,FS),
+    F0 = [print_length(1000000),print_depth(1000000),
+          print_atom_length(1000),print_string_length(500000)|F1],
+    VP0 = [put(param_file,ParamFile,_)|VP1],
+    keep_params(F1,VP1,VP,Done),
+    MESG0 = [info(string#"compile status kept in : ~s",[ParamFile])|MESG].
+otherwise.
+keep(_,VP0,VP,MESG0,MESG,Done) :- true |
+    VP0 = VP,
+    MESG0 = [info(string#"unable to create a new file",[])|MESG],
+    Done = done.
+
+keep_params(F,VP0,VP,Done) :- true |
+    VP0 = [get_and_put(package,DefaultPackage,DefaultPackage),
+           get_and_put(path,SearchPath,SearchPath),
+           get_and_put(prompt,Prompt,Prompt),
+           get_and_put(more_prompt,MorePrompt,MorePrompt),
+%%           get_and_put(assemble_mode,AsmMode,AsmMode),
+%%           get_and_put(profile,Profile,Profile),
+%%           get_and_put(compile_mode,CompMode,CompMode),
+           get_and_put(working_packages,WorkingPackages,WorkingPackages),
+           get_and_put(original_package,OriginalPackage,OriginalPackage),
+           get_and_put(top_modules,TopModules,TopModules),
+           get_and_put(auto_link,AutoLink,AutoLink),
+           get_and_put(distribution,Distribution,Distribution),
+           get_and_put(ls_column,Column,Column),
+           get_and_put(link_error,LinkError,LinkError),
+           get_and_put(extension,Extension,Extension),
+           get_and_put(parallel,Parallel,Parallel),
+           get_and_put(message_mode,Message,Message),
+           get_and_put('$ALIAS_POOL$',AP0,AP),
+           get_and_put('$PRE_PROC$',PP0,PP),
+           get_and_put('$PARSER$',PA0,PA),
+           get_and_put('$UNPARSER$',UP0,UP),
+           get_and_put('$USER_POOL$',LO0,LO),
+           get_and_put('$IF_DEF$',ID0,ID)|VP],
+    AP0 = [carbon_copy(Aliases)|AP],
+    PP0 = [carbon_copy(PreProcs)|PP],
+    PA0 = [carbon_copy(Parsers)|PA],
+    UP0 = [carbon_copy(Unparsers)|UP],
+    LO0 = [carbon_copy(LanguageOptions)|LO],
+    ID0 = [carbon_copy(Defines)|ID],
+    F = [putf(string#"~T .~n",[version(300)]),
+         putf(string#"package = ~T .~n",[DefaultPackage]),
+         putf(string#"path = ~T .~n",[SearchPath]),
+         putf(string#"prompt = ~T .~n",[Prompt]),
+         putf(string#"more_prompt = ~T .~n",[MorePrompt]),
+%%         putf(string#"assemble_mode = ~T .~n",[AsmMode]),
+%%         putf(string#"profile = ~T .~n",[Profile]),
+%%         putf(string#"compile_mode = ~T .~n",[CompMode]),
+         putf(string#"working_packages = ~T .~n",[WorkingPackages]),
+         putf(string#"original_package = ~T .~n",[OriginalPackage]),
+         putf(string#"top_modules = ~T .~n",[TopModules]),
+         putf(string#"auto_link = ~T .~n",[AutoLink]),
+         putf(string#"distribution = ~T .~n",[Distribution]),
+         putf(string#"ls_column = ~T .~n",[Column]),
+         putf(string#"link_error = ~T .~n",[LinkError]),
+         putf(string#"extension = ~T .~n",[Extension]),
+         putf(string#"parallel = ~T .~n",[Parallel]),
+         putf(string#"message_mode = ~T .~n",[Message]),
+         putf(string#"'$ALIAS_POOL$' < ~T .~n",[Aliases]),
+         putf(string#"'$PRE_PROC$' < ~T .~n",[PreProcs]),
+         putf(string#"'$PARSER$' < ~T .~n",[Parsers]),
+         putf(string#"'$UNPARSER$' < ~T .~n",[Unparsers]),
+         putf(string#"'$USER_POOL$' < ~T .~n",[LanguageOptions]),
+         putf(string#"'$IF_DEF$' < ~T .~n",[Defines]),
+         flush(Done)].
+
+%%%% WAITS ...
+
+wait_message_mode(normal(silent),MM) :- true | MM = silent.
+otherwise.
+wait_message_mode(_,MM) :- true | MM = verbose.
+
+wait_define(normal(IDs),ID0,ID) :- list(IDs) |
+    define(IDs,ID0,ID).
+wait_define(normal({Key,Value}),ID0,ID) :- true |
+    define([{Key,Value}],ID0,ID).
+otherwise.
+wait_define(_,ID0,ID) :- true |
+    ID0 = ID.
+
+define([{Key,Value}|Rest],ID0,ID) :- atom(Key) |
+    ID0 = [put(Key,Value,_)|ID1],
+    define(Rest,ID1,ID).
+define([],ID0,ID) :- true | ID0 = ID.
+otherwise.
+define([_|Rest],ID0,ID) :- true |
+    define(Rest,ID0,ID).
+
+wait_parallel(normal(PN),Parallel) :- PN > 0 | Parallel = PN.
+otherwise.
+wait_parallel(PN,Parallel) :- Parallel = 2.
+
+wait_preprocessors(normal(List),PP0,PP) :- list(List) |
+    preprocs(List,PP0,PP).
+wait_preprocessors(normal({InLang,PreProcs}),PP0,PP) :-
+    string(InLang,_,16), list(PreProcs) |
+    set_pps(PreProcs,PreProcs0),
+    PP0 = [put(InLang,{string#"pkl1",PreProcs0},_)|PP].
+wait_preprocessors(normal({InLang,OutLang,PreProcs}),PP0,PP) :-
+    string(InLang,_,16), string(OutLang,_,16), list(PreProcs) |
+    set_pps(PreProcs,PreProcs1),
+    PP0 = [put(InLang,{OutLang,PreProcs1},_)|PP].
+wait_preprocessors(normal({InLang,ModuleName}),PP0,PP) :- 
+    string(InLang,_,16), atom(ModuleName) |
+    PP0 = [put(InLang,ModuleName,_)|PP].
+wait_preprocessors(normal({InLang,OutLang,ModuleName}),PP0,PP) :- 
+    string(InLang,_,16), atom(ModuleName) |
+    PP0 = [put(InLang,{OutLang,ModuleName},_)|PP].
+wait_preprocessors(normal({InLang,{(::),Package,ModuleName}}),PP0,PP) :- 
+    string(InLang,_,16), atom(Package), atom(ModuleName) |
+    PP0 = [put(InLang,{(::),Package,ModuleName},_)|PP].
+wait_preprocessors(normal({InLang,OutLang,{(::),Package,ModuleName}}),PP0,PP) :- 
+    string(InLang,_,16), string(OutLang,_,16), atom(Package), atom(ModuleName) |
+    PP0 = [put(InLang,{OutLang,{(::),Package,ModuleName}},_)|PP].
+otherwise.
+wait_preprocessors(_,PP0,PP) :- true |
+    PP0 = PP.
+
+preprocs([{InLang,PreProcs0}|Rest],PP0,PP) :-
+    string(InLang,_,16), list(PreProcs0) |
+    set_pps(PreProcs0,PreProcs1),
+    PP0 = [put(InLang,{string#"pkl1",PreProcs1},_)|PP1],
+    preprocs(Rest,PP1,PP).
+preprocs([{InLang,OutLang,PreProcs0}|Rest],PP0,PP) :-
+    string(InLang,_,16), string(OutLang,_,16), list(PreProcs0) |
+    set_pps(PreProcs0,PreProcs1),
+    PP0 = [put(InLang,{OutLang,PreProcs1},_)|PP1],
+    preprocs(Rest,PP1,PP).
+preprocs([{InLang,ModuleName}|Rest],PP0,PP) :-
+    string(InLang,_,16), atom(ModuleName) |
+    PP0 = [put(InLang,{string#"pkl1",ModuleName},_)|PP1],
+    preprocs(Rest,PP1,PP).
+preprocs([{InLang,OutLang,ModuleName}|Rest],PP0,PP) :-
+    string(InLang,_,16), string(OutLang,_,16), atom(ModuleName) |
+    PP0 = [put(InLang,{OutLang,ModuleName},_)|PP1],
+    preprocs(Rest,PP1,PP).
+preprocs([{InLang,{(::),Package,ModuleName}}|Rest],PP0,PP) :-
+    string(InLang,_,16), atom(Package), atom(ModuleName) |
+    PP0 = [put(InLang,{string#"pkl1",{(::),Package,ModuleName}},_)|PP1],
+    preprocs(Rest,PP1,PP).
+preprocs([{InLang,OutLang,{(::),Package,ModuleName}}|Rest],PP0,PP) :-
+    string(InLang,_,16), string(OutLang,_,16), atom(Package), atom(ModuleName) |
+    PP0 = [put(InLang,{OutLang,{(::),Package,ModuleName}},_)|PP1],
+    preprocs(Rest,PP1,PP).
+otherwise.
+preprocs(_,PP0,PP) :- true | PP0 = PP.
+
+wait_parsers(normal(List),PP0,PP) :- list(List) |
+    parsers(List,PP0,PP).
+wait_parsers(normal({LANG,ModuleName}),PP0,PP) :- 
+    string(LANG,_,16), atom(ModuleName) |
+    PP0 = [put(LANG,ModuleName,_)|PP].
+wait_parsers(normal({LANG,{(::),Package,ModuleName}}),PP0,PP) :- 
+    string(LANG,_,16), atom(Package), atom(ModuleName) |
+    PP0 = [put(LANG,{(::),Package,ModuleName},_)|PP].
+otherwise.
+wait_parsers(_,PP0,PP) :- true |
+    PP0 = PP.
+
+parsers([{LANG,ModuleName}|Rest],PP0,PP) :- 
+    string(LANG,_,16), atom(ModuleName) |
+    PP0 = [put(LANG,ModuleName,_)|PP1],
+    parsers(Rest,PP1,PP).
+parsers([{LANG,{(::),Package,ModuleName}}|Rest],PP0,PP) :- 
+    string(LANG,_,16), atom(Package), atom(ModuleName) |
+    PP0 = [put(LANG,{(::),Package,ModuleName},_)|PP1],
+    parsers(Rest,PP1,PP).
+otherwise.
+parsers(_,PP0,PP) :- true | PP0 = PP.
+
+wait_unparsers(Status,PP0,PP) :- true | wait_parsers(Status,PP0,PP).
+
+wait_verifiers(Status,CP0,CP) :- true | wait_parsers(Status,CP0,CP).
+
+set_pps([{(::),Package,ModuleName}|Rest],PreProcs0) :-
+    atom(Package), atom(ModuleName) |
+    PreProcs0 = [{(::),Package,ModuleName}|PreProcs1],
+    set_pps(Rest,PreProcs1).
+set_pps([ModuleName|Rest],PreProcs0) :-
+    atom(ModuleName) |
+    PreProcs0 = [ModuleName|PreProcs1],
+    set_pps(Rest,PreProcs1).
+otherwise.
+set_pps(_,PreProcs0) :- true |
+    PreProcs0 = [].
+
+wait_language_options(normal(Pairs),LO0,LO) :- list(Pairs) |
+    set_language_options(Pairs,LO0,LO).
+wait_language_options(normal({Key,Value}),LO0,LO) :- true |
+    LO0 = [put(Key,Value,_)|LO].
+otherwise.
+wait_language_options(_,LO0,LO) :- true | LO0 = LO.
+
+set_language_options([{Key,Value}|Rest],LO0,LO) :- true |
+    LO0 = [put(Key,Value,_)|LO1],
+    set_language_options(Rest,LO1,LO).
+set_language_options([],LO0,LO) :- true | LO0 = LO.
+otherwise.
+set_language_options([_|Rest],LO0,LO) :- true |
+    set_language_options(Rest,LO0,LO).
+
+wait_file_extension(normal(DFEs),Extensions) :- list(DFEs) |
+    check_file_extension(DFEs,Extensions).
+wait_file_extension(normal(DFE),Extensions) :- string(DFE,_,16) |
+    Extensions = [DFE].
+otherwise.
+wait_file_extension(_,Extensions) :- true |
+    Extensions = [string#"aya",string#"mac",string#"kl1",string#"pkl1",string#"sav"].
+
+check_file_extension([DFE|Rest0],DFEs) :- string(DFE,_,16) |
+    DFEs = [DFE|Rest1],
+    check_file_extension(Rest0,Rest1).
+check_file_extension([],DFEs) :- true | DFEs = [].
+otherwise.
+check_file_extension([_|Rest],DFEs) :- true |
+    check_file_extension(Rest,DFEs).
+
+wait_link_error(normal(warning),LinkError) :- true | LinkError = warning.
+otherwise.
+wait_link_error(_,LinkError) :- true | LinkError = error.
+
+wait_auto_link(normal(off),AutoLink) :- true | AutoLink = off.
+otherwise.
+wait_auto_link(_,AutoLink) :- true | AutoLink = on.
+
+wait_ls_column(normal(Column),LsColumn) :- true | Column = LsColumn.
+    otherwise.
+wait_ls_column(_,LsColumn) :- true | LsColumn = 4.
+
+wait_current_directory(normal(CD),Dir) :- string(CD,_,_) |
+    Dir = CD.
+otherwise.
+wait_current_directory(CD,Dir) :- true |
+    Dir = string#"".
+
+wait_path(normal(Path),SearchPath) :- list(Path) |
+    SearchPath = Path.
+otherwise.
+wait_path(_,SearchPath) :- true |
+    SearchPath = [].
+
+wait_prompt(normal(PromptString),normal(MorePromptString),Prompt,MorePrompt) :- 
+    string(PromptString,Length,16), string(MorePromptString,_,16) |
+    Prompt = PromptString,
+    MorePrompt = MorePromptString.
+wait_prompt(normal(PromptString),abnormal,Prompt,MorePrompt) :- 
+    string(PromptString,Length,16) |
+    create_more_prompt(0,Length,PromptString,MorePrompt),
+    Prompt = PromptString.
+wait_prompt(abnormal,normal(MorePromptString),Prompt,MorePrompt) :- 
+    string(MorePromptString,Length,16) |
+    Prompt     = string#"COMPILE>",
+    MorePrompt = MorePromptString.
+otherwise.
+wait_prompt(_,_,Prompt,MorePrompt) :- true |
+    Prompt     = string#"COMPILE> ",
+    MorePrompt = string#"         ".
+
+create_more_prompt(P,Length,PromptString,Prompt) :- P < Length |
+    set_string_element(PromptString,P,#" ",NewPromptString),
+    P1 := P + 1,
+    create_more_prompt(P1,Length,NewPromptString,Prompt).
+create_more_prompt(Length,Length,PromptString,Prompt) :- true |
+    PromptString = Prompt.
+
+%%wait_assemble_mode(normal(firm),Mode) :- true | Mode = firm.
+%%wait_assemble_mode(normal(pimos),Mode) :- true | Mode = pimos.
+%%otherwise.
+%%wait_assemble_mode(_,Mode) :- true | Mode = user.
+
+%%wait_compile_mode(normal(no_indexing),Mode) :- true | Mode = off.
+%%otherwise.
+%%wait_compile_mode(_,Mode) :- true | Mode = on.
+
+wait_default_package(normal(Package),Status) :- atom(Package) |
+    Status = Package.
+otherwise.
+wait_default_package(_,Status) :- true |
+    Status = work.
+
+%%wait_profile(normal(on), Mode) :- true | Mode=on.
+%%otherwise.
+%%wait_profile(_, Mode) :- true | Mode=off.
+
+%%wait_structure_mode(normal(no_const), Mode) :- true | Mode=no_const.
+%%otherwise.
+%%wait_structure_mode(_, Mode) :- true | Mode=const.
+
+wait_working_packages(normal(PS),_,PackageScope) :- atom(PS) |
+    PackageScope = [PS].
+wait_working_packages(normal(PS),_,PackageScope) :- list(PS) |
+    PackageScope = PS.
+otherwise.
+wait_working_packages(_,DefaultPackage,PackageScope) :- true |
+    PackageScope = [DefaultPackage].
+
+wait_original_package_flag(normal(on),OriginalPackage) :- true | OriginalPackage = on.
+otherwise.
+wait_original_package_flag(_,OriginalPackage) :- true | OriginalPackage = off.
+
+wait_top_modules(normal(TopModuleList),TopModules) :- list(TopModuleList) |
+    TopModuleList = TopModules.
+wait_top_modules(normal(TopModule),TopModules) :- atom(TopModule) |
+    TopModules = [TopModule].
+wait_top_modules(normal(TopModule),TopModules) :-
+    TopModule = {(::),PacName,ModName},
+    atom(PacName), atom(ModName) |
+    TopModules = [TopModule].
+otherwise.
+wait_top_modules(_,TopModules) :- true | TopModules = [].
+
+wait_processors(normal(Distribution),Distri,Processors) :- true |
+    current_node(CPE,Max),
+    Distribution = Distri,
+    parse_processor_0(Distribution,Max,Processors).
+otherwise.
+wait_processors(_,Distri,Processors) :- true |
+    Distri = [],
+    current_node(CPE,Max),
+    Processors = {[CPE],[CPE]}.
+
+parse_processor_0(Distribution,Max,Processors) :- Distribution = [_|_] |
+    parse_processor_1(Distribution,Max,List),
+    check_processors(List,List0),
+    Processors = {List0,List0}.
+parse_processor_0([],Max,Processors) :- true |
+    current_node(CPE,Max),
+    Processors = {[CPE],[CPE]}.
+otherwise.
+parse_processor_0(Distribution,Max,Processors) :- true |
+    parse_processor(Distribution,Max,List,[]),
+    check_processors(List,List0),
+    Processors = {List0,List0}.
+
+check_processors([],List) :- true |
+    current_node(CPE,Max),
+    List = [CPE].
+otherwise.
+check_processors(List0,List) :- true | List = List0.
+
+parse_processor_1([Spec|Rest],Max,Processors0) :- true |
+    parse_processor(Spec,Max,Processors0,Processors1),
+    parse_processor_1(Rest,Max,Processors1).
+parse_processor_1([],Max,Processors) :- true |
+    Processors = [].
+
+parse_processor(PE0,Max,List0,List) :- 
+    integer(PE0), 0 =< PE0, PE0 < Max |
+    List0 = [PE0|List].
+parse_processor((*),Max,List0,List) :- true |
+    generate_pes(0,Max,Max,List0,List).
+parse_processor({(-),PE0,PE1},Max,List0,List) :-
+    integer(PE0), 0 =< PE0,
+    integer(PE1), 0 =< PE1,
+    PE0 =< PE1 |
+    Length := PE1 - PE0 + 1,
+    generate_pes(PE0,Length,Max,List0,List).
+parse_processor({(:),PE0,Length},Max,List0,List) :- 
+    integer(PE0), 0 =< PE0, Length > 0 |
+    generate_pes(PE0,Length,Max,List0,List).
+otherwise.
+parse_processor(_,_,List0,List) :- true |
+    List = List0.
+
+generate_pes(PE0,Length0,Max,List0,List) :- Length0 > 0, PE0 < Max |
+    List0 = [PE0|List1],
+    PE1 := PE0 + 1,
+    Length1 := Length0 - 1,
+    generate_pes(PE1,Length1,Max,List1,List).
+generate_pes(PE0,Length0,Max,List0,List) :- PE0 >= Max |
+    List0 = List.
+generate_pes(PE0,0,Max,List0,List) :- true |
+    List0 = List.
+
+check_FR_status(normal(FR0,_,_),FR) :- true |
+    merge(FR,FR0).
+otherwise.
+check_FR_status(Status,FR) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(compiler_error,string#"Unable to get file request device"),Status).
+
+check_TR_status(normal(TR,_,_),TD) :- true |
+    TR = [create(normal(TD0,_,_))],
+    merge(TD,TD0).
+otherwise.
+check_TR_status(Status,TD) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(compiler_error,string#"Unable to get timer request device"),Status).
+
+%%%% UNWRAP
+
+unwrap(atom(Atom),Unwrap,St0,St) :- true |
+    Unwrap = Atom,
+    St0 = St.
+unwrap(integer(Int),Unwrap,St0,St) :- true |
+    Unwrap = Int,
+    St0 = St.
+unwrap(string(Str),Unwrap,St0,St) :- true |
+    Unwrap = Str,
+    St0 = St.
+unwrap(list([WrappedCar|WrappedCdr]),Unwrap,St0,St) :- true |
+    unwrap(WrappedCar,Car,St0,St1),
+    unwrap(WrappedCdr,Cdr,St1,St2),
+    Unwrap = [Car|Cdr],
+    St2 = St.
+unwrap(vector(WrappedVect),Unwrap,St0,St) :- vector(WrappedVect,Length) |
+    new_vector(Vect,Length),
+    unwrap_vector(WrappedVect,Vect,0,Length,Unwrap,St0,St).
+otherwise.
+unwrap(_,Unwrap,St0,St) :- true |
+    Unwrap = [],
+    St = abnormal.
+
+unwrap_vector(WrappedVect,Vect0,I,L,Unwrap,St0,St) :- 
+    I < L, vector_element(WrappedVect,I,WrappedElm) |
+    unwrap(WrappedElm,Elm,St0,St1),
+    set_vector_element(Vect0,I,_,Elm,Vect1),
+    I1 := I + 1,
+    unwrap_vector(WrappedVect,Vect1,I1,L,Unwrap,St1,St).
+unwrap_vector(WrappedVect,Vect,I,L,Unwrap,St0,St) :- I >= L |
+    Vect = Unwrap,
+    St0 = St.
+
+%%%% Buffer %%%%
+
+buffer([],CP0,CP) :- true |
+    CP0 = [abandon_pool|CP].
+otherwise.
+buffer([Mesg|In],CP0,CP) :- true |
+    CP0 = [Mesg|CP1],
+    buffer(In,CP1,CP).

@@ -1,0 +1,628 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module login_int.
+:- with_macro pimos.
+:- public
+     putl/4,
+     putb/4,
+     make_message/3,
+     make_id/2,
+     make_id2/3,
+     window_init/4,
+     window_interact/8,
+     timeout/3,
+     timeout/4,
+     int2string/3,
+     int22str/3.
+
+putl(Str,Win,WinN,Status):-
+   true|
+   new_string(NL0,1,16),
+   set_string_element(NL0,0,key#lf,NL),
+   Win = [putb(Str,_), putb(NL,_), flush(Status)|WinN].
+putb(Str,Win,WinN,Status):-
+   true|
+   Win = [putb(Str,_), flush(Status)|WinN].
+
+make_message(Mes,ID,Out):-
+   string(Mes,N,E)|
+   new_string(Out0,~(N+1),E),
+   builtin#set_substring(Out0,1,Mes,Out1),
+   set_string_element(Out1,0,ID,Out).
+make_id(ID,Mes):-
+   true|
+   new_string(Mes1,1,16),
+   set_string_element(Mes1,0,ID,Mes).
+make_id2(ID,Mes1,Mes2):-
+   true|
+   new_string(Mes10,2,16),
+   new_string(Mes20,1,16),
+   set_string_element(Mes10,0,ID,Mes11),
+   set_string_element(Mes11,1,key#lf,Mes1),
+   set_string_element(Mes20,0,ID,Mes2).
+
+window_init(Win,WinN,NGR,NGRN):-
+   true|
+   NGR = [file(FR)|NGRN],
+   wait_window_init(FR,Win,WinN).
+
+wait_window_init(normal(FR,_,_),Win,WinN):-
+   true|
+   FR = [open(string#"me:pimos.init",read(FF))],
+   wait_window_init2(FF,Win,WinN).
+otherwise.
+wait_window_init(_,Win,WinN):-
+   true|
+   window_default_init(Win,WinN).
+
+wait_window_init2(normal(F,_,_),Win,WinN):-
+   true|
+   buffer:input_filter(FIn,F),
+   FIn = [getwt(WT)|FN],
+   wait_window_init3(WT,FN,Win,WinN).
+otherwise.
+wait_window_init2(_,Win,WinN):-
+   true|
+   window_default_init(Win,WinN).
+
+wait_window_init3(normal(end_of_file),F,Win,WinN):-
+   true|
+   F = [],
+   window_default_init(Win,WinN).
+wait_window_init3(normal(empty),F,Win,WinN):-
+   true|
+   F = [getwt(WT)|FN],
+   wait_window_init3(WT,FN,Win,WinN).
+otherwise.
+wait_window_init3(normal(WT),F,Win,WinN):-
+   true|
+   F = [],
+   variable:unwrap(WT,{_,T},[count(N)]),
+   wait_window_init4(N,T,Win,WinN).
+otherwise.
+wait_window_init3(_,F,Win,WinN):-
+   true|
+   F = [],
+   window_default_init(Win,WinN).
+
+wait_window_init4(0,console_window(Pos,Size,Font),Win,WinN):- string(Font,_,_)|
+   pos_check(Pos,ST1),
+   size_check(Size,ST2),
+   wait_window_init5(ST1,ST2,Font,Win,WinN).
+wait_window_init4(0,console_window(Pos,Size,Font),Win,WinN):- vector(Font,3),
+      vector_element(Font,1,(string)),
+      vector_element(Font,0,(#)),
+      vector_element(Font,2,Str),
+      string(Str,_,_)|
+   pos_check(Pos,ST1),
+   size_check(Size,ST2),
+   wait_window_init5(ST1,ST2,Font,Win,WinN).
+otherwise.
+wait_window_init4(_,_,Win,WinN):-
+   true|
+   window_default_init(Win,WinN).
+
+pos_check(at(X,Y),St):-
+   X >= 0, Y >= 0| St = normal(at(X,Y)).
+pos_check(mouse,St):-
+   true| St = normal(mouse).
+otherwise.
+pos_check(_,St):-
+   true| St = abnormal.
+size_check(char(X,Y),St):-
+   X >= 1, Y >= 1|
+   St = normal(char(X,Y)).
+size_check(mouse,St):-
+   true| St = normal(mouse).
+otherwise.
+size_check(_,St):-
+   true| St = abnormal.
+
+wait_window_init5(normal(Pos),normal(Size),Font,Win,WinN):-
+   true|
+   Win = [set_title(string#"SELECT YOUR PARTITION",_),
+          set_font(Font,Status)|Win1],
+   wait_window_init6(Status,Pos,Size,Win1,WinN).
+otherwise.
+wait_window_init5(_,_,_,Win,WinN):-
+   true|
+   window_default_init(Win,WinN).
+
+wait_window_init6(normal,Pos,Size,Win,WinN):-
+   true|
+   Win = [reshape(Pos,Size,Status)|Win1],
+   wait_window_init7(Status,Win1,WinN).
+otherwise.
+wait_window_init6(_,_,_,Win,WinN):-
+   true|
+   window_default_init(Win,WinN).
+
+wait_window_init7(normal,Win,WinN):-
+   true|
+   Win = [activate(_)|WinN].
+otherwise.
+wait_window_init7(_,Win,WinN):-
+   true|
+   window_default_init(Win,WinN).
+
+window_default_init(Win,WinN):-
+   true|
+   Win = [ set_title(string#"SELECT YOUR PARTITION",_),
+           set_font(string#"font:test_11.font",_),
+           reshape(at(200,200),char(47,14),_),
+           activate(_)|WinN].
+
+
+
+
+
+
+%window_interact(Win,WinN,Abort,Who,Entry,Atom,Timer,Status)
+%  if Entry = []  => no entry for this user
+%  Who = [{Mode,Number,From,To,Users},...
+%                         user(Name),nouser
+
+window_interact(Win,WinN,Abort,Who,Entry,A,T,Status):-
+   true|
+   write_title(Win0,Win2),
+   A = {A1,A2},
+   copy:copy(Entry,Entry1,Entry2),
+   buffer(Win0,Win3,Win),
+   write_who(Who,Win2,[],Entry1,A1),
+   read_entry(Entry2,OK,Win3,WinN,Abort,A2,T,Status).
+
+
+buffer(In1,In2,Out):-
+   true|
+   buffer(In1,Tail,Tail,Out,In2).
+buffer([],Tail,Head,Out,In2):-
+   true|
+   Tail = [],
+   builtin#append_string(Head,Buf1),
+   Out = [putb(Buf1,_),flush(_)|In2].
+buffer([putb(Str,Status)|Next],Tail,Head,Out,In2):-
+   true|
+   Tail = [Str|TailN], Status = normal,
+   buffer(Next,TailN,Head,Out,In2).
+buffer([flush(Status)|Next],Tail,Head,Out,In2):-
+   true|
+   Status = normal,
+   buffer(Next,Tail,Head,Out,In2).
+
+write_title(Win,WinN):-
+   true|
+   putl(string#"Part:     Mode      :Node No.:  User Name (LID)",Win,Win2,_),
+   putl(string#"===============================================",Win2,WinN,_).
+
+write_who([],Win,WinN,Entry,A):-
+   true|
+   putl(string#"",Win,WinN,_),
+   A = [].
+%  Who = [{Mode,Number,From,To,Users},...
+write_who([{single,Number,From,To,[{Lid,Info}]}|Rest],Win,WinN,Entry,A):-
+   true|
+   set_vector_element(Info,1,User,0,_),
+   int2string(4,Number,Str1),
+   int2string(1,Lid,LID),
+   check_entry(no,Entry,Number,Str2,Entry1),
+   int22str(From,To,Str30),
+   string(Str30,N,_,Str3),
+   blank(N,8,BL),
+   builtin#append_string([Str1,string#":",Str2,string#":",Str3,
+                          BL,string#": ",User,string#" (",
+                          LID,string#")"],Str),
+   putl(Str,Win,Win1,_),
+   write_who(Rest,Win1,WinN,Entry1,A).
+write_who([{single,Number,From,To,no_users}|Rest],Win,WinN,Entry,A):-
+   true|
+   int2string(4,Number,Str1),
+   check_entry(yes,Entry,Number,Str2,Entry1),
+   int22str(From,To,Str30),
+   string(Str30,N,_,Str3),
+   blank(N,8,BL),
+   builtin#append_string([Str1,string#":",Str2,string#":",Str3,
+                          BL,string#":"],Str),
+   putl(Str,Win,Win1,_),
+   write_who(Rest,Win1,WinN,Entry1,A).
+write_who([{multiple,Number,From,To,[{Lid,U}|Users]}|Rest],Win,WinN,Entry,A):-
+   true|
+   set_vector_element(U,1,UN,0,_),
+   int2string(4,Number,Str1),
+   int2string(1,Lid,LID),
+   check_entry(multiple,Entry,Number,Str2,Entry1),
+   int22str(From,To,Str30),
+   string(Str30,N,_,Str3),
+   blank(N,8,BL),
+   builtin#append_string([Str1,string#":",Str2,string#":",Str3,
+                          BL,string#": "],Str),
+   string(Str,N0,_,NStr),
+   builtin#append_string([NStr,UN,string#" (",
+                          LID,string#")"],NNStr),
+   putl(NNStr,Win,Win1,_),
+   new_string(NewStr,N0,16),
+   str2blk(0,N0,NewStr,BLK),
+   write_rest_users(Users,BLK,Win1,Win2),
+   write_who(Rest,Win2,WinN,Entry1,A).
+write_who([{multiple,Number,From,To,no_users}|Rest],Win,WinN,Entry,A):-
+   int2string(4,Number,Str1),
+   check_entry(multiple,Entry,Number,Str2,Entry1),
+   int22str(From,To,Str30),
+   string(Str30,N,_,Str3),
+   blank(N,8,BL),
+   builtin#append_string([Str1,string#":",Str2,string#":",Str3,
+                          BL,string#": "],
+                         Str),
+   putl(Str,Win,Win1,_),
+   write_who(Rest,Win1,WinN,Entry1,A).
+
+check_entry(Mode,[],Num,Str,Entry1):-
+   true|
+   Entry1 = [],
+   Str = string#" not available ".
+otherwise.
+check_entry(multiple,[Num|Rest],Num,Str,Entry1):-
+   true|
+   Entry1 = [Num|Rest],
+   Str = string#" (multi-user)  ".
+check_entry(no,[Num|Rest],Num,Str,Entry1):-
+   true|
+   Entry1 = [Num|Rest],
+   Str = string#" not available ".
+check_entry(yes,[Num|Rest],Num,Str,Entry1):-
+   true|
+   Entry1 = [Num|Rest],
+   Str = string#"  available    ".
+otherwise.
+check_entry(Mode,[Num1|Rest],Num,Str,Entry1):-
+   true|
+   Entry1 = [Num1|Entry1N],
+   check_entry(Mode,Rest,Num,Str,Entry1N).
+
+read_entry([],OK,Win,WinN,Abort,A,T,Status):-
+   true|
+   putb(string#"Confirm(<return> or kill): ",Win,Win1,_),
+   Win1 = [getb(100,In)|Win2],
+   read_entry1(In,OK,Win2,WinN,Abort,A,T,Status).
+otherwise.
+read_entry(Entry,OK,Win,WinN,Abort,A,T,Status):-
+   true|
+   copy:copy(Entry,Entry1,Entry2),
+   make_entry(Entry1,Str1),
+   builtin#append_string([string#"select your partition (",Str1,string#"exit kill)?"],Prompt),
+   putb(Prompt,Win,Win2,_),
+   Win2 = [getb(100,In)|Win3],
+   read_entry2(In,OK,Entry2,Win3,WinN,Abort,A,T,Status).
+read_entry2(normal(Str),OK,Entry,Win,WinN,Abort,A,T,Status):-
+   true|
+   read_entry22(Str,OK,Entry,Win,WinN,Abort,A,T,Status).
+read_entry2(_,OK,Entry,Win,WinN,Abort,A,T,Status):-
+   wait(OK)|
+   Abort = abort, Win = WinN, A = [], T = [], Status = exit.
+
+read_entry22(Str,OK,Entry,Win,WinN,Abort,A,T,Status):-
+   string_element(Str,0,#"E")|
+   Win = WinN,
+   A = [], T = [], Status = exit.
+read_entry22(Str,OK,Entry,Win,WinN,Abort,A,T,Status):-
+   string_element(Str,0,#"e")|
+   Win = WinN,
+   A = [], T = [], Status = exit.
+read_entry22(Str,OK,Entry,Win,WinN,Abort,A,T,Status):-
+   string_element(Str,0,#"K")|
+   read_entry23(Entry,Win,WinN,Abort,A,T,Status).
+read_entry22(Str,OK,Entry,Win,WinN,Abort,A,T,Status):-
+   string_element(Str,0,#"k")|
+   read_entry23(Entry,Win,WinN,Abort,A,T,Status).
+otherwise.
+read_entry22(Str,OK,Entry,Win,WinN,Abort,A,T,Status):-
+   true|
+   str2int(Str,Stat),
+   copy:copy(Entry,Entry1,Entry2),
+   read_entry3(Stat,OK,Entry1,Entry2,Win,WinN,Abort,A,T,Status).
+read_entry3(normal(Int),OK,[Int|_],Entry,Win,WinN,_,A,T,Status):-
+   true|
+   Win = WinN, A = [], T = [],
+   Status = entry(Int).
+read_entry3(normal(Int),OK,[Int1|Rest],Entry,Win,WinN,Abort,A,T,Status):-
+   Int =\= Int1|
+   read_entry3(normal(Int),OK,Rest,Entry,Win,WinN,Abort,A,T,Status).
+otherwise.
+read_entry3(_,OK,_,Entry,Win,WinN,Abort,A,T,Status):-
+   true|
+   putl(string#"Input Error!!",Win,Win1,_),
+   read_entry(Entry,OK,Win1,WinN,Abort,A,T,Status).
+
+read_entry23(Entry,Win,WinN,Abort,A,T,Status):-
+    true|
+    Win = [putb(string#"enter your partition ?",_),
+           getb(100,In)|Win1],
+    timeout(T,OK,TN),
+    wait_entry231(In,OK,Entry,Win1,WinN,Abort,A,TN,Status).
+
+wait_entry231(normal(B),OK,Entry,Win,WinN,Abort,A,T,Status):-
+    true|
+    str2int(B,Stat),
+    wait_entry232(Stat,Entry,Win,WinN,Abort,A,T,Status).
+wait_entry231(_,OK,Entry,Win,WinN,Abort,A,T,Status):-
+    wait(OK)|
+    Abort = abort,
+    Win = WinN,
+    A = [], T = [], Status = exit.
+
+wait_entry232(normal(Int),Entry,Win,WinN,Abort,A,T,Status):-
+   true|
+    Win = [putb(string#"enter your LID ?",_),
+           getb(100,In)|Win1],
+    timeout(T,OK,TN),
+    wait_entry233(In,OK,Int,Entry,Win1,WinN,Abort,A,TN,Status).
+otherwise.
+wait_entry232(_,Entry,Win,WinN,Abort,A,T,Status):-
+   true|
+   putl(string#"Input Error!!",Win,Win1,_),
+   timeout(T,OK,T1),
+   read_entry(Entry,OK,Win1,WinN,Abort,A,T1,Status).
+
+wait_entry233(normal(B),OK,PInt,Entry,Win,WinN,Abort,A,T,Status):-
+    true|
+    str2int(B,Stat),
+    wait_entry234(Stat,PInt,Entry,Win,WinN,Abort,A,T,Status).
+wait_entry233(_,OK,_,Entry,Win,WinN,Abort,A,T,Status):-
+    wait(OK)|
+    Abort = abort,
+    Win = WinN,
+    A = [], T = [], Status = exit.
+
+wait_entry234(normal(Lid),PInt,Entry,Win,WinN,Abort,A,T,Status):-
+   true|
+   Status = kill(PInt,Lid,St),
+   wait_entry235(St,Entry,Win,WinN,Abort,A,T).
+otherwise.
+wait_entry234(_,_,Entry,Win,WinN,Abort,A,T,Status):-
+   true|
+   putl(string#"Input Error!!",Win,Win1,_),
+   timeout(T,OK,T1),
+   read_entry(Entry,OK,Win1,WinN,Abort,A,T1,Status).
+
+wait_entry235(normal,Entry,Win,WinN,Abort,A,T):-
+   true|
+   Win = WinN, A = [], T = [].
+otherwise.
+wait_entry235(abnormal(Status),Entry,Win,WinN,Abort,A,T):-
+   true|
+   putl(string#"Input Error!!",Win,Win1,_),
+   timeout(T,OK,T1),
+   read_entry(Entry,OK,Win1,WinN,Abort,A,T1,Status).
+   
+
+str2int(Str,Stat):-
+   string(Str,N,_),
+   N > 1|
+   str2int(0,N,Str,0,Stat).
+otherwise.
+str2int(_,Stat):-
+   true|
+   Stat = abnormal.
+str2int(N,N,Str,Int,Stat):-
+   true|
+   Stat = normal(Int).
+otherwise.
+str2int(M,N,Str,Int,Stat):-
+   true|
+   string_element(Str,M,E,NStr),
+   str2int(E,NStr,M,N,Int,Stat).
+str2int(E,Str,M,N,Int,Stat):-
+   E >= #"0",
+   E =< #"9",
+   Int1 := Int*10 + E - #"0",
+   M1 := M + 1|
+   str2int(M1,N,Str,Int1,Stat).
+str2int(E,_,_,_,Int,Stat):-
+   E = key#lf|
+   Stat = normal(Int).
+otherwise.
+str2int(_,_,_,_,_,Stat):-
+   true|
+   Stat = abnormal.
+
+read_entry1(normal(In),OK,Win,WinN,Abort,A,T,Status):-
+   string(In,0,_)|
+   A = [], T = [], Status = exit, Win = WinN.
+read_entry1(normal(In),OK,Win,WinN,Abort,A,T,Status):-
+   string(In,N,_), N > 0|
+   read_entry11(In,N,Win,WinN,Abort,A,T,Status).
+read_entry1(abnormal,OK,Win,WinN,Abort,A,T,Status):-
+   true|
+   Win = WinN,
+   A = [], T = [], Abort = abort, Status = exit.
+read_entry1(aborted,OK,Win,WinN,Abort,A,T,Status):-
+   true|
+   Win = WinN,
+   A = [], T = [], Abort = abort, Status = exit.
+read_entry1(_,OK,Win,WinN,Abort,A,T,Status):-
+   wait(OK)|
+   Win = WinN,
+   A = [], T = [], Abort = abort, Status = exit.
+
+read_entry11(In,N,Win,WinN,Abort,A,T,Status):-
+   string_element(In,0,key#lf)|
+   Win = WinN, A = [], T = [], Status = exit.
+read_entry11(In,N,Win,WinN,Abort,A,T,Status):-
+   string_element(In,0,#"k")|
+   Win = [putb(string#"Enter your partition ?",_),
+          getb(100,In0)|Win1],
+   timeout(T,OK,TN),
+   wait_entry111(In0,OK,Win1,WinN,Abort,A,TN,Status).
+otherwise.
+read_entry11(In,N,Win,WinN,Abort,A,T,Status):-
+   true|
+   Win = WinN, A = [], T = [], Status = exit.
+
+wait_entry111(normal(B),OK,Win,WinN,Abort,A,T,Status):-
+    true|
+    str2int(B,Stat),
+    wait_entry112(Stat,Win,WinN,Abort,A,T,Status).
+wait_entry111(_,OK,Win,WinN,Abort,A,T,Status):-
+    wait(OK)|
+    Abort = abort,
+    Win = WinN,
+    A = [], T = [], Status = exit.
+
+wait_entry112(normal(Int),Win,WinN,Abort,A,T,Status):-
+   true|
+    Win = [putb(string#"Enter your LID ?",_),
+           getb(100,In)|Win1],
+    timeout(T,OK,TN),
+    wait_entry113(In,OK,Int,Win1,WinN,Abort,A,TN,Status).
+otherwise.
+wait_entry112(_,Win,WinN,Abort,A,T,Status):-
+   true|
+   putl(string#"Input Error!!",Win,Win1,_),
+   timeout(T,OK,T1),
+   read_entry([],OK,Win1,WinN,Abort,A,T1,Status).
+
+wait_entry113(normal(B),OK,PInt,Win,WinN,Abort,A,T,Status):-
+    true|
+    str2int(B,Stat),
+    wait_entry114(Stat,PInt,Win,WinN,Abort,A,T,Status).
+wait_entry113(_,OK,_,Win,WinN,Abort,A,T,Status):-
+    wait(OK)|
+    Abort = abort,
+    Win = WinN,
+    A = [], T = [], Status = exit.
+
+wait_entry114(normal(Lid),PInt,Win,WinN,Abort,A,T,Status):-
+   true|
+   Status = kill(PInt,Lid,St),
+   wait_entry123(St,Win,WinN,Abort,A,T).
+otherwise.
+wait_entry114(_,_,Win,WinN,Abort,A,T,Status):-
+   true|
+   putl(string#"Input Error!!",Win,Win1,_),
+   timeout(T,OK,T1),
+   read_entry([],OK,Win1,WinN,Abort,A,T1,Status).
+
+wait_entry123(normal,Win,WinN,Abort,A,T):-
+   true|
+   Win = WinN, A = [], T = [].
+otherwise.
+wait_entry123(abnormal(Status),Win,WinN,Abort,A,T):-
+   true|
+   putl(string#"Input Error!!",Win,Win1,_),
+   timeout(T,OK,T1),
+   read_entry([],OK,Win1,WinN,Abort,A,T1,Status).
+
+
+%%%%%%%%%%%%%%%%%
+int22str(N,N,Str):-
+   true|
+   int2string(3,N,Str1),
+   builtin#append_string([string#"  ",Str1,string#"  "],Str).
+otherwise.
+int22str(M,N,Str):-
+   true|
+   int2string(1,M,Str0),
+   int2string(1,N,Str2),
+   builtin#append_string([Str0,string#"-",Str2],Str).
+
+
+int2string(N,0,Str):-
+   true|
+   int2string(N,1,[0],Str).
+otherwise.
+int2string(N,Int,Str):-
+   true|
+   int2string(N,0,Int,[],Str).
+int2string(N,L,0,List,Str):-
+   true|
+   int2string(N,L,List,Str).
+otherwise.
+int2string(N,L,Int,List,Str):-
+   Int1 := Int / 10,
+   Int2 := Int - Int1*10,
+   L1 := L + 1|
+   int2string(N,L1,Int1,[Int2|List],Str).
+int2string(M,N,List,Str):-
+   M =< N |
+   new_string(Str0,N,16),
+   int2str(0,List,Str0,Str).
+int2string(M,N,List,Str):-
+   M > N|
+   new_string(Str0,M,16),
+   int2str(0,List,Str0,Str1),
+   str2blk(N,M,Str1,Str).
+int2str(N,[],Str0,Str):-
+   true|
+   Str0 = Str.
+int2str(N,[E|List],Str0,Str):-
+   N1 := N + 1|
+   set_string_element(Str0,N,~(#"0"+E),Str1),
+   int2str(N1,List,Str1,Str).
+str2blk(N,N,Str0,Str):-
+   true|
+   Str0 = Str.
+otherwise.
+str2blk(M,N,Str0,Str):-
+   M1 := M + 1|
+   set_string_element(Str0,M,#" ",Str1),
+   str2blk(M1,N,Str1,Str).
+
+timeout(T,OK,TN):-
+   true|
+   timeout(T,900000,OK,TN).
+timeout(T,Int,OK,TN):-
+   true|
+   T = [on_after(Int,Stat)|TN],
+   wait_timeout(Stat,OK).
+wait_timeout(normal(OK0),OK):-
+   true|
+   OK0 = OK.
+otherwise.
+wait_timeout(_,OK):-
+   true|
+   OK = [].
+
+write_rest_users([],BLK,Win1,Win2):-
+   true|
+   Win1 = Win2.
+write_rest_users([{Lid,U}|N],BLK,Win1,Win2):-
+   true|
+   set_vector_element(U,1,UN,0,_),
+   int2string(1,Lid,LID),
+   builtin#append_string([UN,string#" (",LID,string#")"],ALL),
+   putb(BLK,Win1,Win0,_),
+   putl(ALL,Win0,Win00,_),
+   write_rest_users(N,BLK,Win00,Win2).
+
+make_entry(Entry1,Str1):-
+   true|
+   make_entry(Entry1,List,List,Str1).
+make_entry([],Tail,Head,Str1):-
+   true|
+   Tail = [],
+   builtin#append_string(Head,Str1).
+make_entry([Int|Next],Tail,Head,Str):-
+   true|
+   int2string(1,Int,Str0),
+   Tail = [Str0,string#" "|TailN],
+   make_entry(Next,TailN,Head,Str).
+
+blank(M,L,Str):-
+   M >= L|
+   new_string(Str,0,16).
+otherwise.
+blank(M,L,Str):-
+   N := L - M|
+   new_string(Str0,N,16),
+   blanks(Str0,N,Str).
+blanks(Str0,0,Str):-
+   true|
+   Str0 = Str.
+otherwise.
+blanks(Str0,N,Str):-
+   N1:= N - 1|
+   set_string_element(Str0,N1,#" ",Str1),
+   blanks(Str1,N1,Str).

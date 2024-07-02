@@ -1,0 +1,783 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module listener_spy_manager.
+:- public create/3, list_spied/3, list_spying/4, list_tracing/3, filter/2,
+          spied_check/6.  % listener
+:- public debug_msg/7.
+:- with_macro pimos.
+
+create(SPY,Pac,CODE) :- true|
+    merge([trace(Pac,*,*,*,_)|SPY],SPY1),
+    pool:keyed_sorted_set(S),
+    pool:keyed_sorted_set(TR),
+    manager(SPY1,S,CODE,TR,on).
+
+
+manager([spy(P)|SPY],S,CODE,TR,SH) :- 
+    S=[put(P,_,_)|S1],
+    manager(SPY,S1,CODE,TR,SH).
+manager([spy(M,P,A,Status)|SPY],S,CODE,TR,SH) :- atom(M) |
+    CODE=[get_default_package(normal(Pac)),
+          existent(Pac,M,P,A,Exist)|CODE1],
+    set_spy(Exist,{Pac,M,P,A},S,S1,Status),
+    manager(SPY,S1,CODE1,TR,SH).
+manager([spy(Pac,M,P,A,Status)|SPY],S,CODE,TR,SH) :- 
+    CODE=[existent(Pac,M,P,A,Exist)|CODE1],
+    set_spy(Exist,{Pac,M,P,A},S,S1,Status),
+    manager(SPY,S1,CODE1,TR,SH).
+manager([spy(Pac::M,P,A,Status)|SPY],S,CODE,TR,SH) :- 
+    CODE=[existent(Pac,M,P,A,Exist)|CODE1],
+    set_spy(Exist,{Pac,M,P,A},S,S1,Status),
+    manager(SPY,S1,CODE1,TR,SH).
+
+manager([nospy(M,P,A,Remove)|SPY],S,CODE,TR,SH) :- atom(M) |
+    CODE=[get_default_package(normal(Pac))|CODE1],
+    S=[get_all(Spied)|S1],
+    reset_spy(Spied,{Pac,M,P,A},S1,S2,Remove),
+    manager(SPY,S2,CODE1,TR,SH).
+manager([nospy(Pac,M,P,A,Remove)|SPY],S,CODE,TR,SH) :- 
+    S=[get_all(Spied)|S1],
+    reset_spy(Spied,{Pac,M,P,A},S1,S2,Remove),
+    manager(SPY,S2,CODE,TR,SH).
+manager([nospy(Pac::M,P,A,Remove)|SPY],S,CODE,TR,SH) :- 
+    S=[get_all(Spied)|S1],
+    reset_spy(Spied,{Pac,M,P,A},S1,S2,Remove),
+    manager(SPY,S2,CODE,TR,SH).
+
+manager([nospy|SPY],S,CODE,TR,SH) :- 
+    S=[get_all(_)|S1],
+    manager(SPY,S1,CODE,TR,SH).
+
+% 6/19 TO.RI.A.E.ZU
+manager([spying(pimos,shoen,raise,3,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([spying(pimos,shoen,execute,7,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([spying(pimos,shoen,profile,7,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([spying(pimos::shoen,raise,3,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([spying(pimos::shoen,execute,7,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([spying(pimos::shoen,profile,7,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+% 91.2.7
+manager([tracing(pimos,shoen,raise,3,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([tracing(pimos,shoen,execute,7,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([tracing(pimos,shoen,profile,7,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([tracing(pimos::shoen,raise,3,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([tracing(pimos::shoen,execute,7,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+manager([tracing(pimos::shoen,profile,7,YorN)|SPY],S,CODE,TR,on) :- 
+    YorN=yes, manager(SPY,S,CODE,TR,on).
+%
+
+manager([spied_code_vector(SpyCV)|SPY],S,CODE,TR,on) :- 
+    S=[carbon_copy(Goals)|S1],
+    listener_utility:length(Goals,0,L,Goals1),
+    Goals2=[{{pimos,shoen,raise,3},_},{{pimos,shoen,execute,7},_},{{pimos,shoen,profile,7},_}|Goals1],
+    Size := (L+3)*3,
+    new_vector(Vct,Size),
+    SpyCV={Spy,CV},
+    spied_code_vector(Goals2,0,Vct,Spy,CV),
+    manager(SPY,S1,CODE,TR,on).
+manager([spied_code_vector(SpyCV)|SPY],S,CODE,TR,off) :- 
+    S=[carbon_copy(Goals)|S1],
+    listener_utility:length(Goals,0,L,Goals1),
+    new_vector(Vct,~(L*3)),
+    SpyCV={Spy,CV},
+    spied_code_vector(Goals1,0,Vct,Spy,CV),
+    manager(SPY,S1,CODE,TR,off).
+
+manager([spied_list(Patterns)|SPY],S,CODE,TR,SH) :- 
+    S=[carbon_copy(Spied)|S1],
+    spied_list(Spied,Patterns),
+    manager(SPY,S1,CODE,TR,SH).
+
+manager([spying_list(M,Patterns,Goals)|SPY],S,CODE,TR,SH) :- atom(M) |
+    CODE=[get_default_package(normal(Pac))|CODE1],
+    S=[carbon_copy(Spied)|S1],
+    pool:keyed_sorted_set(SI),
+    spying_list(Spied,Pac,M,CODE1,CODE2,SI,Patterns,Goals),
+    manager(SPY,S1,CODE2,TR,SH).
+manager([spying_list(Pac,M,Patterns,Goals)|SPY],S,CODE,TR,SH) :- 
+    S=[carbon_copy(Spied)|S1],
+    pool:keyed_sorted_set(SI),
+    spying_list(Spied,Pac,M,CODE,CODE1,SI,Patterns,Goals),
+    manager(SPY,S1,CODE1,TR,SH).
+manager([spying_list(Pac::M,Patterns,Goals)|SPY],S,CODE,TR,SH) :- 
+    S=[carbon_copy(Spied)|S1],
+    pool:keyed_sorted_set(SI),
+    spying_list(Spied,Pac,M,CODE,CODE1,SI,Patterns,Goals),
+    manager(SPY,S1,CODE1,TR,SH).
+
+manager([trace(P)|SPY],S,CODE,TR,SH) :- 
+    TR=[put(P,_,_)|TR1],
+    manager(SPY,S,CODE,TR1,SH).
+manager([trace(M,P,A,Status)|SPY],S,CODE,TR,SH) :- atom(M) |
+    CODE=[get_default_package(normal(Pac)),
+          existent(Pac,M,P,A,Exist)|CODE1],
+    set_spy(Exist,{Pac,M,P,A},TR,TR1,Status),
+    manager(SPY,S,CODE1,TR1,SH).
+manager([trace(Pac::M,P,A,Status)|SPY],S,CODE,TR,SH) :-
+    CODE=[existent(Pac,M,P,A,Exist)|CODE1],
+    set_spy(Exist,{Pac,M,P,A},TR,TR1,Status),
+    manager(SPY,S,CODE1,TR1,SH).
+manager([trace(Pac,M,P,A,Status)|SPY],S,CODE,TR,SH) :-
+    CODE=[existent(Pac,M,P,A,Exist)|CODE1],
+    set_spy(Exist,{Pac,M,P,A},TR,TR1,Status),
+    manager(SPY,S,CODE1,TR1,SH).
+
+manager([notrace(M,P,A,Remove)|SPY],S,CODE,TR,SH) :- atom(M) |
+    CODE=[get_default_package(normal(Pac))|CODE1],
+    TR=[get_all(Spied)|TR1],
+    reset_spy(Spied,{Pac,M,P,A},TR1,TR2,Remove),
+    manager(SPY,S,CODE1,TR2,SH).
+manager([notrace(Pac::M,P,A,Remove)|SPY],S,CODE,TR,SH) :- 
+    TR=[get_all(Spied)|TR1],
+    reset_spy(Spied,{Pac,M,P,A},TR1,TR2,Remove),
+    manager(SPY,S,CODE,TR2,SH).
+manager([notrace(Pac,M,P,A,Remove)|SPY],S,CODE,TR,SH) :- 
+    TR=[get_all(Spied)|TR1],
+    reset_spy(Spied,{Pac,M,P,A},TR1,TR2,Remove),
+    manager(SPY,S,CODE,TR2,SH).
+
+manager([notrace|SPY],S,CODE,TR,SH) :- 
+    TR=[get_all(_)|TR1],
+    manager(SPY,S,CODE,TR1,SH).
+
+manager([traced_list(Patterns)|SPY],S,CODE,TR,SH) :- 
+    TR=[carbon_copy(Spied)|TR1],
+    spied_list(Spied,Patterns),
+    manager(SPY,S,CODE,TR1,SH).
+
+manager([tracing_list(M,Patterns,Goals)|SPY],S,CODE,TR,SH) :- atom(M) |
+    CODE=[get_default_package(normal(Pac))|CODE1],
+    TR=[carbon_copy(Spied)|TR1],
+    pool:keyed_sorted_set(SI),
+    spying_list(Spied,Pac,M,CODE1,CODE2,SI,Patterns,Goals),
+    manager(SPY,S,CODE2,TR1,SH).
+manager([tracing_list(Pac,M,Patterns,Goals)|SPY],S,CODE,TR,SH) :- 
+    TR=[carbon_copy(Spied)|TR1],
+    pool:keyed_sorted_set(SI),
+    spying_list(Spied,Pac,M,CODE,CODE1,SI,Patterns,Goals),
+    manager(SPY,S,CODE1,TR1,SH).
+manager([tracing_list(Pac::M,Patterns,Goals)|SPY],S,CODE,TR,SH) :- 
+    TR=[carbon_copy(Spied)|TR1],
+    pool:keyed_sorted_set(SI),
+    spying_list(Spied,Pac,M,CODE,CODE1,SI,Patterns,Goals),
+    manager(SPY,S,CODE1,TR1,SH).
+
+manager([do(List)|SPY],S,CODE,TR,SH) :- 
+    merge(List,List1),
+    listener_utility:prepend(List1,SPY,SPY1),
+    manager(SPY1,S,CODE,TR,SH).
+
+manager([],S,CODE,TR,_) :-  S=[], CODE=[], TR=[].
+
+manager([trace_shoen|SPY],S,CODE,TR,_) :- manager(SPY,S,CODE,TR,on).
+manager([notrace_shoen|SPY],S,CODE,TR,_) :- manager(SPY,S,CODE,TR,off).
+manager([get_shoen_trace_mode(Mode)|SPY],S,CODE,TR,SH) :- 
+    Mode=SH,
+    manager(SPY,S,CODE,TR,SH).
+
+otherwise.
+manager([spying(Pac,M,P,A,YorN)|SPY],S,CODE,TR,SH) :- 
+    S=[carbon_copy(Spied)|S1],
+    spied_check(Spied,Pac,M,P,A,YorN),
+    manager(SPY,S1,CODE,TR,SH).
+manager([spying(Pac::M,P,A,YorN)|SPY],S,CODE,TR,SH) :- 
+    S=[carbon_copy(Spied)|S1],
+    spied_check(Spied,Pac,M,P,A,YorN),
+    manager(SPY,S1,CODE,TR,SH).
+
+manager([tracing(Pac,M,P,A,YorN)|SPY],S,CODE,TR,SH) :- 
+    TR=[carbon_copy(Spied)|TR1],
+    spied_check(Spied,Pac,M,P,A,YorN),
+    manager(SPY,S,CODE,TR1,SH).
+manager([tracing(Pac::M,P,A,YorN)|SPY],S,CODE,TR,SH) :- 
+    TR=[carbon_copy(Spied)|TR1],
+    spied_check(Spied,Pac,M,P,A,YorN),
+    manager(SPY,S,CODE,TR1,SH).
+
+
+set_spy(exist,Spy,S,S2,Status) :- 
+    S=[get_all(Spied)|S1],
+    set_spy1(Spied,Spy,S1,S2,Status).
+otherwise.
+set_spy(Exist,_  ,S,S1,Status) :-  S1=S, Status=Exist.
+
+set_spy1([{Spied,_}|L],Spy,S,S1,Status) :- 
+    include_check(Spied,Spy,Include),
+    set_spy2(Include,L,Spied,Spy,S,S1,Status).
+set_spy1([],           Spy,S,S1,Status) :- 
+    S=[put(Spy,_,_)|S1], Status=set_spy.
+
+set_spy2(include,L,_,    Spy,S,S1,Status) :- 
+    set_spy1(L,Spy,S,S1,Status).
+set_spy2(diff,   L,Spied,Spy,S,S2,Status) :- 
+    S=[put(Spied,_,_)|S1],
+    set_spy1(L,Spy,S1,S2,Status).
+otherwise.
+set_spy2(_,      L,Spied,_,  S,S2,Status) :- 
+    S=[put(Spied,_,_)|S1],
+    Status=spied,
+    set_spy3(L,S1,S2).
+
+set_spy3([{Spied,_}|L],S,S2) :- 
+    S=[put(Spied,_,_)|S1], set_spy3(L,S1,S2).
+set_spy3([],           S,S1) :-  S1=S.
+
+
+reset_spy([{Spied,_}|L],Spy,S,S2,RL) :- 
+    include_check(Spied,Spy,Include),
+    reset_spy1(Include,Spied,S,S1,RL,RL1),
+    reset_spy(L,Spy,S1,S2,RL1).
+reset_spy([],           _,  S,S1,RL) :-  S1=S, RL=[].
+
+reset_spy1(included,Spied,S,S1,RL,RL1) :- 
+    S=[put(Spied,_,_)|S1], RL1=RL.
+reset_spy1(diff,    Spied,S,S1,RL,RL1) :- 
+    S=[put(Spied,_,_)|S1], RL1=RL.
+otherwise.
+reset_spy1(_,       Spied,S,S1,RL,RL1) :- 
+    S1=S, RL=[Spied|RL1].
+
+
+include_check(Spy,Spy,Include) :- Include=same.
+otherwise.
+include_check({'*','*','*','*'},_,               Include) :-  Include=included.
+include_check({'*','*','*', A },{ _, _ , _ , A },Include) :-  Include=included.
+include_check({'*','*', P ,'*'},{ _, _ , P , _ },Include) :-  Include=included.
+include_check({'*', M ,'*','*'},{ _, M , _ , _ },Include) :-  Include=included.
+include_check({ X ,'*','*','*'},{ X, _ , _ , _ },Include) :-  Include=included.
+include_check({ X , M ,'*','*'},{ X, M , _ , _ },Include) :-  Include=included.
+include_check({ X ,'*', P ,'*'},{ X, _ , P , _ },Include) :-  Include=included.
+include_check({ X ,'*','*', A },{ X, _ , _ , A },Include) :-  Include=included.
+include_check({'*','*', P , A },{ _, _ , P , A },Include) :-  Include=included.
+include_check({'*', M ,'*', A },{ _, M , _ , A },Include) :-  Include=included.
+include_check({'*', M , P ,'*'},{ _, M , P , _ },Include) :-  Include=included.
+include_check({'*', M , P , A },{ _, M , P , A },Include) :-  Include=included.
+include_check({ X ,'*', P , A },{ X, _ , P , A },Include) :-  Include=included.
+include_check({ X , M ,'*', A },{ X, M , _ , A },Include) :-  Include=included.
+include_check({ X , M , P ,'*'},{ X, M , P , _ },Include) :-  Include=included.
+otherwise.
+include_check(_,                {'*','*','*','*'},Include) :-  Include=include.
+include_check({ _ , _ , _ , A },{'*','*','*', A },Include) :-  Include=include.
+include_check({ _ , _ , P , _ },{'*','*', P ,'*'},Include) :-  Include=include.
+include_check({ _ , M , _ , _ },{'*', M ,'*','*'},Include) :-  Include=include.
+include_check({ X , _ , _ , _ },{ X ,'*','*','*'},Include) :-  Include=include.
+include_check({ X , M , _ , _ },{ X , M ,'*','*'},Include) :-  Include=include.
+include_check({ X , _ , P , _ },{ X ,'*', P ,'*'},Include) :-  Include=include.
+include_check({ X , _ , _ , A },{ X ,'*','*', A },Include) :-  Include=include.
+include_check({ _ , _ , P , A },{'*','*', P , A },Include) :-  Include=include.
+include_check({ _ , M , _ , A },{'*', M ,'*', A },Include) :-  Include=include.
+include_check({ _ , M , P , _ },{'*', M , P ,'*'},Include) :-  Include=include.
+include_check({ _ , M , P , A },{'*', M , P , A },Include) :-  Include=include.
+include_check({ X , _ , P , A },{ X ,'*', P , A },Include) :-  Include=include.
+include_check({ X , M , _ , A },{ X , M ,'*', A },Include) :-  Include=include.
+include_check({ X , M , P , _ },{ X , M , P ,'*'},Include) :-  Include=include.
+otherwise.
+include_check(_,_,Include) :- Include=diff.
+
+
+spied_check([{Spied,_}|L],Pac,M,P,A,YorN) :- 
+    include_check(Spied,{Pac,M,P,A},Include),
+    spied_check1(L,Pac,M,P,A,YorN,Include).
+spied_check([],           _,  _,_,_,YorN) :-  YorN=no.
+otherwise.
+spied_check([Spied|L],Pac,M,P,A,YorN) :-        % called from spied_check/3.
+    include_check(Spied,{Pac,M,P,A},Include),
+    spied_check1(L,Pac,M,P,A,YorN,Include).
+otherwise.
+spied_check(_,_,_,_,_,YorN) :- YorN=no.
+
+spied_check1(L,Pac,M,P,A,YorN,diff) :- 
+    spied_check(L,Pac,M,P,A,YorN).
+otherwise.
+spied_check1(_,_,  _,_,_,YorN,_   ) :-  YorN=yes.
+
+
+spied_code_vector([{{Pac,M,P,A},_}|G],N,Vct,Spy,CV) :- 
+    Spy=[{Pac,M,P,A}|Spy1],
+    N1 := N+1, N2 := N1+1, N3 := N2+1,
+    module_wildcard(M,M1),
+    predicate_wildcard(P,P1),
+    arity_wildcard(A,A1),
+    set_vector_element(Vct, N ,_,M1,Vct1),
+    set_vector_element(Vct1,N1,_,P1,Vct2),
+    set_vector_element(Vct2,N2,_,A1,Vct3),
+    spied_code_vector(G,N3,Vct3,Spy1,CV).
+spied_code_vector([],             _,Vct,Spy,CV) :-  Spy=[], CV=Vct.
+
+module_wildcard('*',M1) :-  M1=0.
+otherwise.
+module_wildcard(M,  M1) :-  M1=M.
+
+predicate_wildcard('*',P1) :-  P1=0.
+otherwise.
+predicate_wildcard(P,  P1) :-  P1=P.
+
+arity_wildcard('*',A1) :-  A1=[].
+otherwise.
+arity_wildcard(A,  A1) :-  A1=A.
+
+
+
+spied_list([{P,_}|L],PL) :- PL=[P|PL1], spied_list(L,PL1).
+spied_list([],PL) :- PL=[].
+
+
+spying_list([{{Pac,M,P,A},_}|L],'*','*',CODE,CODE2,SI,Patterns,Goals) :- 
+    CODE=[get_predicates(Pac,M,P,A,List)|CODE1],
+    set_spying_predicates(List,{Pac,M,P,A},SI,SI1),
+    Patterns=[{Pac,M,P,A}|Patterns1],
+    spying_list(L,'*','*',CODE1,CODE2,SI1,Patterns1,Goals).
+spying_list([{{Pac,M,P,A},_}|L],Pac,'*',CODE,CODE2,SI,Patterns,Goals) :- 
+    CODE=[get_predicates(Pac,M,P,A,List)|CODE1],
+    set_spying_predicates(List,{Pac,M,P,A},SI,SI1),
+    Patterns=[{Pac,M,P,A}|Patterns1],
+    spying_list(L,Pac,'*',CODE1,CODE2,SI1,Patterns1,Goals).
+spying_list([{{Pac,M,P,A},_}|L],'*',M,CODE,CODE2,SI,Patterns,Goals) :- 
+    CODE=[get_predicates(Pac,M,P,A,List)|CODE1],
+    set_spying_predicates(List,{Pac,M,P,A},SI,SI1),
+    Patterns=[{Pac,M,P,A}|Patterns1],
+    spying_list(L,'*',M,CODE1,CODE2,SI1,Patterns1,Goals).
+spying_list([{{Pac,M,P,A},_}|L],Pac,M,CODE,CODE2,SI,Patterns,Goals) :- 
+    CODE=[get_predicates(Pac,M,P,A,List)|CODE1],
+    set_spying_predicates(List,{Pac,M,P,A},SI,SI1),
+    Patterns=[{Pac,M,P,A}|Patterns1],
+    spying_list(L,Pac,M,CODE1,CODE2,SI1,Patterns1,Goals).
+spying_list([{{'*','*',P,A},_}|L],Pac,M,CODE,CODE2,SI,Patterns,Goals) :- 
+    CODE=[get_predicates(Pac,M,P,A,List)|CODE1],
+    set_spying_predicates(List,{'*','*',P,A},SI,SI1),
+    Patterns=[{'*','*',P,A}|Patterns1],
+    spying_list(L,Pac,M,CODE1,CODE2,SI1,Patterns1,Goals).
+spying_list([{{Pac,'*',P,A},_}|L],Pac,M,CODE,CODE2,SI,Patterns,Goals) :- 
+    CODE=[get_predicates(Pac,M,P,A,List)|CODE1],
+    set_spying_predicates(List,{Pac,'*',P,A},SI,SI1),
+    Patterns=[{Pac,'*',P,A}|Patterns1],
+    spying_list(L,Pac,M,CODE1,CODE2,SI1,Patterns1,Goals).
+spying_list([{{'*',M,P,A},_}|L],Pac,M,CODE,CODE2,SI,Patterns,Goals) :- 
+    CODE=[get_predicates(Pac,M,P,A,List)|CODE1],
+    set_spying_predicates(List,{'*',M,P,A},SI,SI1),
+    Patterns=[{'*',M,P,A}|Patterns1],
+    spying_list(L,Pac,M,CODE1,CODE2,SI1,Patterns1,Goals).
+spying_list([],                  _,  _, CODE,CODE1,SI,Patterns,Goals) :- 
+    CODE1=CODE, SI=[get_all(Goals)], Patterns=[].
+otherwise.
+spying_list([{Pat,_}|L],Pac,M,CODE,CODE1,SI,Patterns,Goals) :- 
+    Patterns=[Pat|Patterns1],
+    spying_list(L,Pac,M,CODE,CODE1,SI,Patterns1,Goals).
+
+set_spying_predicates([{Pac,List}|L],Spied,SI,SI2) :- 
+    set_spying_predicates1(List,Pac,Spied,SI,SI1),
+    set_spying_predicates(L,Spied,SI1,SI2).
+set_spying_predicates([],_,SI,SI1) :-  SI1=SI.
+
+set_spying_predicates1([{M,Preds}|L],Pac,Spied,SI,SI2) :- 
+    spying_predicates(Preds,Pac,M,Spied,SI,SI1),
+    set_spying_predicates1(L,Pac,Spied,SI1,SI2).
+set_spying_predicates1([],_,_,SI,SI1) :-  SI1=SI.
+
+spying_predicates([{Type,P,A}|L],Pac,M,Spied,SI,SI2) :- 
+    SI=[get_if_any_and_put({Pac,M,P,A,Type},X,Y)|SI1],
+    add_spied(X,Spied,Y),
+    spying_predicates(L,Pac,M,Spied,SI1,SI2).
+spying_predicates([],            _,  _,_,    SI,SI1) :-  SI1=SI.
+
+add_spied({}, Spied,Y) :-  Y=[Spied].
+add_spied({X},Spied,Y) :-  Y=[Spied|X].
+
+
+
+list_spied([],IN,IN1) :-
+    IN=[putb(" No spying patterns !!"), nl|IN1].
+otherwise.
+list_spied(Spied,IN,IN2) :-
+    listener_utility:length(Spied,0,N,Spied1),
+    count_spied_msg(N,Msg),
+    IN=[putb(" %%% SPYING PATTERNS ("), 
+        putt(N), putb(Msg), nl|IN1],
+    display_spied(Spied1,IN1,IN2).
+
+count_spied_msg(1,Msg) :- Msg=" pattern) %%%".
+otherwise.
+count_spied_msg(_,Msg) :- Msg=" patterns) %%%".
+
+display_spied([{Pac,M,P,A}|Spied],    IN,IN2) :- 
+    IN=[putt(Pac::M), putb(":"), 
+        putt(P), putb("/"), putt(A), nl|IN1],
+    display_spied(Spied,IN1,IN2).
+display_spied([],                 IN,IN1) :-  IN1=IN.
+
+
+
+list_spying([],    _,IN,IN1) :- 
+    IN=[putf(" No spying predicates !!~n",[])|IN1].
+otherwise.
+list_spying(Spying,N,IN,IN2) :- 
+    listener_utility:length(Spying,0,Len,Spying1),
+    count_spying_msg(Len,Msg),
+    IN=[putf(" %%% SPYING PREDICATES (~t~s~n",[Len,Msg])|IN1],
+    display_spying(Spying1,0,0,Len,N,0,0,IN1,IN2).
+
+count_spying_msg(1,Msg) :- Msg=" predicate) %%%".
+otherwise.
+count_spying_msg(_,Msg) :- Msg=" predicates) %%%".
+
+display_spying([],_,_,_,_,_,_,IN,IN1) :- IN1=IN.
+otherwise.
+display_spying(L,Pac,M,Len,N,Disp,N,IN,IN2) :- 
+    read_command(IN,IN1,Len,Disp,Com),
+    do_command(Com,L,Pac,M,Len,N,Disp,IN1,IN2).
+otherwise.
+display_spying([{{Pac,M,P,A,(public)},Pattern}|L],Pac,M,Len,N,Disp,C,IN,IN3) :- 
+    IN=[tab(4), putt((P/A)), putb(" (public) - ")|IN1],
+    display_pattern(Pattern,IN1,IN2),
+    display_spying(L,Pac,M,Len,N,~(Disp+1),~(C+1),IN2,IN3).
+display_spying([{{Pac,M,P,A,(local)},Pattern}|L],Pac,M,Len,N,Disp,C,IN,IN3) :- 
+    IN=[tab(4), putt((P/A)), putb(" - ")|IN1],
+    display_pattern(Pattern,IN1,IN2),
+    display_spying(L,Pac,M,Len,N,~(Disp+1),~(C+1),IN2,IN3).
+display_spying([{{Pac,M,P,A,(public)},Pattern}|L],Pac,M1,Len,N,Disp,C,IN,IN3) :- M\=M1 |
+    IN=[tab(2),putt(M), putb(":"), nl,
+        tab(4), putt((P/A)), putb(" (public) - ")|IN1],
+    display_pattern(Pattern,IN1,IN2),
+    display_spying(L,Pac,M,Len,N,~(Disp+1),~(C+1),IN2,IN3).
+display_spying([{{Pac,M,P,A,(local)},Pattern}|L],Pac,M1,Len,N,Disp,C,IN,IN3) :- M\=M1 |
+    IN=[tab(2),putt(M), putb(":"), nl,
+        tab(4), putt((P/A)), putb(" - ")|IN1],
+    display_pattern(Pattern,IN1,IN2),
+    display_spying(L,Pac,M,Len,N,~(Disp+1),~(C+1),IN2,IN3).
+display_spying([{{Pac,M,P,A,(public)},Pattern}|L],Pac1,_,Len,N,Disp,C,IN,IN3) :- Pac\=Pac1 |
+    IN=[putt(Pac), putb("::"), nl,
+        tab(2),putt(M), putb(":"), nl,
+        tab(4), putt((P/A)), putb(" (public) - ")|IN1],
+    display_pattern(Pattern,IN1,IN2),
+    display_spying(L,Pac,M,Len,N,~(Disp+1),~(C+1),IN2,IN3).
+display_spying([{{Pac,M,P,A,(local)},Pattern}|L],Pac1,_,Len,N,Disp,C,IN,IN3) :- Pac\=Pac1 |
+    IN=[putt(Pac), putb("::"), nl,
+        tab(2),putt(M), putb(":"), nl,
+        tab(4), putt((P/A)), putb(" - ")|IN1],
+    display_pattern(Pattern,IN1,IN2),
+    display_spying(L,Pac,M,Len,N,~(Disp+1),~(C+1),IN2,IN3).
+
+
+display_pattern([{Pac,M,P,A}],IN,IN1) :- 
+    IN=[putt(Pac::M), putb(":"), 
+        putt(P), putb("/"), putt(A), nl|IN1].
+otherwise.
+display_pattern([{Pac,M,P,A}|L],IN,IN2) :- 
+    IN=[putt(Pac::M), putb(":"), 
+        putt(P), putb("/"), putt(A), putb(", ")|IN1],
+    display_pattern(L,IN1,IN2).
+
+read_command(IN,IN1,Len,Disp,Com) :- 
+    IN=[putb(" ... ("), putt((Disp/Len)), putb(") ...? "),
+        getl(Line)|IN1],
+    listener_utility:string_to_term(Line,C),
+    translate(C,Com).
+
+translate(h,Com) :-  Com=help.
+translate(q,Com) :-  Com=quit.
+otherwise.
+translate(C,Com) :-  Com=C.
+
+do_command(end_of_file, L,Pac,M,Len,N,Disp,IN,IN1) :- 
+    display_spying(L,Pac,M,Len,N,Disp,0,IN,IN1).
+do_command(C, L,Pac,M,Len,_,Disp,IN,IN1) :- C>0 |
+    display_spying(L,Pac,M,Len,C,Disp,0,IN,IN1).
+do_command(help, L,Pac,M,Len,N,Disp,IN,IN3) :- 
+    IN=[putf("~n  <cr> : list ~t predicates~n",[N]),
+          putf("  N(>0): list N predicates~n",[]),
+          putf("  q    : quit~2n",[])|IN1],
+    read_command(IN1,IN2,Len,Disp,Com),
+    do_command(Com,L,Pac,M,Len,N,Disp,IN2,IN3).
+do_command(quit, _,_,_,_,_,_,IN,IN1) :-  IN1=IN.
+otherwise.
+do_command(_, L,Pac,M,Len,N,Disp,IN,IN2) :- 
+    read_command(IN,IN1,Len,Disp,Com),
+    do_command(Com,L,Pac,M,Len,N,Disp,IN1,IN2).
+
+
+list_tracing([],IN,IN1) :-
+    IN=[putb(" No predicates are set on default-trace-mode."), nl|IN1].
+otherwise.
+list_tracing(Spied,IN,IN2) :-
+    listener_utility:length(Spied,0,N,Spied1),
+    count_spied_msg(N,Msg),
+    IN=[putb(" %%% TRACING PREDICATES ("), 
+        putt(N), putb(Msg), nl|IN1],
+    display_tracing(Spied1,IN1,IN2).
+
+display_tracing([{Pac,M,P,A}|Spied],    IN,IN2) :- 
+    IN=[putt((Pac::M:P/A)), nl|IN1],
+    display_tracing(Spied,IN1,IN2).
+display_tracing([],                 IN,IN1) :-  IN1=IN.
+
+
+debug_msg(non_existent_package,Pac,_,_,_,_,Msg) :- true |
+    Msg=[putf(">Nonexistent package: ~t~n",[Pac])].
+debug_msg(non_existent_module,Pac,M,_,_,_,Msg) :- true |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(">Nonexistent module: ~t~n",[PM])].
+debug_msg(non_existent_predicate,Pac,M,P,A,_,Msg) :- true |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(">Nonexistent predicate: ~t~n",[(PM:P/A)])].
+debug_msg(protection_violation,Pac,M,_,_,_,Msg) :- true |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(">Protection violation: ~t~n",[PM])].
+debug_msg(spied,Pac,M,P,A,spy,Msg) :- true |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(" There already is a spypoint on ~t:~t/~t .~n",[PM,P,A])].
+debug_msg(spied,Pac,M,P,A,trace,Msg) :- true |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(" There already is a tracepoint on ~t:~t/~t .~n",[PM,P,A])].
+debug_msg([],Pac,M,P,A,nospy,Msg) :- true |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(" Spypoint can't reset on ~t:~t/~t .~n",[PM,P,A])].
+debug_msg([],Pac,M,P,A,notrace,Msg) :- true |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(" Tracepoint can't reset on ~t:~t/~t .~n",[PM,P,A])].
+debug_msg(List,Pac,M,P,A,nospy,Msg) :- list(List) |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(" %%% Reset pattern (~t:~t/~t) %%%~n",[PM,P,A])|Msg1],
+    list_patterns(List,Msg1).
+debug_msg(List,Pac,M,P,A,notrace,Msg) :- list(List) |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(" %%% Reset pattern (~t:~t/~t) %%%~n",[PM,P,A])|Msg1],
+    list_patterns(List,Msg1).
+otherwise.
+debug_msg(_,Pac,M,P,A,spy,Msg) :- true |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(" Spypoint set on ~t:~t/~t .~n",[PM,P,A])].
+debug_msg(_,Pac,M,P,A,trace,Msg) :- true |
+    module_with_package(Pac,M,PM),
+    Msg=[putf(" Tracepoint set on ~t:~t/~t .~n",[PM,P,A])].
+
+
+
+list_patterns([{Pac,M,P,A}|L],Msg) :- true |
+    Msg=[putf(" ~t::~t:~t/~t~n",[Pac,M,P,A])|Msg1],
+    list_patterns(L,Msg1).
+list_patterns([],Msg) :- true | Msg=[].
+
+module_with_package(0,M,PM) :- PM=M.
+module_with_package(Pac,M,PM) :- atom(Pac) | PM= Pac::M.
+
+
+filter([spy(M,P,A,Status)|US],OS) :- atom(M), atom(P), A>=0 |
+    OS=[spy(M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([spy(M,P,'*',Status)|US],OS) :- atom(M), atom(P) |
+    OS=[spy(M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([spy(Pac,M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[spy(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([spy(Pac,M,P,'*',Status)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[spy(Pac,M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([spy(Pac::M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[spy(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([spy(Pac::M,P,'*',Status)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[spy(Pac,M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+
+filter([nospy(M,P,A,Status)|US],OS) :- atom(M), atom(P), A>=0 |
+    OS=[nospy(M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([nospy(M,P,'*',Status)|US],OS) :- atom(M), atom(P) |
+    OS=[nospy(M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([nospy(Pac,M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[nospy(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([nospy(Pac,M,P,'*',Status)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[nospy(Pac,M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([nospy(Pac::M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[nospy(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([nospy(Pac::M,P,'*',Status)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[nospy(Pac,M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+
+filter([nospy|US],OS) :-
+    OS=[nospy|OS1],
+    filter(US,OS1).
+
+filter([spying(Pac,M,P,A,YN)|US],OS) :- atom(Pac), atom(M), atom(P), A>0 |
+    OS=[spying(Pac,M,P,A,YN1)|OS1],
+    listener_utility:ground_unify(YN1,YN),
+    filter(US,OS1).
+filter([spying(Pac,M,P,'*',YN)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[spying(Pac,M,P,'*',YN1)|OS1],
+    listener_utility:ground_unify(YN1,YN),
+    filter(US,OS1).
+filter([spying(Pac::M,P,A,YN)|US],OS) :- atom(Pac), atom(M), atom(P), A>0 |
+    OS=[spying(Pac,M,P,A,YN1)|OS1],
+    listener_utility:ground_unify(YN1,YN),
+    filter(US,OS1).
+filter([spying(Pac::M,P,'*',YN)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[spying(Pac,M,P,'*',YN1)|OS1],
+    listener_utility:ground_unify(YN1,YN),
+    filter(US,OS1).
+
+filter([spied_list(Spied)|US],OS) :-
+    OS=[spied_list(Spied1)|OS1],
+    listener_utility:ground_unify(Spied1,Spied),
+    filter(US,OS1).
+filter([spying_list(Pac,M,Pat,Gs)|US],OS) :- atom(Pac), atom(M) |
+    OS=[spying_list(Pac,M,Pat1,Gs1)|OS1],
+    listener_utility:ground_unify(Pat1,Pat),
+    listener_utility:ground_unify(Gs1,Gs),
+    filter(US,OS1).
+filter([spying_list(Pac::M,Pat,Gs)|US],OS) :- atom(Pac), atom(M) |
+    OS=[spying_list(Pac,M,Pat1,Gs1)|OS1],
+    listener_utility:ground_unify(Pat1,Pat),
+    listener_utility:ground_unify(Gs1,Gs),
+    filter(US,OS1).
+filter([spying_list(M,Pat,Gs)|US],OS) :- atom(M) |
+    OS=[spying_list(M,Pat1,Gs1)|OS1],
+    listener_utility:ground_unify(Pat1,Pat),
+    listener_utility:ground_unify(Gs1,Gs),
+    filter(US,OS1).
+
+filter([spied_code_vector(CV)|US],OS) :-
+    OS=[spied_code_vector(CV1)|OS1],
+    listener_utility:ground_unify(CV1,CV),
+    filter(US,OS1).
+filter([do(List)|US],OS) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,US,US1),
+    filter(US1,OS).
+filter([],OS) :- OS=[].
+
+
+% 6/18
+filter([trace(M,P,A,Status)|US],OS) :- atom(M), atom(P), A>=0 |
+    OS=[trace(M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([trace(M,P,'*',Status)|US],OS) :- atom(M), atom(P) |
+    OS=[trace(M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([trace(Pac,M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[trace(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([trace(Pac,M,P,'*',Status)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[trace(Pac,M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([trace(Pac::M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[trace(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([trace(Pac::M,P,'*',Status)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[trace(Pac,M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+
+filter([notrace(M,P,A,Status)|US],OS) :- atom(M), atom(P), A>=0 |
+    OS=[notrace(M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([notrace(M,P,'*',Status)|US],OS) :- atom(M), atom(P) |
+    OS=[notrace(M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([notrace(Pac,M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[notrace(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([notrace(Pac,M,P,'*',Status)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[notrace(Pac,M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([notrace(Pac::M,P,A,Status)|US],OS) :- atom(Pac), atom(M), atom(P), A>=0 |
+    OS=[notrace(Pac,M,P,A,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([notrace(Pac::M,P,'*',Status)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[notrace(Pac,M,P,'*',Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+
+filter([notrace|US],OS) :-
+    OS=[notrace|OS1],
+    filter(US,OS1).
+
+filter([tracing(Pac,M,P,A,YN)|US],OS) :- atom(Pac), atom(M), atom(P), A>0 |
+    OS=[tracing(Pac,M,P,A,YN1)|OS1],
+    listener_utility:ground_unify(YN1,YN),
+    filter(US,OS1).
+filter([tracing(Pac,M,P,'*',YN)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[tracing(Pac,M,P,'*',YN1)|OS1],
+    listener_utility:ground_unify(YN1,YN),
+    filter(US,OS1).
+filter([tracing(Pac::M,P,A,YN)|US],OS) :- atom(Pac), atom(M), atom(P), A>0 |
+    OS=[tracing(Pac,M,P,A,YN1)|OS1],
+    listener_utility:ground_unify(YN1,YN),
+    filter(US,OS1).
+filter([tracing(Pac::M,P,'*',YN)|US],OS) :- atom(Pac), atom(M), atom(P) |
+    OS=[tracing(Pac,M,P,'*',YN1)|OS1],
+    listener_utility:ground_unify(YN1,YN),
+    filter(US,OS1).
+
+filter([traced_list(Spied)|US],OS) :-
+    OS=[traced_list(Spied1)|OS1],
+    listener_utility:ground_unify(Spied1,Spied),
+    filter(US,OS1).
+filter([tracing_list(Pac,M,Pat,Gs)|US],OS) :- atom(Pac), atom(M) |
+    OS=[tracing_list(Pac,M,Pat1,Gs1)|OS1],
+    listener_utility:ground_unify(Pat1,Pat),
+    listener_utility:ground_unify(Gs1,Gs),
+    filter(US,OS1).
+filter([tracing_list(Pac::M,Pat,Gs)|US],OS) :- atom(Pac), atom(M) |
+    OS=[tracing_list(Pac,M,Pat1,Gs1)|OS1],
+    listener_utility:ground_unify(Pat1,Pat),
+    listener_utility:ground_unify(Gs1,Gs),
+    filter(US,OS1).
+filter([tracing_list(M,Pat,Gs)|US],OS) :- atom(M) |
+    OS=[tracing_list(M,Pat1,Gs1)|OS1],
+    listener_utility:ground_unify(Pat1,Pat),
+    listener_utility:ground_unify(Gs1,Gs),
+    filter(US,OS1).
+
+filter([trace_shoen|US],OS) :- 
+    OS=[trace_shoen|OS1],
+    filter(US,OS1).
+filter([notrace_shoen|US],OS) :- 
+    OS=[notrace_shoen|OS1],
+    filter(US,OS1).
+filter([get_shoen_trace_mode(M)|US],OS) :- 
+    OS=[get_shoen_trace_mode(M1)|OS1],
+    listener_utility:ground_unify(M1,M),
+    filter(US,OS1).
+
+

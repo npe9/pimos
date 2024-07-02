@@ -1,0 +1,109 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                               %
+%           Code Translator Module              %
+%    1990/12/11    version 2.0 (shapeuped)      %
+%                                               %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module code_translator.
+:- public go/1,go/2.
+:- with_macro pimos.
+
+%% main process
+%% go(UserStream)
+
+go(InSt):-true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[string_io(normal(ST,_,_))],
+    ST=[create(string#"paragraph##dev",normal(IO,_,_))],
+    buffer:character_pool([
+        print_depth(100),
+        print_length(100000),
+        print_string_length(100000),
+        print_atom_length(100000)|Pool]),
+%%%%%% edit by kamiko %%%%%%
+    IO=[io(1,"init",_)|IOL],
+    translate(InSt,ParseMes,IOL),%%
+    parser(ParseMes,Pool).
+
+%% main process 2
+%% go(UserStream,ESP-StringDevice)
+%% Edited by Aikawa 1990,6,15 %%%
+
+go(InSt,Device):-true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[string_io(normal(ST,_,_))],
+    ST=[create(Device,normal(IO,_,_))],
+    buffer:character_pool([
+        remove_op(500,yfx,('+')),
+        remove_op(80,fx,('module')),
+        print_depth(10000000),
+        print_length(90000000),
+        print_string_length(90000000),
+        print_atom_length(90000000)|Pool]),
+%%%%%% edit by kamiko %%%%%%
+    IO=[io(1,"init",_)|IOL],
+    translate(InSt,ParseMes,IOL),
+    parser(ParseMes,Pool).
+
+%% translate KL1-Message -> ESP-Device Message
+%% translate(UserSt,ParserSt,DeviceSt,Log)
+
+translate([],L1,L2):-true|
+    L1=[],L2=[io(2,"kill",_)].
+%%%%% edit by kamiko 1991.7.17 %%%%%
+translate([io(Id,String,Ans)|L],Par,IO):- string(String,_,_) |
+    IO=[io(Id,String,Ans)|IOL],
+    translate(L,Par,IOL).
+translate([in(Term)|L],Par,IO):-wait(Term)|
+    Par=[unparse(in(Term),StringIn)|ParL],
+    IO=[io(0,StringIn,_)|IOL],
+    translate(L,ParL,IOL).
+translate([out(Term,Answer)|L],Par,IO):-wait(Term)|
+    IO=[io(0,StringIn,StringOut)|IOL],
+    Par=[unparse(out(Term),StringIn),
+         parse(StringOut,Answer)|ParL],
+    translate(L,ParL,IOL).
+%%%%% edit by kubo 1991.6.28 %%%%%
+translate([outd(StringIn,Answer)|L],Par,IO):-wait(StringIn)|
+    IO=[io(3,StringIn,StringOut)|IOL],
+    Par=[parse(StringOut,Answer)|ParL],
+    translate(L,ParL,IOL).
+%%%%%
+translate([nil|L],P,IO):-true|
+    translate(L,P,IO).
+translate([abort|_],P,IO):-true|
+    P=[],
+    IO=[].
+
+%% parsing & unparsing process
+%% parser(ParserMessageSt,PoolSt)
+
+parser([],L):-true|L=[].
+parser([parse(Out,Term)|L],Pool):-wait(Out)|
+    outString(Out,String),
+    Pool=[putb(String),putc(#"."),nl,gett(Term),flush(_)|PoolL],
+    parser(L,PoolL).
+%% Edited by Aikawa 1990,6,15 %% putt -> puttq
+parser([unparse(Term,String)|L],Pool):-true|
+    Pool=[puttq(Term),nl,getl(String),flush(_)|PoolL],
+    parser(L,PoolL).
+
+%% translate system message term -> string
+%% outString(SystemOutMessage,~String)
+
+outString(normal(String),NewString):-string(String,N,_),N>0|
+    NewString=String.
+outString(normal(String),NewString):-string(String,N,_),N=0|
+    NewString="_".
+outString(abnormal,NewString):-true|
+    NewString="abnormal".
+
+

@@ -1,0 +1,261 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% kl1 pre_processor
+
+:- module kl1pp.
+:- public go/0.
+:- public go/1.
+:- public go/2.
+:- with_macro pimos.
+/*
+    stdin --> stdout
+*/
+go :- true |
+    shoen:raise(pimos_tag#shell, get_std_in, In0),
+    shoen:raise(pimos_tag#shell, get_std_out, [print_length(1000), print_depth(1000),
+                                               print_atom_length(1000), print_string_length(1000)|Out0]),
+    shoen:raise(pimos_tag#shell, get_std_mes, Mes0),
+    readFile(In0, [], Mes0, Mes1, Module0, []),
+    convertMacro(Module, [], Mes1, Mes2, Module0),
+    writeFile(Out0, [], Mes2, [], Module).
+
+go(File) :- true |
+    shoen:raise(pimos_tag#shell, get_std_out, [print_length(1000), print_depth(1000),
+                                               print_atom_length(1000), print_string_length(1000)|Out0]),
+    shoen:raise(pimos_tag#shell, get_std_mes, Mes0),
+    openFileCheck(Mes0, Mes1, File, read, Stat),
+    checkAndConv1(Out0, [], Mes1, [], Stat).
+
+go(InModule, OutModule) :- true |
+    shoen:raise(pimos_tag#shell, get_std_mes, Mes0),
+    convertMacro(InModule, [], Mes0, [], OutModule). 
+
+:- local_implicit mes:oldnew.
+openFileCheck(File, Mode, Stat) --> string(File, _, 16) |
+  {{shoen:raise(pimos_tag#task,general_request, [file(normal([open(File, {Mode, FStat})],_,_))])}},
+    checkFStat(FStat, File, Mode, Stat).
+otherwise.
+openFileCheck(File, _, Stat) --> true |
+    &mes <<= [putf("error: illegal file name : ~t~n", [File])],
+    Stat=abnormal.
+
+checkFStat(normal(FS,_,_), _, read, Stat) --> true |
+  {{buffer:input_filter(FS1, FS)}},
+    Stat = normal(FS1).
+checkFStat(normal(FS,_,_), _, write, Stat) --> true |
+  {{buffer:output_filter(FS1, FS)}},
+    Stat = normal(FS1).
+otherwise.
+checkFStat(_, File, _, Stat) --> true |
+    &mes <<= [putf("error : file not found : ~t~n", [File])],
+    Stat=abnormal.
+
+
+:- local_implicit out:oldnew, mes:oldnew.
+checkAndConv1(normal(FS)) --> true |
+  {{readFile(FS, [], &mes, Module0, []),
+    convertMacro(Module, [], &mes, Module0),
+    writeFile(&out, &mes, Module)}}.
+otherwise.
+checkAndConv1(_) --> true | true.
+
+%
+% read from input stream
+%
+
+:- local_implicit in:oldnew, mes:oldnew, modu:oldnew.
+
+readFile --> true |
+   &in <<= [getwt(WT)],
+   readFile(WT).
+
+readFile(normal(end_of_file)) --> true | true.
+otherwise.
+readFile(normal(WT)) --> true |
+    &modu <<= [WT],
+    &in <<= [getwt(Next)],
+    readFile(Next).
+readFile(abnormal(Info)) --> true |
+    &mes <<= [print_error(Info)],
+    &in <<= [getwt(Next)],
+    readFile(Next).
+
+:- local_implicit out:oldnew, mes:oldnew.
+writeFile([Cls|Rest]) --> true |
+    prettyPrint(Cls),
+    &out <<= [nl],
+    writeFile(Rest).
+writeFile([]) --> true | true.
+
+prettyPrint(Cls-_) --> true |
+    prettyPrint(Cls).
+prettyPrint(wrap#(H:-G|B)) --> true |
+    &out <<= [putwtq(H)],
+    &out <<= [putt(':-')],
+    printGoals(8, G),
+    &out <<= [putt('|'), nl],
+    printGoals(4, B),
+    &out <<= [putt('.'), nl].
+otherwise.
+prettyPrint(Term) --> true | &out <<= [putwtq(Term), putt('.'), nl].
+
+printGoals(Tab, Goals0) --> true |
+  {{termToList(Goals, [], Goals0)}},
+    printGoalsList(Tab, Goals).
+
+termToList(L0, L, wrap#(G0,G)) :- true |
+    termToList(L0, L1, G0),
+    termToList(L1, L, G).
+otherwise.
+termToList(L0, L, G) :- true | L0=[G|L].
+
+printGoalsList(Tab, []) --> true | &out <<= [tab(Tab)].
+printGoalsList(Tab, [Goal]) --> true | &out <<= [tab(Tab), putwtq(Goal)].
+otherwise.
+printGoalsList(Tab, [G|Cdr]) --> true | &out <<= [tab(Tab), putwtq(G), putt(','), nl],
+    printGoalsList(Tab, Cdr).
+
+
+%
+% expand macro
+%
+:- local_implicit modu:oldnew, mes:oldnew.
+convertMacro(Module0) --> true |
+  {{errorFilter(&mes, Error),
+    convertMacro_(&modu, Error, [], Module0)}}.
+
+convertMacro_(Module0) --> true |
+  {{dummyVP(VP),
+    kl1cmp_macro_driver:driver(&mes, VP, [], Module0, Module1),
+    kl1cmp_inputfilter:filter(Mes1, Mes2, Module1, Module2),
+    extractInitialDirectives(&modu, Module2, Module3),
+    kl1cmp_pbank:predicate_bank(Module3, In),
+    kl1cmp_reader:create_reader(In, [], &mes, Reader),
+    macro_processor(Reader, [], &mes, const, Req),
+    extract(&modu, Req, [])}}.
+
+:- local_implicit mod:oldnew.
+extractInitialDirectives([wrap#(:- module Mod)-Info|Rest], Mod0) --> true |
+    &mod <<= [wrap#(:- module Mod)-Info],
+    extractInitialDirectives(Rest, Mod0).
+extractInitialDirectives([wrap#(:- public Pubs)-Info|Rest], Mod0) --> true |
+    &mod <<= [wrap#(:- public Pubs)-Info],
+    extractInitialDirectives(Rest, Mod0).
+otherwise.
+extractInitialDirectives([Cls|Rest], Mod0) --> true |
+    Mod0=[Cls|Mod],
+    extractInitialDirectives(Rest, Mod).
+extractInitialDirectives([], Mod) --> true | Mod=[].
+
+:- local_implicit mod:oldnew, req:oldnew.
+extract --> true |
+    &req <<= [read_predicate(Clause, Pred)],
+    extract(Clause, Pred).
+
+extract(end_of_file, _) --> true | true.
+otherwise.    
+extract(Clause, _) --> true |
+  {{outStream(&mod, Clause)}},
+    &req <<= [read_predicate(NextC, NextP)],
+    extract(NextC, NextP).
+
+:- local_implicit out:oldnew.
+outStream([Cls|Cdr]) --> true |
+    outStream(Cls),
+    outStream(Cdr).
+outStream([]) --> true | true.
+otherwise.
+outStream(Term0-Info) --> true |
+  {{integer_to_string(Term0, Term)}},
+    &out <<= [Term-Info].
+otherwise.
+outStream(Term0) --> true | {{integer_to_string(Term0, Term)}},
+    &out <<= [Term].
+
+:- local_implicit in:oldnew, err:oldnew, struct:shared.
+
+macro_processor(Pragma) --> true |
+    {{kl1cmp_macro:generate_macro_expander(&in, &err, MacroProcess),
+      kl1cmp_struct:struct_processor(&err, MacroProcess, [], &struct, StructProcess),
+      kl1cmp_pragma:pragma_expander(&err, StructProcess, [], Pragma)}}.
+
+
+dummyVP(VP) :- true |
+    atom_table:cache_table(Atom),
+    module_table:cache_table(Mod),
+    dummyVP(Atom, Mod, VP).
+
+dummyVP(Atom0, Mod0, [get_atom_table(Atom)|Cdr]) :- true |
+    merge({Atom, Atom1}, Atom0),
+    dummyVP(Atom1, Mod0, Cdr).
+dummyVP(Atom0, Mod0, [get_module_table(Mod)|Cdr]) :- true |
+    merge({Mod, Mod1}, Mod0),
+    dummyVP(Atom0, Mod1, Cdr).
+dummyVP(Atom0, Mod0, [defined(Def)|Cdr]) :- true |
+    Def=[],
+    dummyVP(Atom0, Mod0, Cdr).
+dummyVP(Atom0, Mod0, []) :- true | Atom0=[], Mod0=[].
+
+:- local_implicit mes:oldnew.
+errorFilter([error(FS,Arg)|Cdr]) --> true |
+    &mes <<= [putt("error : "),putf(FS,Arg),nl],
+    errorFilter(Cdr).
+errorFilter([warning(FS,Arg)|Cdr]) --> true |
+    &mes <<= [putt("warning : "),putf(FS,Arg),nl],
+    errorFilter(Cdr).
+errorFilter([error(FS,Arg,_)|Cdr]) --> true |
+    &mes <<= [putt("error : "),putf(FS,Arg),nl],
+    errorFilter(Cdr).
+errorFilter([warning(FS,Arg,_)|Cdr]) --> true |
+    &mes <<= [putt("warning : "),putf(FS,Arg),nl],
+    errorFilter(Cdr).
+errorFilter([]) --> true | true.
+
+integer_to_string(vector(Vect0), Term) :- vector(Vect0, N) |
+    intToStr(0, N, Vect0, Vect),
+    Term=vector(Vect).
+integer_to_string(list([Car0|Cdr0]), Term) :- true |
+    integer_to_string(Car0, Car),
+    integer_to_string(Cdr0, Cdr),
+    Term=list([Car|Cdr]).
+integer_to_string(variable(N), Term) :- integer(N) |
+    iToS(N, Str0),
+    builtin#append_string("_", Str0, Str),
+    Term=variable(Str).
+integer_to_string('$SCNST'(Str), Term) :- true | Term=Str.
+otherwise.
+integer_to_string(Term0, Term) :- true | Term0=Term.
+
+intToStr(A, N, Vect0, Vect) :- A<N |
+    set_vector_element(Vect0, A, E0, E, Vect1),
+    integer_to_string(E0, E),
+    A1 := A+1,
+    intToStr(A1, N, Vect1, Vect).
+intToStr(N, N, Vect0, Vect) :- true | Vect0=Vect.
+
+iToS(N, Str) :- true |
+    iToS(1, Size, Ilist, [], N),
+    new_string(Str0, Size, 16),
+    setString(0, Ilist, Str0, Str).
+
+iToS(Size0, Size, IList0, IList, N) :- N < 10 |
+    Size0=Size,
+    string_element("0123456789", N, Str, _),
+    IList0=[Str|IList].
+iToS(Size0, Size, IList0, IList, N) :- N >= 10 |
+    N1 := N mod 10,
+    N2 := N / 10,
+    Size1 := Size0 + 1,
+    string_element("0123456789", N1, Str, _),
+    iToS(Size1, Size, IList0, IList1, N2),
+    IList1=[Str|IList].
+
+setString(A, [N|Cdr], Str0, Str) :- true |
+    set_string_element(Str0, A, N, Str1),
+    A1 := A+1,
+    setString(A1, Cdr, Str1, Str).
+setString(_, [], Str0, Str) :- true | Str0=Str.

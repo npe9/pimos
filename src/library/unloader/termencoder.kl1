@@ -1,0 +1,140 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Unloader>termencoder.kl1.12, 17-Sep-92 18:56:39, Edit by hori
+
+:- module term_encoder.
+:- with_macro pimos.
+:- public encode/2, decode/2.
+
+magic_number(X) :- true |
+    kl1_unloader_version:marker(term_encode,X).
+
+encode(Term0,Status) :- true |
+    check_term(Term0,Term1,St),
+    encode_0(St,Term1,Status).
+
+encode_0(normal,Term,Status) :- true |
+    pseudo_out_file(UNLFS,String),
+    kl1_unloaded_atom_table:encode(AT),
+    kl1_unloaded_file_encoder:encode(Term,UNLFS,[],AT,[]),
+    Status = normal(String).
+otherwise.
+encode_0(_,_,Status) :- true |
+    Status = abnormal.
+
+decode(String,Status) :- string(String,Len,16) |
+    pseudo_in_file(UNLFS,String,Status0),
+    atom_table:cache_table(CT),
+    kl1_unloaded_atom_table:decode(AT,CT,[]),
+    kl1_unloaded_file_decoder:decode(UNLFS,[],Term,AT,[],Status1),
+    wait_done(Status0,Status1,Term,Status).
+
+wait_done(normal,normal,Term,Status) :- true |
+    Status = normal(Term).
+otherwise.
+wait_done(_,_,_,Status) :- true | Status = abnormal.
+
+pseudo_out_file(UNLFS0,String) :- true |
+    count(UNLFS0,UNLFS1,N),
+    new_string(String0,N,16),
+    set_elms(UNLFS1,String0,0,N,String).
+
+count(UNLFS0,UNLFS1,N) :- true |
+    magic_number(MagicNum),
+    UNLFS1 = [MagicNum|UNLFS2],
+    count(UNLFS0,UNLFS2,1,N).
+
+count([Word|In],UNLFS0,N0,N) :- true |
+    N1 := N0 + 1,
+    UNLFS0 = [Word|UNLFS1],
+    count(In,UNLFS1,N1,N).
+count([],UNLFS0,N0,N) :- true |
+    UNLFS0 = [16#"1000"],
+    N := N0 + 1.
+
+set_elms([Word|In],String0,I0,Max,String) :- I0 < Max |
+    set_string_element(String0,I0,Word,String1),
+    I1 := I0 + 1,
+    set_elms(In,String1,I1,Max,String).
+set_elms([],String0,Max,Max,String) :- true | String = String0.
+
+pseudo_in_file(UNLFS,String,Status) :- string_element(String,0,Elm) |
+    magic_number(MagicNum),
+    in_file_0(UNLFS,MagicNum,Elm,String,Status).
+otherwise.
+pseudo_in_file(UNLFS,String,Status) :- true |
+    abort_read(UNLFS),
+    Status = abnormal.
+
+in_file_0(UNLFS,MagicNum,MagicNum,String,Status) :- string(String,Len,Size) |
+    in_file_1(UNLFS,1,Len,String,Status).
+otherwise.
+in_file_0(UNLFS,_,_,String,Status) :- true |
+    abort_read(UNLFS),
+    Status = abnormal.
+
+in_file_1([Word|In],I0,Max,String,Status) :- string_element(String,I0,Elm) |
+    Word = Elm,
+    I1 := I0 + 1,
+    in_file_1(In,I1,Max,String,Status).
+in_file_1([],I0,Max,String,Status) :- string_element(String,I0,Elm) |
+    in_file_2(Elm,Status).
+otherwise.
+in_file_1(UNLFS,_,_,String,Status) :- true |
+    abort_read(UNLFS),
+    Status = abnormal.
+
+in_file_2(16#"1000",Status) :- true | Status = normal.
+otherwise.
+in_file_2(_,Status) :- true | Status = abnormal.
+
+abort_read([X|In]) :- true | X = 0, abort_read(In).
+abort_read([]) :- true | true.
+
+check_term(Vect0,Vect,Status) :- vector(Vect0,Len), Len > 0 |
+    new_vector(Vect1,Len),
+    check_vect(0,Len,Vect0,Vect1,Vect,Status).
+check_term([Car0|Cdr0],List,Status) :- true |
+    check_term(Car0,Car,St0),
+    check_term(Cdr0,Cdr,St1),
+    check_list(St0,Car,St1,Cdr,List,Status).
+check_term(Code0,Code,Status) :- code(Code0,_,_,_) |
+    Code = code_is_illegal,
+    Status = abnormal.
+check_term(Module0,Module,Status) :- module(Module0,_) |
+    Module = module_is_illegal,
+    Status = abnormal.
+otherwise.
+check_term(Atomic0,Atomic,Status) :- wait(Atomic0) |
+    Atomic = Atomic0,
+    Status = normal.
+
+check_vect(I0,Len,Vect0,Vect1,Vect,Status) :-
+    vector_element(Vect0,I0,Elm0) |
+    check_term(Elm0,Elm,St),
+    check_vect_0(St,Elm,I0,Len,Vect0,Vect1,Vect,Status).
+check_vect(I0,Len,Vect0,Vect1,Vect,Status) :- I0 >= Len |
+    Vect = Vect1,
+    Status = normal.
+
+check_vect_0(normal,Elm,I0,Len,Vect0,Vect1,Vect,Status) :- true |
+    set_vector_element(Vect1,I0,_,Elm,Vect2),
+    I1 := I0 + 1,
+    check_vect(I1,Len,Vect0,Vect2,Vect,Status).
+otherwise.
+check_vect_0(_,Elm,I0,Len,Vect0,Vect1,Vect,Status) :- true |
+    Vect = Vect1,
+    Status = abnormal.
+
+check_list(normal,Car,normal,Cdr,List,Status) :- true |
+    List = [Car|Cdr],
+    Status = normal.
+otherwise.
+check_list(St0,Car,St2,Cdr,List,Status) :- true |
+    List = [],
+    Status = abnormal.

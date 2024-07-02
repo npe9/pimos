@@ -1,0 +1,480 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi606::>sys>user>yashiro>V35>scsi>SAM.kl1.8, 08-Sep-92 22:34:46, Edit by yashiro
+:- module scsi_sequential_access.
+:- with_macro pimos.
+:- public device_manager/4.
+
+device_manager([],SCSI_OUT,_,_) :-
+    true |
+        SCSI_OUT=[].
+
+device_manager([test_unit_ready(Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    true |
+        scsi_common:test_unit_ready(sequential_access,Result,SCSI_OUT,SCSI_OUT1,Unit,LUN),
+        device_manager(NSA,SCSI_OUT1,Unit,LUN).
+
+device_manager([inquiry(Result)|NSA],SCSI_OUT,Unit,LUN) :-
+        scsi_common:inquiry(sequential_access,Result,SCSI_OUT,SCSI_OUT1,Unit,LUN),
+        device_manager(NSA,SCSI_OUT1,Unit,LUN).
+
+%  *********** Rewind Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |    Reserve    |Fix|
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%
+device_manager([rewind(on_at,Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" \/ 16#"00000001" |
+        new_string(CDB,scsi#group_0_command_size,8),
+%        set_string_element(CDB,0,scsi#rewind_command,CDB1),
+        set_string_element(CDB,0,16#"01",CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        new_string(Data,0,8),
+        SCSI_OUT=[command({Unit,LUN,CDB2,0,scsi#no_direction,Data,0}
+                          ,NData,NLength,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Result,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+device_manager([rewind(on_after,Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" |
+        new_string(CDB,scsi#group_0_command_size,8),
+%        set_string_element(CDB,0,scsi#rewind_command,CDB1),
+        set_string_element(CDB,0,16#"01",CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        new_string(Data,0,8),
+        SCSI_OUT=[command({Unit,LUN,CDB2,0,scsi#no_direction,Data,0}
+                          ,NData,NLength,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Result,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+
+%  *********** Read block limits Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 1 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |    Reserve        |
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%
+device_manager([read_block_limits(Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" |
+        new_string(CDB,scsi#group_0_command_size,8),
+%        set_string_element(CDB,0,scsi#read_block_limits_command,CDB1),
+        set_string_element(CDB,0,16#"05",CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+%        new_string(Data,scsi#read_block_limits_data_size,8),
+        new_string(Data,6,8),
+        SCSI_OUT=[command({Unit,LUN,CDB2,6,scsi#direction_in,Data,0}
+                          ,NData,NLength,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Status1,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_read_block_limits(Status1,NData,NLength,Result),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+
+%  *********** Read Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |    Reserve    |Fix|
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Length (MSB)       | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Length             | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |            Length (LSB)       | 
+%     +---+---+---+---+---+---+---+---+
+%
+device_manager([read(Buffer,block(Size),Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" \/ 16#"00000001",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF",
+    string(Buffer,BufferSize,8) |
+        new_string(CDB,scsi#group_0_command_size,8),
+        set_string_element(CDB,0,scsi#read_command,CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        SCSI_OUT=[command({Unit,LUN,CDB5,BufferSize,scsi#direction_in,Buffer,0}
+                          ,NData,Length3,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Status1,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_read_command(Status1,NData,Length3,Result),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+device_manager([read(Buffer,byte(Size),Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF",
+    string(Buffer,BufferSize,8)|
+        new_string(CDB,scsi#group_0_command_size,8),
+        set_string_element(CDB,0,scsi#read_command,CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        SCSI_OUT=[command({Unit,LUN,CDB5,BufferSize,scsi#direction_in,Buffer,0}
+                          ,NData,Length3,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Status1,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_read_command(Status1,NData,Length3,Result),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+
+%  *********** Write Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |    Reserve    |Fix|
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Length (MSB)       | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Length             | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |            Length (LSB)       | 
+%     +---+---+---+---+---+---+---+---+
+%
+device_manager([write(Buffer,block(Size),Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" \/ 16#"00000001",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF",
+    string(Buffer,BufferSize,8)|
+        new_string(CDB,scsi#group_0_command_size,8),
+        set_string_element(CDB,0,scsi#write_command,CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        SCSI_OUT=[command({Unit,LUN,CDB5,BufferSize,scsi#direction_out,Buffer,0}
+                          ,NData,Length3,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Status1,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_write_command(Status1,NData,Length3,Result),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+device_manager([write(Buffer,byte(Size),Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF",
+    string(Buffer,BufferSize,8)|
+        new_string(CDB,scsi#group_0_command_size,8),
+        set_string_element(CDB,0,scsi#write_command,CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        SCSI_OUT=[command({Unit,LUN,CDB5,BufferSize,scsi#direction_out,Buffer,0}
+                          ,NData,Length3,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Status1,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        check_write_command(Status1,NData,Length3,Result),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+
+%  *********** Write Filemarks Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |      Reserve      |
+%     +---+---+---+---+---+---+---+---+
+%  2  |     File mark size (MSB)      | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |     File mark size            |
+%     +---+---+---+---+---+---+---+---+
+%  4  |     File mark size (LSB)      | 
+%     +---+---+---+---+---+---+---+---+
+%
+device_manager([write_filemarks(Size,Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF" |
+        new_string(CDB,scsi#group_0_command_size,8),
+        new_string(Buffer,0,8),
+%        set_string_element(CDB,0,scsi#write_filemarks_command,CDB1),
+        set_string_element(CDB,0,16#"10",CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        SCSI_OUT=[command({Unit,LUN,CDB5,0,scsi#no_direction,Buffer,0}
+                          ,_,_,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Result,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+
+
+%  *********** Space Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 1 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |  Reserve  | Cond. |
+%     +---+---+---+---+---+---+---+---+
+%  2  |       Space size (MSB)        | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |       Space size              |
+%     +---+---+---+---+---+---+---+---+
+%  4  |       Space size (LSB)        | 
+%     +---+---+---+---+---+---+---+---+
+%
+device_manager([space(block(Size),Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF" |
+        new_string(CDB,scsi#group_0_command_size,8),
+        new_string(Buffer,0,8),
+%        set_string_element(CDB,0,scsi#space_command,CDB1),
+        set_string_element(CDB,0,16#"11",CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        SCSI_OUT=[command({Unit,LUN,CDB5,0,scsi#no_direction,Buffer,0}
+                          ,_,_,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Result,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+
+device_manager([space(filemark(Size),Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" \/ 16#"00000001",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF" |
+        new_string(CDB,scsi#group_0_command_size,8),
+        new_string(Buffer,0,8),
+%        set_string_element(CDB,0,scsi#space_command,CDB1),
+        set_string_element(CDB,0,16#"11",CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        SCSI_OUT=[command({Unit,LUN,CDB5,0,scsi#no_direction,Buffer,0}
+                          ,_,_,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Result,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+device_manager([space(filemarks(Size),Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" \/ 16#"00000002",
+    Length0 := Size /\  16#"000000FF",
+    Length1 := (Size >> 8) /\  16#"000000FF",
+    Length2 := (Size >> 16) /\  16#"000000FF" |
+        new_string(CDB,scsi#group_0_command_size,8),
+        new_string(Buffer,0,8),
+%        set_string_element(CDB,0,scsi#space_command,CDB1),
+        set_string_element(CDB,0,16#"11",CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+        set_string_element(CDB2,2,Length2,CDB3),
+        set_string_element(CDB3,3,Length1,CDB4),
+        set_string_element(CDB4,4,Length0,CDB5),
+        SCSI_OUT=[command({Unit,LUN,CDB5,0,scsi#no_direction,Buffer,0}
+                          ,_,_,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Result,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+
+device_manager([space(end_of_data,Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" \/ 16#"00000003" |
+        new_string(CDB,scsi#group_0_command_size,8),
+        new_string(Buffer,0,8),
+%        set_string_element(CDB,0,scsi#space_command,CDB1),
+        set_string_element(CDB,0,16#"11",CDB1),
+        set_string_element(CDB1,1,ELUN,CDB2),
+%        set_string_element(CDB2,2,Length2,CDB3),
+%        set_string_element(CDB3,3,Length1,CDB4),
+%        set_string_element(CDB4,4,Length0,CDB5),
+        SCSI_OUT=[command({Unit,LUN,CDB2,0,scsi#no_direction,Buffer,0}
+                          ,_,_,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Result,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+
+
+%  *********** Mode Select Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 1 | 0 | 1 | 0 | 1 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |       Reserve     |
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |      Length of paramenter     | 
+%     +---+---+---+---+---+---+---+---+
+%
+device_manager([mode_select(MediumType,BlockDescriptor,Modification,Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" |
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#mode_select_command, CDB1),
+        set_string_element(CDB1, 1, ELUN,  CDB4),
+        set_string_element(CDB4, 4, Length, CDB5),
+        mode(BlockDescriptor, MediumType, Modification, Length, Data),
+        SCSI_OUT=[command({Unit,LUN,CDB5,0,scsi#direction_out,Data,0}
+                          ,NData,NLength,ID,Status0)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(Status0,Result,sequential_access,Unit,LUN,SCSI_OUT1,SCSI_OUT2),
+        device_manager(NSA,SCSI_OUT2,Unit,LUN).
+
+
+%  *********** Mode Sense Command Format ***********
+%       7   6   5   4   3   2   1   0
+%     +---+---+---+---+---+---+---+---+
+%  0  | 0 | 0 | 0 | 1 | 1 | 0 | 1 | 0 | op code
+%     +---+---+---+---+---+---+---+---+
+%  1  |    LUN    |      Reserve      |
+%     +---+---+---+---+---+---+---+---+
+%  2  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  3  |            Reserve            | 
+%     +---+---+---+---+---+---+---+---+
+%  4  |        Allocated length       | 
+%     +---+---+---+---+---+---+---+---+
+%
+device_manager([mode_sense(Result)|NSA],SCSI_OUT,Unit,LUN) :-
+    ELUN := (LUN << 5) /\ 16#"0000000E0" |
+        new_string(CDB, scsi#group_0_command_size, 8),
+        set_string_element(CDB,  0, scsi#mode_sense_command, CDB1),
+        set_string_element(CDB1, 1, ELUN,  CDB4),
+        set_string_element(CDB4, 4, 16#"FF", CDB5),
+%        smaller(MaxBufferSize, 16#"FF", Length),
+        new_string(Data, 16#"FF", 8),
+        SCSI_OUT = [command({Unit, LUN, CDB5, 16#"FF", scsi#direction_in, Data, 0}, 
+                             NewData, TransferredLength, _, CommandStatus)|SCSI_OUT1],
+        scsi_common:analyze_scsi_command_result(CommandStatus, AnalyzedStatus, sequential_access,
+                                                               Unit, LUN, SCSI_OUT1, NewSCSI_OUT),
+        mode_sense_status(AnalyzedStatus, NewData, TransferredLength, Result),
+        device_manager(NSA,NewSCSI_OUT,Unit,LUN).
+
+check_read_command(normal,Data,Length,Result) :-
+    string(Data,_,8) |
+        Result=normal(Length,Data).
+otherwise.
+check_read_command(abnormal(Reason),Data,Length,Result) :-
+    true |
+        Result=abnormal(Reason,Length,Data).
+
+check_write_command(normal,Data,Length,Result) :-
+    string(Data,_,8) |
+        Result=normal(Length,Data).
+otherwise.
+check_write_command(abnormal(Reason),Data,Length,Result) :-
+    true |
+        Result=abnormal(Reason,Length,Data).
+
+check_read_block_limits(normal,Data,Length,Result) :-
+    Length =:= 6,
+    string(Data,_,8) |
+        Result=normal(Data).
+otherwise.
+check_read_block_limits(abnormal(Reason),Data,Length,Result) :-
+    true |
+        Result=abnormal(Reason).
+%--------%
+% mode/5 %
+%--------%
+mode({}, MediumType, Modification,  Length, ModeString):-
+    true |
+        string(Modification, VULength, _, Modification1),
+        Length := VULength + 4,
+        new_string(String, Length, 8),
+        set_string_element(String, 1, MediumType, String1),
+        builtin#set_substring(String1, 4, Modification1, ModeString).
+mode({Density, BlockSize, TotalBlocks}, MediumType, Modification,  Length, ModeString):-
+    true |
+        Byte5  := (TotalBlocks /\ 16#"FF0000") >> 16,
+        Byte6  := (TotalBlocks /\ 16#"FF00") >> 8,
+        Byte7  :=  TotalBlocks /\ 16#"FF",
+        Byte9  := (BlockSize   /\ 16#"FF0000") >> 16,
+        Byte10 := (BlockSize   /\ 16#"FF00") >> 8,
+        Byte11 :=  BlockSize   /\ 16#"FF",
+        string(Modification, VULength, _, Modification1),
+        Length := VULength + 12,
+        new_string(String, Length, 8),
+        set_string_element(String,    1, MediumType, String3),
+        set_string_element(String3,   3, 8,          String4),
+        set_string_element(String4,   4, Density,    String5),
+        set_string_element(String5,   5, Byte5,      String6),
+        set_string_element(String6,   6, Byte6,      String7),
+        set_string_element(String7,   7, Byte7,      String9),
+        set_string_element(String9,   9, Byte9,      String10),
+        set_string_element(String10, 10, Byte10,     String11),
+        set_string_element(String11, 11, Byte11,     String12),
+        builtin#set_substring(String12, 12, Modification1, ModeString).
+
+
+% mode_sense(G0/O) %
+
+%---------------------%
+% mode_sense_status/4 %
+%---------------------%
+mode_sense_status(normal, Data, Length, Status):-
+    true |
+        builtin#substring(Data, 0, Length, Data0, _),
+        string_element(Data0, 0, SenseDataLength, Data1),
+        string_element(Data1, 1, MediumType, Data2),
+        string_element(Data2, 2, Byte2, Data3),
+        WriteProtect := Byte2 >> 7,
+        string_element(Data3, 3, DescriptorLength, Data4),
+        block_descriptor(DescriptorLength, Data4, BlockDescriptor, VUPosition),
+        mode_sense_vu_param_length(Length, SenseDataLength, DescriptorLength, ParamLength),
+        builtin#substring(Data4, VUPosition, ParamLength, VUParameters, _),
+        Status = normal(MediumType, WriteProtect, BlockDescriptor, VUParameters).
+otherwise.
+mode_sense_status(Abnormal, _, _, Status):-
+    true |
+        Status = Abnormal.
+
+%--------------------%
+% block_descriptor/4 %
+%--------------------%
+block_descriptor(0, _, Descriptor, NextPosition):-
+    true |
+        Descriptor = {},
+        NextPosition = 4.
+block_descriptor(8, Data4, Descriptor, NextPosition):-
+    true |
+        Descriptor = {Density, BlockSize, TotalBlocks},
+        string_element(Data4, 4, Density, Data5),
+        string_element(Data5, 5, Byte5,   Data6),
+        string_element(Data6, 6, Byte6,   Data7),
+        string_element(Data7, 7, Byte7,   Data9),
+        TotalBlocks := (Byte5 << 16) \/ (Byte6 << 8) \/ Byte7,
+        string_element(Data9,  9,  Byte9,  Data10),
+        string_element(Data10, 10, Byte10, Data11),
+        string_element(Data11, 11, Byte11, _),
+        BlockSize   := (Byte9 << 16) \/ (Byte10 << 8) \/ Byte11,
+        NextPosition = 12.
+
+%------------------------------%
+% mode_sense_vu_param_length/4 %   
+%------------------------------%
+mode_sense_vu_param_length(Length, SenseDataLength, BlockDescriptorLength, ParamLength):-
+    true |
+        ParamLength := Length - ( 4 + BlockDescriptorLength ),
+        RealLength  := SenseDataLength - ( 3 + BlockDescriptorLength ),
+        ParamLength  = RealLength.              % to debug
+
+
+%-----------%
+% smaller/3 %
+%-----------%
+%smaller(MaxBufferSize, CDBMax, BufferSize):-
+%    MaxBufferSize < CDBMax |
+%        BufferSize = MaxBufferSize.
+%otherwise.
+%smaller(_, CDBMax, BufferSize):-
+%    true |
+%        BufferSize = CDBMax.

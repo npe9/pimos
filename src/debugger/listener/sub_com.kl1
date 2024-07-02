@@ -1,0 +1,239 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_sub_command.
+:- public do/8.
+:- with_macro pimos.
+
+do(print_variable_mode,IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[print_variable(Pvar,Pvar1)|IN1], RSC1=RSC, MM1=MM,
+    listener_buffer:pvar_mode(Pvar,Pvar1).
+do(print_length(L),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- L>=0 |
+    IN=[print_length(L)|IN1], RSC1=RSC, MM1=MM.
+do(print_depth(D), IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- D>=0 |
+    IN=[print_depth(D)|IN1], RSC1=RSC, MM1=MM.
+do(print_string_length(L),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- L>=0 |
+    IN=[print_string_length(L)|IN1], RSC1=RSC, MM1=MM.
+do(print_atom_length(L),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- L>=0 |
+    IN=[print_atom_length(L)|IN1],  RSC1=RSC, MM1=MM.
+do(print_depth,IN,IN2,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[print_depth(D,Dep),
+        putb(" Print depth: "), putt(D), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,D,Dep,IN1,IN2),
+    RSC1=RSC, MM1=MM.
+do(print_length,IN,IN2,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[print_length(L,Len),
+        putb(" Print length: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    RSC1=RSC, MM1=MM.
+do(print_string_length,IN,IN2,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[print_string_length(L,Len),
+        putb(" Print string length: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    RSC1=RSC, MM1=MM.
+do(print_atom_length,IN,IN2,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[print_atom_length(L,Len),
+        putb(" Print atom length: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    RSC1=RSC, MM1=MM.
+do(non_existent(Com),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[tab(1),putft(Com), putf(": Command not found.~n",[])|IN1],
+    RSC1=RSC, MM1=MM.
+do(illegal_id(ID),   IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[tab(1),putft(ID),putf(": Illegal goal ID.~n",[])|IN1],
+    RSC1=RSC, MM1=MM.
+do(syntax_error,     IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[putb(">Syntax error"), nl|IN1], RSC1=RSC, MM1=MM.
+
+do(monitor('$VAR'(_,Var)),IN,IN2,RSC,RSC1,MM,MM1,_NUM) :- string(Var,_,_) |
+    MM={MM1,MM2},
+    IN=[get_value(Var,Val)|IN1], 
+    listener_inspector:monitor(Val,Var,Var,IN1,IN2,RSC,RSC1,MM2).
+do(monitor('$VAR'(_,Var),'$VAR'(_,Name)),IN,IN2,RSC,RSC1,MM,MM1,_NUM) :-
+  string(Var,_,_), string(Name,_,_) |
+    MM={MM1,MM2},
+    IN=[get_value(Var,Val)|IN1],
+    listener_inspector:monitor(Val,Var,Name,IN1,IN2,RSC,RSC1,MM2).
+do(monitor('$VAR'(_,Var),Atom),IN,IN2,RSC,RSC2,MM,MM1,_NUM) :-
+  string(Var,_,_),atom(Atom) |
+    MM={MM1,MM2},
+    RSC=[atom(get_atom_name(Atom,normal(Name)))|RSC1],
+    IN=[get_value(Var,Val)|IN1],
+    listener_inspector:monitor(Val,Var,Name,IN1,IN2,RSC1,RSC2,MM2).
+do(monitor_and_fork('$VAR'(_,Var)),IN,IN2,RSC,RSC1,MM,MM1,_NUM) :-
+  string(Var,_,_) |
+    MM={MM1,MM2},
+    IN=[get_value(Var,Val)|IN1],
+    listener_inspector:monitor_and_fork(Val,Var,Var,IN1,IN2,RSC,RSC1,MM2).
+do(monitor_and_fork('$VAR'(_,Var),'$VAR'(_,Name)),IN,IN2,RSC,RSC1,MM,MM1,_NUM) :-
+  string(Var,_,_), string(Name,_,_) |
+    MM={MM1,MM2},
+    IN=[get_value(Var,Val)|IN1],
+    listener_inspector:monitor_and_fork(Val,Var,Name,IN1,IN2,RSC,RSC1,MM2).
+do(monitor_and_fork('$VAR'(_,Var),Atom),IN,IN2,RSC,RSC2,MM,MM1,_NUM) :-
+  string(Var,_,_),atom(Atom) |
+    MM={MM1,MM2},
+    RSC=[atom(get_atom_name(Atom,normal(Name)))|RSC1],
+    IN=[get_value(Var,Val)|IN1],
+    listener_inspector:monitor_and_fork(Val,Var,Name,IN1,IN2,RSC1,RSC2,MM2).
+do(monitor_mode,IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[putf(Fstr,TL)|IN1], RSC1=RSC,
+    MM=[monitor_mode(normal(Fstr,TL))|MM1].
+do(monitored_terms,IN,IN2,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[do(IN1)|IN2], RSC1=RSC,
+    MM=[monitored_terms(IN1)|MM1].
+do(remember('$VAR'(_,Var)),IN,IN2,RSC,RSC1,MM,MM1,_NUM) :- 
+  string(Var,_,_) |
+    IN=[get_value(Var,Val)|IN1], MM1=MM,
+    listener_var_manager:remember(Val,{},Var,Var,IN1,IN2,RSC,RSC1).
+do(remember('$VAR'(_,Var),'$VAR'(_,Name)),IN,IN2,RSC,RSC1,MM,MM1,_NUM) :-
+  string(Var,_,_),string(Name,_,_) |
+    IN=[get_value(Var,Val),get_value(Name,Val1)|IN1], MM1=MM,
+    listener_var_manager:remember(Val,Val1,Var,Name,IN1,IN2,RSC,RSC1).
+do(list,IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    MM={MM1,MM2},
+    listener_execution_query:query(NUM,IN,IN1,RSC,RSC1,MM2,_).
+do(value,IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    MM1=MM,
+    listener_execution_query:value(NUM,RSC,RSC1,IN,IN1).
+do(value(Vars),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- true|
+    listener_utility:to_list(Vars,Vars1),
+    RSC1=RSC, MM1=MM,
+    value(Vars1,IN,IN1).
+
+do(spying,              IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(spying(*,*),     IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(spying((Pac,M)),     IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(spying(Pac,M),   IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(spying(Pac::M),      IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(spying(Pac,M),   IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(spying(Pac,M),IN,IN2,RSC,RSC1,MM,MM1,_NUM) :-
+  atom(Pac), atom(M) |
+    MM1=MM,
+    RSC=[spy(spying_list(Pac,M,Spied,Spying))|RSC1],
+    listener_spy_manager:list_spied(Spied,IN,IN1),
+    listener_spy_manager:list_spying(Spying,10,IN1,IN2).
+do(spying(M),IN,IN2,RSC,RSC1,MM,MM1,_NUM) :-
+  atom(M) |
+    MM1=MM,
+    RSC=[spy(spying_list(M,Spied,Spying))|RSC1],
+    listener_spy_manager:list_spied(Spied,IN,IN1),
+    listener_spy_manager:list_spying(Spying,10,IN1,IN2).
+
+do(spy(M:P/A),          IN,IN1,RSC,RSC1,MM,MM1,NUM) :-
+    do(spy(M,P,A),      IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(spy((M,P,A)),        IN,IN1,RSC,RSC1,MM,MM1,NUM) :-
+    do(spy(M,P,A),      IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(spy(P/A),            IN,IN1,RSC,RSC1,MM,MM1,NUM) :-
+    do(spy(P,A),        IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(spy(Pac::M,P,A),     IN,IN1,RSC,RSC1,MM,MM1,NUM) :-
+    do(spy(Pac,M,P,A),  IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(spy(Pac,M,P,A),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :-
+  atom(Pac), atom(M), atom(P), A>=0 |
+    RSC=[spy(spy(Pac,M,P,A,SpyStatus))|RSC1],
+    IN=[do(Msg)|IN1], MM1=MM,
+    listener_spy_manager:debug_msg(SpyStatus,Pac,M,P,A,spy,Msg).
+do(spy(Pac,M,P,*),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :-
+  atom(Pac), atom(M), atom(P) |
+    RSC=[spy(spy(Pac,M,P,*,SpyStatus))|RSC1],
+    IN=[do(Msg)|IN1], MM1=MM,
+    listener_spy_manager:debug_msg(SpyStatus,Pac,M,P,*,spy,Msg).
+do(spy(M,P,A),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :-
+  atom(M), atom(P), A>=0 |
+    RSC=[spy(spy(M,P,A,SpyStatus))|RSC1],
+    IN=[do(Msg)|IN1], MM1=MM,
+    listener_spy_manager:debug_msg(SpyStatus,0,M,P,A,spy,Msg).
+do(spy(M,P,*),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :-
+ atom(M), atom(P) |
+    RSC=[spy(spy(M,P,*,SpyStatus))|RSC1],
+    IN=[do(Msg)|IN1], MM1=MM,
+    listener_spy_manager:debug_msg(SpyStatus,0,M,P,*,spy,Msg).
+do(spy(0,_,_),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[putf(" spy: Default module is not set.~n",[])|IN1],
+    RSC1=RSC, MM1=MM.
+do(spy(P,A),IN,IN1,RSC,RSC2,MM,MM1,NUM) :-
+  atom(P), A>=0 |
+    RSC=[get(module,M)|RSC1],
+    do(spy(M,P,A),IN,IN1,RSC1,RSC2,MM,MM1,NUM).
+do(spy(P,*),IN,IN1,RSC,RSC2,MM,MM1,NUM) :-
+  atom(P) |
+    RSC=[get(module,M)|RSC1],
+    do(spy(M,P,*),IN,IN1,RSC1,RSC2,MM,MM1,NUM).
+
+do(nospy,               IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(nospy(*,*,*,*),  IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(nospy(M:P/A),        IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(nospy(M,P,A),    IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(nospy((M,P,A)),      IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(nospy(M,P,A),    IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(nospy(P/A),          IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(nospy(P,A),      IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(nospy(Pac::M,P,A),   IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(nospy(Pac,M,P,A),IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(nospy(Pac,M,P,A),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :-
+  atom(Pac), atom(M), atom(P), A>=0 |
+    RSC=[spy(nospy(Pac,M,P,A,SpyStatus))|RSC1],
+    IN=[do(Msg)|IN1], MM1=MM,
+    listener_spy_manager:debug_msg(SpyStatus,Pac,M,P,A,nospy,Msg).
+do(nospy(Pac,M,P,*),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :-
+  atom(Pac), atom(M), atom(P) |
+    RSC=[spy(nospy(Pac,M,P,*,SpyStatus))|RSC1],
+    IN=[do(Msg)|IN1], MM1=MM,
+    listener_spy_manager:debug_msg(SpyStatus,Pac,M,P,*,nospy,Msg).
+do(nospy(M,P,A),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :-
+  atom(M), atom(P), A>=0 |
+    RSC=[spy(nospy(M,P,A,SpyStatus))|RSC1],
+    IN=[do(Msg)|IN1], MM1=MM,
+    listener_spy_manager:debug_msg(SpyStatus,0,M,P,A,nospy,Msg).
+do(nospy(M,P,*),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :-
+  atom(M), atom(P) |
+    RSC=[spy(nospy(M,P,*,SpyStatus))|RSC1],
+    IN=[do(Msg)|IN1], MM1=MM,
+    listener_spy_manager:debug_msg(SpyStatus,0,M,P,*,nospy,Msg).
+do(nospy(0,_,_),IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- true|
+    IN=[putf(" nospy: Default module is not set.~n",[])|IN1],
+    RSC1=RSC, MM1=MM.
+do(nospy(P,A),IN,IN1,RSC,RSC2,MM,MM1,NUM) :-
+  atom(P), A>=0 |
+    RSC=[get(module,M)|RSC1],
+    do(nospy(M,P,A),IN,IN1,RSC1,RSC2,MM,MM1,NUM).
+do(nospy(P,*),IN,IN1,RSC,RSC2,MM,MM1,NUM) :-
+  atom(P) |
+    RSC=[get(module,M)|RSC1],
+    do(nospy(M,P,*),IN,IN1,RSC1,RSC2,MM,MM1,NUM).
+
+otherwise.
+do(spy((P,A)),IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(spy(P,A),IN,IN1,RSC,RSC1,MM,MM1,NUM).
+do(nospy((P,A)),IN,IN1,RSC,RSC1,MM,MM1,NUM) :- true|
+    do(nospy(P,A),IN,IN1,RSC,RSC1,MM,MM1,NUM).
+otherwise.
+do({Com,X},IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- atom(Com) |
+    RSC1=RSC, MM1=MM,
+    IN=[putf(" ~t: ",[Com]), putft(X), putf(" illegal parameter.~n",[])|IN1].
+otherwise.
+do(X,      IN,IN1,RSC,RSC1,MM,MM1,_NUM) :- true|
+    RSC1=RSC, MM1=MM,
+    IN=[tab(1), putft(X), putf(": Illegal parameter.~n",[])|IN1].
+
+
+value(['$VAR'(_,Var)|Vars],IN,IN3) :- string(Var,_,_)|
+    IN=[get_value(Var,Val)|IN1],
+    (Val={Value} ->
+        IN1=[putf(" ~s = ",[Var]), write(Value),nl|IN2];
+    otherwise;
+     true -> IN1=[putf(" value: ~s nonexistent.~n",[Var])|IN2]),
+    value(Vars,IN2,IN3).
+value([],IN,IN1) :- true| IN1=IN.
+otherwise.
+value([X|Vars],IN,IN2) :- true|
+    IN=[putf(" ~t: illegal argument.~n",[X])|IN1],
+    value(Vars,IN1,IN2).

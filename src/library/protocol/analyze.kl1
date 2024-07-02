@@ -1,0 +1,1085 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module protAnalyze.
+:- public analyzeDef/5.
+:- with_macro pimos.
+
+analyzeDef([Top|Tops],TopC,TopO,Term,Ptable):- atom(Top) |
+    TopO = [Top|TopOtail],
+    Ptable = {Ptable1,Ptable2},
+    Ptable1 = [register('$$top'(1),'$$top'(1),u(+,Top,none))| Ptable11],
+    TopC = [topfilter('$$top'(1)) |TopC2],
+    analyzeTop(Tops,TopC2,TopOtail,Ptable11,1),
+    makeKey(Key),
+    analyzeTerm(Term,Ptable2,Key).
+analyzeDef([{Top,Err}|Tops],TopC,TopO,Term,Ptable):- atom(Top) |
+    TopO = [{Top,Err}|TopOtail],
+    Ptable = {Ptable1,Ptable2},
+    Ptable1 = [register('$$top'(1),'$$top'(1),u(+,Top,none))| Ptable11],
+    TopC = [topfilter('$$top'(1)) |TopC2],
+    analyzeTop(Tops,TopC2,TopOtail,Ptable11,1),
+    makeKey(Key),
+    analyzeTerm(Term,Ptable2,Key).
+otherwise.
+analyzeDef(_Top,TopC,TopO,_Term,Ptable) :- true |
+    TopC = [],
+    TopO = [],
+    Ptable = [],
+    shoen:raise(pimos_tag#pimos,general_request,[suicide(_)]).
+
+syntax_error(Msg,Pat):- wait(Msg) |
+    shoen:raise(pimos_tag#shell, get_std_out, 
+        [putt('syntax_error'),tab(4),putl(Msg),
+        putt('at'),tab(4),putt(pat),nl,flush(S)]),
+    suicide(S).
+
+suicide(S) :- wait(S) |
+    shoen:raise(pimos_tag#pimos, general_request,[abort([],_)]).
+%    shoen:raise(pimos_tag#pimos, general_request,[suicide(_)]).
+
+%%%%%
+%  register top level protocol
+%%%%%    
+
+analyzeTop([Top|Tops],TopC,TopO,Ptable,TopN):- atom(Top) |
+    N = TopN + 1,
+    TopO = [Top|TopOtail],
+    Ptable = [register('$$top'(N),'$$top'(N),u(+,Top,none))| Ptail],
+    TopC = [topfilter('$$top'(N))|TopC2],
+    analyzeTop(Tops,TopC2,TopOtail,Ptail,N).
+analyzeTop([],TopC,TopO,Ptable,_TopN):- true |
+    TopC = [],
+    TopO = [],
+    Ptable = [].
+
+analyzeTerm(['$error'(ErrorInfo)|_Term],Ptable,Key):- true |
+    shoen:raise(pimos_tag#shell,get_std_out,
+        [print_error(error(ErrorInfo)),flush(S)]),
+    Ptable = [],
+    Key = [],
+    suicide(S).
+
+analyzeTerm(['$ambiguous'(ErrorInfo)|_Term],Ptable,Key):- true |
+    shoen:raise(pimos_tag#shell,get_std_out,
+        [print_error(ambiguous(ErrorInfo)),flush(S)]),
+    Ptable = [],
+    Key = [],
+    suicide(S).
+%    shoen:raise(pimos_tag#pimos, general_request,[abort([],_)]).
+%    shoen:raise(pimos_tag#pimos, general_request,[suicide(_)]).
+
+otherwise.
+analyzeTerm([Def|Term], Ptable, Key):- vector_element(Def,1,Left) |
+    Ptable = {Ptable1,Ptable2},
+    vector_element(Def,2,Right,_),
+    Key = {Key1,Key2},
+    definition(Left,Right,Ptable1,Key1),
+    analyzeTerm(Term,Ptable2,Key2).
+analyzeTerm([],Ptable,Key):- true | 
+    Ptable = [],
+    Key = [].
+
+%%%  definition
+
+definition(Left,Right,Ptable,Key):- true |
+    (atom(Left) -> defRight(Right,Left,Ptable,Key) ;
+     vector(Left,Size) -> vector_element(Left,0,Head,New),
+        userLeft(New,Parameter,Size),
+        userRight(Right,Parameter,Head,Size,Ptable,Key)).
+
+%%%%%
+
+defRight(&(Super,My),Left,Ptable,Key):- true |
+    Ptable = {Ptable1,Ptable2},
+    Key = {Key1,Key2},
+    super(Super,SuperList,Ptable1,Key1),
+    mybodyS(My,Left,SuperList,Ptable2,Key2).
+otherwise.
+defRight(Body,Left,Ptable,Key):- true |
+    bodysign(Body, Left, Ptable,Key).
+
+%%%%%  definition of user defined protocol with parameter
+
+%%%%% left hand side
+userLeft(Left,Parameter,Size):- 
+        vector_element(Left,1,Formal) |
+        userformal(1,Formal,F2),
+        Parameter = [F2 | Ptail],
+        userLeft2(Left,2,Size,Ptail).
+
+userLeft2(Left,Pos,Size,Param):- Pos =\= Size |
+        vector_element(Left,Pos,F1,New),
+        userformal(Pos,F1,F2),
+        Param = [F2 | Ptail],
+        Npos := Pos + 1,
+        userLeft2(New,Npos,Size,Ptail).
+userLeft2(_Left,Size,Size,Param):- true |
+        Param = [].
+
+userformal(Pos,F1,F2):- atom(F1) |
+        F2 = {'$$form'(Pos),F1}.
+
+%%%%%
+%%%%%  for ease, it does not have inheritance
+
+userRight(Right,Parameter,Head,Size,Ptable,Key):- true |
+        Arity := Size - 1,
+        userbodyS(Right,Parameter,Head,Arity,Ptable,Key).
+
+%%%%% Are there sign ?
+
+userbodyS(+(Body),Parameter,Head,Arity,Ptable,Key):- true |
+        usererr('+',Body,Parameter,Head,Arity,Ptable,Key).
+userbodyS(-(Body),Parameter,Head,Arity,Ptable,Key):- true |
+        usererr('-',Body,Parameter,Head,Arity,Ptable,Key).
+otherwise.
+userbodyS(Body,Parameter,Head,Arity,Ptable,Key):- true |
+        usererr('+',Body,Parameter,Head,Arity,Ptable,Key).
+
+usererr(Sign,Body,Parameter,Head,Arity,Ptable,Key):- 
+        vector_element(Body,0,E), E = '#', vector(Body,Size) |
+        (Size =:= 2 -> vector_element(Body,1,Body2,_),
+            userbody(Sign,Body2,Parameter,Head,Arity,add,Ptable,Key) ;
+        Size =:= 3 -> vector_element(Body,1,Body2,New),
+            vector_element(New,2,Error,_),
+            userbody(Sign,Body2,Parameter,Head,Arity,add(Error),Ptable,Key)).
+usererr(Sign,Body,Parameter,Head,Arity,Ptable,Key):- 
+        vector_element(Body,0,E), E = '##', vector(Body,Size) |
+        (Size =:= 2 -> vector_element(Body,1,Body2,_),
+            userbody(Sign,Body2,Parameter,Head,Arity,reset,Ptable,Key) ;
+        Size =:= 3 -> vector_element(Body,1,Body2,New),
+            vector_element(New,2,Error,_),
+            userbody(Sign,Body2,Parameter,Head,Arity,reset(Error),Ptable,Key)).
+otherwise.
+usererr(Sign,Body,Parameter,Head,Arity,Ptable,Key):- true |
+        userbody(Sign,Body,Parameter,Head,Arity,none,Ptable,Key).
+
+%%%%% for user defined protocol with parameter
+
+userbody(Sign,Body,Parameter,Head,Arity,Error,Ptable,Key):- 
+        vector(Body,Size), Size =:= 1 |
+        (Error = add -> Einfo = add({Head,enu}) ;
+        Error = reset -> Einfo = reset({Head,enu}) ;
+        otherwise ;
+        true -> Einfo = Error ),
+        vector_element(Body,0,Enu,_),
+        userEnu(Sign,Enu,Parameter,Head,Arity,Einfo,Ptable,Key).
+userbody(Sign,Body,Parameter,Head,Arity,Error,Ptable,Key):- 
+        vector(Body,Size), Size =\= 1 |
+        vector_element(Body,0,Bhead,Nbody),
+        Ptable = [register({Head,Arity},{Head,Arity},Next)|Ptail],
+        uActinv(Sign,Bhead,Nbody,Error,Next,Parameter,Ptail,Key).
+
+%%%%%
+userEnu(Sign,';'(Pat,Next),Parameter,Head,Arity,Error,Ptable,Key):-
+         true |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        Ptable1 = [register({Head,Arity},{Head,Arity},e(Sign,Enu,Error))
+                        |Ptail],
+        userEnuPat(Sign,Pat,Npat,Parameter,Ptable2,Key2),
+        userEnu2(Sign,Next,Parameter,[Npat|Tail],Tail,Enu,Ptail,Key1).
+otherwise.
+userEnu(Sign,Pat,Parameter,Head,Arity,Error,Ptable,Key):- true |
+        Ptable = [register({Head,Arity},{Head,Arity},e(Sign,Enu,Error))
+                        |Ptail],
+        Enu = [Npat],
+        userEnuPat(Sign,Pat,Npat,Parameter,Ptail,Key).
+
+userEnu2(Sign,';'(Pat,Next),Parameter,Top,Tail,Enu,Ptable,Key):- true |
+        userEnuPat(Sign,Pat,Npat,Parameter,Ptable1,Key1),
+        Tail = [Npat|Tail2],
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        userEnu2(Sign,Next,Parameter,Top,Tail2,Enu,Ptable2,Key2).
+otherwise.
+userEnu2(Sign,Pat,Parameter,Top,Tail,Enu,Ptable,Key):- true |
+        userEnuPat(Sign,Pat,Npat,Parameter,Ptable,Key),
+        Tail = [Npat],
+        Enu = Top.
+%        listDef(Top,Etop-Etop,Enu,no).
+
+%%%%%
+
+listDef([pt(Size,Pat,Act,Err)|Next],Top-Tail,Enu,Flag):- Pat \= [] |
+    Tail = [pt(Size,Pat,Act,Err)|Tail2],
+    listDef(Next,Top-Tail2,Enu,Flag).
+listDef([pt(1,[],[],Err)|Next],Top-Tail,Enu,Flag):- Flag \= yes |
+    listDef(Next,Top-Tail,Enu,[Err]).
+listDef([pt(1,[],[],Err)|Next],Top-Tail,Enu,yes):- true |
+    Tail = Next.
+listDef([sp(Sign,Key,Errs)|Next],Top-Tail,Enu,Flag):- Flag = [Err] |
+    Tail = Next,
+    Enu = [sp(Sign,Key,Errs)|Top].
+listDef([],Top-Tail,Enu,[Err]):- true |
+    Tail = [pt(1,[],[],Err)],
+    Enu = Top.
+listDef([],Top-Tail,Enu,no):- true |
+    Tail = [],
+    Enu = Top.
+otherwise.
+listDef([sp(Sign,Key,Errs)|Next],Top-Tail,Enu,Flag):- true |
+    Enu = [sp(Sign,Key,Errs)|Top],
+    listDef(Next,Top-Tail,Enu,yes).
+
+%%%%%  check each pattern
+
+userEnuPat(Sign,Pat,Npat,Parameter,Ptable,Key):- 
+     vector_element(Pat,0,E), E = '#', vector(Pat,Size) |
+     (Size =:= 2 -> vector_element(Pat,1,Pattern,_),
+           userEnuPat2(Sign,Pattern,Npat,Parameter,add,Ptable,Key) ;
+      Size =:= 3 -> vector_element(Pat,1,Pattern,New),
+         vector_element(New,2,Error,_),
+         userEnuPat2(Sign,Pattern,Npat,Parameter,add(Error),Ptable,Key)).
+userEnuPat(Sign,Pat,Npat,Parameter,Ptable,Key):- 
+    vector_element(Pat,0,E), E = '##', vector(Pat,Size) |
+    (Size =:= 2 -> vector_element(Pat,1,Pattern,_),
+         userEnuPat2(Sign,Pattern,Npat,Parameter,reset,Ptable,Key) ;
+    Size =:= 3 -> vector_element(Pat,1,Pattern,New),
+         vector_element(New,2,Error,_),
+      userEnuPat2(Sign,Pattern,Npat,Parameter,reset(Error),Ptable,Key)).
+otherwise.
+userEnuPat(Sign,Pat,Npat,Parameter,Ptable,Key):- true |
+        userEnuPat2(Sign,Pat,Npat,Parameter,none,Ptable,Key).
+
+userEnuPat2(_Sign,Pat,Npat,_Parm,Error,Ptable,Key):- atom(Pat), atom(Error) |
+        (Error = none -> Npat = pt(1,Pat,[],none) ;
+        Error = add -> Npat = pt(1,Pat,[],add({Pat,0})) ;
+        Error = reset -> Npat = pt(1,Pat,[],reset({Pat,0}))),
+        Ptable = [],
+        Key = [].
+userEnuPat2(_Sign,Pat,Npat,_Parm,add(E),Ptable,Key):- 
+        atom(Pat), E \= (';') |
+        Npat = pt(1,Pat,[],add(E)),
+        Ptable = [],
+        Key = [].
+userEnuPat2(_Sign,Pat,Npat,_Parm,reset(E),Ptable,Key):- 
+        atom(Pat), E \= (';') |
+        Npat = pt(1,Pat,[],reset(E)),
+        Ptable = [],
+        Key = [].
+userEnuPat2(Sign,[Car|_Cdr],Npat,Parm,Error,Ptable,Key):- atom(Error) |
+        Key = [makeKey(Id)|Ktail],
+        (Error = none -> Npat = sp(Size,Id,none) ;
+        Error = add -> Npat = sp(Size,Id,add({Atom,Arity})) ;
+        Error = reset -> Npat = sp(Size,Id,reset({Atom,Arity}))),
+        Ptable = [register(Id,list,Next)|Ptail],
+        uAct(Sign,Car,Next,Parm,Ptail,Ktail).
+
+userEnuPat2(Sign,[Car|_Cdr],Npat,Parm,add(Info),Ptable,Key):- 
+        Info \= (';') |
+        Npat = sp(Size,Id,add(Info)), 
+        Ptable = [register(Id,list,Next)|Ptail],
+        uAct(Sign,Car,Next,Parm,Ptail,Ktail).
+userEnuPat2(Sign,[Car|_Cdr],Npat,Parm,reset(Info),Ptable,Key):- 
+        Info \= (';') |
+        Npat = sp(Size,Id,reset(Info)),
+        Ptable = [register(Id,list,Next)|Ptail],
+        uAct(Sign,Car,Next,Parm,Ptail,Ktail).
+userEnuPat2(Sign,Pat,Npat,Parm,Error,Ptable,Key):- 
+        vector(Pat,Size),atom(Error) |
+        vector_element(Pat,0,Atom,New),
+        Arity := Size -1,
+        (Error = none -> Npat = pt(Size,Atom,Actuals,none) ;
+        Error = add -> Npat = pt(Size,Atom,Actuals,add({Atom,Arity})) ;
+        Error = reset -> Npat = pt(Size,Atom,Actuals,reset({Atom,Arity}))),
+        userEnuAct(Sign,New,1,Size,Parm,Actuals,Ptable,Key).
+
+userEnuPat2(Sign,Pat,Npat,Parm,add(Info),Ptable,Key):- 
+        vector(Pat,Size), Info\= (';') |
+        vector_element(Pat,0,Atom,New),
+        Npat = pt(Size,Atom,Actuals,add(Info)),
+        userEnuAct(Sign,New,1,Size,Parm,Actuals,Ptable,Key).
+userEnuPat2(Sign,Pat,Npat,Parm,reset(Info),Ptable,Key):- 
+        vector(Pat,Size), Info\= (';') |
+        vector_element(Pat,0,Atom,New),
+        Npat = pt(Size,Atom,Actuals,reset(Info)),
+        userEnuAct(Sign,New,1,Size,Parm,Actuals,Ptable,Key).
+otherwise.
+userEnuPat2(_Sign,Pat,Npat,Parm,_Error,Ptable,Key):- true |
+        Ptable = [],
+        Key = [],
+        syntax_error("extra ; !!!",Pat).
+
+% check actuals
+
+userEnuAct(Sign,Pat,Pos,Size,Parm,Actuals,Ptable,Key):- Pos =\= Size |
+        Ptable ={Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        vector_element(Pat,Pos,Act,New),
+        uAct(Sign,Act,Nact,Parm,Ptable1,Key1),
+        Actuals = [{'$$var'(Pos),Nact}|Atail],
+        Npos := Pos + 1,
+        userEnuAct(Sign,New,Npos,Size,Parm,Atail,Ptable2,Key2).
+userEnuAct(_Sign,_Pat,Size,Size,_Parm,Actuals,Ptable,Key):- true |
+        Actuals = [],
+        Ptable = [],
+        Key = [].
+
+uAct(Sign,+(Act),Nact,Parm,Ptable,Key):- true |
+        uActerr(Sign,Act,Nact,Parm,Ptable,Key).
+uAct(Sign,-(Act),Nact,Parm,Ptable,Key):- true |
+        decSign(Sign,'-',Sign2),
+        uActerr(Sign2,Act,Nact,Parm,Ptable,Key).
+otherwise.
+uAct(Sign,Act,Nact,Parm,Ptable,Key):- true |
+        uActerr(Sign,Act,Nact,Parm,Ptable,Key).
+
+uActerr(Sign,Act,Nact,Parm,Ptable,Key):- 
+        vector_element(Act,0,E), E = '#', vector(Act,Size) |
+        (Size =:= 2 -> vector_element(Act,1,Prot,_),
+            uActbody(Sign,Prot,add,Nact,Parm,Ptable,Key) ;
+        Size =:= 3 -> vector_element(Act,1,Prot,New),
+            vector_element(New,1,Error,_),
+            uActbody(Sign,Prot,add(Error),Nact,Parm,Ptable,Key)).
+uActerr(Sign,Act,Nact,Parm,Ptable,Key):- 
+        vector_element(Act,0,E), E = '##', vector(Act,Size) |
+        (Size =:= 2 -> vector_element(Act,1,Prot,_),
+            uActbody(Sign,Prot,reset,Nact,Parm,Ptable,Key) ;
+        Size =:= 3 -> vector_element(Act,1,Prot,New),
+            vector_element(New,1,Error,_),
+            uActbody(Sign,Prot,reset(Error),Nact,Parm,Ptable,Key)).
+otherwise.
+uActerr(Sign,Act,Nact,Parm,Ptable,Key):- true |
+        uActbody(Sign,Act,none,Nact,Parm,Ptable,Key).
+
+%%%%%
+
+uActbody(Sign,Act,Error,Nact,Parm,Ptable,Key):- atom(Act) |
+        (Error = add -> ErrorI = add(Act) ;
+        Error = reset -> ErrorI = reset(Act) ;
+        otherwise;
+        true -> Error = ErrorI),
+        checkParm(Sign,Act,ErrorI,Nact,Parm),
+        Ptable = [],
+        Key = [].
+uActbody(Sign,Act,Error,Nact,Parm,Ptable,Key):- 
+        vector(Act,Size), Size =:= 1 |
+        (Error = add -> Info = add({'$$enu'}) ;
+        Error = reset -> Info = reset({'$$enu'}) ;
+        otherwise;
+        true -> Error = Info),
+        vector_element(Act,0,Enu,_),
+        uActenu(Sign,Enu,Info,Nact,Parm,Ptable,Key).
+uActbody(Sign,Act,Error,Nact,Parm,Ptable,Key):-
+        vector(Act,Size), Size =\= 1 |
+        vector_element(Act,0,Head,New),
+        uActinv(Sign,Head,New,Error,Nact,Parm,Ptable,Key).
+
+%%%%%
+
+uActinv(Sign,stream,Body,Error,Nact,Parm,Ptable,Key):- 
+        vector_element(Body,1,Act) |
+        (Error = add -> Info = add({'$$stream'}) ;
+        Error = reset -> Info = reset({'$$stream'}) ;
+        otherwise ;
+        true -> Info = Error),
+        Nact = sp(Sign,Id,Info),
+        Key = [makeKey(Id)|Ktail],
+        Ptable = [register(Id,stream,Next)|Ptail],
+        uAct(Sign,Act,Next,Parm,Ptail,Ktail).
+uActinv(Sign,list,Body,Error,Nact,Parm,Ptable,Key):- 
+        vector_element(Body,1,Act) |
+        (Error = add -> Info = add({'$$list'}) ;
+        Error = reset -> Info = reset({'$$list'}) ;
+        otherwise ;
+        true -> Info = Error),
+        Nact = sp(Sign,Id,Info),
+        Key = [makeKey(Id)|Ktail],
+        Ptable = [register(Id,list,Next)|Ptail],
+        uAct(Sign,Act,Next,Parm,Ptail,Ktail).
+uActinv(Sign,vector,Body,Error,Nact,Parm,Ptable,Key):- 
+        vector_element(Body,1,Act) |
+        (Error = add -> Info = add({'$$vector'}) ;
+        Error = reset -> Info = reset({'$$vector'}) ;
+        otherwise ;
+        true -> Info = Error),
+        Nact = sp(Sign,Id,Info),
+        Key = [makeKey(Id)|Ktail],
+        Ptable = [register(Id,vector,elm(Num,Next))|Ptail],
+        uvAct(Sign,Act,Num,Next,Parm,Ptail,Ktail).
+%%  user defined protocol again
+otherwise.
+uActinv(Sign,Head,Body,Error,Nact,Parm,Ptable,Key):- 
+        vector(Body,Size) |
+        (Error = add -> Info = add({'$$list'}) ;
+        Error = reset -> Info = reset({'$$list'}) ;
+        otherwise ;
+        true -> Info = Error),
+        Nact = up(Sign,Id,Info),
+        Key = [makeKey(Id)|Ktail],
+        Arity := Size - 1,
+        Ptable = [register(Id,{Head,Arity},parm(Actuals))|Ptail],
+        checkUser(Sign,Size,Parm,Body,Actuals,Ptail,Ktail).
+
+checkUser(Sign,Size,Parm,Body,Actuals,Ptable,Key):- 
+        vector_element(Body,1,P1) |
+        uAct(Sign,P1,P2,Parm,Ptable1,Key1),
+        Actuals = [{'$$form'(1),P2}|Atail],
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        checkUser2(Sign,Parm,Body,2,Size,Atail,Ptable2,Key2).
+
+
+checkUser2(_Sign,_Parm,_Body,Size,Size,Actuals,Ptable,Key):- true |
+        Actuals = [],
+        Key = [],
+        Ptable = [].
+otherwise.
+checkUser2(Sign,Parm,Body,Pos,Size,Actuals,Ptable,Key):- 
+        vector_element(Body,Pos,P1) |
+        uAct(Sign,P1,P2,Parm,Ptable1,Key1),
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        Actuals = [{'$$form'(Pos),P2}|Tail],
+        Npos := Pos + 1,
+        checkUser2(Sign,Parm,Body,Npos,Size,Tail,Ptable2,Key2).
+
+uvAct(Sign,[Elm | Elm2],Num,Next,Parm,Ptable,Key):- true |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        Next = [{'$$elm'(1),Nelm}|Ntail],
+        uAct(Sign,Elm,Nelm,Parm,Ptable1,Key1),
+        uvAct2(Sign,Elm2,1,Num,Ntail,Parm,Ptable2,Key2).
+uvAct(_Sign,[],Next,Num,_Parm,Ptable,Key):- true |    
+        Next = [],
+        Num = 0,
+        Ptable = [],
+        Key = [].
+otherwise.
+uvAct(Sign,Elm,Num,Next,Parm,Ptable,Key):- true |
+        Num = any,
+        uAct(Sign,Elm,Next,Parm,Ptable,Key).
+
+uvAct2(Sign,[Elm|Elm2],Pos,Num,Next,Parm,Ptable,Key):- true |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        Next = [{'$$elm'(Pos),Nelm}|Ntail],
+        uAct(Sign,Elm,Nelm,Parm,Ptable1,Key1),
+        Npos := Pos + 1,
+        uvAct2(Sign,Elm2,Npos,Num,Ntail,Parm,Ptable2,Key2).
+uvAct2(_Sign,[],Pos,Num,Next,_Parm,Ptable,Key):- true |
+        Ptable = [],
+        Key = [],
+        Num = Pos,
+        Next = [].
+
+uActenu(Sign,';'(Pat,Next),Error,Nact,Parm,Ptable,Key):- true |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        Nact = e(Sign,Enu,Error),
+        userEnuPat(Sign,Pat,PatN,Parm,Ptable1,Key1),
+        userEnu2(Sign,Next,Parm,[PatN|Tail],Tail,Enu,Ptable2,Key2).
+otherwise.
+uActenu(Sign,Pat,Error,Nact,Parm,Ptable,Key):- true |
+        Nact = e(Sign,[Npat],Error),
+        userEnuPat(Sign,Pat,Npat,Parm,Ptable,Key).
+
+%%%%%  analyze super 
+
+super(&(Next,Super),Supers,Ptable,Key):- true |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        superInv(Super,Super2,Ptable1,Key1),
+        super2(Next,Supers,[last(Super2)],Ptable2,Key2).
+otherwise.
+super(Super,Supers,Ptable,Key):- true |
+        superInv(Super,Super2,Ptable,Key),
+        Supers = [last(Super2)].
+
+super2(&(Next,Super),Supers,Last,Ptable,Key):- true |
+    Ptable = {Ptable1,Ptable2},
+    Key = {Key1,Key2},
+    superInv(Super,Super2,Ptable1,Key1),
+    Plast = [Super2|Last],
+    super2(Next,Supers,Plast,Ptable2,Key2).
+otherwise.
+super2(Super,Supers,Plast,Ptable,Key):- true |
+        superInv(Super,Super2,Ptable,Key),
+        Supers = [Super2|Plast].
+
+
+superInv(Super,Super2,Ptable,Key):- atom(Super) |
+        Ptable = [],
+        Key = [],
+        checkName('+',Super,none,Super2).
+superInv(Super,Super2,Ptable,Key):- vector(Super,Size) |
+        vector_element(Super,0,Head,New),
+        superInv2(Head,Size,New,Super2,Ptable,Key).
+
+superInv2(stream,_Size,Super,Super2,Ptable,Key):- true |
+        vector_element(Super,1,Act,_),
+        Super2 = sp('+',Id,none),
+        Key = [makeKey(Id) | Ktail],
+        Ptable = [register(Id,stream,Next)|Ptail],
+        sAct('+',Act,Next,Ptail,Ktail).
+superInv2(list,_Size,Super,Super2,Ptable,Key):- true |
+        vector_element(Super,1,Act,_),
+        Super2 = sp('+',Id,none),
+        Key = [makeKey(Id) | Ktail],
+        Ptable = [register(Id,list,Next)|Ptail],
+        sAct('+',Act,Next,Ptail,Ktail).
+superInv2(vector,_Size,Super,Super2,Ptable,Key):- true |
+        vector_element(Super,1,Act,_),
+        Super2 = sp('+',Id,none),
+        Key = [makeKey(Id) | Ktail],
+        Ptable = [register(Id,vector,elm(Num,Next)) | Ptail],
+        vAct('+',Act,Num,Next,Ptail,Ktail).
+otherwise.
+superInv2(_Head,_Size,_Super,_Super2,_Ptable,_Key):- true | true.
+
+%%%%%  analyze mybody
+
+mybodyS(+(Mybody),Left,SuperList,Ptable,Key):- true |
+    mybodyE('+',Mybody,Left,SuperList,Ptable,Key).
+mybodyS(-(Mybody),Left,SuperList,Ptable,Key):- true |
+    mybodyE('-',Mybody,Left,SuperList,Ptable,Key).
+otherwise.
+mybodyS(Mybody,Left,SuperList,Ptable,Key):- true |
+    mybodyE('+',Mybody,Left,SuperList,Ptable,Key).
+
+%%%%%  Are there sign ?
+
+bodysign(+(Body), Left, Ptable,Key):- true |
+    bodyerr('+',Body,Left,Ptable,Key).
+bodysign(-(Body), Left, Ptable,Key):- true |
+    bodyerr('-',Body,Left,Ptable,Key).
+otherwise.
+bodysign(Body, Left, Ptable,Key):- true |
+    bodyerr('+',Body,Left,Ptable,Key).
+
+%%%%%  Are there error information ?
+
+mybodyE(Sign,My,Left,Super,Ptable,Key):- 
+    vector_element(My,0,E), E = '#', vector(My,Size) |
+    (Size =:= 2 -> vector_element(My,1,Prot,_),
+        mybody(Sign,Prot,Left,Super,add,Ptable,Key) ;
+     Size =:= 3 -> vector_element(My,1,Prot,New),
+        vector_element(New,2,Error,_),
+        mybody(Sign,Prot,Left,Super,add(Error),Ptable,Key)).
+mybodyE(Sign,My,Left,Super,Ptable,Key):- 
+    vector_element(My,0,E), E = '##', vector(My,Size) |
+    (Size =:= 2 -> vector_element(My,1,Prot,_),
+        mybody(Sign,Prot,Left,Super,reset,Ptable,Key) ;
+     Size =:= 3 -> vector_element(My,1,Prot,New),
+        vector_element(New,2,Error,_),
+        mybody(Sign,Prot,Left,Super,reset(Error),Ptable,Key)).
+otherwise.
+mybodyE(Sign,My,Left,Super,Ptable,Key):- true |
+    mybody(Sign,My,Left,Super,none,Ptable,Key).
+
+%%%%%
+
+bodyerr(Sign,Body,Left,Ptable,Key):- 
+    vector_element(Body,0,E), E = '#', vector(Body,Size) |
+    (Size =:= 2 -> vector_element(Body,1,Prot,_),
+        body(Sign,Prot,Left,add,Ptable,Key) ;
+     Size =:= 3 -> vector_element(Body,1,Prot,New),
+        vector_element(New,2,Error,_),
+        body(Sign,Prot,Left,add(Error),Ptable,Key)).
+bodyerr(Sign,Body,Left,Ptable,Key):- 
+    vector_element(Body,0,E), E = '##', vector(Body,Size) |
+    (Size =:= 2 -> vector_element(Body,1,Prot,_),
+        body(Sign,Prot,Left,reset,Ptable,Key) ;
+     Size =:= 3 -> vector_element(Body,1,Prot,New),
+        vector_element(New,2,Error,_),
+        body(Sign,Prot,Left,reset(Error),Ptable,Key)).
+
+otherwise.
+bodyerr(Sign,Body,Left,Ptable,Key):- true |
+    body(Sign,Body,Left,none,Ptable,Key).
+
+%%%%% 
+% analyze body  (invocation or enumeration)
+% body(sign, body, left%protocol name, error info, stream of ptable)
+%%%%%
+
+body(Sign,Body,Left,Error,Ptable,Key):- atom(Body) |
+    (Error = add -> ErrorI = add(Body) ;
+     Error = reset -> ErrorI = reset(Body) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Key = [],
+    checkName(Sign,Body,ErrorI,Next),
+    Ptable = [register(Left,Left,Next)].
+body(Sign,Body,Left,Error,Ptable,Key):- 
+    vector(Body,Size), Size =:= 1 |
+    (Error = add -> ErrorI = add({Left,enu}) ;
+     Error = reset -> ErrorI = reset({Left,enu}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    vector_element(Body,0,Enu,_),
+    enumeration(Sign,Enu,Left,ErrorI,Ptable,Key).
+body(Sign,Body,Left,Error,Ptable,Key):- 
+    vector(Body,Size), Size =\= 1 |
+    vector_element(Body,0,Head,Nbody),
+    invocation(Sign,Head,Nbody,Left,Size,Error,Ptable,Key).
+
+%%%%%
+
+mybody(Sign,My,Left,Super,Error,Ptable,Key):- atom(My) |
+    (Error = add -> ErrorI = add(My) ;
+     Error = reset -> ErrorI = reset(My) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Key = [],
+    checkName(Sign,My,ErrorI,Next),
+    Ptable = [register(Left,Left,i(Super,Next))].
+mybody(Sign,My,Left,Super,Error,Ptable,Key):- 
+    vector(My,Size), Size =:= 1 |
+    (Error = add -> ErrorI = add({Left,enu}) ;
+     Error = reset -> ErrorI = reset({Left,enu}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    vector_element(My,0,Enu,_),
+    myEnu(Sign,Enu,Left,Super,ErrorI,Ptable,Key).
+mybody(Sign,My,Left,Super,Error,Ptable,Key):- 
+    vector(My,Size), Size =\= 1 |
+    vector_element(My,0,Head,Nbody),
+    myInv(Sign,Head,Nbody,Left,Super,Size,Error,Ptable,Key).
+
+
+
+%%%%%
+% invocation user definition or system definition with parameter
+%%%%%
+
+invocation(Sign,stream,Body,Left,_Size,Error,Ptable,Key):- 
+    vector_element(Body,1,Act) |
+    (Error = add -> ErrorI = add({Left,stream}) ;
+     Error = reset -> ErrorI = reset({Left,stream}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Ptable = [register(Left,Left,sp(Sign,Id,ErrorI)),
+              register(Id,stream,Next)|Ptail],
+    Key = [makeKey(Id)|Ktail],
+    sAct(Sign,Act,Next,Ptail,Ktail).
+invocation(Sign,list,Body,Left,_Size,Error,Ptable,Key):- 
+    vector_element(Body,1,Act) |
+    (Error = add -> ErrorI = add({Left,list}) ;
+     Error = reset -> ErrorI = reset({Left,list}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Ptable = [register(Left,Left,sp(Sign,Id,ErrorI)),
+              register(Id,list,Next)|Ptail],
+    Key = [makeKey(Id)|Ktail],
+    sAct(Sign,Act,Next,Ptail,Ktail).
+invocation(Sign,vector,Body,Left,Size,Error,Ptable,Key):- 
+    vector_element(Body,1,Act) |
+    (Error = add -> ErrorI = add({Left,vector}) ;
+     Error = reset -> ErrorI = reset({Left,vector}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Ptable = [register(Left,Left,sp(Sign,Id,ErrorI)),
+              register(Id,vector,elm(Num,Next))|Ptail],
+    Key = [makeKey(Id)|Ktail],    
+    vAct(Sign,Act,Num,Next,Ptail,Ktail).
+otherwise.
+
+% user defined parameterized protocol
+
+invocation(Sign,Head,Body,Left,Size,Error,Ptable,Key):- 
+    true |
+    Arity := Size - 1,
+    (Error = add -> ErrorI = add({Left,Head}) ;
+     Error = reset -> ErrorI = reset({Left,Head}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Ptable = [register(Left,Left,up(Sign,Id,ErrorI)),
+              register(Id,{Head,Arity},parm(Parm))|Ptail],
+    Key = [makeKey(Id)|Ktail],
+    userDef(Sign,Body,1,Size,Parm,Ptail,Ktail).
+
+myInv(Sign,stream,My,Left,Super,_Size,Error,Ptable,Key):-
+    vector_element(My,1,Act) |
+    (Error = add -> ErrorI = add({Left,stream}) ;
+     Error = reset -> ErrorI = reset({Left,stream}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Ptable = [register(Left,Left,i(Super,sp(Sign,Id,ErrorI))),
+              register(Id,stream,Next)|Ptail],
+    Key = [makeKey(Id)|Ktail],
+    sAct(Sign,Act,Next,Ptail,Ktail).
+myInv(Sign,list,My,Left,Super,_Size,Error,Ptable,Key):- 
+    vector_element(My,1,Act) |
+    (Error = add -> ErrorI = add({Left,list}) ;
+     Error = reset -> ErrorI = reset({Left,list}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Ptable = [register(Left,Left,i(Super,sp(Sign,Id,ErrorI))),
+              register(Id,list,Next)|Ptail],
+    Key = [makeKey(Id)|Ktail],
+    sAct(Sign,Act,Next,Ptail,Ktail).
+myInv(Sign,vector,My,Left,Super,Size,Error,Ptable,Key):- 
+    vector_element(My,1,Act) |
+    (Error = add -> ErrorI = add({Left,vector}) ;
+     Error = reset -> ErrorI = reset({Left,vector}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Ptable = [register(Left,Left,i(Super,sp(Sign,Id,ErrorI))),
+              register(Id,vector,elm(Num,Next))|Ptail],
+    Key = [makeKey(Id)|Ktail],
+    vAct(Sign,Act,Num,Next,Ptail,Ktail).
+otherwise.
+% user defined parameterized protocol
+
+myInv(Sign,Head,My,Left,Super,Size,Error,Ptable,Key):- 
+    true |
+    Arity := Size - 1,
+    (Error = add -> ErrorI = add({Left,Head}) ;
+     Error = reset -> ErrorI = reset({Left,Head}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Ptable = [register(Left,Left,i(Super,up(Sign,Id,ErrorI))),
+              register(Id,{Head,Arity},parm(Parm))|Ptail],
+    Key = [makeKey(Id)|Ktail],
+    userDef(Sign,My,1,Size,Parm,Ptail,Ktail).
+
+%%%%% actual parameters for user defined parameterized protocol
+
+userDef(Sign,Body,Pos,Size,Parm,Ptable,Key):- Pos =\= Size |
+        vector_element(Body,Pos,Act,Nbody),
+        sAct('+',Act,Nact,Ptable1,Key1),
+        Parm = [{'$$form'(Pos),Nact}|Parm2],
+        Npos := Pos + 1,
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        userDef(Sign,Nbody,Npos,Size,Parm2,Ptable2,Key2).
+userDef(_Sign,_Body,Size,Size,Parm,Ptable,Key):- true |
+        Parm = [],
+        Ptable = [],
+        Key = [].
+
+%%%%%
+% vector(p) or vector([p1,p2,p3]) 
+%%%%%
+
+vAct(Sign,[Elm |Elm2],Num,Next,Ptable,Ktable):- true |
+        Ptable = {Ptable1,Ptable2},
+        Ktable = {Ktable1,Ktable2},
+        sAct(Sign,Elm,Nelm,Ptable1,Ktable1),
+        Next = [{'$$elm'(1),Nelm}|Ntail],
+        vAct2(Sign,Elm2,1,Num,Ntail,Ptable2,Ktable2).
+vAct(_Sign,[],Num,Next,Ptable,Ktable):- true |
+        Next = [],
+        Num = 0,
+        Ptable = [],
+        Ktable = [].
+otherwise.
+vAct(Sign,Elm,Num,Next,Ptable,Ktable):- true |
+        sAct(Sign,Elm,Next,Ptable,Ktable),
+        Num = any.
+
+vAct2(Sign,[Elm |Elm2],Pos,Num,Next,Ptable,Ktable):- true |
+        Ptable = {Ptable1,Ptable2},
+        Ktable = {Ktable1,Ktable2},
+        sAct(Sign,Elm,Nelm,Ptable1,Ktable1),
+        Npos := Pos + 1,
+        Next = [{'$$elm'(Npos),Nelm} | Ntail],
+        vAct2(Sign,Elm2,Npos,Num,Ntail,Ptable2,Ktable2).
+vAct2(_Sign,[],Pos,Num,Next,Ptable,Ktable):- true |
+        Num = Pos,
+        Next = [],
+        Ptable = [],
+        Ktable = [].
+
+
+%%%%%
+% enumeration
+%%%%%
+
+enumeration(Sign,';'(Pat,Next),Left,Error,Ptable,Key):- true |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        Ptable1 = [register(Left,Left,e(Sign,Enu,Error))|Ptail],
+        enuPat(Sign,Pat,PatN,Ptail,Key1),
+        enu2(Sign,Next,[PatN|Tail],Tail,Enu,Ptable2,Key2).
+otherwise.
+enumeration(Sign,Pat,Left,Error,Ptable,Key):- true |
+        Ptable = [register(Left,Left,e(Sign,[Enu],Error))|Ptail],
+        enuPat(Sign,Pat,Enu,Ptail,Key).
+
+%%%%%
+
+myEnu(Sign,';'(Pat,Next),Left,Super,Error,Ptable,Key):- true |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        Ptable1 = [register(Left,Left,i(Super,e(Sign,Enu,Error)))|Ptail],
+        enuPat(Sign,Pat,PatN,Ptail,Key1),
+        enu2(Sign,Next,[PatN|Tail],Tail,Enu,Ptable2,Key2).
+otherwise.
+myEnu(Sign,Pat,Left,Super,Error,Ptable,Key):- true |
+        Ptable = [register(Left,Left,i(Super,e(Sign,[Enu],Error)))|Ptail],
+        enuPat(Sign,Pat,Enu,Ptail,Key).
+        
+%%%%%
+
+enu2(Sign,';'(Pat,Next),Top,Tail,Enu,Ptable,Key):- true |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        Tail = [PatN | Tail1],
+        enuPat(Sign,Pat,PatN,Ptable1,Key1),
+        enu2(Sign,Next,Top,Tail1,Enu,Ptable2,Key2).
+otherwise.
+enu2(Sign,Pat,Top,Tail,Enu,Ptable,Key):- true |
+        Tail = [PatN],
+        enuPat(Sign,Pat,PatN,Ptable,Key),
+        Enu = Top.
+%        listDef(Top,Etop-Etop,Enu,no).
+
+%%%%%
+% check each pattern
+%%%%%
+
+enuPat(Sign,Pat,PatN,Ptable,Key):- 
+        vector_element(Pat,0,E), E = '#', vector(Pat,Size) |
+        (Size =:= 2 -> vector_element(Pat,1,Pattern,_),
+            enuPat2(Sign,Pattern,PatN,add,Ptable,Key) ;
+         Size =:= 3 -> vector_element(Pat,1,Pattern,New),
+             vector_element(New,2,Error,_),
+             enuPat2(Sign,Pattern,PatN,add(Error),Ptable,Key)).
+enuPat(Sign,Pat,PatN,Ptable,Key):-
+        vector_element(Pat,0,E), E = '##', vector(Pat,Size) |
+        (Size =:= 2 -> vector_element(Pat,1,Pattern,_),
+            enuPat2(Sign,Pattern,PatN,reset,Ptable,Key) ;
+         Size =:= 3 -> vector_element(Pat,1,Pattern,New),
+             vector_element(New,2,Error,_),
+             enuPat2(Sign,Pattern,PatN,reset(Error),Ptable,Key)).
+otherwise.
+enuPat(Sign,Pat,PatN,Ptable,Key):- true |
+        enuPat2(Sign,Pat,PatN,none,Ptable,Key).
+
+enuPat2(_Sign,Pat,PatN,Error,Ptable,Key):- atom(Pat), atom(Error) |
+        (Error = none -> PatN = pt(1,Pat,[],none) ;
+         Error = add -> PatN = pt(1,Pat,[],add(Pat)) ;
+         Error = reset -> PatN = pt(1,Pat,[],reset(Pat))),
+        Ptable = [],
+        Key = [].
+enuPat2(_Sign,Pat,PatN,add(Info),Ptable,Key):- atom(Pat), Info \= (';') |
+         PatN = pt(1,Pat,[],add(Info)),
+        Ptable = [],
+        Key = [].
+enuPat2(_Sign,Pat,PatN,reset(Info),Ptable,Key):- 
+        atom(Pat), Info \= (';') |
+        PatN = pt(1,Pat,[],reset(Info)),
+        Ptable = [],
+        Key = [].
+enuPat2(Sign,[Car|_Cdr],PatN,Error,Ptable,Key):- atom(Error) |
+        Key = [makeKey(Id)|Ktail],
+        (Error = none -> PatN = sp(Sign,Id,none) ;
+         Error = add -> PatN = sp(Sign,Key,add({'$$list'})) ;
+         Error = reset -> PatN = sp(Sign,Key,reset({'$$list'}))),
+        Ptable = [register(Id,list,Next)|Ptail],
+        sAct(Sign,Car,Next,Ptail,Ktail).
+enuPat2(Sign,[Car|_Cdr],PatN,add(Info),Ptable,Key):- Info \= (';') |
+        PatN = sp(Sign,Key,add(Info)),
+        Ptable = [register(Id,list,Next)|Ptail],
+        sAct(Sign,Car,Next,Ptail,Ktail).
+enuPat2(Sign,[Car|_Cdr],PatN,reset(Info),Ptable,Key):- Info \= (';') |
+        PatN = sp(Sign,Key,reset(Info)),
+        Ptable = [register(Id,list,Next)|Ptail],
+        sAct(Sign,Car,Next,Ptail,Ktail).
+enuPat2(Sign,Pat,PatN,Error,Ptable,Key):- vector(Pat,Size), atom(Error) |
+        vector_element(Pat,0,Atom,New),
+        Arity := Size - 1,
+        (Error = none -> PatN = pt(Size,Atom,Actuals,none) ;
+         Error = add -> PatN = pt(Size,Atom,Actuals,add({Atom,Arity})) ;
+         Error = reset -> PatN = pt(Size,Atom,Actuals,reset({Atom,Arity}))),
+        enuAct(Sign,New,1,Size,Actuals,Ptable,Key).
+enuPat2(Sign,Pat,PatN,add(Info),Ptable,Key):- 
+        vector(Pat,Size), Info \= (';') |
+        vector_element(Pat,0,Atom,New),
+        PatN = pt(Size,Atom,Actuals,add(Info)),
+        enuAct(Sign,New,1,Size,Actuals,Ptable,Key).
+enuPat2(Sign,Pat,PatN,reset(Info),Ptable,Key):- 
+        vector(Pat,Size), Info \= (';') |
+        vector_element(Pat,0,Atom,New),
+        PatN = pt(Size,Atom,Actuals,reset(Info)),
+        enuAct(Sign,New,1,Size,Actuals,Ptable,Key).
+otherwise.
+enuPat2(_Sign,Pat,PatN,Error,Ptable,Key):- true |
+        syntax_error("extra ; !!!",Pat),
+        Ptable = [],
+        Key = [].
+        
+enuAct(Sign,Pat,Pos,Size,Actuals,Ptable,Key):- 
+    Pos =\= Size, vector_element(Pat,Pos,Act) |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        sAct(Sign,Act,Nact,Ptable1,Key1),
+        Actuals = [{'$$var'(Pos),Nact} | Atail],
+        Npos := Pos + 1,
+        enuAct(Sign,Pat,Npos,Size,Atail,Ptable2,Key2).
+enuAct(_Sign,_Pat,Size,Size,Actuals,Ptable,Key):- true |
+        Actuals = [],
+        Ptable = [],
+        Key = [].
+
+    
+%%%%% check the actual of system defined parameterized protocol
+
+sAct(Sign,+(Act),Next,Ptable,Key):- true |
+    sActerr(Sign,Act,Next,Ptable,Key).
+sAct(Sign,-(Act),Next,Ptable,Key):- true |
+    decSign(Sign,'-',Sign2),
+    sActerr(Sign2,Act,Next,Ptable,Key).
+otherwise.
+sAct(Sign,Act,Next,Ptable,Key):- true |
+    sActerr(Sign,Act,Next,Ptable,Key).
+
+sActerr(Sign,Body,Next,Ptable,Key):- 
+        vector_element(Body,0,E), E = '#', vector(Body,Size) |
+    (Size =:= 2 -> vector_element(Body,1,Prot,_),
+        sActbody(Sign,Prot,add,Next,Ptable,Key) ;
+     Size =:= 3 -> vector_element(Body,1,Prot,New),
+        vector_element(New,2,Error,_),
+        sActbody(Sign,Prot,add(Error),Next,Ptable,Key)).
+sActerr(Sign,Body,Next,Ptable,Key):- 
+        vector_element(Body,0,E), E = '##', vector(Body,Size) |
+    (Size =:= 2 -> vector_element(Body,1,Prot,_),
+        sActbody(Sign,Prot,reset,Next,Ptable,Key) ;
+     Size =:= 3 -> vector_element(Body,1,Prot,New),
+        vector_element(New,2,Error,_),
+        sActbody(Sign,Prot,reset(Error),Next,Ptable,Key)).
+otherwise.
+sActerr(Sign,Body,Next,Ptable,Key):- true |
+    sActbody(Sign,Body,none,Next,Ptable,Key).
+
+%%%%%
+
+sActbody(Sign,Body,Error,Next,Ptable,Key):- atom(Body) |
+    (Error = add -> ErrorI = add(Body) ;
+     Error = reset -> ErrorI = reset(Body) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    checkName(Sign,Body,ErrorI,Next),
+    Ptable = [],
+    Key = [].
+sActbody(Sign,Body,Error,Next,Ptable,Key):- 
+    vector(Body,Size), Size =:= 1 |
+    (Error = add -> ErrorI = add({'$$enu'}) ;
+     Error = reset -> ErrorI = reset({'$$enu'}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    vector_element(Body,0,Enu,_),
+    sActenu(Sign,Enu,ErrorI,Next,Ptable,Key).
+sActbody(Sign,Body,Error,Next,Ptable,Key):-
+    vector(Body,Size), Size =\= 1 |
+    vector_element(Body,0,Head,Nbody),
+    sActinv(Sign,Head,Nbody,Error,Next,Ptable,Key).
+
+%%%%%
+
+sActinv(Sign,stream,Body,Error,Next,Ptable,Key):- 
+    vector_element(Body,1,Act) |
+    (Error = add -> ErrorI = add({'$$stream'}) ;
+     Error = reset -> ErrorI = reset({'$$stream'}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Next = sp(Sign,Id,ErrorI),
+    Key = [makeKey(Id)|Ktail],
+    Ptable = [register(Id,stream,NewNext)|Ptail],
+    sAct(Sign,Act,NewNext,Ptail,Ktail).
+sActinv(Sign,list,Body,Error,Next,Ptable,Key):-
+    vector_element(Body,1,Act) |
+    (Error = add -> ErrorI = add({'$$list'}) ;
+     Error = reset -> ErrorI = reset({'$$list'}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Next = sp(Sign,Id,ErrorI),
+    Key = [makeKey(Id)|Ktail],
+    Ptable = [register(Id,list,NewNext)|Ptail],
+    sAct(Sign,Act,NewNext,Ptail,Ktail).
+sActinv(Sign,vector,Body,Error,Next,Ptable,Key):-
+    vector_element(Body,1,Act) |
+    (Error = add -> ErrorI = add({'$$vector'}) ;
+     Error = reset -> ErrorI = reset({'$$vector'}) ;
+    otherwise ;
+    true -> Error = ErrorI),
+    Next = sp(Sign,Id,ErrorI),
+    Key = [makeKey(Id)|Ktail],
+    Ptable = [register(Id,vector,elm(Num,NewNext))|Ptail],
+    vAct(Sign,Act,Num,NewNext,Ptail,Ktail).
+otherwise.
+sActinv(Sign,Head,Body,Error,Next,Ptable,Key):-
+        vector(Body,Size) |
+        Arity := Size - 1,
+        (Error = add -> ErrorI = add({'$$user',Head}) ;
+         Error = reset -> ErrorI = reset({'$$user',Head}) ;
+        otherwise ;
+        true -> Error = ErrorI),
+        Next = up(Sign,Id,ErrorI),
+        Key = [makeKey(Id)|Ktail],
+        Ptable = [register(Id,{Head,Arity},parm(Parm))|Ptail],
+        userDef(Sign,Body,1,Size,Parm,Ptail,Ktail).
+
+sActenu(Sign,';'(Pat,NextE),Error,Next,Ptable,Key):- true |
+        Ptable = {Ptable1,Ptable2},
+        Key = {Key1,Key2},
+        Next = e(Sign,Enu,Error),
+        Top = [PatN | Tail],
+        enuPat(Sign,Pat,PatN,Ptable1,Key1),
+        enu2(Sign,NextE,Top,Tail,Enu,Ptable2,Key2).
+otherwise.
+sActenu(Sign,Pat,Error,Next,Ptable,Key):- true |
+        Next = e(Sign,[Enu],Error),
+        enuPat(Sign,Pat,Enu,Ptable,Key).
+
+%%%%% Is name system defined or not ?
+
+checkName(Sign,atom,Error,Prot):- true |
+    Prot = s(Sign,atom,Error).
+checkName(Sign,integer,Error,Prot):- true |
+    Prot = s(Sign,integer,Error).
+checkName(Sign,string,Error,Prot):- true |
+    Prot = s(Sign,string,Error).
+checkName(Sign,'code',Error,Prot):- true |
+    Prot = s(Sign,'code',Error).
+checkName(Sign,'module',Error,Prot):- true |
+    Prot = s(Sign,'module',Error).
+checkName(Sign,any,Error,Prot):- true |
+    Prot = s(Sign,any,Error).
+checkName(Sign,ground,Error,Prot):- true |
+    Prot = s(Sign,ground,Error).
+otherwise.
+checkName(Sign,Name,Error,Prot):- true |
+    Prot = u(Sign,Name,Error).
+
+%%%%% make key
+
+makeKey(Key):- true |
+    merge(Key,Key2),
+    makeKey(Key2,1).
+
+makeKey([makeKey(Id)|Key],Num):- true |
+    Id = '$$key'(Num),
+    Nnum := Num + 1,
+    makeKey(Key,Nnum).
+makeKey([],_Num):- true |
+    true.
+
+
+%%%%% decide sign
+
+decSign('+', '+', Sign):- true |
+        Sign = '+'.
+decSign('+', '-', Sign):- true |
+        Sign = '-'.
+decSign('-', '+', Sign):- true |
+        Sign = '-'.
+decSign('-', '-', Sign):- true |
+        Sign = '+'.
+
+%%%%%
+
+checkParm(Sign,Act,Error,Nact,[{Key,Act}|_Parm]):- true |
+        Nact = p(Sign,Key,Error).
+checkParm(Sign,Act,Error,Nact,[]):- true |
+        checkName(Sign,Act,Error,Nact).
+otherwise.
+checkParm(Sign,Act,Error,Nact,[{_Key,_Data}|Parm]):- true |
+        checkParm(Sign,Act,Error,Nact,Parm).

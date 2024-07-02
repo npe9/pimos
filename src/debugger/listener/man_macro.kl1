@@ -1,0 +1,49 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_macro_manager.
+:- public create/3, filter/2.
+:- with_macro pimos.
+
+create(Macro,COD,MCR) :- true|
+    merge(MCR,MCR1),
+    macro_expander:macro_process(_,_,[change_macro(Macro,_)|MCR1],COD).
+
+filter([get_macro(M,St)|US],OS) :-
+    listener_utility:ground_unify(M,M1),
+    get_macro(M1,St,OS,OS1),
+    filter(US,OS1).
+filter([change_macro(0,St)|US],OS) :-
+    OS=[change_macro(0,St1)|OS1],
+    listener_utility:ground_unify(St1,St),
+    filter(US,OS1).
+filter([change_macro(M,St)|US],OS) :- atom(M) |
+    OS=[change_macro(M,St1)|OS1],
+    listener_utility:ground_unify(St1,St),
+    filter(US,OS1).
+filter([change_macro(M,St)|US],OS) :- list(M) |
+    listener_utility:ground_unify(M,M1),
+    change_macro(M1,St,OS,OS1),
+    filter(US,OS1).
+filter([current_macro(St)|US],OS) :-
+    OS=[current_macro(St1)|OS1],
+    listener_utility:ground_unify(St1,St),
+    filter(US,OS1).
+filter([do(List)|US],OS) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,US,US1),
+    filter(US1,OS).
+filter([],OS) :- OS=[].
+
+
+get_macro(T,St,OS,OS1) :- wait(T) |
+    OS=[get_macro(T,St1)|OS1],
+    listener_utility:ground_unify(St1,St).
+
+change_macro(M,St,OS,OS1) :- wait(M) |
+    OS=[change_macro(M,St1)|OS1],
+    listener_utility:ground_unify(St1,St).

@@ -1,0 +1,1179 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%%% 1992.2.5
+%%%% What-Mnipulator Shell
+
+class what_manipulator_shell has
+
+attribute buffer;
+
+:create(Class,X,Y,Font,Obj):-
+    :new(Class,Obj),
+    :create(#what_shell_window,
+        [
+        size(750,400),
+        position(X,Y),
+        margin_flag(off),
+        border_flag(off),
+        label_font(Font),
+        title(" What manipulator shell")],W),
+    :set_font(W,Font),
+    Obj!window:=W,
+    %Obj!buffer:=Buf,
+    :create(#list,His),
+    Obj!history:=His,
+    :create(#list_index,Ali),
+    Obj!alias:=Ali,
+    :create(#list_index,Var),
+    Obj!var:=Var,
+    :create(#list_index,Env),
+    Obj!env:=Env,
+    :initenv(Obj);
+
+:go(Class):-
+    :create(#wshell_tester,WT),
+    Font= #wshell_tester!font,
+    :create(Class,500,250,Font,Obj),
+    :go(Obj,WT),
+    :kill(Obj);
+
+:fp(Class,Form,Ans):-
+    get_token(Form,Tokens),
+    parsing_form(Tokens,Ans);
+
+:fa(Class,Form,Ans):-
+    :create(#wshell_buffer,B),
+    Class!buffer:=B,
+    :fp(Class,Form,Ans1),
+    analyze(Ans1,Class,Ans);
+
+:fe(Class,Form,Ans):-
+    :fa(Class,Form,Ans1),
+    set_execute(Ans1,Class),
+    :get_keys(Class!buffer,2,Ans);
+
+%:sw(_,S,S1,F,N):-
+%    is_sw(S,S1,F,N);
+
+instance
+
+attribute   window,
+            history,
+            alias,
+            env,
+            var,
+            what,
+            buffer;
+
+:go(Obj,What):-
+    Obj!what:=What,
+    Obj!buffer:=What!buffer,
+    %:init_message(Obj),
+    :activate(Obj!window),
+    repeat,
+    :background(Obj!window,white),
+    :putc(Obj!window,#">"),
+    :getl(Obj!window,String0),
+    extend(Obj,String0,Com),
+    :background(Obj!window,black),
+    Com={Command,Args},
+    exe(Command,Args,Obj),
+    %:putt(Obj!window,Com),  %% TEST
+    %:putl(Obj!window),
+    :flash(Obj!window),
+    %:confirm(#messenger," ok "),     %% TEST
+    Command==exit,!,
+    :deactivate(Obj!window);
+
+:kill(Obj):-
+    :kill(Obj!window);
+
+:get_all_flag_status(Obj,SW):-
+    (:check_key(Obj!buffer,2,1),!,SW=on;
+     SW=off);
+
+:getenv(Obj,Key,V):-
+    :get_at(Obj!env,V,Key);
+
+:setenv(Obj,Key,V):-
+    :add_at(Obj!env,V,Key);
+
+:initenv(Obj):-
+    :setenv(Obj,"$from","1"),
+    :setenv(Obj,"$num","30");
+
+:init_message(Obj,What):-
+    Buf=What!buffer,
+    VS=What!selector,
+    :sum(Buf,3,Red),
+    :sum(Buf,4,Sus),
+    :count(Buf,N),
+    :get_history_tag(VS,{Hid,Tag,Time,Pe}),
+    display_init(Tag,Obj!window,N,Red,Sus,Time,Pe);
+
+local
+
+exe(exit,_,_):-!;
+exe(test,_,Obj):-!,
+    :putb(Obj!window,"SUCCESS !!",10),
+    :putl(Obj!window);
+exe(help,_,Obj):-!,
+    display_help(Obj!window);
+exe((?),_,Obj):-!,
+    display_help(Obj!window);
+exe(setenv,L,Obj):-!,
+    setenv(L,Obj);
+exe(resetenv,L,Obj):-!,
+    resetenv(L,Obj);
+exe(getenv,L,Obj):-!,
+    getenv(L,Obj);
+exe(setvar,L,Obj):-!,
+    setvar(L,Obj);
+exe(resetvar,L,Obj):-!,
+    resetvar(L,Obj);
+exe(alias,L,Obj):-!,
+    alias(L,Obj);
+exe(sh,L,Obj):-!,
+    shell_go(L,Obj);
+exe(save,L,Obj):-!,
+    save(L,Obj);
+exe(load,L,Obj):-!,
+    load(L,Obj);
+exe(set,L,Obj):-!,
+    set_go(L,Obj);
+exe(reset,L,Obj):-!,
+    reset_go(L,Obj);
+exe(init,L,Obj):-!,
+    init_go(L,Obj);
+exe(percent,L,Obj):-!,
+    percent(L,Obj);
+exe(reverse,L,Obj):-!,
+    reverse(L,Obj);
+exe(narrow,L,Obj):-!,
+    narrow(L,Obj);
+exe(show,L,Obj):-!,
+    show(L,Obj);
+exe(list,L,Obj):-!,
+    list(L,Obj);
+exe(get,L,Obj):-!,
+    list(L,Obj);
+exe(head,L,Obj):-!,
+    head(L,Obj);
+exe(_,_,Obj):-
+    :confirm(#messenger,"  Command ERROR !!  ");
+
+extend(Obj,S,{Com,Args}):-
+    get_token(S,Tokens),
+    Tokens=[Command0|Args0],
+    (history_exe(Obj,Command0,Command,Args),!;
+     var_exe(Obj,Command0,Command,Args),!;
+     Command=Command0,
+     Args=Args0),
+    enter_history(Obj!history,[Command|Args]),
+    :enter_atom(#symbolizer,Com0,Command),
+    alias_exe(Obj!alias,Com0,Com);
+
+history_exe(Obj,C0,C,A):-
+    string_element(C0,0,Code),
+    Code== #"!",!,
+    L=Obj!history,
+    get_history_num(C0,Num),
+    (number(Num),
+     :get_at(L,St,Num),!;
+     search_history(L,Num,St)),
+    get_token(St,Tokens),
+    Tokens=[C|A];
+
+get_history_num(S,Num):-
+    string(S,Len,_),
+    (Len==2,string_element(S,1,Code),
+     Code== #"!",!,
+     Num=0;
+     substring(S,1,Len-1,S1),
+     (number_string(S1,Num),!;
+      Num=S1));
+
+search_history(List,Num,St):-
+    :append(#string,[Num,"*"],SS),
+    :get_contents(List,L0),
+    :string(#wildcard,SS,L0,L),
+    L=[St|_];
+
+number_string(S1,Num):-
+    :get_number(#symbolizer,Num0,S1),!,
+    Num=Num0-1;
+
+var_exe(Obj,C0,C,A):-
+    string_element(C0,0,Code),
+    Code== #"$",!,
+    string(C0,Len,_),
+    substring(C0,1,Len-1,C1),
+    :enter_atom(#symbolizer,Var,C1),
+    :get_at(Obj!var,St,Var),
+    get_token(St,Tokens),
+    Tokens=[C|A];
+
+alias_exe(L,C0,C):-
+    (:get_at(L,C,C0),!;
+     C=C0);
+
+enter_history(H,L):-
+    add_sp(L,L1),
+    :append(#string,L1,S),
+    :add_first(H,S);
+
+add_sp([],_):-!,fail;
+add_sp([X],[X]):-!;
+add_sp([F|L],[F," "|L1]):-
+    add_sp(L,L1);
+
+get_token(S,L):-
+    string(S,Len,_),
+    get_syl(0,Len,S,not_quoat,0,L);
+
+get_syl(N,N,S,Flag,P,L):-!,
+    (N==P,!,L=[];
+     substring(S,P,N-P,SS),
+     L=[SS]);
+get_syl(C,N,S,Flag,P,L):-
+    string_element(S,C,Code),
+    (Code== #" ",Flag==not_quoat,!,
+     substring(S,P,C-P,SS),
+     L=[SS|L1],
+     get_syl(C+1,N,S,Flag,C+1,L1);
+     Code== #"'",Flag==quoat,!,
+     substring(S,P+1,C-P-1,SS),
+     L=[SS|L1],
+     (C+2=<N,!,
+      get_syl(C+2,N,S,not_quoat,C+2,L1);
+      L1=[]);
+     Code== #"'",Flag==not_quoat,!,
+     get_syl(C+1,N,S,quoat,P,L);
+     get_syl(C+1,N,S,Flag,P,L));
+
+list_length([],0):-!;
+list_length([_|L],N+1):-
+    list_length(L,N);
+
+display_help(Win):-
+    :putl(Win,"help"),
+    %:putl(Win,"?"),
+    %:putl(Win,"!"),         %% for extend
+    %:putl(Win,"!!"),        %% for extend
+    %:putl(Win,"!<number>"), %% for extend
+    %:putl(Win,"$<var>"),    %% for extend
+    %:putl(Win,"alias"),
+    :putl(Win,"set"),
+    :putl(Win,"reset"),
+    %:putl(Win,"init"),
+    %:putl(Win,"reverse"),
+    :putl(Win,"percent"),
+    % :putl(Win,"narrow"),
+    :putl(Win,"exit"),
+    %:putl(Win,"sh"),
+    :putl(Win,"show"),
+    :putl(Win,"head"),
+    :putl(Win,"setenv"),
+    :putl(Win,"getenv"),
+    %:putl(Win,"setvar"),
+    %:putl(Win,"save"),
+    %:putl(Win,"load"),
+    :putl(Win);
+
+getenv([],Obj):-!,
+    :get_contents_with_key(Obj!env,L),
+    disp_all(L,Obj!window);
+
+setenv([],Obj):-!,
+    :get_contents_with_key(Obj!env,L),
+    disp_all(L,Obj!window);
+setenv([VarS,Value],Obj):-!,
+    %del_q(VarS,Var0),
+    %:enter_atom(#symbolizer,Var,Var0),
+    (:remove_at(Obj!env,_,VarS),!;true),
+    :add_at(Obj!env,Value,VarS);
+resetenv([VarS],Obj):-!,
+    %del_q(VarS,Var0),
+    %:enter_atom(#symbolizer,Var,Var0),
+    :remove_at(Obj!env,_,VarS);
+setvar([],Obj):-!,
+    :get_contents_with_key(Obj!var,L),
+    disp_all(L,Obj!window);
+setvar([VarS,Value],Obj):-!,
+    del_q(VarS,Var0),
+    :enter_atom(#symbolizer,Var,Var0),
+    :add_at(Obj!var,Value,Var);
+resetvar([VarS],Obj):-!,
+    del_q(VarS,Var0),
+    :enter_atom(#symbolizer,Var,Var0),
+    :remove_at(Obj!var,_,Var);
+alias([],Obj):-!,
+    :get_contents_with_key(Obj!alias,L),
+    disp_all(L,Obj!window);
+alias([Old,New],Obj):-!,
+    :enter_atom(#symbolizer,OldA,Old),
+    :enter_atom(#symbolizer,NewA,New),
+    :add_at(Obj!alias,NewA,OldA);
+shell_go([File],Obj):-!,
+    :create(#standard_input_file,In,File),
+    repeat,
+    (:end_of_input(In),!;
+     :getl(In,String0),
+     :putl(Obj!window,String0),
+     extend(Obj,String0,Com),
+     Com={Command,Args},
+     exe(Command,Args,Obj),
+     fail),!,
+    :close_input(In);
+save(L,Obj):-!,
+    (L=[File],!,SW="-evha";
+     L=[SW,File]),
+    string(SW,Len,_),
+    Len>1,
+    get_sw(1,Len,SW,SWStack),
+    :create(#standard_output_file,Out,File),
+    write_env(Out,SWStack,Obj),
+    :close_output(Out);
+load(L,Obj):-!,
+    (L==[],!,def_load_file(Obj,File);
+     L=[File]),
+    :create(#standard_input_file,In,File),
+    read_env(In,Obj),
+    :close_input(In);
+
+%%%%%%% buffer access
+
+set_go([],Obj):-!,
+    set_go(["*"],Obj);
+set_go(L,Obj):-!,
+    parsing_form(L,Form),
+    analyze(Form,Obj,Coms),
+    set_execute(Coms,Obj);
+reset_go([],Obj):-!,
+    reset_go(["*"],Obj);
+reset_go(L,Obj):-!,
+    parsing_form(L,Form),
+    analyze(Form,Obj,Coms),
+    reset_execute(Coms,Obj);
+init_go(L,Obj):-!,
+    parsing_form(L,Form),
+    analyze(Form,Obj,Coms),
+    init_execute(Coms,Obj);
+percent([],Obj):-!,
+    :percent_manipulator(Obj!what);
+percent([St],Obj):-!,
+    :get_number(#symbolizer,Num,St),
+    :set_percent(Obj!what,Num);
+reverse(L,Obj):-!;%%%
+narrow(L,Obj):-!;%%%
+
+show([],Obj):-!,
+    :count(Obj!buffer,Len),
+    :get_partial_contents(Obj!buffer,0,Len,L),
+    disp_data_list(L,Obj!window);
+show(L,Obj):-!,
+    %:confirm(#debwin,L),
+    command_for_show(L,F,N,Form,Out),
+    %:confirm(#debwin,(F,N,Form)),
+    exe_show(F,N,Form,Out,Obj);
+
+list([],Obj):-!,
+    list(["*"],Obj);
+list(L,Obj):-!,
+    parsing_form(L,Form),
+    analyze(Form,Obj,Coms),
+    Buf=Obj!buffer,
+    :count(Buf,Len),
+    :get_partial_contents(Buf,0,Len,L0),
+    get_matched_pos(L0,L0,0,Coms,PosL0),
+    qsort(PosL0,PosL,[]),
+    get_vec_with_ast_loop(L0,0,PosL,Ans),
+    disp_data_list(Ans,Obj!window);
+
+head([],Obj):-!,
+    head(["*"],Obj);
+head(L,Obj):-
+    :getenv(Obj,"$from",FS0),
+    :getenv(Obj,"$num",NumS),
+    :get_number(#symbolizer,F0,FS0),
+    :get_number(#symbolizer,N,NumS),
+    F=F0-1,  %% origin translate
+    %:get_number_string(#symbolizer,F,FS),
+    %:append(#string,["-f",FS],SW1),
+    %:append(#string,["-n",NumS],SW2),
+    command_for_show(L,_,_,Form,Out),
+    exe_head(F,N,Form,Out,Obj);
+
+exe_head(F,N,Form,Out0,Obj):-
+    search_buffer_narrow(Obj,F,N,Form,L),
+    %:confirm(#debwin,L),
+    (Out0==nil,!,
+     Out=Obj!window,
+     %output_data(L,Out);
+     disp_data_list(L,Out);
+     string(Out0,_,_),
+     :create(#standard_output_file,Out,Out0),
+     %output_data(L,Out),
+     disp_data_list(L,Out),
+     :close_output(Out));
+
+search_buffer_narrow(Obj,F,N,FormL,L):-!,
+    parsing_form(FormL,Form),
+    analyze(Form,Obj,Coms),
+    get_execute(Coms,Obj,F,N,L);
+
+exe_show(F,N,Form,Out0,Obj):-
+    search_buffer(Obj,F,N,Form,L),
+    %:confirm(#debwin,L),
+    (Out0==nil,!,
+     Out=Obj!window,
+     %output_data(L,Out);
+     disp_data_list(L,Out);
+     string(Out0,_,_),
+     :create(#standard_output_file,Out,Out0),
+     %output_data(L,Out),
+     disp_data_list(L,Out),
+     :close_output(Out));
+
+command_for_show([SW1,SW2|L],F,N,Form,Out):-
+    is_sw(SW1,SW2,F,N),!,
+    get_last(L,L1,St),
+    (is_out(St,Out),!,
+     Form=L1;
+     Out=nil,
+     Form=L);
+command_for_show([SW|L],F,N,Form,Out):-
+    is_sw(SW,F,N),!,
+    get_last(L,L1,St),
+    (is_out(St,Out),!,
+     Form=L1;
+     Out=nil,
+     Form=L);
+command_for_show(L,0,nil,Form,Out):-!,
+    get_last(L,L1,St),
+    (is_out(St,Out),!,
+     Form=L1;
+     Out=nil,
+     Form=L);
+
+get_last([X],[],X):-!;
+get_last([F|L],[F|L1],Last):-
+    get_last(L,L1,Last);
+
+is_out(S,SS):-
+    string(S,Len,_),
+    Len>0,
+    string_element(S,0,#">"),!,
+    substring(S,1,Len-1,SS);
+
+is_sw(S,F,N):-
+    string(S,Len,_),
+    Len>1,
+    string_element(S,0,#"-"),!,
+    substring(S,2,Len-2,SS),
+    :get_number(#symbolizer,Num,SS),
+    (string_element(S,1,#"n"),!,N=Num,F=0;
+     string_element(S,1,#"f"),!,N=nil,F=Num);
+
+is_sw(S1,S2,F,N):-
+    is_sw0(S1,F,N),
+    is_sw0(S2,F,N);
+
+is_sw0(S,F,N):-
+    string(S,Len,_),
+    Len>1,
+    string_element(S,0,#"-"),!,
+    substring(S,2,Len-2,SS),
+    :get_number(#symbolizer,Num,SS),
+    (string_element(S,1,#"n"),!,N=Num;
+     string_element(S,1,#"f"),!,F=Num);
+
+
+search_buffer(Obj,F,N,FormL,L):-!,
+    parsing_form(FormL,Form),
+    analyze(Form,Obj,Coms),
+    get_execute(Coms,Obj,L0),
+    region(L0,0,F,N,L);
+
+region([],_,_,_,[]):-!;
+region(L,F,F,N,L1):-!,
+    region0(L,N,L1);
+region([_|L],C,F,N,L1):-!,
+    region(L,C+1,F,N,L1);
+
+region0(_,0,[]):-!;
+region0([],_,[]):-!;
+region0(L,nil,L):-!;
+region0([F|L],N,[F|L1]):-
+    region0(L,N-1,L1);
+
+output_data([],Out):-!,:putl(Out);
+output_data([F|L],Out):-
+    :putl(Out,F),
+    output_data(L,Out);
+
+del_q(VS,V):-!,
+    string(VS,Len,_),
+    (string_element(VS,0,#"'"),
+     string_element(VS,Len-1,#"'"),!,
+     substring(VS,1,Len-2,V);
+     V=VS);
+
+disp_all([],Win):-!,:putl(Win);
+disp_all([{Val,Var}|L],Win):-!,
+    string(Var,Len1,_),
+    string(Val,Len,_),
+    :putl(Win),
+    %:putt(Win,Var),
+    :putb(Win,Var,Len1),
+    :putc(Win,#"="),
+    :putb(Win,Val,Len),
+    %:putt(Win,Val),
+    :flash(Win),
+    disp_all(L,Win);
+
+read_env(In,Obj):-!,
+    repeat,
+    (:end_of_input(In),!;
+     :gett(In,{Slot,L}),
+     (Slot==history,!,
+      :put_contents(Obj!Slot,L);
+      :put_contents_with_key(Obj!Slot,L)),
+     fail),!;
+write_env(Out,{E,V,H,A},Obj):-!,
+    (unbound(E),!;
+     :get_contents_with_key(Obj!env,LE),
+     :putt(Out,{env,LE}),
+     :putc(Out,#"."),
+     :putl(Out)),
+    (unbound(V),!;
+     :get_contents_with_key(Obj!var,LV),
+     :putt(Out,{var,LV}),
+     :putc(Out,#"."),
+     :putl(Out)),
+    (unbound(H),!;
+     :get_contents(Obj!history,LH),
+     :putt(Out,{history,LH}),
+     :putc(Out,#"."),
+     :putl(Out)),
+    (unbound(A),!;
+     :get_contents_with_key(Obj!alias,LA),
+     :putt(Out,{alias,LA}),
+     :putc(Out,#"."),
+     :putl(Out));
+
+def_load_file(Obj,File):-!,
+    :get_at(Obj!env,File,loadfile);
+
+get_sw(Len,Len,SW,SWStack):-!;
+get_sw(C,Len,S,V):-
+    string_element(S,C,Code),
+    sw_table(Code,V),
+    get_sw(C+1,Len,S,V);
+
+sw_table(#"e",{A,B,C,D}):-!,A=bound;
+sw_table(#"v",{A,B,C,D}):-!,B=bound;
+sw_table(#"h",{A,B,C,D}):-!,C=bound;
+sw_table(#"a",{A,B,C,D}):-!,D=bound;
+
+parsing_form(L,Struct):-
+    conv_tokens(L,Tokens),
+    make_struct(Tokens,[],T,T,Struct);
+
+conv_tokens([],[]):-!;
+conv_tokens([St|L],[Sy|L1]):-
+    string(St,Len,_),
+    conv_token(Len,St,Sy),
+    conv_tokens(L,L1);
+
+conv_token(_,St,Sy):-
+    :get_number(#symbolizer,Sy,St),!;
+conv_token(1,St,Sy):-!,
+    string_element(St,0,Code),
+    (Code== #"&",!,Sy=and;
+     Code== #",",!,Sy=or;
+     Code== #"|",!,Sy=pipe;
+     Code== #"<",!,Sy=small;
+     Code== #">",!,Sy=large;
+     Code== #"#",!,Sy=number;
+     Sy=St);
+conv_token(2,St,Sy):-!,
+    string_element(St,0,Code1),
+    string_element(St,1,Code2),
+    (Code1== #">",Code2== #"=",!,Sy=largeE;
+     Code1== #"=",Code2== #"<",!,Sy=smallE;
+     Sy=St);
+conv_token(3,St,Sy):-
+    string_element(St,0,#"n"),
+    string_element(St,1,#"o"),
+    string_element(St,2,#"t"),!,
+    Sy=not;
+conv_token(_,St,St):-!;
+
+%% make_struct(H,[],H0,T0,Ans):-
+
+make_struct(L,L0,H,T,Struct):-L==L0,!,
+    make_struct0(H,T,H1,H1,Struct);
+make_struct([and|L],T0,H,T,and(Struct1,Struct2)):-!,
+    make_struct0(H,T,H1,H1,Struct1),
+    make_struct(L,T0,T,T,Struct2);
+make_struct([or|L],T0,H,T,or(Struct1,Struct2)):-!,
+    make_struct0(H,T,H1,H1,Struct1),
+    make_struct(L,T0,T,T,Struct2);
+make_struct([pipe|L],T0,H,T,pipe(Struct1,Struct2)):-!,
+    make_struct0(H,T,H1,H1,Struct1),
+    make_struct(L,T0,T,T,Struct2);
+make_struct([X|L],T0,H,[X|T],Struct):-
+    make_struct(L,T0,H,T,Struct);
+
+make_struct0([Token|L],L0,H,H,Token):-L==L0,!;
+make_struct0([large|L],L0,H,H,large(Token)):-!,
+    make_struct0(L,L0,H0,H0,Token);
+make_struct0([largeE|L],L0,H,H,largeE(Token)):-!,
+    make_struct0(L,L0,H0,H0,Token);
+make_struct0([small|L],L0,H,H,small(Token)):-!,
+    make_struct0(L,L0,H0,H0,Token);
+make_struct0([smallE|L],L0,H,H,smallE(Token)):-!,
+    make_struct0(L,L0,H0,H0,Token);
+make_struct0([not|L],L0,H,H,not(Token)):-!,
+    make_struct0(L,L0,H0,H0,Token);
+make_struct0([number,Token|L],L,H,H,number(Token)):-!;
+
+analyze(Struct,Obj,Ans):-
+    analyze0(init,Struct,Obj,_,Ans);
+
+%% analyze0(init,Struct,Obj,_,Ans):-
+
+analyze0(OP,{OP1,A,B},Obj,L0,R):-!,
+    search_pred(OP,A,Obj,L0,L1),
+    analyze0(OP1,B,Obj,L1,R);
+analyze0(OP,A,Obj,L0,R):-!,
+    search_pred(OP,A,Obj,L0,R);
+
+search_pred(init,Vec,Obj,_,R):-!,
+    search_pred0(Vec,Obj,R);
+search_pred(and,Vec,Obj,L,R):-!,
+    search_pred_list(Vec,L,Obj,R);
+search_pred(or,Vec,Obj,L,R):-!,
+    search_pred0(Vec,Obj,L0),
+    %%compact(L,L0,R);
+    append(L0,L,R);
+search_pred(pipe,Vec,Obj,L,R):-!,
+    search_pred_list(Vec,L,Obj,R);
+
+search_pred0(String,Obj,Result):-string(String,_,_),!,
+    search_buffer(Obj!buffer,String,Result);%%
+search_pred0(Vec,Obj,Result):-
+    get_number(Vec,OP,Type,Num),
+    search_number(OP,Type,Num,Obj,Result);%%
+
+search_pred_list(String,L,Obj,R):-string(String,_,_),!,
+    search_list(L,String,R);
+search_pred_list(Vec,L,Obj,R):-
+    get_number(Vec,OP,Type,Num),
+    search_list_number(OP,Type,Num,L,Obj,R);
+
+get_number({OP,number(Num)},OP,order,Num):-!;
+get_number(number(Num),self,order,Num):-!;
+get_number({OP,Num},OP,number,Num):-!;
+get_number(Num,self,number,Num):-!;
+
+append([X|L],Y,[X|L1]):-!,append(L,Y,L1);
+append([],L,L):-!;
+
+search_list(L,S,Ans):-
+    :string(#wildcard,S,L,Ans);
+search_list_number(OP,Type,Num,L,Obj,Result):-!,
+    %%% 1. access buffer by string !!
+    %%% 2. search that data ( {Id,num} ) by number
+    %%% 3. get string of search-data from buffer
+    Buf=Obj!buffer,
+    :count(Buf,Len),
+    :get_partial_contents(Buf,0,Len,L0),
+    num_cond_search(OP,Type,Num,L,L0,Result);
+search_number(OP,Type,Num,Obj,Result):-!,
+    %%% 1. search buffer-data ( {Id,num} ) by number
+    %%% 2. get string of searched-data from buffer
+    Buf=Obj!buffer,
+    :count(Buf,Len),
+    :get_partial_contents(Buf,0,Len,L),
+    num_cond_search(OP,Type,Num,L,Result);
+search_buffer(Buf,String,Result):-!,
+    %%% 1. get-contents buffer-data (string) by String
+    :get_keys(Buf,11,L), %% get all
+    :string(#wildcard,String,L,Result);
+
+%%num_cond_search(OP,Type,Num,DataL,Result):-!;
+
+num_cond_search(large,number,Num,L,R):-!,
+    large_red(L,off,Num,R);
+num_cond_search(large,order,Num,L,R):-!,
+    large_id(L,off,Num,R);
+num_cond_search(largeE,number,Num,L,R):-!,
+    large_red(L,on,Num,R);
+num_cond_search(largeE,order,Num,L,R):-!,
+    large_id(L,on,Num,R);
+num_cond_search(small,number,Num,L,R):-!,
+    small_red(L,off,Num,R);
+num_cond_search(small,order,Num,L,R):-!,
+    small_id(L,off,Num,R);
+num_cond_search(smallE,number,Num,L,R):-!,
+    small_red(L,on,Num,R);
+num_cond_search(smallE,order,Num,L,R):-!,
+    small_id(L,on,Num,R);
+num_cond_search(self,number,Num,L,R):-!,
+    self_red(L,Num,R);
+num_cond_search(self,order,Num,L,R):-!,
+    self_id(L,Num,R);
+num_cond_search(not,number,Num,L,R):-!,
+    not_red(L,Num,R);
+num_cond_search(not,order,Num,L,R):-!,
+    not_id(L,Num,R);
+
+large_red([],_,_,[]):-!;
+large_red([Vec|L],SW,N,[String|L1]):-
+    vector_element(Vec,3,Num),
+    (SW==off,Num>N,!;
+     SW==on,Num>=N,!),!,
+    vector_element(Vec,11,String),
+    large_red(L,SW,N,L1);
+large_red([_|L],SW,N,L1):-
+    large_red(L,SW,N,L1);
+large_id([],_,_,[]):-!;
+large_id([Vec|L],SW,N,[String|L1]):-
+    vector_element(Vec,10,Num),
+    (SW==off,Num>N,!;
+     SW==on,Num>=N,!),!,
+    vector_element(Vec,11,String),
+    large_id(L,SW,N,L1);
+large_id([_|L],SW,N,L1):-
+    large_id(L,SW,N,L1);
+small_red([],_,_,[]):-!;
+small_red([Vec|L],SW,N,[String|L1]):-
+    vector_element(Vec,3,Num),
+    (SW==off,Num<N,!;
+     SW==on,Num=<N,!),!,
+    vector_element(Vec,11,String),
+    small_red(L,SW,N,L1);
+small_red([_|L],SW,N,L1):-
+    small_red(L,SW,N,L1);
+small_id([],_,_,[]):-!;
+small_id([Vec|L],SW,N,[String|L1]):-
+    vector_element(Vec,10,Num),
+    (SW==off,Num<N,!;
+     SW==on,Num=<N,!),!,
+    vector_element(Vec,11,String),
+    small_id(L,SW,N,L1);
+small_id([_|L],SW,N,L1):-
+    small_id(L,SW,N,L1);
+self_red([],_,[]):-!;
+self_red([Vec|L],N,[String]):-
+    vector_element(Vec,3,N),!,
+    vector_element(Vec,11,String);
+self_red([_|L],N,L1):-
+    self_red(L,N,L1);
+self_id([],_,[]):-!;
+self_id([Vec|L],N,[String]):-
+    vector_element(Vec,10,N),!,
+    vector_element(Vec,11,String);
+self_id([_|L],N,L1):-
+    self_id(L,N,L1);
+not_red([],_,[]):-!;
+not_red([Vec|L],N,[String|L1]):-
+    vector_element(Vec,3,Num),
+    Num=\=N,!,
+    vector_element(Vec,11,String),
+    not_red(L,N,L1);
+not_red([_|L],N,L1):-
+    not_red(L,N,L1);
+not_id([],_,[]):-!;
+not_id([Vec|L],N,[String|L1]):-
+    vector_element(Vec,10,Num),
+    Num=\=N,!,
+    vector_element(Vec,11,String),
+    not_id(L,N,L1);
+not_id([_|L],N,L1):-
+    not_id(L,N,L1);
+
+%%num_cond_search(OP,Type,Num,StringL,AllDataL0,Result):-!;
+
+num_cond_search(large,number,Num,L,L0,R):-!,
+    large_red(L,L0,L0,off,Num,R);
+num_cond_search(large,order,Num,L,L0,R):-!,
+    large_id(L,L0,L0,off,Num,R);
+num_cond_search(largeE,number,Num,L,L0,R):-!,
+    large_red(L,L0,L0,on,Num,R);
+num_cond_search(largeE,order,Num,L,L0,R):-!,
+    large_id(L,L0,L0,on,Num,R);
+num_cond_search(small,number,Num,L,L0,R):-!,
+    small_red(L,L0,L0,off,Num,R);
+num_cond_search(small,order,Num,L,L0,R):-!,
+    small_id(L,L0,L0,off,Num,R);
+num_cond_search(smallE,number,Num,L,L0,R):-!,
+    small_red(L,L0,L0,on,Num,R);
+num_cond_search(smallE,order,Num,L,L0,R):-!,
+    small_id(L,L0,L0,on,Num,R);
+num_cond_search(self,number,Num,L,L0,R):-!,
+    self_red(L,L0,L0,Num,R);
+num_cond_search(self,order,Num,L,L0,R):-!,
+    self_id(L,L0,L0,Num,R);
+num_cond_search(not,number,Num,L,L0,R):-!,
+    not_red(L,L0,L0,Num,R);
+num_cond_search(not,order,Num,L,L0,R):-!,
+    not_id(L,L0,L0,Num,R);
+
+%%% 5.22 Bug !!
+%%% input-string-list includes multiple id
+%%%   EX. ["1","2","3","1","3"]
+
+large_red([],_,_,_,_,[]):-!;
+large_red(L,[],L0,SW,N,LL):-!,
+    large_red(L,L0,L0,SW,N,LL);
+large_red([St0|L],H,L0,SW,N,LL):-
+    search_string_list(H,St0,Vec,T),
+    vector_element(Vec,3,Num),
+    ((SW==off,Num>N,!;
+      SW==on,Num>=N,!),!,
+     vector_element(Vec,11,String),
+     LL=[String|L1],
+     large_red(L,T,L0,SW,N,L1);
+    LL=L1,
+    large_red(L,T,L0,SW,N,L1));
+large_id([],_,_,_,_,[]):-!;
+large_id(L,[],L0,SW,N,LL):-!,
+    large_id(L,L0,L0,SW,N,LL);
+large_id([St0|L],H,L0,SW,N,LL):-
+    search_string_list(H,St0,Vec,T),
+    vector_element(Vec,10,Num),
+    ((SW==off,Num>N,!;
+      SW==on,Num>=N,!),!,
+     vector_element(Vec,11,String),
+     LL=[String|L1],
+     large_id(L,T,L0,SW,N,L1);
+     LL=L1,
+     large_id(L,T,L0,SW,N,L1));
+small_red([],_,_,_,_,[]):-!;
+small_red(L,[],L0,SW,N,LL):-!,
+    small_red(L,L0,L0,SW,N,LL);
+small_red([St0|L],H,L0,SW,N,LL):-
+    search_string_list(H,St0,Vec,T),
+    vector_element(Vec,3,Num),
+    ((SW==off,Num<N,!;
+      SW==on,Num=<N,!),!,
+     vector_element(Vec,11,String),
+     LL=[String|L1],
+     small_red(L,T,L0,SW,N,L1);
+    LL=L1,
+    small_red(L,T,L0,SW,N,L1));
+small_id([],_,_,_,_,[]):-!;
+small_id(L,[],L0,SW,N,LL):-!,
+    small_id(L,L0,L0,SW,N,LL);
+small_id([St0|L],H,L0,SW,N,LL):-
+    search_string_list(H,St0,Vec,T),
+    vector_element(Vec,10,Num),
+    ((SW==off,Num<N,!;
+      SW==on,Num=<N,!),!,
+     vector_element(Vec,11,String),
+     LL=[String|L1],
+     small_id(L,T,L0,SW,N,L1);
+    LL=L1,
+    small_id(L,T,L0,SW,N,L1));
+
+%%% arg !!
+
+self_red([],_,_,_,[]):-!;
+self_red([St0|L],H,L0,N,L1):-
+    (H==[],!,H0=L0;H0=H),
+    search_string_list(H0,St0,Vec,T),
+    vector_element(Vec,3,Num),
+    (Num==N,!,
+     L1=[String],
+     vector_element(Vec,11,String);
+     self_red(L,T,L0,N,L1));
+self_id([],_,_,_,[]):-!;
+self_id([St0|L],H,L0,N,L1):-
+    (H==[],!,H0=L0;H0=H),
+    search_string_list(H,St0,Vec,T),
+    vector_element(Vec,10,Num),
+    (Num==N,!,
+     L1=[String],
+     vector_element(Vec,11,String);
+     self_id(L,T,L0,N,L1));
+not_red([],_,_,_,[]):-!;
+not_red([St0|L],L0,H,N,LL):-
+    (H==[],!,H0=L0;H0=H),
+    search_string_list(H,St0,Vec,T),
+    vector_element(Vec,3,Num),
+    (Num=\=N,!,
+     vector_element(Vec,11,String),
+     LL=[String|L1],
+     not_red(L,T,L0,N,L1);
+     LL=L1,
+     not_red(L,T,L0,N,L1));
+not_id([],_,_,_,[]):-!;
+not_id([St0|L],H,L0,N,LL):-
+    (H==[],!,H0=L0;H0=H),
+    search_string_list(H,St0,Vec,T),
+    vector_element(Vec,10,Num),
+    (Num=\=N,!,
+     vector_element(Vec,11,String),
+     LL=[String|L1],
+     not_id(L,T,L0,N,L1);
+     LL=L1,
+     not_id(L,T,L0,N,L1));
+
+search_string_list([Vec|T],St0,Vec,T):-
+    vector_element(Vec,11,St),
+    equal_string(St,St0),!;
+search_string_list([_|L],St0,Vec,T):-
+    search_string_list(L,St0,Vec,T);
+
+set_execute(L,Obj):-!,
+    %%% 1. matching buffer-string string in L,
+    %%%        if matched -> set (Vec-No 2) := 1
+    %%%    pos 0 --> END
+    %%% 2. if L==[] then execute-end
+    %%%    else 1.  ( leave L )
+    %%% * this class or array_index_buffer class ???
+    Buf=Obj!buffer,
+    :count(Buf,Len),
+    :get_partial_contents(Buf,0,Len,L0),
+    get_matched_pos(L0,L0,0,L,PosL0),
+    qsort(PosL0,PosL,[]),
+    :set_skip_direct(Buf,2,PosL);
+
+reset_execute(L,Obj):-!,
+    Buf=Obj!buffer,
+    :count(Buf,Len),
+    :get_partial_contents(Buf,0,Len,L0),
+    get_matched_pos(L0,L0,0,L,PosL0),
+    qsort(PosL0,PosL,[]),
+    :reset_skip_direct(Buf,2,PosL);
+
+init_execute(L,Obj):-!,
+    Buf=Obj!buffer,
+    :count(Buf,Len),
+    :get_partial_contents(Buf,0,Len,L0),
+    get_matched_pos(L0,L0,0,L,PosL0),
+    qsort(PosL0,PosL,[]),
+    :set_direct(Buf,2,PosL);
+
+get_execute(L,Obj,Ans):-!,
+    Buf=Obj!buffer,
+    :count(Buf,Len),
+    :get_partial_contents(Buf,0,Len,L0),
+    get_matched_pos(L0,L0,0,L,PosL0),
+    qsort(PosL0,PosL,[]),
+    get_vec_loop(L0,0,PosL,Ans);
+    %get_string_loop(L0,0,PosL,Ans);
+
+get_execute(L,Obj,F,N,Ans):-!,
+    Buf=Obj!buffer,
+    :count(Buf,Len),
+    (Len-F>N,!,N0=N;
+     N0=Len-F),
+    :get_partial_contents(Buf,0,Len,L0),
+    get_matched_pos(L0,L0,0,L,PosL0),
+    %:confirm(#debwin,PosL0),
+    qsort(PosL0,PosL1,[]),
+    narrow_cut(PosL1,F,F+N0-1,PosL),
+    %:confirm(#debwin,PosL),
+    del_head(L0,F,LL0),
+    get_vec_loop(LL0,F,PosL,Ans);
+
+narrow_cut([],_,_,[]):-!;
+narrow_cut([P|L],S,E,[]):-
+    P>E,!;
+narrow_cut([P|L],S,E,[P|L1]):-
+    P>=S,!,
+    narrow_cut(L,S,E,L1);
+narrow_cut([_|L],S,E,L1):-
+    narrow_cut(L,S,E,L1);
+
+del_head(L,0,L):-!;
+del_head([_|L],F,Ans):-!,
+    del_head(L,F-1,Ans);
+del_head([],_,[]):-!;
+
+%get_string_loop([],_,_,[]):-!;
+%get_string_loop([F|T1],N,[N|L],[String|T2]):-!,
+%    vector_element(F,11,String),
+%    get_string_loop(T1,N+1,L,T2);
+%get_string_loop([_|T1],N,L,L2):-!,
+%    get_string_loop(T1,N+1,L,L2);
+
+get_vec_loop([],_,_,[]):-!;
+get_vec_loop([F|T1],N,[N|L],[F|T2]):-!,
+    get_vec_loop(T1,N+1,L,T2);
+get_vec_loop([_|T1],N,L,L2):-!,
+    get_vec_loop(T1,N+1,L,L2);
+
+get_vec_with_ast_loop([],_,_,[]):-!;
+get_vec_with_ast_loop([F|T1],N,[N|L],Ans):-!,
+    (vector_element(F,2,1),!,Ans=[F|T2];
+     Ans=T2),
+     get_vec_with_ast_loop(T1,N+1,L,T2);     
+get_vec_with_ast_loop([_|T1],N,L,L2):-!,
+    get_vec_with_ast_loop(T1,N+1,L,L2);
+
+get_matched_pos([],L0,_,L1,L2):-!,
+    (L1==[],!,L2=[];
+     get_matched_pos(L0,L0,0,L1,L2));
+get_matched_pos([F|L],L0,C,[St|L1],[C|L2]):-
+    vector_element(F,11,St0),
+    equal_string(St0,St),!,
+    get_matched_pos(L,L0,C+1,L1,L2);
+get_matched_pos([_|L],L0,C,L1,L2):-
+    get_matched_pos(L,L0,C+1,L1,L2);
+
+qsort([],L,L):-!;
+qsort([F|L],H,T):-
+    pat(F,L,A,B),
+    qsort(B,H,[F|T0]),
+    qsort(A,T0,T);
+
+pat(N0,[N|T],[N|L],S):-N0<N,!,
+    pat(N0,T,L,S);
+pat(N0,[N|T],L,[N|S]):-N0>N,!,
+    pat(N0,T,L,S);
+pat(N0,[N|T],L,S):-N0==N,!, %%% compaction !!
+    pat(N0,T,L,S);
+pat(_,[],[],[]):-!;
+
+disp_v_list([],_):-!;
+disp_v_list([V|L],W):-!,
+    :putt(W,V),
+    :putl(W),
+    disp_v_list(L,W);
+
+disp_ast_list([],_):-!;
+disp_ast_list([V|L],W):-!,
+    vector_element(V,2,Ast),
+    vector_element(V,11,St),
+    (Ast==0,Code= #" ",!;
+     Ast==1,Code= #"*"),
+    :putc(W,Code),
+    :putc(W,#" "),
+    string(St,N,_),
+    :putb(W,St,N),
+    :putl(W),
+    disp_ast_list(L,W);
+disp_data_list(L,W):-!,
+    W0=W!width-26,%%%
+    CW=12,
+    WCW=W0/CW,
+    Max=WCW-(12*2),
+    :get_number_string(#symbolizer,Max,NS),
+    :append(#string,
+        ["\c ","\.",NS,"s \11.11d \11.11d\n"],Fm),
+    disp_data_list(L,W,Fm,Max);
+
+disp_data_list([],_,_,_):-!;
+disp_data_list([V|L],W,Fm,Max):-!,
+    vector_element(V,2,Ast),
+    vector_element(V,11,St0),
+    vector_element(V,3,Red),
+    vector_element(V,4,Sus),
+    (Ast==0,Code0= #" ",!;
+     Ast==1,Code0= #"*"),
+    %:putc(W,Code),
+    %:putc(W,#" "),
+    string(St0,N,_),
+    (Max>=N,!,St=St0,Code=Code0;
+     Code= #" ",
+     long_name(Code0,St0,Max,W,St)),    
+    :putf(W,Fm,[Code,St,Red,Sus]),
+    %:putb(W,St,N),
+    %:putc(W,#" "),
+    %:putt(W,Red),
+    %:putc(W,#" "),
+    %:putt(W,Sus),
+    %:putl(W),
+    disp_data_list(L,W,Fm,Max);
+
+long_name(C,S0,N,W,S):-
+    string(S0,Len,_),
+    Len>N,!,
+    :putc(W,C),
+    :putc(W,#" "),
+    div_string(S0,N,Len,S1,S2),
+    :putb(W,S1,N),
+    :putl(W),
+    long_name(#" ",S2,N,W,S);
+long_name(C,S,N,W,S):-!;
+
+div_string(S,N,Len,S1,S2):-
+    substring(S,0,N,S1),
+    substring(S,N,Len-N,S2);
+
+display_init(goal,W,N,Red,Sus,Time,Pe):-!,
+    :putb(W,"Predicates       = ",19),
+    :putt(W,N),
+    :putl(W),
+    :putb(W,"Reductions       = ",19),
+    :putt(W,Red),
+    :putl(W),
+    :putb(W,"Suspentions      = ",19),
+    :putt(W,Sus),
+    :putl(W),
+    (Time==nil,!;
+     :putb(W,"Execution Time   = ",19),
+     :putt(W,Time),
+     :putl(W)),
+    :putl(W),
+    :flash(W);
+display_init(msg,W,N,Red,Sus,Time,Pe):-!,
+    :putb(W,"Sent Message     = ",19),
+    :putt(W,Sus),
+    :putl(W),
+    :putb(W,"Received Message = ",19),
+    :putt(W,Red),
+    :putl(W),
+    (Time==nil,!;
+     :putb(W,"Execution Time   = ",19),
+     :putt(W,Time),
+     :putl(W)),
+    :putl(W),
+    :flash(W);
+display_init(pe,W,N,Red,Sus,Time,Pe):-!,
+    (Time==nil,!;
+     :putb(W,"Execution Time   = ",19),
+     :putt(W,Time),
+     :putl(W)),
+    :putl(W),
+    :flash(W);
+display_init(event,W,N,Red,Sus,Time,Pe):-!,
+    :putb(W,"Events           = ",19),
+    :putt(W,N),
+    :putl(W),
+    :putb(W,"Total            = ",19),
+    :putt(W,Red),
+    :putl(W),
+    (Time==nil,!;
+     :putb(W,"Execution Time   = ",19),
+     :putt(W,Time),
+     :putl(W)),
+    :putl(W),
+    :flash(W);
+display_init(heap,W,N,Red,Sus,Time,Pe):-!,
+    (Time==nil,!;
+     :putb(W,"Execution Time   = ",19),
+     :putt(W,Time),
+     :putl(W)),
+    :putl(W),
+    :flash(W);
+display_init(act,W,N,Red,Sus,Time,Pe):-!,%%% Pendding
+%    :putb(W,"Sent Message     = ",19),
+%    %:putt(W,Red),
+%    :putl(W),
+%    :putb(W,"Received Message = ",19),
+%    %:putt(W,Sus),
+%    :putl(W),
+%    :putb(W,"Execution Time   = ",19),
+%    :putt(W,Time),
+%    :putl(W),
+%    :putl(W),
+%    :flash(W),
+    true;
+
+end.

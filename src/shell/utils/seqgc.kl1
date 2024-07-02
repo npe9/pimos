@@ -1,0 +1,81 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is 'seqgc' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module seqgc.
+:- public usage/1, go/0, go/1, go/2.
+
+usage(Usage) :- true |
+    Usage = [{string#"~s~n~s~n~s~n~s~n~s~n~s", [S1,S2,S3,S4,S5,S6]}],
+    S1 = string#"Usage : gc",
+    S2 = string#"Usage : gc(Node-number)",
+    S3 = string#"           Node-number = positive-integer | 'self'",
+    S4 = string#"Usage : gc(StartNode, Interval)",
+    S5 = string#"           StartNode = positive-integer | 'self'",
+    S6 = string#"           Interval  = natural-number".
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Start the 'gc'  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+go :- true | current_node(CN,PENO), gcLoopSeq(0,0,PENO,1,CN).
+
+go(self, N) :- integer(N), N > 0 |
+    current_node(CN, PENO), checkNode(CN, PENO, N, CN).
+go(PE, N) :- integer(PE), integer(N), PE >= 0, N > 0 |
+    current_node(CN, PENO), checkNode(PE, PENO, N, CN).
+
+go(PE) :- integer(PE) | current_node(_, PENO), checkNode(PE, PENO).
+go(self) :- true | current_node(CN, _), gcCall@node(CN).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+checkNode(PE, PENO) :- PE < PENO | gcCall@node(PE).
+
+checkNode(PE, PENO, N, CN) :- PE < PENO |
+    gcLoopSeq(PE, 0, PENO, N, CN).
+
+gcLoopSeq(PE, Cnt, Max, N, CN) :- Cnt >= Max | gcCall@node(CN).
+otherwise.
+gcLoopSeq(PE, Cnt, Max, N, CN) :- true |
+    NCnt := Cnt + N, merge(In, Out),
+    gcLoopPara(PE, NPE, Cnt, Max, 0, N, CN, In),
+    waitGcLoopSeq(Out, NPE, NCnt, Max, N, CN).
+
+waitGcLoopSeq(Out, PE, Cnt, Max, N, CN) :- Out=[] |
+    gcLoopSeq(PE, Cnt, Max, N, CN).
+
+gcLoopPara(PE, NPE, Cnt1, Max, Cnt2, N, CN, M) :- Cnt2 >= N | M = [], NPE = PE.
+gcLoopPara(PE, NPE, Cnt1, Max, Cnt2, N, CN, M) :- Cnt2 < N |
+    ( Cnt1 >= Max -> M = [], NPE = PE ;
+      Cnt1 <  Max -> gcLoopParaCheck(PE, NPE, Cnt1, Max, Cnt2, N, CN, M) ).
+
+gcLoopParaCheck(PE, NPE, Cnt1, Max, Cnt2, N, CN, M) :- PE >= Max |
+    gcLoopPara(0, NPE, Cnt1, Max, Cnt2, N, CN, M).
+gcLoopParaCheck(PE, NPE, Cnt1, Max, Cnt2, N, CN, M) :- PE < Max |
+    ( PE = CN -> NewPE := PE + 1, NCnt1 := Cnt1 + 1, NCnt2 := Cnt2 + 1, NM = M ;
+     otherwise ;
+      true -> NewPE := PE + 1, NCnt1 := Cnt1 + 1, NCnt2 := Cnt2 + 1,
+        M = {M0, NM}, gcCall(M0)@node(PE) ),
+    gcLoopPara(NewPE, NPE, NCnt1, Max, NCnt2, N, CN, NM).
+
+%gcCall :- collect_garbage, display_console("gc") | true.
+%gcCall(M) :- collect_garbage, display_console("gc") | M = [].
+
+gcCall :- collect_garbage | true.
+gcCall(M) :- collect_garbage | proceedGcCall(M).
+
+proceedGcCall(M) :- true | M = [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of 'seqgc' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

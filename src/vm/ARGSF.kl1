@@ -1,0 +1,86 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%----------%
+% version1 %
+%----------%
+%  This module is to check the arguments of the predicates defined in disk_simulator_file.
+
+
+:- module dksf_arguments.
+:- with_macro pimos.
+
+:- public   save/4,
+            restore/2.
+
+%========%
+% save/4 %
+%========%
+save(Pathname, MediaStructure, Contents, Status):-
+    true |
+        pathname(Pathname, ArgsStatus, ArgsStatus1),
+        media_structure(MediaStructure, VolumeSize, ArgsStatus1, ArgsStatus2),
+        contents(Contents, VolumeSize, ArgsStatus2, []),
+        status(ArgsStatus, Status).
+
+%===========%
+% restore/2 %
+%===========%
+restore(Pathname, Status):-
+    true |
+        pathname(Pathname, ArgsError, []),
+        status(ArgsError, Status).
+
+%------------%
+% pathname/3 %
+%------------%
+pathname(Pathname, Status, StatusTail):-
+    string(Pathname, _, 16) |
+        Status = StatusTail.
+otherwise.
+pathname(Pathname, Status, StatusTail):-
+    true |
+        Status = [pathname(Pathname)|StatusTail].
+
+%-------------------%
+% media_structure/4 %
+%-------------------%
+media_structure(simulator(BlockSize, CylinderSize, DiskSize), VolumeSize, Status, StatusTail):-
+    integer(BlockSize),
+    integer(CylinderSize),
+    integer(DiskSize),
+    BlockSize    >= 1,
+    CylinderSize >= 1,
+    DiskSize     >= 1,
+    Blocks := CylinderSize * DiskSize |
+        VolumeSize = Blocks,
+        Status = StatusTail.
+otherwise.
+media_structure(MediaStructure, VolumeSize, Status, StatusTail):-
+    true |
+        VolumeSize = 0,
+        Status = [media_structure(MediaStructure)|StatusTail].
+
+%------------%
+% contents/4 %
+%------------%
+contents(Contents, Size, Status, StatusTail):-
+    vector(Contents, Size) |
+        Status = StatusTail.
+otherwise.
+contents(Contents, _, Status, StatusTail):-
+    true |
+        Status = [contents(Contents)|StatusTail].
+
+%----------%
+% status/2 %
+%----------%
+status([ArgsError|_], Status):-
+    true |
+        Status = abnormal(illegal_parameter(ArgsError)).
+status([], Status):-
+    true |
+        Status = normal.

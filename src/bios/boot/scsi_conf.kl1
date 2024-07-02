@@ -1,0 +1,86 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>user>yashiro>V33>boot>scsi_conf.kl1.23, 11-Apr-92 16:55:34, Edit by yashiro
+:- module scsi_conf.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public scsi_where/1.
+
+%   scsi_where(Info)
+%    Info ::= '[]' | '['SCSI_Info '|' Info ']'
+%    SCSI_Info ::= '{' Cluster ',' Processor ',' SCSI_PORT ',' MY_UNIT'}'
+
+:- switch(virtual_machine_interface).
+:- case(yes).
+scsi_where(Result) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,[getenv(vm:scsi_where,Env)]),
+        check_scsi_where(Env,Result).
+check_scsi_where(normal(Env),Result) :-
+    true |
+        pool:keyed_set(POOL),
+        check_port(Env,POOL,Result).
+check_scsi_where(abnormal,Result) :-
+    true |
+        Result = [ {0,0,0,6}].
+check_port([{Node,Processor,SCSI_PORT,MyUnit}|Tail],POOL,Result):-
+    true |
+        POOL=[put({Node,Processor,SCSI_PORT},MyUnit,_)|NPOOL],
+        check_port(Tail,NPOOL,Result).
+check_port([],POOL,Result) :-
+    true |
+        POOL=[get_all(ALL0)],
+        get_only_key(ALL0,ALL),
+        Result = ALL.
+
+get_only_key([{{Node,Processor,SCSI_PORT},MyUnit}|Tail],Result):-
+    true |
+        Result = [{Node,Processor,SCSI_PORT,MyUnit}|Result1],
+        get_only_key(Tail,Result1).
+get_only_key([],Result):-
+    true |
+        Result = [].
+
+:- case(no).
+:- switch(fep_interface).
+:- case(kl1_network).
+scsi_where(Result) :-
+    true |
+        shoen:raise(pimos_tag#task,general_request,[number_of_feps(NFEPS)]),
+        current_node(_,Nodes),
+        check_number_of_feps(NFEPS,Nodes,Result).
+
+check_number_of_feps(normal(1),Nodes,Result) :-
+    8 >= Nodes |
+        Result = [{0,0,0,6}].
+check_number_of_feps(normal(1),Nodes,Result) :-
+    Nodes > 8 |
+        Result = [{1,0,0,6}].
+check_number_of_feps(normal(2),Nodes,Result) :-
+    true |
+        Result = [{1,0,0,6},{5,0,0,6}].
+check_number_of_feps(normal(3),Nodes,Result) :-
+    true |
+        Result = [{1,0,0,6},{5,0,0,6},{58,0,0,6}].
+check_number_of_feps(normal(4),Nodes,Result) :-
+    true |
+        Result = [{1,0,0,6},{5,0,0,6},{58,0,0,6},{62,0,0,6}].
+otherwise.
+check_number_of_feps(_,Nodes,Result) :-
+    true |
+        Result = [].
+:- case(scsi).
+scsi_where(Result) :-
+    true |
+        builtin:scsi_where(Result).
+%        Result = [ {32,0,0,6},{2,0,0,6}].
+:-default.
+scsi_where(Result) :-
+    true |
+        Result = [ {0,0,0,6}].
+:- end_switch.
+:- end_switch.

@@ -1,0 +1,77 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module user_request_device. 
+:- with_macro pimos.
+:- public driver/3.
+:- public user_device_table/1.
+
+user_device_table(In):-
+    true|
+    user_device_table(In,UT1,UT2,GT1,GT2,LT1),
+    user_table_device:user_table(UT1,UT2),
+    group_table_device:group_table(GT1,GT2),
+    login_table_device:login_table(LT1).
+
+user_device_table([],UT1,UT2,GT1,GT2,LT1):-
+    true|
+    UT1 = [],
+    UT2 = [],
+    GT1 = [],
+    GT2 = [],
+    LT1 = [].
+user_device_table([user(U1,U2)|Rest],UT1,UT2,GT1,GT2,LT1):-
+    true|
+    UT1 = {U1,UT11},
+    UT2 = {U2,UT22},
+    user_device_table(Rest,UT11,UT22,GT1,GT2,LT1).
+user_device_table([group(G1,G2)|Rest],UT1,UT2,GT1,GT2,LT1):-
+    true|
+    GT1 = {G1,GT11},
+    GT2 = {G2,GT22},
+    user_device_table(Rest,UT1,UT2,GT11,GT22,LT1).
+user_device_table([login(L)|Rest],UT1,UT2,GT1,GT2,LT1):-
+    true|
+    LT1 = {L,LT2},
+    user_device_table(Rest,UT1,UT2,GT1,GT2,LT2).
+
+driver(Status,Table,Users):- true |
+    Status = normal(UserRequest,Abort,[]),
+    driver1(UserRequest,Table,1,Users).
+
+driver1([reset(Status)|In],Table,MsgID,Users):- true |
+    Status = normal(Abort,[],MsgID),
+    MsgID1 := MsgID + 1,
+    driver1(In,Table,MsgID1,Users).           %
+driver1([next_attention(Status)|In],Table,MsgID,Users):- true |
+    Status = normal([]),
+    driver1(In,Table,MsgID,Users).
+driver1([resend(MsgID0,Status)|In],Table,MsgID,Users):- true |
+    Status = normal,
+    driver1(In,Table,MsgID,Users).
+driver1([cancel(MsgID0,Status)|In],Table,MsgID,Users):- true |
+    Status = normal,
+    driver1(In,Table,MsgID,Users).
+
+driver1([create(user(Status))|In],Table,MsgID,Users):- true |
+    copy:copy(Users,Users1,Users2),
+    Table = [user(U1,U2)|Table2],
+    user_table_device:driver(Status,U1,U2,Users2),
+    driver1(In,Table2,MsgID,Users1).
+driver1([create(group(Status))|In],Table,MsgID,Users):- true |
+    copy:copy(Users,Users1,Users2),
+    Table = [group(G1,G2)|Table2],
+    group_table_device:driver(Status,G1,G2,Users2),
+    driver1(In,Table2,MsgID,Users1).
+driver1([create(login(Status))|In],Table,MsgID,Users):- true |
+    copy:copy(Users,Users1,Users2),
+    Table = [login(L1)|Table2],
+    login_table_device:driver(Status,L1,Users2),
+    driver1(In,Table2,MsgID,Users1).             % 
+driver1([],Table,MsgID,Users):- true |
+    Table = [].
+
+

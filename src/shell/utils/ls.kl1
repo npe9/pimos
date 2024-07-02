@@ -1,0 +1,206 @@
+% icpsi573::>sys>user>yashiro>V36>PATHNAME>ls.kl1.9, 19-Apr-93 16:38:48, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>PATHNAME>ls.kl1.12, 06-Jul-90 14:03:37, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   list directory program                                                  %
+%   Usage: prompt> ls                                                       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro  pimos.
+:- module  ls.
+:- public  go/0, go/1.
+:- public usage/1.
+
+go:-
+    true |
+        shoen:raise(pimos_tag#task, general_request, [fep_attributes(Result)]),
+        go1(Result).
+
+go(WildCard)  :-
+    true |
+        shoen:raise(pimos_tag#task, general_request, [fep_attributes(Result)]),
+        go1(Result,WildCard).
+
+go1(normal(_,_,_,_,">",_,_)) :-    true |
+    shoen:raise(pimos_tag#task,get_std(out),StdOut),
+    pathname:expandPathname(string#"*.*",ListOfFiles),
+    printFiles(ListOfFiles,1,StdOut,">").
+go1(normal(_,_,_,_,"/",_,_)) :-    true |
+    shoen:raise(pimos_tag#task,get_std(out),StdOut),
+    pathname:expandPathname(string#"*",ListOfFiles),
+    printFiles(ListOfFiles,1,StdOut,"/").
+otherwise.
+go1(_) :-    true |
+    shoen:raise(pimos_tag#task,get_std(out),StdOut),
+    pathname:expandPathname(string#"*.*",ListOfFiles),
+    printFiles(ListOfFiles,1,StdOut,">").
+
+go1(normal(_,_,_,_,Directory,_,_),WildCard) :-
+    string(WildCard,_,_) |
+        shoen:raise(pimos_tag#task,get_std(out),StdOut),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[file(normal(FR,_,_))],
+        pathname:expandPathname(WildCard,ListOfFiles),
+        merge(FR1,FR),
+        printFiles2(FR1,ListOfFiles,1,StdOut,Directory).
+go1(normal(_,_,_,_,Directory,_,_),WildCard) :-
+    list(WildCard) |
+        shoen:raise(pimos_tag#task, get_std(out), StdOut),
+        pathname:expandPathname(WildCard,ListOfFiles),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[file(normal(FR,_,_))],
+        merge(FR1,FR),
+        printFiles2(FR1,ListOfFiles,1,StdOut,Directory).
+otherwise.
+go1(abnormal,WildCard) :- true |
+        shoen:raise(pimos_tag#task,get_std(out),StdOut),
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[file(normal(FR,_,_))],
+        pathname:expandPathname(WildCard,ListOfFiles),
+        merge(FR1,FR),
+        printFiles2(FR1,ListOfFiles,1,StdOut,">").
+otherwise.
+go1(_,_) :- true |
+    shoen:raise(pimos_tag#task, get_std(out), StdOut),
+    usage( Usage ),
+    putUsage( Usage, StdOut ).
+
+usage(Usage) :- true |
+    Usage = [{"Usage: ls",[]},
+             {"       ls( WildCard )",[]},
+             {"        Wildcard        ::= String",[]}].
+putUsage( [Usage|UsageList], StdOut) :- 
+    vector_element( Usage, 0, FormatString),
+    vector_element( Usage, 1, ArgumentList) |
+    StdOut=[putf(FormatString, ArgumentList),nl,flush(_) | NewStdOut],
+    putUsage( UsageList, NewStdOut).
+putUsage( [], StdOut) :- true |
+    StdOut = [].
+
+printFiles([file(Car)|Cdr],Level,StdOut,Directory) :-
+    string(Car,_,StringElement) |
+    makeIndent(Indent, Level, StringElement),
+    StdOut=[putb(Indent),putb(Car),nl|NewStdOut],
+    printFiles(Cdr,Level,NewStdOut,Directory).
+printFiles( [directory(Car)|Cdr], Level, StdOut,">") :-
+    string(Car,_,StringElement) |
+    makeIndent(Indent, Level, StringElement),
+    builtin#append_string([Car,string#">"],NewCar),
+    StdOut=[putb(Indent),putb(NewCar),nl|NewStdOut],
+    printFiles( Cdr,Level,NewStdOut,">").
+printFiles( [directory(Car)|Cdr], Level, StdOut,"/") :-
+    string(Car,_,StringElement) |
+    makeIndent(Indent, Level, StringElement),
+    StdOut=[putb(Indent),putb(Car),nl|NewStdOut],
+    printFiles( Cdr,Level,NewStdOut,"/").
+printFiles([abnormal(Car)|Cdr],Level,StdOut,Directory) :-
+    string(Car,_,_) |
+    StdOut=[putb(Car),putb(" cannot be accessed by read-mode."),nl|NewStdOut],
+    printFiles(Cdr,Level,NewStdOut,Directory).
+printFiles([non_existent(File)|Cdr],Level,StdOut,Directory) :-
+    true |
+    StdOut=[putb("no match. "),putb(File),nl|NewStdOut],
+    printFiles(Cdr,Level,NewStdOut,Directory).
+printFiles([],_,StdOut,Directory) :-
+    true |
+    StdOut=[].
+
+printFiles2(FR,[file(Car)|Cdr],Level,StdOut,Directory) :-
+    string(Car,_,StringElement)|
+    makeIndent(Indent,Level,StringElement),
+    StdOut=[putb(Indent),putb(Car),nl|NewStdOut],   % 
+    printFiles2(FR,Cdr,Level,NewStdOut,Directory).
+printFiles2(FR,[directory(Car)|Cdr],Level,StdOut,">") :-
+    string(Car,_,StringElement) |
+    makeIndent(Indent, Level, StringElement),
+    FR=[directory(Car,normal(Dir,_,_))|FR1],
+    Dir=[listing(string#"*.*",Status)], % 
+    StdOut=[putb(Indent),putb(Car),nl|NewStdOut],
+    FR1={FR2,FR3},
+    printFiles3(FR2,Status, ~(Level+1), NewStdOut, NewStdOut1,">"),
+    printFiles2(FR3, Cdr, Level, NewStdOut1,">").
+printFiles2(FR,[directory(Car)|Cdr],Level,StdOut,"/") :-
+    string(Car,_,StringElement) |
+    makeIndent(Indent, Level, StringElement),
+    FR=[directory(Car,normal(Dir,_,_))|FR1],
+    Dir=[listing(string#"*",Status)], % 
+    StdOut=[putb(Indent),putb(Car),nl|NewStdOut],
+    FR1={FR2,FR3},
+    printFiles3(FR2,Status, ~(Level+1), NewStdOut, NewStdOut1,"/"),
+    printFiles2(FR3, Cdr, Level, NewStdOut1,"/").
+printFiles2(FR,[abnormal(Car)|Cdr], Level, StdOut,Directory) :-
+    string(Car,_,_) |
+    StdOut=[putb(Car),putb(" cannot be accessed by read-mode."),nl|NewStdOut],
+    printFiles2(FR, Cdr, Level, NewStdOut,Directory).
+printFiles2(FR, [non_existent(FILE)|Cdr], Level, StdOut,Directory) :-
+    true |
+    StdOut=[putb("no match "),putb(FILE),nl|NewStdOut],
+    printFiles2(FR, Cdr, Level, NewStdOut,Directory).
+printFiles2(FR, [], _, StdOut,Directory) :-
+    true |
+    FR=[],
+    StdOut=[].
+
+printFiles3(FR, normal(ListOfFiles), Level, StdOut, RStdOut,Directory) :-
+    true |
+    printFiles3(FR, ListOfFiles, Level, StdOut, RStdOut,Directory).
+printFiles3(FR, abnormal, _, StdOut, RStdOut,Directory) :-
+    true |
+    FR=[],
+    StdOut=RStdOut.
+printFiles3(FR, [Car|Cdr], Level, StdOut, RStdOut,Directory) :-
+    string(Car,_,StringElement) |
+    makeIndent(Indent, Level, StringElement),
+    StdOut=[putb(Indent),putb(Car),nl|NewStdOut],
+    printFiles3(FR, Cdr, Level, NewStdOut, RStdOut,Directory).
+printFiles3(FR, [directory(Car)|Cdr], Level, StdOut, RStdOut,">") :-
+    string(Car,_,StringElement) |
+    makeIndent(Indent, Level, StringElement),
+    builtin#append_string([Car,string#">"],NewCar),
+    StdOut=[putb(Indent),putb(NewCar),nl|NewStdOut],
+    printFiles3(FR, Cdr, Level, NewStdOut, RStdOut,">").
+printFiles3(FR, [directory(Car)|Cdr], Level, StdOut, RStdOut,"/") :-
+    string(Car,_,StringElement) |
+    makeIndent(Indent, Level, StringElement),
+    StdOut=[putb(Indent),putb(Car),nl|NewStdOut],
+    printFiles3(FR, Cdr, Level, NewStdOut, RStdOut,"/").
+printFiles3(FR, [abnormal(Car)|Cdr], Level, StdOut, RStdOut,Directory) :-
+    string(Car,_,_) |
+    StdOut=[putb(Car),putb(" cannot be accessed by read-mode."),nl|NewStdOut],
+    printFiles3(FR, Cdr, Level, NewStdOut, RStdOut,Directory).
+printFiles3(FR, [non_existent(FILE)|Cdr], Level, StdOut, RStdOut,Directory) :-
+    true |
+    StdOut=[putb("no match"),putb(FILE),nl|NewStdOut],
+    printFiles3(FR, Cdr, Level, NewStdOut, RStdOut,Directory).
+printFiles3(FR, [], _, StdOut, RStdOut,Directory) :-
+    true |
+    FR=[],
+    StdOut=RStdOut.
+
+makeIndent( Indent, Size, Element) :-
+    Size > 0 |
+    new_string( Indent1, Size, Element),
+    fillspace( Indent1, Size, Indent).
+makeIndent( Indent, Size, _) :-
+    Size =< 0 |
+    Indent=string#"".
+
+fillspace( String, Size, NewString) :-
+    Size>0|
+    NewSize:=Size-1,
+    set_string_element( String, NewSize, #" ", NewString1),
+    fillspace( NewString1, NewSize, NewString).
+fillspace( String, Size, NewString) :-
+    Size =< 0 |
+    String=NewString.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                           %%%%%
+%%%%%  End of 'ls' module.      %%%%%
+%%%%%                           %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

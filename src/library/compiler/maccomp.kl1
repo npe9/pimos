@@ -1,0 +1,697 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi206::>sys>user>sekita>macro>maccomp.kl1.130, 15-Nov-90 19:45:21, Edit by sekita
+%%:- op(1150, fx, macro_module).
+%%:- op(1150, fx, inherit_macro).
+%%:- op(1175, fx, (':-')).
+%%:- op(1175, xfx, (':-')).
+%%:- op(1175, xfx, ('-->')).
+%%:- op(1200, xfy, ('!')).
+%%:- op(1050, xfx, when).
+%%:- op(1050, xfx, where).
+
+:- module kl1cmp_maccomp.
+:- public compile_macro/7.
+:- with_macro pimos.
+
+:- include("pimos.h").
+
+compile_macro(VP0, VP, In, Out0, Out, Err0, Err) :- true |
+    add_Position([], In, In1),
+    compileMacro_(Err0, Err1, 0, Parent0, Out0, Out1, Macro0, [], 1, No, 0, Self0, In1),
+    makeSortedTable(No, HTbl, STbl0),
+    sortOutput(Macro0, STbl0),
+    kl1cmp_macro:generate_macro_expander(MacroIn0, [], Err1, Err2,
+        [read_predicate(Out2, _)]),
+    checkParent(Err2, Err, VP0, VP, Parent0, Parent, Self0),
+    outputMacros(0, No, HTbl, Parent, Macro1, []),
+    kl1ClauseBank(Macro1, MacroIn0),
+    outputHiddenPredicate(Out1, Out3, Parent),
+    nameAnnonymousVariablesList(Out2, NumTerm),
+    outputClauses(NumTerm, Out3, Out).
+
+add_Position(Pos, [Cls-Pos1|Cdr], OUT) :- true |
+    OUT=[Cls-Pos1|OUTCdr],
+    add_Position(Pos, Cdr, OUTCdr).
+otherwise.
+add_Position(Pos, [Cls|Cdr], OUT) :- true |
+    OUT=[Cls-Pos|OUTCdr],
+    add_Position(Pos, Cdr, OUTCdr).
+add_Position(_, [], OUT) :- true | OUT=[].
+
+%%remove_Position([], OUT) :- true | OUT=[].
+%%remove_Position([Cls-[]|Cdr], OUT) :- true |
+%%    OUT=[Cls|OUTCdr],
+%%    remove_Position(Cdr, OUTCdr).
+%%otherwise.
+%%remove_Position([Cls|Cdr], OUT) :- true |
+%%    OUT=[Cls|OUTCdr],
+%%    remove_Position(Cdr, OUTCdr).
+
+:- local_implicit err:oldnew, parent:oldnew,
+        cls:oldnew, macro:oldnew, c:oldnew, self:oldnew. 
+compileMacro_([wrap#(:- macro_module(Mod))-Pos|Cdr]) --> true |
+    &cls <<= [wrap#(:- module Mod)-Pos,
+                      wrap#(:- public expand_macro/6, '$my_super_macro_module'/1)-Pos],
+    &self <= Mod,
+    compileMacro_(Cdr).
+compileMacro_([wrap#(:- public A)-Pos|Cdr]) --> true |
+    &cls <<= [wrap#(:- public A)-Pos],
+    compileMacro_(Cdr).
+compileMacro_([wrap#(:-inherit_macro(Mod))-_|Cdr]) --> true |
+    &parent <= Mod,
+    compileMacro_(Cdr).
+compileMacro_([wrap#(:- inherit_macro)-_|Cdr]) --> true |
+    &parent <= 1,
+    compileMacro_(Cdr).
+%% patched D.Sekita 91/09/18
+%%compileMacro_([wrap#(:- user_macro(Dir))-Pos|Cdr]) --> true |
+%%  {{convert_macro:oldToNew([wrap#(:- user_macro(Dir))-Pos|Cdr], New)}},
+%%    compileMacro_(New).
+%% patched D.Sekita 91/09/18
+compileMacro_([wrap#{('!'),Cls0,Cls1}-Pos|Cdr]) --> true |
+  {{compileMacro_(&err, &macro, &c, wrap#{('!'),Cls0,Cls1}-Pos)}},
+    compileMacro_(Cdr).
+otherwise.
+compileMacro_([wrap#(Before=>After:-Guard|Body)-Pos|Cdr]) --> true |
+  {{compileMacro_(&err, &macro, &c, wrap#(Before=>After:-Guard|Body)-Pos)}},
+    compileMacro_(Cdr).
+otherwise.
+compileMacro_([wrap#(Before=>After:-Body)-Pos|Cdr]) --> true |
+  {{compileMacro_(&err, &macro, &c, wrap#(Before=>After:-true|Body)-Pos)}},
+    compileMacro_(Cdr).
+otherwise.
+compileMacro_([wrap#(Before=>After)-Pos|Cdr]) --> true |
+  {{compileMacro_(&err, &macro, &c, wrap#(Before=>After:-true|true)-Pos)}},
+    compileMacro_(Cdr).
+otherwise.
+compileMacro_([wrap#(:- Dir)-Pos|Cdr]) --> true |
+    &cls <<= [wrap#(:- Dir)-Pos],
+    compileMacro_(Cdr).
+otherwise.
+compileMacro_([Term|Cdr]) --> true |
+    &cls <<= [Term],
+    compileMacro_(Cdr).
+compileMacro_([]) --> true | true.
+
+maxOtherwise(C0, C, New) :- C0 < New | C=New.
+maxOtherwise(C0, C, New) :- C0 >= New | C=C0.
+
+:- local_implicit err:oldnew, out:oldnew, c:oldnew.
+compileMacro_(Term0-Pos0) --> true |
+%%  {{compileMacro__(&err, Out0, [], 1, COtherwise, Term0),
+  {{compileMacro__(Err0, [], Out0, [], 1, COtherwise, Term0),
+    maxOtherwise(&c, COtherwise),
+%% patched D.Sekita
+    kl1cmp_error_filter:addErrorInfo(&err, Err0, Pos0, Pos1),
+%% patched D.Sekita
+    add_Position(Pos1, Out0, Out1)}},
+    &out <<= [Out1].
+
+compileMacro__(wrap#({'!',Cls0,Cls1})) --> true |
+       compileMacro__(Cls0),
+       compileMacro__(Cls1).
+compileMacro__(wrap#otherwise) --> true |
+        &out <<= [wrap#otherwise],
+      {{&c <= &c + 1}}.
+otherwise.
+compileMacro__(Cls0) --> true |
+  {{kl1cmp_variable:nameVariablesVoid(Cls0, Cls1), %% newname "_" variable
+    kl1cmp_variable_name:string_to_integer(Cls1, Cls2, VarTbl0),
+    errorFilter(&err, VarTbl0, VarTbl1, Err), 
+    nameNumbers(&out, VarTbl1, _, Out0),
+    normalizeAndCompile(Err, [], Out0, [], Cls2)}}.
+
+:- local_implicit err:oldnew, out:oldnew.
+normalizeAndCompile(wrap#(Before=>After :- Guard | Body)) -->
+      {{kl1cmp_reader:count_variables(wrap#(Before=>After :- Guard | Body), Cls0, 0, Nv),
+        kl1cmp_vargen:variable_generator(Nv, _, Var0),
+        compileMacro(&err, &out, Var0, [], Cls0)}}.
+otherwise.
+normalizeAndCompile(wrap#(Before=>After :- Body)) -->
+      {{kl1cmp_reader:count_variables(wrap#(Before=>After :- true | Body), Cls0, 0, Nv),
+        kl1cmp_vargen:variable_generator(Nv, _, Var0),
+        compileMacro(&err, &out, Var0, [], Cls0)}}.
+otherwise.
+normalizeAndCompile(wrap#(Before=>After)) -->
+      {{kl1cmp_reader:count_variables(wrap#(Before=>After :- true | true), Cls0, 0, Nv),
+        kl1cmp_vargen:variable_generator(Nv, _, Var0),
+        compileMacro(&err, &out, Var0, [], Cls0)}}.
+otherwise.
+normalizeAndCompile(Cls0) --> true |
+        &err <<= [error("Macro syntax error : ~W", [Cls0])].
+
+:- local_implicit err:oldnew, out:oldnew, var:oldnew.
+compileMacro(wrap#(Before0=>After0 :- Guard0 | Body0)) --> true |
+        &var <<= [new_variable(OutVar)],
+      {{extractVariables(&err, Vars, [], After0, After, wrap#[Before0, Guard0, Body0],
+                                         wrap#[Before1, Guard1, Body1]),
+        makeHead(&err, &var, Before1, Head, OutVar),
+        makeGuard(&err, &var, Guard1, Guard2),
+        makeBody(&err, &var, Body1, After, Body2, OutVar, Vars)}},
+      {{deleteTrue(Guard2, Guard), deleteTrue(Body2, Body)}},
+      &out <<= [wrap#(Head --> Guard | Body)].
+
+:- local_implicit err:oldnew, vars:oldnew.
+extractVariables(After0, After, Another0, Another) --> true |
+  {{extractVariablesWrappedTerm(&err, Var0, [], After0, After),
+    extractVariables(&err, Var1, [], Another0, Another),
+    extractLacks(Var2, [], Var0, Var1),
+    uniq(&vars, Var2)}}.
+
+
+deleteTrue(Goal0, Goal) :- true |
+    makeList(Goal0, List0, []),
+    reconstructGoals(List0, Goal).
+
+makeList(wrap#(G0,G1),L0,L) :- true |
+    makeList(G0,L0,L1),
+    makeList(G1,L1,L).
+makeList(wrap#(G0;G1),L0,L) :- true |
+    deleteTrueInCond(wrap#(G0;G1),NewGoal),
+    L0=[NewGoal|L].
+otherwise.
+makeList(wrap#(true),L0,L) :- true | L0=L.
+otherwise.
+makeList(Goal0,L0,L) :- true | L0=[Goal0|L].
+
+deleteTrueInCond(wrap#(G0;G1),Goal) :- true |
+    deleteTrueInCond(G0, NewG0),
+    deleteTrueInCond(G1, NewG1),
+    Goal=wrap#(NewG0;NewG1).
+otherwise.
+deleteTrueInCond(wrap#(Cond0->Body0),Goal) :- true |
+    deleteTrue(Cond0, Cond),
+    deleteTrue(Body0, Body),
+    Goal=wrap#(Cond->Body).
+otherwise.
+deleteTrueInCond(Goal0, Goal) :- true | Goal0=Goal.
+
+reconstructGoals([G0], Goal) :- true | Goal=G0.
+otherwise.
+reconstructGoals([G0|Rest], Goal) :- true |
+    Goal=wrap#(G0,NewGoals),
+    reconstructGoals(Rest, NewGoals).
+reconstructGoals([], Goal) :- true | Goal=atom(true).
+
+:- local_implicit var:oldnew.
+uniq([A|Vars]) --> true |
+  {{uniq(Vars1, [], A, Vars),
+    &var <<= [A]}},
+    uniq(Vars1).
+uniq([]) --> true | true.
+
+uniq(A, [A|Cdr]) --> true |
+        uniq(A, Cdr).
+otherwise.
+uniq(A, [B|Cdr]) --> true |
+        &var <<= [B],
+        uniq(A, Cdr).
+uniq(_, []) --> true | true.
+
+:- local_implicit err:oldnew, vars:oldnew.
+extractVariablesWrappedTerm(wrap#({when,Pat0,When0}), WTerm) --> true |
+    extractVariablesWrappedTerm(Pat0, Pat),
+    extractVariablesWrappedTerm(When0, When),
+    WTerm=wrap#({when,Pat,When}).
+extractVariablesWrappedTerm(wrap#({where,Pat0,Where0}), WTerm) --> true |
+    extractVariablesWrappedTerm(Pat0, Pat),
+    extractVariablesWrappedTerm(Where0, Where),
+    WTerm=wrap#({where,Pat,Where}).
+% added by murayama 93.7
+extractVariablesWrappedTerm(wrap#({with_clauses,Pat0,Cls0}), WTerm) --> true |
+    extractVariablesWrappedTerm(Pat0, Pat),
+    extractVariablesWrappedTerm(Cls0, Cls),
+    WTerm=wrap#({with_clauses,Pat,Cls}).
+extractVariablesWrappedTerm(wrap#({with_predicates,Pat0,Cls0}), WTerm) --> true |
+    extractVariablesWrappedTerm(Pat0, Pat),
+    extractVariablesWrappedTerm(Cls0, Cls),
+    WTerm=wrap#({with_predicates,Pat,Cls}).
+%
+otherwise.
+extractVariablesWrappedTerm(WTerm0, WTerm) --> true |
+    extractVariablesWrappedTerm_(WTerm0, WTerm).
+
+extractVariablesWrappedTerm_(vector({atom(vector), vector(Vect0)}),
+                WVect) --> vector(Vect0, N) |
+        extractVariablesWrappedTerm_(0, N, Vect0, Vect),
+        WVect=vector({atom(vector), vector(Vect)}).
+%%%%%% ins SAGI
+extractVariablesWrappedTerm_(atom([]), WList) --> true | WList=atom([]).
+extractVariablesWrappedTerm_(list([Car0|Cdr0]), WList) --> true |
+        extractVariablesWrappedTerm_(Car0, Car),
+        extractVariablesWrappedTerm_(Cdr0, Cdr),
+        WList=list([Car|Cdr]).
+%%%%% ins end
+extractVariablesWrappedTerm_(vector({atom(list), list([Car0|Cdr0])}), WList) --> true |
+        extractVariablesWrappedTerm_(Car0, Car),
+        extractVariablesWrappedTerm_(Cdr0, Cdr),
+        WList=vector({atom(list), list([Car|Cdr])}).
+extractVariablesWrappedTerm_(variable(N), WVar) --> true |
+    &vars <<= [variable(N)],
+    WVar=variable(N).
+extractVariablesWrappedTerm_(vector({atom(atom), atom(Atom)}), WAtom) --> atom(Atom) |
+        WAtom=vector({atom(atom), atom(Atom)}).
+extractVariablesWrappedTerm_(vector({atom(integer), integer(Int)}), WInt) --> integer(Int) |
+        WInt=vector({atom(integer), integer(Int)}).
+extractVariablesWrappedTerm_(vector({atom(string), string(String)}), WString) --> string(String, _, _) |
+        WString=vector({atom(string), string(String)}).
+extractVariablesWrappedTerm_(vector({atom(floating_point), floating_point(Float)}), WString) -->
+        floating_point(Float) |
+        WString=vector({atom(floating_point), floating_point(Float)}).
+%%extractVariablesWrappedTerm_(vector({atom(code), code(Code)}), WCode) --> code(Code,_,_) |
+%%        WCode=vector({atom(code), code(Code)}).
+%% special case
+extractVariablesWrappedTerm_(vector({atom(variable), string(String)}), WCode) --> true |
+    WCode=vector({atom(variable), string(String)}).
+extractVariablesWrappedTerm_(vector({atom(variable), integer(Int)}), WCode) --> true |
+    WCode=vector({atom(variable), integer(Int)}).
+extractVariablesWrappedTerm_(vector({atom(variable), variable(N)}), WCode) --> true |
+    WCode=vector({atom(variable), variable(N)}).
+extractVariablesWrappedTerm_(vector({atom(vector), variable(N)}), WVect) --> true |
+    &vars <<= [variable(N)],
+    WVect=vector({atom(vector),variable(N)}).
+extractVariablesWrappedTerm_(vector({atom(list), variable(N)}), WVect) --> true |
+    &vars <<= [variable(N)],
+    WVect=vector({atom(list),variable(N)}).
+extractVariablesWrappedTerm_(vector({atom(atom), variable(N)}), WVect) --> true |
+    &vars <<= [variable(N)],
+    WVect=vector({atom(atom), variable(N)}).
+extractVariablesWrappedTerm_(vector({atom(integer), variable(N)}), WVect) --> true |
+    &vars <<= [variable(N)],
+    WVect=vector({atom(integer), variable(N)}).
+extractVariablesWrappedTerm_(vector({atom(string), variable(N)}), WVect) --> true |
+    &vars <<= [variable(N)],
+    WVect=vector({atom(string), variable(N)}).
+:- if_equal(extended_floating_point, yes).
+extractVariablesWrappedTerm_(vector({atom(extended_floating_point), variable(N)}), WVect) --> true |
+    &vars <<= [variable(N)],
+    WVect=vector({atom(extended_floating_point), variable(N)}).
+:- end_if.
+extractVariablesWrappedTerm_(vector({atom(floating_point), variable(N)}), WVect) --> true |
+    &vars <<= [variable(N)],
+    WVect=vector({atom(floating_point), variable(N)}).
+otherwise.
+extractVariablesWrappedTerm_(Arg0, Arg) --> true |
+    &err <<= [warning("mis-wrapped term : ~W", [Arg0])],
+    Arg0=Arg.
+
+extractVariablesWrappedTerm_(A, N, Vect0, Vect) --> A<N |
+  {{set_vector_element(Vect0, A, Elm0, Elm, Vect1)}},
+    extractVariablesWrappedTerm_(Elm0, Elm),
+  {{A1 := A+1}},
+    extractVariablesWrappedTerm_(A1, N, Vect1, Vect).
+extractVariablesWrappedTerm_(N, N, Vect0, Vect) --> true | Vect0=Vect.
+
+extractVariables(vector(Vect0), WVect) --> vector(Vect0, N) |
+    extractVariablesVect(0, N, Vect0, Vect),
+    WVect=vector(Vect).
+extractVariables(list([Car0|Cdr0]), WCode) --> true |
+    extractVariables(Car0, Car),
+    extractVariables(Cdr0, Cdr),
+    WCode=list([Car|Cdr]).
+extractVariables(variable(N), Var) --> true |
+    &vars <<= [variable(N)],
+    Var=variable(N).
+otherwise.
+extractVariables(WCode0, WCode) --> true | WCode0=WCode.
+
+extractVariablesVect(A, N, Vect0, Vect) --> A<N |
+  {{set_vector_element(Vect0, A, Elm0, Elm, Vect1)}},
+    extractVariables(Elm0, Elm),
+  {{A1 := A+1}},
+    extractVariablesVect(A1, N, Vect1, Vect).
+extractVariablesVect(N, N, Vect0, Vect) --> true | Vect0=Vect.
+
+:- local_implicit vars:oldnew.
+extractLacks([V|Cdr], Vars) --> true |
+        extractLacks_(V, Vars),
+        extractLacks(Cdr, Vars).
+extractLacks([], _) --> true | true.
+
+extractLacks_(V, [V|_]) --> true | true.
+otherwise.
+extractLacks_(V, [_|Cdr]) --> true | extractLacks_(V, Cdr).
+extractLacks_(V, []) --> true | &vars <<= [V].
+
+:- local_implicit err:oldnew, var:oldnew.
+makeHead(Before, Head, OutVar) --> true |
+        Head = wrap#expand_macro(Before, OutVar).
+
+makeGuard(wrap#(G0,G), Guard) --> true |
+        makeGuard(G0, GG0),
+        makeGuard(G, GG),
+        Guard=wrap#(GG0,GG).
+otherwise.
+makeGuard(wrap#(as_a_clause), Goal) --> true |
+        Goal=vector({atom(vector_element), vector({atom(('&')), atom(info)}), integer(0), atom(clause)}).
+makeGuard(wrap#(as_a_goal), Goal) --> true |
+        Goal=vector({atom(vector_element), vector({atom(('&')), atom(info)}), integer(0), atom(goal)}).
+makeGuard(wrap#(as_an_argument), Goal) --> true |
+        Goal=vector({atom(vector_element), vector({atom(('&')), atom(info)}), integer(0), atom(argument)}).
+makeGuard(wrap#(in_the_head), Goal) --> true |
+        Goal=vector({atom(vector_element), vector({atom(('&')), atom(info)}), integer(1), atom(head)}).
+makeGuard(wrap#(in_the_guard), Goal) --> true |
+        Goal=vector({atom(vector_element), vector({atom(('&')), atom(info)}), integer(1), atom(guard)}).
+makeGuard(wrap#(in_the_body), Goal) --> true |
+        Goal=vector({atom(vector_element), vector({atom(('&')), atom(info)}), integer(1), atom(body)}).
+otherwise.
+makeGuard(Goal0, Goal) --> true | Goal0=Goal.
+
+%
+% expand_macro(Module, Patterm, Out) -->
+%
+
+makeBody(Body0, After, Body, OutVar, Vars) --> true |
+        reconstructBody(Body0, Body, Body1),
+        processAfter(After, Pattern, Body1, Body2),
+        makeNewVariableList(Vars, NewVariables),
+%%        Body2=wrap#(&stream <<= NewVariables,
+%%                            '$recursive_call_it_self'(Pattern, OutVar)).
+%%        Body2=vector({atom((',')),
+%%                  vector({atom('<<='), vector({atom(('&')), atom(stream)}), NewVariables}),
+%%                  wrap#'$recursive_call_it_self'(Pattern, OutVar)}).
+        Body2=vector({atom((',')),
+                    vector({atom('<<='), vector({atom(('&')), atom(stream)}), NewVariables}),
+                    Body3}),
+        makeMultiBody(Pattern,Body3,OutVar).
+
+%%%% ins SAGI
+%%makeMultiBody(atom([]),Body,OutVar)--> true |
+%%        Body=wrap#(OutVar=atom([])).
+%%makeMultiBody(list([Term|Cdr]),Body,OutVar)-->true |
+%%        Body=wrap#(OutVar=list([Term|Cdr])).
+%% bug fixed D.Sekita 
+makeMultiBody(atom([]),Body,OutVar)--> true |
+        Body=wrap#(OutVar=[]).
+makeMultiBody(list([Term|Cdr]),Body,OutVar)-->true |
+        Body=wrap#(OutVar=[Term|Cdr]).
+otherwise.
+makeMultiBody(Pattern,Body,OutVar)-->true |
+        Body=wrap#'$recursive_call_it_self'(Pattern, OutVar).
+%%%%
+
+%%'$recursive_call_it_self(Module, Pattern) --> true |
+%%                                predicate_to_code(Module, expand_macro, 10, Code), 
+%%                                apply(Code, {&info, &stream, Module, Patter)
+
+reconstructBody(wrap#(G0,G1), Body, Last) --> true |
+%%      {{addMacroArgs(G0, NewG0)}},
+        reconstructBody(G0, Body0, atom(true)),
+        reconstructBody(G1, Body1, Last),
+        Body=wrap#(Body0, Body1).
+otherwise.
+reconstructBody(Body0, Body, Last) --> true |
+      {{addMacroArgs(Body0, Body1)}},
+        Body=wrap#(Body1, Last).
+
+addMacroArgs(wrap#(X=Y), WBody) :- true | WBody=wrap#(X=Y).
+addMacroArgs(wrap#(X<=Y) , WBody) :- true | WBody=wrap#(X<=Y).
+addMacroArgs(wrap#(X<<=Y), WBody) :- true | WBody=wrap#(X<<=Y).
+addMacroArgs(wrap#true, WBody) :- true | WBody=wrap#true.
+addMacroArgs(wrap#(X:=Y), WBody) :- true | WBody=wrap#(X:=Y).
+otherwise.
+addMacroArgs(vector({atom((':')),vector({atom(('::')),atom(Package),atom(Module)}),vector(PredVec)}),WBody) :- vector(PredVec, N) |
+    N1 := N+2,
+    new_vector(Body0,N1),
+    set_vector_element(PredVec, 0, Func, 0, Vect1),
+    set_vector_element(Body0, 0, _, Func, Body1),
+    set_vector_element(Body1, 1, _, vector({atom(('&')), atom(info)}), Body2),
+    set_vector_element(Body2, 2, _, vector({atom(('&')), atom(stream)}), Body3),
+    copyArgs(1, N, 3, Vect1, Body3, Body),
+    WBody=vector({vector({vector({atom((':')),vector({atom(('::')),atom(Package),atom(Module)}),vector(Body)})})}). % {{Body}}
+addMacroArgs(vector({atom((':')),atom(Module),vector(PredVec)}),WBody) :- vector(PredVec, N) |
+    N1 := N+2,
+    new_vector(Body0,N1),
+    set_vector_element(PredVec, 0, Func, 0, Vect1),
+    set_vector_element(Body0, 0, _, Func, Body1),
+    set_vector_element(Body1, 1, _, vector({atom(('&')), atom(info)}), Body2),
+    set_vector_element(Body2, 2, _, vector({atom(('&')), atom(stream)}), Body3),
+    copyArgs(1, N, 3, Vect1, Body3, Body),
+    WBody=vector({vector({vector({atom((':')),atom(Module),vector(Body)})})}). % {{Body}}
+addMacroArgs(vector({atom((':')),vector({atom(('::')),atom(Package),atom(Module)}),atom(PredAtom)}),WBody) :- atom(PredAtom) |
+    new_vector(Body0, 3),
+    set_vector_element(Body0, 0, _, atom(PredAtom), Body1),
+    set_vector_element(Body1, 1, _, vector({atom(('&')), atom(info)}), Body2),
+    set_vector_element(Body2, 2, _, vector({atom(('&')), atom(stream)}), Body),
+    WBody=vector({vector({vector({atom((':')),vector({atom(('::')),atom(Package),atom(Module)}),vector(Body)})})}). % {{Body}}
+addMacroArgs(vector({atom((':')),atom(Module),atom(PredAtom)}),WBody) :- atom(PredAtom) |
+    new_vector(Body0, 3),
+    set_vector_element(Body0, 0, _, atom(PredAtom), Body1),
+    set_vector_element(Body1, 1, _, vector({atom(('&')), atom(info)}), Body2),
+    set_vector_element(Body2, 2, _, vector({atom(('&')), atom(stream)}), Body),
+    WBody=vector({vector({vector({atom((':')),atom(Module),vector(Body)})})}). % {{Body}}
+otherwise.
+addMacroArgs(vector({vector(Vect0)}), WBody) :- vector(Vect0, N), N > 0 |
+    WBody=vector({vector(Vect0)}).
+otherwise.
+addMacroArgs(vector(Vect0), WBody) :- vector(Vect0, N) |
+    N1 := N+2,
+    new_vector(Body0, N1),
+    set_vector_element(Vect0, 0, Func, 0, Vect1),
+    set_vector_element(Body0, 0, _, Func, Body1),
+    set_vector_element(Body1, 1, _, vector({atom(('&')), atom(info)}), Body2),
+    set_vector_element(Body2, 2, _, vector({atom(('&')), atom(stream)}), Body3),
+    copyArgs(1, N, 3, Vect1, Body3, Body),
+    WBody=vector({vector({vector(Body)})}). % {{Body}}
+otherwise.
+addMacroArgs(atom(Pred),WBody) :- true |
+    new_vector(Body0, 3),
+    set_vector_element(Body0, 0, _, atom(Pred), Body1),
+    set_vector_element(Body1, 1, _, vector({atom(('&')), atom(info)}), Body2),
+    set_vector_element(Body2, 2, _, vector({atom(('&')), atom(stream)}), Body),
+    WBody=vector({vector({vector(Body)})}). % {{Body}}
+    
+
+copyArgs(A, N, NA, Vect0, Body0, Body) :- A<N |
+    set_vector_element(Vect0, A, Elm, 0, Vect1),
+    set_vector_element(Body0, NA, _, Elm, Body1),
+    A1 := A+1,
+    NA1 := NA + 1,
+    copyArgs(A1, N, NA1, Vect1, Body1, Body).
+copyArgs(N, N, _, _, Body0, Body) :- true | Body0=Body.
+
+processAfter(wrap#({when,Pattern0,When}), Pattern, Body0, Body) -->
+                true |
+        processWhen(When, Body0, Body),
+        Pattern=Pattern0.
+processAfter(wrap#({where,Pattern0,Where}), Pattern, Body0, Body) -->
+                true |
+        processWhere(Where, Body0, Body),
+        Pattern=Pattern0.
+% added by murayama 93.7
+processAfter(wrap#({with_cluases,Pattern0,Cls}), Pattern, Body0, Body) -->
+                true |
+        processWithClause(Cls, Body0, Body),
+        Pattern=Pattern0.
+processAfter(wrap#({with_predicates,Pattern0,Cls}), Pattern, Body0, Body) -->
+                true |
+        processWithPredicate(Cls, Body0, Body),
+        Pattern=Pattern0.
+%
+otherwise.
+processAfter(Pattern0, Pattern, Body0, Body) --> true |
+        Pattern=Pattern0, Body0=Body.
+
+processWhen(wrap#({where,When,Where}), Body0, Body) --> true |
+        Body0=vector({atom((',')), vector({atom('<<='), vector({atom(('&')), atom(stream)}),
+                                            wrap#([front(When)])}),
+                        Body1}),
+        processWhere(Where, Body1, Body).
+otherwise.
+processWhen(When, Body0, Body) --> true |
+%%        Body0=wrap#(&stream <<= [front(When)], Body).
+        Body0=vector({atom((',')), vector({atom('<<='), vector({atom(('&')), atom(stream)}),
+                                              wrap#[front(When)]}), Body}).
+
+processWhere(wrap#({when,Where,When}), Body0, Body) --> true |
+%%        Body0=wrap#(&stream <<= [back(Where)], Body1),
+        Body0=vector({atom((',')), vector({atom('<<='), vector({atom(('&')), atom(stream)}),
+                                            wrap#[back(Where)]}), Body1}),
+        processWhen(When, Body1, Body).
+otherwise.
+processWhere(Where, Body0, Body) --> true |
+%%        Body0=wrap#(&stream <<= [back(Where)], Body).
+        Body0=vector({atom((',')), vector({atom('<<='), vector({atom(('&')), atom(stream)}),
+                                                        wrap#[back(Where)]}), Body}).
+
+% added by murayama 93.7
+processWithClause(Cls, Body0, Body) --> true |
+        Body0=vector({atom((',')), vector({atom('<<='), vector({atom(('&')), atom(stream)}), wrap#[with_clauses(Cls)]}), Body}).
+
+processWithPredicate(Cls, Body0, Body) --> true |
+        Body0=vector({atom((',')), vector({atom('<<='), vector({atom(('&')), atom(stream)}), wrap#[with_predicates(Cls)]}), Body}).
+%
+
+makeNewVariableList([V|Cdr], NewVariables0) --> true |
+       NewVariables0=list([wrap#new_variable(V)|NewVariables]),
+        makeNewVariableList(Cdr, NewVariables).
+makeNewVariableList([], NewVariables) --> true |
+        NewVariables=atom([]).
+
+sortOutput([Pred|Cdr], Tbl0) :- true |
+        set_vector_element(Tbl0, 0, Cls0, Cls, Tbl1),
+        sortOutput_(Pred, 0, Cls0, Cls, Tbl1, Tbl2),
+        sortOutput(Cdr, Tbl2).
+sortOutput([], Tbl0) :- vector(Tbl0, N) |
+        clearTable(0, N, Tbl0).
+
+clearTable(A, N, Tbl0) :- A<N |
+        set_vector_element(Tbl0, A, [], _, Tbl1),
+        A1 := A+1,
+        clearTable(A1, N, Tbl1).
+clearTable(N, N, _) :- true | true.
+
+sortOutput_([wrap#(otherwise)-_|Cdr], N, Cls0, Cls, Out0, Out) :- true |
+        Cls0=Cls,
+        N1 := N+1,
+        set_vector_element(Out0, N1, NewCls0, NewCls, Out1),
+        sortOutput_(Cdr, N1, NewCls0, NewCls, Out1, Out).
+otherwise.
+sortOutput_([Clause|Cdr], N, Cls0, Cls, Out0, Out) :- true |
+        Cls0=[Clause|Cls1],
+        sortOutput_(Cdr, N, Cls1, Cls, Out0, Out).
+sortOutput_([], _, Cls0, Cls, Out0, Out) :- true |
+        Cls0=Cls, Out0=Out.
+
+
+        
+makeSortedTable(No, HTbl, STbl) :- true |
+        new_vector(HTbl0, No),
+        new_vector(STbl0, No),
+        initializeVector(0, No, HTbl0, HTbl, STbl0, STbl).
+
+initializeVector(A, No, HTbl0, HTbl, STbl0, STbl) :- A<No |
+        set_vector_element(HTbl0, A, _, Cls, HTbl1),
+        set_vector_element(STbl0, A, _, Cls, STbl1),
+        A1 := A+1,
+        initializeVector(A1, No, HTbl1, HTbl, STbl1, STbl).
+initializeVector(No, No, HTbl0, HTbl, STbl0, STbl) :- true |
+        HTbl0=HTbl, STbl0=STbl.
+
+
+outputMacros(0, N, HTbl0, Parent, Out0, Out) :- true |
+        set_vector_element(HTbl0, 0, Cls, [], HTbl1),
+        outputClauses(Cls, Out0, Out1),
+        outputMacros(1, N, HTbl1, Parent, Out1, Out).
+otherwise.
+outputMacros(A, N, HTbl0, Parent, Out0, Out) :- A<N |
+        Out0=[wrap#otherwise-[]|Out1],
+        set_vector_element(HTbl0, A, Cls, [], HTbl1),
+        outputClauses(Cls, Out1, Out2),
+        A1 := A+1,
+        outputMacros(A1, N, HTbl1, Parent, Out2, Out).
+outputMacros(N, N, _, 1, Out0, Out) :- true |
+    Out0=[wrap#otherwise-[],
+          wrap#(expand_macro(Pattern, OutPattern) --> true | Pattern = OutPattern)-[]|Out],
+    Pattern=variable("GenVar0"), OutPattern=variable("GenVar1").
+otherwise.
+outputMacros(N, N, _, Module, Out0, Out) :- true |
+    Out0=[wrap#otherwise-[],
+          wrap#(expand_macro(Pattern, OutPattern) --> true |
+                    Module:expand_macro(Pattern, OutPattern))-[]|Out],
+    Pattern=variable("GenVar0"), OutPattern=variable("GenVar1").
+
+outputHiddenPredicate(Out0, Out, Module) :- true |
+        Out0=[
+vector({atom((:-)), vector({atom('$recursive_call_it_self'), A0, A1, A2, Self, Pattern, OutPat}),
+    vector({atom(apply), Self,
+            vector({A0, A1, A2, Self, Pattern, OutPat})})})-[]|Out1],
+        A0=variable("GenVar0"), A1=variable("GenVar1"),
+        A2=variable("GenVar2"),
+        Self=variable("GenVar7"), Pattern=variable("GenVar8"),
+        OutPat=variable("GenVar9"),
+    outputReservedPredicate(Module, Out1, Out).
+
+outputReservedPredicate(atom(Mod), Out0, Out) :- true |
+    Out0=[wrap#('$my_super_macro_module'(X) :- X=MacroModule#Module)-[]|Out],
+    MacroModule=atom(module),
+    X=variable("GenVar0"), Module=atom(Mod).
+otherwise.
+outputReservedPredicate(_, Out0, Out) :- true |
+    Out0=[wrap#('$my_super_macro_module'(X) :- X=0)-[]|Out],
+    X=variable("GenVar0").
+
+outputClauses([Cls-Info|Cdr], Out0, Out) :- true |
+        Out0=[Cls-Info|Out1],
+        outputClauses(Cdr, Out1, Out).
+otherwise.
+outputClauses([Cls|Cdr], Out0, Out) :- true |
+        Out0=[Cls-[]|Out1],
+        outputClauses(Cdr, Out1, Out).
+outputClauses([], Out0, Out) :- true | Out0=Out.
+
+%%'$recursive_call_it_self(Module, Pattern) --> true |
+%%                                predicate_to_code(Module, expand_macro, 10, Code), 
+%%                                apply(Code, {&info, &stream, Module, Patter)
+
+:- local_implicit str:oldnew, varpool:oldnew.
+errorFilter([{MSG, STR, Args0}|Cdr]) --> true |
+    {{nameNumbers(Args, [], &varpool, Args0)}},
+    &str <<= [{MSG, STR, Args}],
+    errorFilter(Cdr).
+errorFilter([]) --> true | true.
+
+:- local_implicit str:oldnew, varpool:oldnew.
+nameNumbers([Arg0|Cdr]) --> true |
+  {{kl1cmp_variable_name:integer_to_string(Arg0, &varpool, Arg1)}},
+    &str <<= [Arg1],
+    nameNumbers(Cdr).
+nameNumbers([]) --> true | true.
+
+kl1ClauseBank(Out3, [read_predicate(Clause, Pred)|Cdr]) :- true |
+    Clause=[wrap#(:-local_implicit info:shared, stream:oldnew, macro:shared)-[]],
+    Pred=macro,
+    kl1ClauseBank_(Out3, Cdr).
+
+kl1ClauseBank_(Out3, [read_predicate(Clause, Pred)|Cdr]) :- true |
+    Clause=Out3,
+    Pred=expand_macro/6,
+    kl1ClauseBank(Cdr).
+
+kl1ClauseBank([read_predicate(Clause, Pred)|Cdr]) :- true |
+    Clause=end_of_file, Pred=end_of_file,
+    kl1ClauseBank(Cdr).
+kl1ClauseBank([]) :- true | true.
+
+
+nameAnnonymousVariablesList([Arg0-Info|Cdr], List0) :- true |
+    kl1cmp_variable:nameVariables(Arg0, Arg),
+    List0=[Arg-Info|List],
+    nameAnnonymousVariablesList(Cdr, List).
+otherwise.
+nameAnnonymousVariablesList([Arg0|Cdr], List0) :- true |
+    kl1cmp_variable:nameVariables(Arg0, Arg),
+    List0=[Arg|List],
+    nameAnnonymousVariablesList(Cdr, List).
+nameAnnonymousVariablesList([], List) :- true | List=[].
+
+:- local_implicit err:oldnew, modtbl:oldnew.
+checkParent(0, Parent, 0) --> true |
+    &err <<= [error("no macro_module declaration", [])],
+    &err <<= [error("can't inherit itself. change `macro_module' or `inherit_macro'", [])],
+    Parent=atom(pimos).
+otherwise.
+checkParent(Parent0, Parent, 0) --> true |
+    &err <<= [error("no macro_module declaration", [])], Parent0=Parent.
+otherwise.
+checkParent(Parent0, Parent, Parent0) --> true |
+    &err <<= [error("can't inherit itself. change `macro_module' or `inherit_macro'", [])],
+    Parent0=Parent.
+otherwise.
+checkParent(0, Parent, Self) --> true |
+    &err <<= [warning("no inherit_macro declaration. assumed `pimos'.", [])],
+    Parent = atom(pimos),
+    kl1cmp_check_module:checkSelfAndSuper(Self, pimos).
+checkParent(1, Parent, _) --> true | Parent = 1.
+checkParent(atom(Parent0), WParent, Self) --> true |
+    WParent = atom(Parent0),
+    kl1cmp_check_module:checkSelfAndSuper(Self, Parent0).
+otherwise.
+checkParent(Parent0, Parent, _) --> true |
+    &err <<= [error("Invalid inherit module. : ~W", [Parent0])],
+    Parent=1.

@@ -1,0 +1,274 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module listener_error_manager.
+:- public create/2, list/9, filter/2.
+:- with_macro pimos.
+
+create(ERR1,Size) :- true |
+    merge(ERR1,ERR),
+    predicate_to_code(module#comparator,descending_sort,5,Code),
+    pool:keyed_sorted_bag(Code,SS),
+    manager(ERR,SS,0,0,Size).
+
+manager([last(Stat)|ERR],SS,Max,Num,Size) :- 
+    SS=[carbon_copy(Max,D)|SS1],
+    existent_check(D,Max,Stat),
+    manager(ERR,SS1,Max,Num,Size).
+
+manager([get(N,Stat)|ERR],SS,Max,Num,Size) :- 
+    SS=[carbon_copy(N,D)|SS1],
+    existent_check(D,N,Stat),
+    manager(ERR,SS1,Max,Num,Size).
+
+manager([put(_)|ERR],SS,Max,Num,0) :- 
+    manager(ERR,SS,~(Max+1),Num,0).
+manager([put(D)|ERR],SS,Max,Num,Size) :- Size=\=0, Num<Size |
+    NewMax := Max+1,
+    SS=[put(NewMax,D)|SS1],
+    manager(ERR,SS1,NewMax,~(Num+1),Size).
+manager([put(D)|ERR],SS,Max,Num,Size) :- Size=\=0, Num=Size |
+    NewMax := Max+1,
+    SS=[get_max_if_any(_),put(NewMax,D)|SS1],
+    manager(ERR,SS1,NewMax,Num,Size).
+manager([errors(D)|ERR],SS,Max,Num,Size) :- 
+    SS=[carbon_copy(D)|SS1],
+    manager(ERR,SS1,Max,Num,Size).
+manager([get_queue_length(Old)|ERR],SS,Max,Num,Size) :- 
+    Old=Size,
+    manager(ERR,SS,Max,Num,Size).
+manager([queue_length(New)|ERR],SS,Max,Num,Size) :- New>=Size |
+    manager(ERR,SS,Max,Num,New).
+manager([queue_length(New)|ERR],SS,Max,_,Size) :- New<Size |
+    SS=[get_all(D)|SS1],
+    reset_error(D,New,0,Num,SS1,SS2),
+    manager(ERR,SS2,Max,Num,New).
+
+manager([do(List)|ERR],SS,Max,Num,Size) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,ERR,ERR1),
+    manager(ERR1,SS,Max,Num,Size).
+manager([],SS,_,_,_) :- SS=[].
+
+
+reset_error([{K,D}|L],N,Num,Num1,SS,SS2) :- N>0 |
+    SS=[put(K,D)|SS1],
+    reset_error(L,~(N-1),~(Num+1),Num1,SS1,SS2).
+reset_error([_|_],    N,Num,Num1,SS,SS1) :- N=<0 | Num1=Num, SS1=SS.
+reset_error([],       _,Num,Num1,SS,SS1) :- true | Num1=Num, SS1=SS.
+
+existent_check([D],_,Stat) :- Stat=D.
+existent_check([], N,Stat) :- Stat=non_existent(N).
+
+
+filter([last(V)|US],OS) :-
+    OS=[last(V1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    filter(US,OS1).
+filter([get(K,V)|US],OS) :-
+    OS=[get(K,V1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    filter(US,OS1).
+filter([put(V)|US],OS) :-
+    OS=[put(V)|OS1],
+    filter(US,OS1).
+filter([errors(V)|US],OS) :-
+    OS=[errors(V1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    filter(US,OS1).
+filter([get_queue_length(O)|US],OS) :-
+    OS=[get_queue_length(O1)|OS1],
+    listener_utility:wait_unify(O1,O),
+    filter(US,OS1).
+filter([queue_length(N)|US],OS) :- N>=0 |
+    OS=[queue_length(N)|OS1],
+    filter(US,OS1).
+filter([do(Msg)|US],OS) :- 
+    merge(Msg,Msg1),
+    listener_utility:prepend(Msg1,US,US1),
+    filter(US1,OS).
+filter([],OS) :- OS=[].
+
+
+
+list(_,[],IN,IN1,RSC,RSC1,MM,At,At1) :- 
+    IN1=IN, RSC1=RSC, MM=[], At1=normal(At).
+otherwise.
+list(all,List,IN,IN2,RSC,RSC1,MM,At,At1) :- true |
+    listener_utility:reverse(List,List1),
+    index(List1,IN,IN1,ErrNum),
+    get_error(List1,ErrNum,Error),
+    query(Error,IN1,IN2,RSC,RSC1,MM,At,At1).
+list(last,[Error|_],IN,IN1,RSC,RSC1,MM,At,At1) :- true |
+    query(Error,IN,IN1,RSC,RSC1,MM,At,At1).
+
+index([{K,{N,Kind,Info}}],IN,IN3,ErrNum) :-
+    print_error_number(K,IN,IN1),
+    print_event_number(N,IN1,IN2),
+    IN2=[putf("~t ",[Kind]), write(Info,2,2), putb(" ? "), getlt(ErrNum)|IN3].
+otherwise.
+index([{K,{N,Kind,Info}}|L],IN,IN4,ErrNum) :- true |
+    print_error_number(K,IN,IN1),
+    print_event_number(N,IN1,IN2),
+    IN2=[putf("~t ",[Kind]), write(Info,2,2), nl|IN3],
+    index(L,IN3,IN4,ErrNum).
+
+print_error_number(N,IN,IN1) :- N<10         | IN=[putf("  ~t  ",[N])|IN1].
+print_error_number(N,IN,IN1) :- N>=10, N<100 | IN=[putf(" ~t  ",[N])|IN1].
+print_error_number(N,IN,IN1) :- N>=100       | IN=[putf("~t  ",[N])|IN1].
+
+print_event_number(N,IN,IN1) :- N<10         | IN=[putf("[~t]   ",[N])|IN1].
+print_event_number(N,IN,IN1) :- N>=10, N<100 | IN=[putf("[~t]  ",[N])|IN1].
+print_event_number(N,IN,IN1) :- N>=100       | IN=[putf("[~t] ",[N])|IN1].
+
+get_error([Err],  end_of_file,Error) :- true | Error=Err.
+get_error([{K,Err}|_],K,          Error) :- true | Error={K,Err}.
+get_error([],         _,          Error) :- true | Error={}.
+otherwise.
+get_error([_|L],K,Error) :- true | get_error(L,K,Error).
+
+query({},IN,IN1,RSC,RSC1,MM,At,At1) :- true |
+    IN1=IN, RSC1=RSC, MM=[], At1=normal(At).
+query({K,{N,Kind,Info}},IN,IN4,RSC,RSC1,MM,At,At2) :- true |
+    listener_exception_handler:exception_msg(Kind,Info,IN,IN1),
+    IN1=[putf(" !! Exception[~t.~t]: ",[K,N]),getlt(Com)|IN2],
+    next_attention(Com,Com1,At,At1,IN2,IN3),
+    is_command(Com1,NewCom),            
+    do_command(NewCom,{K,{N,Kind,Info}},IN3,IN4,RSC,RSC1,MM,At1,At2).
+
+query({K,{N,Kind,Info}},IN,IN4,RSC,RSC1,MM,At,At2,D,L) :- true |
+    IN=[print_depth(Dep,D),print_length(Len,L)|IN0],
+    listener_exception_handler:exception_msg(Kind,Info,IN0,IN1),
+    IN1=[putf(" !! Exception[~t.~t]: ",[K,N]),getlt(Com),
+         print_depth(Dep),
+         print_length(Len)|IN2],
+    next_attention(Com,Com1,At,At1,IN2,IN3),
+    is_command(Com1,NewCom),
+    do_command(NewCom,{K,{N,Kind,Info}},IN3,IN4,RSC,RSC1,MM,At1,At2).
+
+
+next_attention(Com,Com1,At,At2,IN,IN2) :- wait(At) |
+    IN=[next_attention(normal(At1))|IN1],
+    next_attention(Com,Com1,At1,At2,IN1,IN2).
+alternatively.
+next_attention(Com,Com1,At,At1,IN,IN1) :- wait(Com) |
+    Com1=Com, At1=At, IN1=IN.
+
+is_command(end_of_file,             C) :- C=quit.
+is_command(quit,                    C) :- C=quit.
+is_command(q,                       C) :- C=quit.
+is_command(help,                    C) :- C=help.
+is_command(h,                       C) :- C=help.
+is_command(?,                       C) :- C=help.
+is_command(write,                   C) :- C=write.
+is_command(w,                       C) :- C=write.
+is_command(inspect,                 C) :- C=inspect.
+is_command(ins,                     C) :- C=inspect.
+is_command(information,             C) :- C=information.
+is_command(info,                    C) :- C=information.
+is_command(print_length(P),         C) :- C=print_length(P).
+is_command(print_length,            C) :- C=print_length.
+is_command(pl(P),                   C) :- C=print_length(P).
+is_command(pl,                      C) :- C=print_length.
+is_command(print_depth(P),          C) :- C=print_depth(P).
+is_command(print_depth,             C) :- C=print_depth.
+is_command(pd(P),                   C) :- C=print_depth(P).
+is_command(pd,                      C) :- C=print_depth.
+is_command(print_string_length(P),  C) :- C=print_string_length(P).
+is_command(print_string_length,     C) :- C=print_string_length.
+is_command(psl(P),                  C) :- C=print_string_length(P).
+is_command(psl,                     C) :- C=print_string_length.
+is_command(print_atom_length(P),    C) :- C=print_atom_length(P).
+is_command(print_atom_length,       C) :- C=print_atom_length.
+is_command(pal(P),                  C) :- C=print_atom_length(P).
+is_command(pal,                     C) :- C=print_atom_length.
+is_command(print_variable_mode,     C) :- C=print_variable_mode.
+is_command(pv,                      C) :- C=print_variable_mode.
+is_command('$error'(_),             C) :- C=syntax_error.
+is_command('$ambiguous'(_),         C) :- C=syntax_error.
+otherwise.
+is_command(Com,                     C) :- C=non_existent(Com).
+
+do_command(quit,_,IN,IN1,RSC,RSC1,MM,AT,AT1) :- 
+    IN1=IN, RSC1=RSC, MM=[], AT1=normal(AT).
+do_command(inspect,{K,{N,Kind,Info}},IN,IN3,RSC,RSC2,MM,At,At2) :-
+    RSC=[abort_line(Kill), variable(_TF,VAR), get(tracer,TrID)|RSC1],
+    IN=[do(IN1)|IN2],
+    MM={MM1,MM2},
+    listener_inspector:create(Kill,TrID,Info,VAR,IN1,At,{_,At1},MM1),
+    query({K,{N,Kind,Info}},IN2,IN3,RSC1,RSC2,MM2,At1,At2).
+do_command(information,{K,{N,Kind,Info}},IN,IN2,RSC,RSC1,MM,At,At1) :-
+    listener_exception_handler:print_module_info(Kind,Info,IN,IN1),
+    query({K,{N,Kind,Info}},IN1,IN2,RSC,RSC1,MM,At,At1).
+do_command(print_length(L),Error,IN,IN2,RSC,RSC1,MM,AT,AT1) :- L>=0 |
+    IN=[print_length(L)|IN1],
+    query(Error,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+do_command(print_depth(D),Error,IN,IN2,RSC,RSC1,MM,AT,AT1) :- D>=0 |
+    IN=[print_depth(D)|IN1],
+    query(Error,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+do_command(print_variable_mode,Error,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_variable(Pvar,Pvar1)|IN1],
+    listener_buffer:pvar_mode(Pvar,Pvar1),
+    query(Error,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+do_command(print_string_length(L),Error,IN,IN2,RSC,RSC1,MM,AT,AT1) :- L>=0 |
+    IN=[print_string_length(L)|IN1],
+    query(Error,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+do_command(print_atom_length(L),Error,IN,IN2,RSC,RSC1,MM,AT,AT1) :- L>=0 |
+    IN=[print_atom_length(L)|IN1],
+    query(Error,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+do_command(print_depth,Error,IN,IN3,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_depth(D,Dep),
+        putb(" Print depth: "), putt(D), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,D,Dep,IN1,IN2),
+    query(Error,IN2,IN3,RSC,RSC1,MM,AT,AT1).
+do_command(print_length,Error,IN,IN3,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_length(L,Len),
+        putb(" Print length: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    query(Error,IN2,IN3,RSC,RSC1,MM,AT,AT1).
+do_command(print_string_length,Error,IN,IN3,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_string_length(L,Len),
+        putb(" Print string length: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    query(Error,IN2,IN3,RSC,RSC1,MM,AT,AT1).
+do_command(print_atom_length,Error,IN,IN3,RSC,RSC1,MM,AT,AT1) :-
+    IN=[print_atom_length(L,Len),
+        putb(" Print atom length: "), putt(L), 
+        putb(" => "), getlt(Term)|IN1],
+    listener_utility:check_input(Term,L,Len,IN1,IN2),
+    query(Error,IN2,IN3,RSC,RSC1,MM,AT,AT1).
+do_command(write,Error,IN,IN1,RSC,RSC2,MM,AT,AT1) :- 
+    RSC=[get(rewrite_depth,D),get(rewrite_length,L)|RSC1],
+    query(Error,IN,IN1,RSC1,RSC2,MM,AT,AT1,D,L).
+do_command(write(D,L),Error,IN,IN1,RSC,RSC1,MM,AT,AT1) :- D>=0, L>=0 |
+    query(Error,IN,IN1,RSC,RSC1,MM,AT,AT1,D,L).
+do_command(help,Error,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[nl,
+        putb("  <cr>    : quit"), nl,
+        putb("  ins     : inspect exception"), nl,
+        putb("  info    : print exception informations"), nl,
+        putb("  w <D,L> : rewrite exception"),nl,
+        putb("  pd  <D> : set print depth"), nl,
+        putb("  pl  <L> : set print length"), nl,
+        putb("  psl <L> : set print string length"), nl,
+        putb("  pal <L> : set print atom length"), nl,
+        putf("  pv      : set print variable mode~2n",[])|IN1],
+    query(Error,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+
+do_command(non_existent(Com),Error,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[tab(1),putft(Com), putf(": Command not found.~n",[])|IN1],
+    query(Error,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+do_command(syntax_error,Error,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[putf(">Syntax error~n",[])|IN1],
+    query(Error,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+otherwise.
+do_command(X,Error,IN,IN2,RSC,RSC1,MM,AT,AT1) :-
+    IN=[tab(1),putft(X), putf(": Illegal parameter.~n",[])|IN1],
+    query(Error,IN1,IN2,RSC,RSC1,MM,AT,AT1).
+

@@ -1,0 +1,250 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module raise_handler.
+:- with_macro pimos.
+:- public handler/9, dummy/0, connect/2, go_filter/2.
+
+% handler(Type,{Node,ExcInfo},NCode,NArgv,In,Outs,Tools,Info,Env)
+
+handler(general_request,ExcInfos,NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,0,{Cond,Reason},{Cond,Reason},InfoN),
+    handler1(Cond,ExcInfos,NCode,NArgv,In,Outs,Tools,InfoN,Env,none).
+handler(general_request(IONode),ExcInfos,NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,0,{Cond,Reason},{Cond,Reason},InfoN),
+    handler1(Cond,ExcInfos,NCode,NArgv,In,Outs,Tools,InfoN,Env,{IONode}).
+handler(general_request(IONode,RU,RP),ExcInfos,NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,0,{Cond,Reason},{Cond,Reason},InfoN),
+    handler1(Cond,ExcInfos,NCode,NArgv,In,Outs,Tools,InfoN,Env,{IONode,RU,RP}).
+handler(general_request(Fep,IONode,RU,RP),ExcInfos,NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,0,{Cond,Reason},{Cond,Reason},InfoN),
+    handler1(Cond,ExcInfos,NCode,NArgv,In,Outs,Tools,InfoN,Env,{Fep,IONode,RU,RP}).
+handler(atom,{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,5,[_])|
+    set_vector_element(Tools,0,{FOut,Atom},Atom,ToolsN),
+    predicate_to_code(module#raise_handler,connect,2,NCode),
+    NArgv = {FIn,normal(FOut)},
+    task_handler:ohandler(In,Outs,ToolsN,Info,Env).
+handler(module,{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,5,[_])|
+    set_vector_element(Tools,1,{FOut,Module},Module,ToolsN),
+    predicate_to_code(module#raise_handler,connect,2,NCode),
+    NArgv = {FIn,normal(FOut)},
+    task_handler:ohandler(In,Outs,ToolsN,Info,Env).
+handler(user,{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,5,[_])|
+    set_vector_element(Tools,2,{FOut,User},User,ToolsN),
+    predicate_to_code(module#raise_handler,connect,2,NCode),
+    NArgv = {FIn,normal(FOut)},
+    task_handler:ohandler(In,Outs,ToolsN,Info,Env).
+handler(timer,{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,5,[_])|
+    set_vector_element(Tools,3,{FOut,Timer},Timer,ToolsN),
+    predicate_to_code(module#raise_handler,connect,2,NCode),
+    NArgv = {FIn,normal(FOut)},
+    task_handler:ohandler(In,Outs,ToolsN,Info,Env).
+handler(scsi,{Node,FIn},
+            NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,5,[_])|
+    set_vector_element(Outs,2,
+               [scsi(FOut)|Mon],Mon,OutN),
+    predicate_to_code(module#raise_handler,connect,2,NCode),
+    NArgv = {FIn,FOut},
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(console,{Node,FIn},
+            NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,5,[_])|
+    set_vector_element(Outs,2,
+               [console(FOut)|Mon],Mon,OutN),
+    predicate_to_code(module#raise_handler,connect,2,NCode),
+    NArgv = {FIn,FOut},
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(syslog,{Node,FIn},
+            NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,5,[_])|
+    set_vector_element(Outs,2,
+               [syslog(FOut)|Mon],Mon,OutN),
+    predicate_to_code(module#raise_handler,connect,2,NCode),
+    NArgv = {FIn,FOut},
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+%%%%%
+handler(get_std(in),{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Node,0,CL,0,_),
+    set_vector_element(Tools,5,[request(in,CL,FOut,FInfo,NCode)|Stdio],
+                        Stdio,ToolN),
+    NArgv = {FInfo,FIn,FOut},
+    task_handler:ohandler(In,Outs,ToolN,Info,Env).
+handler(get_std(out),{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Node,0,CL,0,_),
+    set_vector_element(Tools,5,[request(out,CL,FOut,FInfo,NCode)|Stdio],
+                        Stdio,ToolN),
+    NArgv = {FInfo,FIn,FOut},
+    task_handler:ohandler(In,Outs,ToolN,Info,Env).
+handler(get_std(inter),{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Node,0,CL,0,_),
+    set_vector_element(Tools,5,[request(inter,CL,FOut,FInfo,NCode)|Stdio],
+                        Stdio,ToolN),
+    NArgv = {FInfo,FIn,FOut},
+    task_handler:ohandler(In,Outs,ToolN,Info,Env).
+handler(get_std(io),{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Node,0,CL,0,_),
+    set_vector_element(Tools,5,[request(io,CL,FOut,FInfo,NCode)|Stdio],
+                        Stdio,ToolN),
+    NArgv = {FInfo,FIn,FOut},
+    task_handler:ohandler(In,Outs,ToolN,Info,Env).
+handler(get_std(switch),{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Node,0,CL,0,_),
+    set_vector_element(Tools,5,[request(switch,CL,FOut,FInfo,NCode)|Stdio],
+                        Stdio,ToolN),
+    NArgv = {FInfo,FIn,FOut},
+    task_handler:ohandler(In,Outs,ToolN,Info,Env).
+%
+handler(console(Com),{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,4,US),
+    vector_element(US,0,0)|
+    predicate_to_code(module#raise_handler,dummy,0,NCode),
+    NArgv = {},
+    set_vector_element(Outs,2,[console(Com,FIn)|MO],MO,OutN),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(log(Com),{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,4,US),
+    vector_element(US,0,0)|
+    predicate_to_code(module#raise_handler,dummy,0,NCode),
+    NArgv = {},
+    set_vector_element(Outs,2,[log(Com,FIn)|MO],MO,OutN),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(shut_down,{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,4,US),
+    vector_element(US,0,0)|
+    predicate_to_code(module#raise_handler,dummy,0,NCode),
+    NArgv = {},
+    set_vector_element(Outs,2,[shut_down|MO],MO,OutN),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+handler(show_console,{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    vector_element(Info,4,US),
+    vector_element(US,0,0)|
+    predicate_to_code(module#raise_handler,dummy,0,NCode),
+    NArgv = {},
+    set_vector_element(Outs,2,[show_console|MO],MO,OutN),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+otherwise.
+handler(Type,{Node,ExcInfo},NCode,NArgv,In,Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,0,
+                       [exception(raised,{Node,Type,ExcInfo},NCode,NArgv)|Rep],
+                       Rep,OutN),
+    task_handler:ohandler(In,OutN,Tools,Info,Env).
+
+%%%%%%%%%%%%%%%%%%%%%
+handler1(terminating,_,NCode,NArgv,In,Outs,Tools,Info,Env,_):-
+    true|
+    predicate_to_code(module#raise_handler,dummy,0,NCode),
+    NArgv = [],
+    task_handler:ohandler(In,Outs,Tools,Info,Env).
+handler1(shut_terminating,_,NCode,NArgv,In,Outs,Tools,Info,Env,_):-
+    true|
+    predicate_to_code(module#raise_handler,dummy,0,NCode),
+    NArgv = [],
+    task_handler:ohandler(In,Outs,Tools,Info,Env).
+otherwise.
+handler1(_,{Node,FIn},NCode,NArgv,In,Outs,Tools,Info,Env,IOInfo):-
+    true|
+    set_vector_element(Node,0,CL,0,_),
+    Env = {Env1,EnvN},
+    set_vector_element(Tools,4,{Rsc1,RscN},RscN,Tool1),
+    set_vector_element(Tool1,5,{Std1,StdN},StdN,Tool2),
+    set_vector_element(Tool2,0,{Atom1,AtomN},AtomN,ToolN),
+    set_vector_element(Outs,4,
+        [add_monitor(general_request,
+                     "general_request",
+                     St)|{FOut,INN}],INN,Out2),
+    set_vector_element(Out2,5,Shut,Shut,OutN),
+    set_vector_element(Info,4,US,USN,InfoN),
+    copy:copy(US,US1,USN),
+    task_handler:ohandler(In,OutN,ToolN,InfoN,EnvN),
+    internal_handler:get_relative_node(CL,NewNode),
+    b2w(FOut0,FOut),
+    general_request(St,NCode,NArgv,FIn,FOut0,
+                    {Rsc1,Std1,Atom1},US1,Env1,Shut,IOInfo)@node(NewNode).
+
+general_request(normal(MIn,MOut),NCode,NArgv,FIn,FOut,
+                                    Tools,US,Env,Shut,none):-
+    true|
+    predicate_to_code(module#raise_handler,go_filter,2,NCode),
+    NArgv = {FIn,GIn},
+    general_request_handler:handler(GIn,FOut,MIn,MOut,Tools,US,Env,Shut).
+general_request(normal(MIn,MOut),NCode,NArgv,FIn,FOut,
+                                    Tools,US,Env,Shut,{IONode}):-
+    true|
+    predicate_to_code(module#raise_handler,go_filter,2,NCode),
+    NArgv = {FIn,GIn},
+    general_request_handler:handler([set_remote_info(IONode,_)|GIn],
+                                             FOut,MIn,MOut,Tools,US,Env,Shut).
+general_request(normal(MIn,MOut),NCode,NArgv,FIn,FOut,
+                                    Tools,US,Env,Shut,{IONode,RU,RP}):-
+    true|
+    predicate_to_code(module#raise_handler,go_filter,2,NCode),
+    NArgv = {FIn,GIn},
+    general_request_handler:handler([set_remote_info(IONode,RU,RP,_)|GIn],
+                                              FOut,MIn,MOut,Tools,US,Env,Shut).
+general_request(normal(MIn,MOut),NCode,NArgv,FIn,FOut,
+                                    Tools,US,Env,Shut,{Fep,IONode,RU,RP}):-
+    true|
+    predicate_to_code(module#raise_handler,go_filter,2,NCode),
+    NArgv = {FIn,GIn},
+    general_request_handler:handler([set_remote_info(Fep,IONode,RU,RP,_)|GIn],
+                                              FOut,MIn,MOut,Tools,US,Env,Shut).
+otherwise.
+general_request(_,NCode,NArgv,FIn,FOut,Tools,US,Env,Shut,_):-
+    true|
+    FOut = [],
+    Env = [],
+    close_tools(Tools),
+    predicate_to_code(module#raise_handler,dummy,0,NCode),
+    NArgv = {}.
+
+dummy:- true| true.
+
+go_filter(In,Out):-
+    true|
+    genreq_filter:genreq_filter(In,Med),
+    general_request_translator:trans0(Med,Out).
+%general_request_filter(In,Med):- true| In = Med.
+
+trans([],Out):- true| Out = [].
+trans([Msg|In],Out):- true|
+     Out = [Msg|OutN],
+     trans(In,OutN).
+
+connect(In,Out):-
+    In = Out.
+
+close_tools(Tools):-
+    vector(Tools,N)|
+    close_tools(N,Tools).
+
+close_tools(0,_):-
+    true|
+    true.
+otherwise.
+close_tools(N,V):-
+    N1 := N - 1|
+    set_vector_element(V,N1,[],0,NV),
+    close_tools(N1,NV).
+
+b2w([],Out):- true | Out = [].
+b2w([Msg|In],Out):- wait(Msg)|
+    Out = [Msg|OutN],
+    b2w(In,OutN).

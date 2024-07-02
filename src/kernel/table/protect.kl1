@@ -1,0 +1,96 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module check_protection.
+
+:- with_macro pimos.
+
+:- public check/5 .
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%   Prot = 2#{UR,UW,UX,GR,GW,GX,OR,OW,OX}
+%
+%   OID = {OUid,OGid}
+%   UID = {UUid,UGidList}
+
+check(Command,Prot,OID,UID,Status):-
+    true|
+    get_mode(OID,UID,MOD),
+    check(Command,Prot,MOD,Status).
+
+%
+
+get_mode({OID,OGID},{0,GIDS},Mode):-    % if super_pimos
+    true|
+    Mode = -1.
+otherwise.
+get_mode({OID,OGID},{OID,GIDS},Mode):-
+    integer(OID)|
+    gid_check(OGID,GIDS,8#"707",Mode).
+get_mode({OID,OGID},{UID,GIDS},Mode):-
+    integer(OID),
+    integer(UID),
+    OID \= UID|
+    gid_check(OGID,GIDS,8#"007",Mode).
+
+gid_check(_,[],M1,Mode):-
+    true|
+    M1 = Mode.
+gid_check(OGID,[OGID|_],M1,Mode):-
+    integer(OGID)|
+    Mode := M1 \/ 8#"070".
+gid_check(OGID,[UGID|Next],M1,Mode):-
+    integer(OGID),
+    integer(UGID),
+    OGID \= UGID|
+    gid_check(OGID,Next,M1,Mode).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%   main
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+check(_,Prot,-1,Status):-
+    true|
+    Status = normal.
+otherwise.
+check(read,Prot,Mode,Status):-
+    Tag1 := Prot /\ Mode,
+    Tag  := Tag1 /\ 2#"100100100",      % r--r--r--
+    Tag \= 0|
+    Status = normal.
+check(write,Prot,Mode,Status):-
+    Tag1 := Prot /\ Mode,
+    Tag  := Tag1 /\ 2#"010010010",      % -w--w--w-
+    Tag \= 0|
+    Status = normal.
+check(access,Prot,Mode,Status):-
+    Tag1 := Prot /\ Mode,
+    Tag  := Tag1 /\ 2#"001001001",      % --x--x--x
+    Tag \= 0|
+    Status = normal.
+check(add,Prot,Mode,Status):-
+    Tag1 := Prot /\ Mode,
+    Tag  := Tag1 /\ 2#"010010010",      % -w--w--w-
+    Tag \= 0|
+    Status = normal.
+check(remove,Prot,Mode,Status):-
+    Tag1 := Prot /\ Mode,
+    Tag  := Tag1 /\ 2#"010010010",      % -w--w--w-
+    Tag \= 0|
+    Status = normal.
+check(protect,_,Mode,Status):-
+    Tag := 8#"700" /\ Mode,             % only owner
+    Tag \= 0|
+    Status = normal.
+otherwise.
+check(_,_,_,Status):-
+    true|
+    Status = protection_violation.
+

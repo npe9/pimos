@@ -1,0 +1,107 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi277::>sys>user>pimos>V15>src>shell>utils>pretty_printer.kl1.2, 17-Jan-90 11:43:13, Edit by pimos
+:-with_macro pimos.
+:-module pretty_printer.
+:-public pp/1, pprinter/2.
+
+pp(F):-true|
+    in(F,Xs),
+    test_print(Xs,CmdStr,[nl],start),
+    pprinter(CmdStr,Ys),
+    shoen:raise(pimos_tag#shell,get_std_out,Ys).
+
+in(F,Xs):-true|
+    shoen:raise(pimos_tag#task,general_request,[file(normal(FR,_,_))]),
+    FR=[open(F,read(Status))],
+    inputFile_status(Status,Xs).
+
+inputFile_status(normal(Is,_,_),Xs) :- true |
+    buffer:input_filter(Is1,Is),
+    buffer:output_filter(Xs1,Xs),
+    inconv(Is1,Xs1).
+otherwise.
+inputFile_status(_,_) :- true | true.
+
+inconv(Is,Xs):-true|
+    Is=[getwt(X)|Is1],
+    inconv2(X,Is1,Xs).
+inconv2(normal(end_of_file),Is,Xs):- true | Xs=[],Is=[].        
+inconv2(normal(empty),      Is,Xs):- true |
+    Is=[getwt(Y)|Is1],
+    inconv2(Y,Is1,Xs).
+inconv2(abnormal(Error),    Is,Xs):- true | 
+    Xs=[print_error(Error)|Xs1],
+    Is=[getwt(Y)|Is1],
+    inconv2(Y,Is1,Xs1).
+otherwise.
+inconv2(normal(X),Is,Xs):- true |
+    Xs=[X|Xs1],
+    Is=[getwt(Y)|Is1],
+    inconv2(Y,Is1,Xs1).
+
+transform(vector({atom((':-')),A,vector({atom(('|')),G,B})}),
+            Ns,Ns0,CmdInf):- true |
+        cmd_chk(A,CmdInf,PA),
+        Ns=[PA,tab(1),putb(string#":-"),nl,tab(4)|Ns1],
+        Ns2=[tab(1),putb(string#"|"),nl|Ns3],
+        form0(G,CmdInf,Ns1,Ns2),
+        form(B,CmdInf,Ns3,Ns0).
+transform(vector({atom((':-')),Def}),Ns,Ns0,CmdInf):- true |
+        cmd_chk(Def,CmdInf,PDef),
+        Ns=[putb(string#":-"),tab(1),PDef|Ns0].
+otherwise.
+transform(vector({atom((':-')),A,B}),Ns,Ns0,CmdInf):- true |
+        cmd_chk(A,CmdInf,PA),
+        Ns=[PA,tab(1),putb(string#":-"),nl|Ns1],
+        form(B,CmdInf,Ns1,Ns0).
+otherwise.
+transform(A,Ns,Ns0,CmdInf):- true |
+        cmd_chk(A,CmdInf,PA),
+        Ns=[PA|Ns0].
+
+form(vector({atom((',')),A,B}),CmdInf,Ns,Ns1):- true |
+        form(A,CmdInf,Ns,Ns0),
+        Ns0=[putb(string#","),nl|Ns2],
+        form(B,CmdInf,Ns2,Ns1).
+otherwise.
+form(A,CmdInf,Ns,Ns1):- true |
+        cmd_chk(A,CmdInf,PA),Ns=[tab(8),PA|Ns1].
+
+form0(vector({atom((',')),A,B}),CmdInf,Ns,Ns1):- true |
+        form0(A,CmdInf,Ns,Ns0),
+        Ns0=[putb(string#","),tab(1)|Ns2],
+        form0(B,CmdInf,Ns2,Ns1).
+otherwise.
+form0(A,CmdInf,Ns,Ns1):- true |
+        cmd_chk(A,CmdInf,PA),Ns=[PA|Ns1].
+
+cmd_chk(X,stt(w),Px):- true | Px=putwt(X).
+cmd_chk(X,stt(w,Length,Depth),Px):- true | Px=putwt(X,Length,Depth).
+cmd_chk(X,stt(q),Px):- true | Px=putwtq(X).
+cmd_chk(X,stt(q,Length,Depth),Px):- true | Px=putwtq(X,Length,Depth).
+
+test_print(Term,Cs,Cs0,start):- true |
+        Cs=[putt('::: '),putb(string#"START"),putt('==>'),nl|Cs1],
+        test_print(Term,Cs1,Cs0,cont).
+test_print([Term|Ts],Cs,Cs0,cont):- true |
+        Cs=[putwtq(Term),putt('.'),nl|Cs1],
+        test_print(Ts,Cs1,Cs0,cont).
+test_print([],Cs,Cs0,_):- true |
+        Cs=[putl(string#"************************"),putt('DONE.')|Cs0].
+
+pprinter([],Ys):- true | Ys=[].
+pprinter([putwt(X)|Cs0],Ys0):- true |
+        transform(X,Ys0,Ys1,stt(w)),pprinter(Cs0,Ys1).
+pprinter([putwt(X,Length,Depth)|Cs0],Ys0):- true |
+        transform(X,Ys0,Ys1,stt(w,Length,Depth)),pprinter(Cs0,Ys1).
+pprinter([putwtq(X)|Cs0],Ys0):- true |
+        transform(X,Ys0,Ys1,stt(q)),pprinter(Cs0,Ys1).
+pprinter([putwtq(X,Length,Depth)|Cs0],Ys0):- true |
+        transform(X,Ys0,Ys1,stt(q,Length,Depth)),pprinter(Cs0,Ys1).
+otherwise.
+pprinter([C|Cs],Ys):- true | Ys=[C|Ys1],pprinter(Cs,Ys1).

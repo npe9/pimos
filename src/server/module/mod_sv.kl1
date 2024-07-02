@@ -1,0 +1,107 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Module>mod_sv.kl1.4, 23-Jul-92 20:22:30, Edit by hori
+:- module module_server.
+:- with_macro pimos.
+:- public go/3, go/2, filter/3.
+
+go(OK1,OK,AB) :- wait(OK1) | go(OK,AB).
+
+go(OK,AB) :- true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [register(module_request,{0,0,3},Res)],
+    wait_(Res,OK,AB).
+
+wait_(normal(St,Ab,_),OK,AB) :- true |
+    OK = ok,
+    shoen:raise(pimos_tag#task,module,MOD),
+    wait_0(MOD,St,Ab,AB).
+
+wait_0(normal(Module1),St,Ab,AB) :- true |
+    autoload:module(Module2,Module1,AB),
+    merge(ModuleIn,Module2),
+    predicate_to_code(module#module_server,filter,3,Code),
+    St = [get_request(Code,"module_request",Res) |Next],
+    wait_2(Res,Next,Code,Ab,ModuleIn,AB).
+
+wait_2(_,Next,Code,RAb,Mod,AB) :- wait(AB) |
+    RAb = abort,
+    Next = [],
+    Mod = [].
+alternatively.
+wait_2(general_request(SCont,Ab,Att,SInfo,FInfo,In),Next,Code,RAb,Mod,AB) :- true |
+    Next = [get_request(Code,"module_request",Res) |Next1],
+    FInfo = [],
+    Mod = {Mod1,Mod2},
+    wait_2(Res,Next1,Code,RAb,Mod1,AB),
+    set_vector_element(SInfo,3,ANode,0,SInfo1),
+    user_server:get_user_info(SInfo1,UInfo),
+    internal_handler:get_relative_node(ANode,Node),
+    In = normal(In1,_,[]),
+    merge(SContIn,SCont),
+    wait_3(In1,Mod2,Att,SContIn,Ab,UInfo,AB)@node(Node).
+wait_2(abnormal,Next,Code,RAb,Mod,AB) :- true |
+    Next = [],
+    Mod = [].
+wait_2(aborted,Next,Code,RAb,Mod,AB) :- true |
+    Next = [],
+    Mod = [].
+
+wait_3(In,Mod,CAb,SCont,Ab,UInfo,AB) :- true |
+    module_request_device:driver(In2,Mod,UInfo),
+    handler0(In,In2,CAb,SCont,Ab,AB).
+
+handler0(In,normal(Stream,Abort,Att),CAb,SCont,Ab,AB) :- true |
+    handler(In,Stream,CAb,SCont,Ab,AB).
+
+handler([create(Result) |In],Out,CAb,Cont,Ab,AB) :- true |
+    Out = [create(Result2) |OutN],
+    handler(In,OutN,CAb,ContN,Ab,AB),
+    wait_handler(Result2,Result,Cont,ContN,CAb,AB).
+handler([Msg|In],Out,CAb,Cont,Ab,AB) :-
+    vector(Msg,2), vector_element(Msg,0,Func), Func \= create |
+    Out = [Msg|OutN],
+    handler(In,OutN,CAb,Cont,Ab,AB).
+handler([Msg|In],Out,CAb,Cont,Ab,AB) :- vector(Msg,N), N \= 2 |
+    Out = [Msg|OutN],
+    handler(In,OutN,CAb,Cont,Ab,AB).
+handler([Msg|In],Out,CAb,Cont,Ab,AB) :- atom(Msg) |
+    Out = [Msg|OutN],
+    handler(In,OutN,CAb,Cont,Ab,AB).
+handler([],Out,CAb,Cont,Ab,AB) :- true |
+    Out = [],
+    Cont = [].
+handler(_,Out,CAb,Cont,Ab,AB) :- wait(CAb) |
+    Ab = abort,
+    Out = [],
+    Cont = [].
+handler(_,Out,CAb,Cont,Ab,AB) :- wait(AB) |
+    Ab = abort,
+    Out = [],
+    Cont = [].
+
+wait_handler(normal(Mod),Result,Cont,ContN,CAb,AB) :- true |
+    Cont = [add_resource((module),"module",Res) |ContN],
+    wait_handler2(Res,Mod,Result,CAb,AB).
+
+wait_handler2(normal(SCont,Ab),Mod,Result,CAb,AB) :- true |
+    Result = normal(ModIn,_,[]),
+    handler(ModIn,Mod,CAb,SCont,Ab,AB).
+wait_handler2(abnormal,Mod,Result,CAb,AB) :- true |
+    Mod = [],
+    Result = abnormal.
+wait_handler2(aborted,Mod,Result,CAb,AB) :- true |
+    Mod = [],
+    Result = aborted.
+wait_handler2(_,Mod,Result,CAb,AB) :- wait(CAb) |
+    Mod = [],
+    Result = aborted.
+
+filter(_,In,Out) :- true |
+    modulereq_filter:modulereq_filter(In,Out).
+    

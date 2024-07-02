@@ -1,0 +1,37 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module module_request_device. %% NOTE !! module name has been changed !!
+:- public driver/3.
+:- with_macro pimos.
+
+driver(Status,Table,Users):- true |
+    Status = normal(ModuleRequest,Abort,[]),
+    driver(ModuleRequest,Table,Users,1).	% Initial Message ID is 1
+
+driver([reset(Status)|In],ModuleIn,Users,MsgID):- true |
+    Status = normal(Abort,[],MsgID),
+    MsgID1 := MsgID + 1,
+    driver(In,ModuleIn,Users,MsgID1).
+driver([next_attention(Status)|In],ModuleIn,Users,MsgID):- true |
+    Status = normal([]),
+    driver(In,ModuleIn,Users,MsgID).
+driver([resend(MsgID0,Status)|In],ModuleIn,Users,MsgID):- true |
+    Status = normal,
+    driver(In,ModuleIn,Users,MsgID).
+driver([cancel(MsgID0,Status)|In],ModuleIn,Users,MsgID):- true |
+    Status = normal,
+    driver(In,ModuleIn,Users,MsgID).
+driver([create(Status)|In],ModuleIn,Users,MsgID):- true |
+    copy:copy(Users,Users1,Users2),
+    Status = normal(Module),
+    ModuleIn = {Module1,Module2},
+    module_table_device:driver(Module,Module2,Users2),
+    driver(In,Module1,Users1,MsgID).
+driver([],Modules,Users,MsgID):- true |
+    Modules = [].
+
+

@@ -1,0 +1,566 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a standardIOFilter module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module stdio_switch.
+:- public create/6.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%            <<Parent Task (usually 'SHELL')>>  [Parent]
+%                                    ^                    
+%                                    |
+%                            -----------------
+%             [UAbort]  ---->|  standard     |---->  [PAbort]
+%    USER side  [User]  =====|     io        |=====  [Pimos]    PIMOS side
+%               [UAtt]  <----|    filter     |<----  [PAtt]
+%                            -----------------
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%    IO_Stream Messages (defined by the device handler) are as follows.
+%
+%        getb(Size, ^StringWithStatus)
+%        getb_noecho(Size, ^StringWithStatus)
+%        prompt(String, ^Status)
+%        ungetb(String, ^Status)
+%        putb(String, ^Status)
+%        flush(^Status)
+%        get_attributes(^Attributes)
+%        get_attributes(Destination,^Attributes)
+%
+%        reset({Status, Abort, ^Attention, ^Id})
+%        next_attention({Status, ^Attention})
+%        resend(Id, Status)
+%        cancel(Id, Status)
+%
+%    Status = normal | abnormal | aborted | disconnected
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%    Messages from the parent are as follows
+%
+%        connect(Type, Detect, Status)
+%        disconnect(Status)
+%        desert(Status)
+%
+%        Type = resend | cancel
+%        Status = normal | abnormal
+%        Detect = detected | closed | disconnected | deserted
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%    When the event 'Attention' occured,
+%    the so-called attention variable would be bounded
+%    by the atom 'attention'.
+%
+%    And if you want to occur the event 'Abort',
+%    you must bind the abort variable by the atom 'abort'.
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create(OS,User,Prnt,CShut,HINT,PorB) :- true |
+    ( PorB = pass  -> stdIoF0pass(HINT,OS,User,Prnt,CShut) ;
+      PorB = block -> stdIoF0block(HINT,OS,User,Prnt,CShut) ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  [ Standard I/O Filter Process ]       %%%%%
+%%%%%  Initial state of the 'STDIO' process  %%%%%
+%%%%%    ( Status = [0] )                    %%%%%
+%%%%%    ( Default procedure)                %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% if Pass-state  then every I/O messages will be pass through stdio-filter.
+% if Block-state then every I/O messages will be hold by stdio-filter.
+
+%%%%% Pass state %%%%%
+%%% closing the I/O stream %%%
+stdIoF0pass(HINT,OS,[],Prnt,_) :- true | OS=[], stdIoFEnd(HINT,Prnt).
+
+%%% Through I/O messages %%%
+stdIoF0pass(HINT,OS,[Mes|User],Prnt,CShut) :- true |
+    ( Mes = reset(Status) -> OS = [reset(Status) | NOS] ;
+      Mes = next_attention(Status) -> OS = [next_attention(Status) | NOS] ;
+      Mes = resend(ID, Status) -> OS = [resend(ID, Status) | NOS] ;
+      Mes = cancel(ID, Status) -> OS = [cancel(ID, Status) | NOS] ;
+      Mes = switch(Status) -> OS = [switch(Status) | NOS] ;
+      Mes = get_attributes(Status) -> OS = [get_attributes(Status) | NOS] ;
+      Mes = get_attributes(Dest,Stat) -> OS = [get_attributes(Dest,Stat)|NOS] ;
+      Mes = am_I_there(Status) -> NOS = OS, Status = normal ;
+      Mes = getb(Size, StrWithStat) -> OS = [getb(Size, StrWithStat) | NOS] ;
+      Mes = getb_noecho(Size, StrWithStat) ->
+              OS = [getb_noecho(Size, StrWithStat) | NOS] ;
+      Mes = prompt(String, Status) -> OS = [prompt(String, Status) | NOS] ;
+      Mes = ungetb(String, Status) -> OS = [ungetb(String, Status) | NOS] ;
+      Mes = putb(String, Status) -> OS = [putb(String, Status) | NOS] ;
+      Mes = flush(Status) -> OS = [flush(Status) | NOS] ;
+      Mes = igetb(Size, StrWithStat) -> OS = [igetb(Size, StrWithStat) | NOS] ;
+      Mes = igetb_noecho(Size, StrWithStat) ->
+              OS = [igetb_noecho(Size, StrWithStat) | NOS] ;
+      Mes = iprompt(String, Status) -> OS = [iprompt(String, Status) | NOS] ;
+      Mes = iungetb(String, Status) -> OS = [iungetb(String, Status) | NOS] ;
+      Mes = iputb(String, Status) -> OS = [iputb(String, Status) | NOS] ;
+      Mes = iflush(Status) -> OS = [iflush(Status) | NOS] ),
+    stdIoF0pass(HINT, NOS, User, Prnt, CShut).
+
+%%% Wait the message from the Parent process. %%%
+stdIoF0pass(HINT, OS, User, [], _) :- true | OS = User.
+stdIoF0pass(HINT,OS,_,[desert(Status)|_],_) :- true | Status=normal, OS=[].
+stdIoF0pass(HINT,OS,_,[forced_desert(Status)|_],_) :- true |
+    Status=normal, OS=[].
+stdIoF0pass(HINT,OS,User,[pass_to_block(Status)|Prnt],CShut) :- true |
+    Status = normal, %??????????
+    stdIoF0block(HINT,OS,User,Prnt,CShut).
+
+%%%%% Block state %%%%%
+%%% closing the I/O stream %%%
+stdIoF0block(HINT,OS,[],Prnt,_) :- true | OS=[], stdIoFEnd(HINT,Prnt).
+
+%%% Wait the message from the Parent process. %%%
+stdIoF0block(HINT, OS, User, [], _) :- true | OS = User.
+stdIoF0block(HINT,OS,_,[desert(Status)|_],_) :- true | Status=normal, OS=[].
+stdIoF0block(HINT,OS,_,[forced_desert(Status)|_],_) :- true |
+    Status=normal, OS=[].
+stdIoF0block(HINT,OS,User,[connect(_,Dtct,Status)|Prnt],CShut) :- true |
+    OS = [reset(NStatus)|NOS],
+    stdIoF01(HINT, Status, NStatus, Dtct, NOS, User, Prnt, [], CShut).
+
+stdIoF01(HINT,Status,NStatus,Dtct,OS,User,[Mes|Prnt],STK,CShut) :- true |
+    ( Mes = forced_desert(Stat) ->
+        OS=[], Stat=normal, Status=aborted, Dtct=deserted, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Stat) ->
+        OS=[], Stat=normal, Status=aborted, Dtct=deserted, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true -> stdIoF01(HINT,Status,NStatus,Dtct,OS,User,Prnt,[Mes|STK],CShut) ).
+stdIoF01(HINT,Status,NStatus,Dtct,OS,User,Prnt,STK,CShut) :- wait(NStatus) |
+    ( NStatus = normal(PAbt, PAtt, _) -> Status=normal,
+        reverse(STK,NSTK), append(NSTK,Prnt,NPrnt),
+        stdIoF1(HINT, OS, PAtt, PAbt, User, NPrnt, Dtct, CShut) ;
+     otherwise ;
+        true -> Status=NStatus,
+        reverse(STK,NSTK), append(NSTK,Prnt,NPrnt),
+        stdIoF1(HINT, OS, _, _, User, NPrnt, Dtct, CShut) ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  [ Standard I/O Filter Process ]  %%%%%
+%%%%%  Handling the Attention Mechanism %%%%%
+%%%%%  by the 'STDIO' process.          %%%%%
+%%%%%    ( Status = [1] )               %%%%%
+%%%%%    ( Default procedure)           %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%% Accepting the 'ATTENTION' message from the PIMOS side.      %%%
+%%% So, sending the 'ABORT' request message to the PIMOS side.  %%%
+%%% Receive the message from 'PARENT' process.                  %%%
+%%% And, Change the process status into the status [3].         %%%
+stdIoF1(HINT,OS,PAtt,PAbt,User,Prnt,Dtct,CShut) :- wait(PAtt) |
+    ( PAtt=attention -> Dtct=detected,
+        stdIoF1(HINT, OS, _, PAbt, User, Prnt, _, CShut) ;
+      PAtt=[] -> Dtct=disconnected,
+        stdIoF1(HINT, OS, _, PAbt, User, Prnt, _, CShut) ;
+     otherwise ;
+      true -> error_raise({Dtct, HINT}, "stdIoF1: ~w~n") ).
+
+alternatively.
+
+%%% closing the Parent stream. %%%
+stdIoF1(HINT, OS, _, _, User, [], Dtct, _) :- true | Dtct = closed, OS = User.
+
+stdIoF1(HINT,OS,_,PAbt,User,[MES|Prnt],Dtct,CShut) :- true |
+    ( MES = disconnect(Status) ->
+        Dtct = disconnected, PAbt = abort, OS = [reset(NStatus) | NOS],
+        stdIoF13(HINT, NOS, User, Prnt, Status, NStatus, [], CShut) ;
+      MES = desert(Status) ->
+        Dtct = deserted, PAbt = abort, OS = [reset(NStat)|NOS],
+        cancel_end(HINT,NStat,NOS,Status,CShut) ;
+      MES = forced_desert(Status) ->
+        Dtct = deserted, PAbt = abort, OS = [], Status = normal ).
+
+alternatively.
+
+%%% closing the I/O stream %%%
+stdIoF1(HINT, OS, _, _, [], Prnt, Dtct, _) :- true |
+    Dtct = closed, OS = [], stdIoFEnd(HINT, Prnt).
+
+%%% RESET
+stdIoF1(HINT, OS, _, _, [reset(UStat) | User], Prnt, Dtct, CShut) :- true |
+    OS = [reset(OStat) | NOS],
+    stdIoF12(HINT,OStat,UStat,NOS,User,Prnt,[],Dtct,CShut).
+
+%%% Transferring the I/O messages %%%
+stdIoF1(HINT, OS, PAtt, PAbt, [Mes | User], Prnt, Dtct, CShut) :-
+        vector_element(Mes, 0, V0), V0 \= reset |
+     %%% NEXT_ATTENTION, RESEND, CANCEL
+    (Mes = next_attention(Status) -> NOS = OS, Status = abnormal ;
+     Mes = resend(_, Status) -> NOS = OS, Status = abnormal ;
+     Mes = cancel(_, Status) -> NOS = OS, Status = abnormal ;
+     Mes = switch(Status) -> NOS = OS, Status = abnormal ;
+     Mes = get_attributes(Status) -> OS = [get_attributes(Status) | NOS];
+     Mes = get_attributes(Dest,Stat) -> OS = [get_attributes(Dest,Stat) | NOS];
+     Mes = am_I_there(Status) -> NOS = OS, Status = normal ;
+     Mes = getb(Size, StrWithStat) -> OS = [getb(Size, StrWithStat) | NOS];
+     Mes = getb_noecho(Size, StrWithStat) ->
+             OS = [getb_noecho(Size, StrWithStat) | NOS];
+     Mes = prompt(String, Status) -> OS = [prompt(String, Status) | NOS] ;
+     Mes = ungetb(String, Status) -> OS = [ungetb(String, Status) | NOS] ;
+     Mes = putb(String, Status) -> OS = [putb(String, Status) | NOS] ;
+     Mes = flush(Status) -> OS = [flush(Status) | NOS] ;
+     Mes = igetb(Size, StrWithStat) -> OS = [igetb(Size, StrWithStat) | NOS] ;
+     Mes = igetb_noecho(Size, StrWithStat) ->
+             OS = [igetb_noecho(Size, StrWithStat) | NOS] ;
+     Mes = iprompt(String, Status) -> OS = [iprompt(String, Status) | NOS] ;
+     Mes = iungetb(String, Status) -> OS = [iungetb(String, Status) | NOS] ;
+     Mes = iputb(String, Status) -> OS = [iputb(String, Status) | NOS] ;
+     Mes = iflush(Status) -> OS = [iflush(Status) | NOS] ),
+    stdIoF1(HINT, NOS, PAtt, PAbt, User, Prnt, Dtct, CShut).
+
+
+stdIoF12(HINT,OStat,UStat,OS,User,[Mes|Prnt],STK,Dtct,CShut) :- true |
+    ( Mes = forced_desert(Status) ->
+        OS=[], UStat=aborted, Dtct=deserted, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Status) ->
+        OS=[], UStat=aborted, Dtct=deserted, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true -> stdIoF12(HINT,OStat,UStat,OS,User,Prnt,[Mes|STK],Dtct,CShut) ).
+stdIoF12(HINT,OStat,UStat,OS,User,Prnt,STK,Dtct,CShut) :- wait(OStat) |
+    ( OStat = normal(PAbt,PAtt,Id) -> UStat = normal(UAbt,UAtt,Id),
+        reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+        stdIoF2(HINT,OS,PAtt,PAbt,User,UAtt,UAbt,NPrnt,Dtct,CShut) ;
+     otherwise ;
+      true -> UStat=OStat,
+        reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+        stdIoF2(HINT,OS,_,_,User,_,_,NPrnt,Dtct,CShut) ).
+
+stdIoF13(HINT, OS, User, [Mes | Prnt], Status, NStatus, STK, CShut) :- true |
+    ( Mes = forced_desert(Stat) ->
+        OS=[], Stat=normal, Status=aborted, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Stat) ->
+        OS=[], Stat=normal, Status=aborted, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true -> stdIoF13(HINT,OS,User,Prnt,Status,NStatus,[Mes|STK],CShut) ).
+stdIoF13(HINT, OS, User, Prnt, Status, NStatus, STK, CShut) :- wait(NStatus) |
+    ( NStatus = normal(_,_,Id) -> Status=normal,
+        reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+        stdIoF3(HINT, OS, User, NPrnt, Id, CShut) ;
+     otherwise ;
+      true -> Status=NStatus,
+        reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+        stdIoF3(HINT, OS, User, NPrnt, 0, CShut) ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  [ Standard I/O Filter Process ]  %%%%%
+%%%%%  Handling the Attention Mechanism %%%%%
+%%%%%  by the 'USER' side process.      %%%%%
+%%%%%    ( Status = [2] )               %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%% Accepting the 'ATTENTION' message from the PIMOS side.   %%%
+%%% So, re-sending the 'ATTENTION' message to the USER side. %%%
+stdIoF2(HINT,OS,PAtt,PAbt,User,UAtt,UAbt,Prnt,Dtct,CShut) :- wait(PAtt) |
+    PAtt = UAtt,
+    stdIoF2(HINT, OS, _, PAbt, User, _, UAbt, Prnt, Dtct, CShut).
+
+%%% Accepting the 'ABORT' request message from the 'USER' side.    %%%
+%%% So, re-sending the 'ABORT' request message to the PIMOS side.  %%%
+%%% Send the message to 'PARENT' process.                          %%%
+%%% And, Change the process status into the status [4].            %%%
+stdIoF2(HINT,OS,PAtt,PAbt,User,UAtt,UAbt,Prnt,Dtct,CShut) :- wait(UAbt) |
+    PAbt = UAbt,
+    stdIoF2(HINT, OS, PAtt, _, User, UAtt, _, Prnt, Dtct, CShut).
+
+alternatively.
+
+%%% closing the Parent stream %%%
+stdIoF2(HINT, OS, PAtt, PAbt, User, UAtt, UAbt, [], Dtct, _) :- true |
+    PAtt = UAtt, PAbt = UAbt, Dtct = closed, OS = User.
+
+stdIoF2(HINT,OS,_,PAbt,User,UAtt,UAbt,[disconnect(Status)|Prnt],Dtct,CShut) :-
+        true|
+    Dtct = disconnected, PAbt = abort,
+    OS = [reset(NStatus) | NOS],
+    stdIoF24(HINT,NStatus,NOS,User,UAtt,UAbt,Prnt,Status,[],CShut).
+
+stdIoF2(HINT,OS,OPAtt,PAbt,_,OUAtt,_,[desert(Status)|_],Dtct,CShut) :- true |
+    OPAtt = OUAtt, Dtct = deserted, PAbt = abort,
+    OS = [reset(NStat)|NOS], cancel_end(HINT,NStat,NOS,Status,CShut).
+
+stdIoF2(HINT,OS,OPAtt,PAbt,_,OUAtt,_,[forced_desert(Status)|_],Dtct,_) :-
+    OPAtt = OUAtt, Dtct = deserted, PAbt = abort, OS = [], Status = normal.
+
+alternatively.
+
+%%% closing the I/O stream %%%
+stdIoF2(HINT, OS, PAtt, PAbt, [], UAtt, UAbt, Prnt, Dtct, _) :- true |
+    PAtt = UAtt, PAbt = UAbt, Dtct = closed, OS = [],
+    stdIoFEnd(HINT, Prnt).
+
+%%% RESET
+stdIoF2(HINT,OS,OPAtt,OPAbt,[reset(UStat)|User],OUAtt,OUAbt,Prnt,Dtct,CShut) :-
+    true | OPAtt = OUAtt, OPAbt = OUAbt,
+    OS = [reset(OStat) | NOS],
+    stdIoF22r(HINT,OStat,UStat,NOS,User,Prnt,[],Dtct,CShut).
+
+%%% Request for re-connecting the 'ATTENTION' variable. %%%
+stdIoF2(HINT, OS, OPAtt, PAbt, [next_attention(UStat) | User],
+        OUAtt, UAbt, Prnt, Dtct, CShut) :- true |
+    OPAtt = OUAtt,
+    OS = [next_attention(OStat) | NOS],
+    stdIoF22n(HINT,OStat,UStat,NOS,PAbt,User,UAbt,Prnt,[],Dtct,CShut).
+
+%%% SWITCH (abort wo okutta ato io_line wo switch suru.)
+stdIoF2(HINT,OS,PAtt,PAbt,[switch(Status)|User],UAtt,UAbt,Prnt,Dtct,CShut) :-
+    true | Dtct = detected, Status = normal,
+    stdIoF2(HINT, OS, PAtt, PAbt, User, UAtt, UAbt, Prnt, _, CShut).
+
+%%% Transferring the I/O messages (dummy) %%%
+stdIoF2(HINT, OS, PAtt, PAbt, [Mes | User], UAtt, UAbt, Prnt, Dtct, CShut) :-
+        vector_element(Mes,0,V0), V0\=reset, V0\=next_attention, V0\=switch |
+     %%% RESEND, CANCEL
+    (Mes = resend(Id, Status) -> OS = [resend(Id, Status) | NOS] ;
+     Mes = cancel(Id, Status) -> OS = [cancel(Id, Status) | NOS] ;
+     Mes = am_I_there(Status) -> NOS = OS, Status = normal ;
+     Mes = get_attributes(Status) -> OS = [get_attributes(Status) | NOS] ;
+     Mes = get_attributes(Dest,Stat) -> OS = [get_attributes(Dest,Stat) | NOS];
+     Mes = getb(Size, StrWithStat) -> OS = [getb(Size, StrWithStat) | NOS] ;
+     Mes = getb_noecho(Size, StrWithStat) ->
+             OS = [getb_noecho(Size, StrWithStat) | NOS] ;
+     Mes = prompt(String, Status) -> OS = [prompt(String, Status) | NOS] ;
+     Mes = ungetb(String, Status) -> OS = [ungetb(String, Status) | NOS] ;
+     Mes = putb(String, Status) -> OS = [putb(String, Status) | NOS] ;
+     Mes = flush(Done) -> OS = [flush(Done) | NOS] ;
+     Mes = igetb(Size, StrWithStat) -> OS = [igetb(Size, StrWithStat) | NOS] ;
+     Mes = igetb_noecho(Size, StrWithStat) ->
+             OS = [igetb_noecho(Size, StrWithStat) | NOS] ;
+     Mes = iprompt(String, Status) -> OS = [iprompt(String, Status) | NOS] ;
+     Mes = iungetb(String, Status) -> OS = [iungetb(String, Status) | NOS] ;
+     Mes = iputb(String, Status) -> OS = [iputb(String, Status) | NOS] ;
+     Mes = iflush(Done) -> OS = [iflush(Done) | NOS] ),
+    stdIoF2(HINT, NOS, PAtt, PAbt, User, UAtt, UAbt, Prnt, Dtct, CShut).
+
+%%%%% next_attention
+stdIoF22n(HINT,
+        OStat,UStat,OS,PAbt,User,UAbt,[Mes|Prnt],STK,Dtct,CShut) :- true |
+    ( Mes = forced_desert(Status) ->
+        UStat=aborted, OS=[], Dtct=deserted, PAbt=abort, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Status) ->
+        UStat=aborted, OS=[], Dtct=deserted, PAbt=abort, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true -> stdIoF22n(HINT,
+                OStat,UStat,OS,PAbt,User,UAbt,Prnt,[Mes|STK],Dtct,CShut) ).
+stdIoF22n(HINT,OStat,UStat,OS,PAbt,User,UAbt,Prnt,STK,Dtct,CShut) :-
+        wait(OStat) |
+    ( OStat = normal(PAtt) -> UStat=normal(UAtt),
+        reverse(STK,NSTK), append(NSTK,Prnt,NPrnt),
+        stdIoF2(HINT,OS,PAtt,PAbt,User,UAtt,UAbt,NPrnt,Dtct,CShut) ;
+     otherwise ;
+      true -> UStat=OStat,
+        reverse(STK,NSTK), append(NSTK,Prnt,NPrnt),
+        stdIoF2(HINT,OS,_,PAbt,User,_,UAbt,NPrnt,Dtct,CShut) ).
+
+%%%%% reset
+stdIoF22r(HINT,OStat,UStat,OS,User,[Mes|Prnt],STK,Dtct,CShut) :- true |
+    ( Mes = forced_desert(Status) ->
+        UStat=aborted, OS=[], Dtct=deserted, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Status) ->
+        UStat=aborted, OS=[], Dtct=deserted, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true -> stdIoF22r(HINT,OStat,UStat,OS,User,Prnt,[Mes|STK],Dtct,CShut) ).
+stdIoF22r(HINT,OStat,UStat,OS,User,Prnt,STK,Dtct,CShut) :- wait(OStat) |
+    ( OStat = normal(PAbt,PAtt,Id) -> UStat=normal(UAbt,UAtt,Id),
+        reverse(STK,NSTK), append(NSTK,Prnt,NPrnt),
+        stdIoF2(HINT,OS,PAtt,PAbt,User,UAtt,UAbt,NPrnt,Dtct,CShut) ;
+     otherwise ;
+      true -> UStat=OStat,
+        reverse(STK,NSTK), append(NSTK,Prnt,NPrnt),
+        stdIoF2(HINT,OS,_,_,User,UAtt,UAbt,NPrnt,Dtct,CShut) ).
+
+stdIoF24(HINT,NStatus,OS,User,UAtt,UAbt,[Mes|Prnt],Status,STK,CShut) :- true |
+    ( Mes = forced_desert(Stat) ->
+        OS=[], Stat=normal, UAtt=[], Status=aborted, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Stat) ->
+        OS=[], Stat=normal, UAtt=[], Status=aborted, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true ->
+        stdIoF24(HINT,NStatus,OS,User,UAtt,UAbt,Prnt,Status,[Mes|STK],CShut) ).
+stdIoF24(HINT,NStatus,OS,User,UAtt,UAbt,Prnt,Status,STK,CShut) :-
+        wait(NStatus) |
+    ( NStatus = normal(_,_,ID) -> Status = normal,
+        reverse(STK,NSTK), append(NSTK,Prnt,NPrnt),
+        stdIoF4(HINT, OS, User, UAtt, UAbt, NPrnt, ID, CShut) ;
+     otherwise ;
+      true -> Status = NStatus,
+        reverse(STK,NSTK), append(NSTK,Prnt,NPrnt),
+        stdIoF4(HINT, OS, User, UAtt, UAbt, NPrnt, 0, CShut) ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  [ Standard I/O Filter Process ]  %%%%%
+%%%%%  Handling the Attention Mechanism %%%%%
+%%%%%  by the 'STDIO' process.          %%%%%
+%%%%%    ( Status = [3] )               %%%%%
+%%%%%    ( Default procedure)           %%%%%
+%%%%%   ( Wait message from 'PARENT')   %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%% closing the Parent stream. %%%
+stdIoF3(HINT, OS, User, [], Id, _) :- true | OS = [cancel(Id, _) | User].
+
+%%% Wait for the 'RESEND' | 'CANCEL' message from PARENT.
+stdIoF3(HINT, OS, User, [Mes | Prnt], Id, CShut) :- true |
+    (Mes = connect(resend, Dtct, Status) -> OS = [reset(NStat) | NOS],
+        stdIoF31(HINT,NStat,resend,Id,NOS,User,Prnt,Dtct,Status,[],CShut) ;
+     Mes = connect(cancel, Dtct, Status) -> OS = [reset(NStat) | NOS],
+        stdIoF31(HINT,NStat,cancel,Id,NOS,User,Prnt,Dtct,Status,[],CShut) ;
+     Mes = desert(Status) -> OS = [cancel(Id, Status)] ;
+     Mes = forced_desert(Status) -> OS = [], Status = normal ).
+
+alternatively.
+
+%%% closing the I/O stream %%%
+stdIoF3(HINT, OS, [], Prnt, _, _) :- true | OS = [], stdIoFEnd(HINT, Prnt).
+
+stdIoF31(HINT,NStat,Mode,Id,OS,User,[Mes|Prnt],Dtct,Status,STK,CShut) :- true |
+    ( Mes = forced_desert(Stat) ->
+        OS=[], Stat=normal, Dtct=deserted, Status=aborted, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Stat) ->
+        OS=[], Stat=normal, Dtct=deserted, Status=aborted, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true ->
+        stdIoF31(HINT,NStat,Mode,Id,OS,User,Prnt,Dtct,Status,[Mes|STK],CShut) ).
+stdIoF31(HINT,NStat,Mode,Id,OS,User,Prnt,Dtct,Status,STK,CShut) :- wait(NStat) |
+    ( NStat = normal(PAbt,PAtt,_) -> OS=[{Mode,Id,CMP}|NOS],
+        reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+        waitStdIoF1(CMP,Status,HINT,NOS,PAtt,PAbt,User,NPrnt,Dtct,CShut,[]) ;
+     otherwise ;
+      true -> Status = NStat, OS=[{Mode,Id,CMP}],
+        reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+        waitStdIoF1(CMP, _, HINT, NOS, _, _, User, NPrnt, Dtct, CShut, []) ).
+
+waitStdIoF1(CMP,Status,HINT,OS,PAtt,PAbt,User,Prnt,Dtct,CShut,STK) :-
+        wait(CMP) | Status=CMP,
+    reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+    stdIoF1(HINT, OS, PAtt, PAbt, User, NPrnt, Dtct, CShut).
+alternatively.
+waitStdIoF1(CMP,Status,HINT,OS,PAtt,PAbt,User,[Mes|Prnt],Dtct,CShut,STK) :-
+    ( Mes = forced_desert(Stat) ->
+        OS=[], Stat=normal, Dtct=deserted, Status=aborted, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Stat) ->
+        OS=[], Stat=normal, Dtct=deserted, Status=aborted, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true ->
+        waitStdIoF1(CMP,
+                Status,HINT,OS,PAtt,PAbt,User,Prnt,Dtct,CShut,[Mes|STK]) ).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  [ Standard I/O Filter Process ]  %%%%%
+%%%%%  Handling the Attention Mechanism %%%%%
+%%%%%  by the 'USER' side process.      %%%%%
+%%%%%    ( Status = [4] )               %%%%%
+%%%%%   ( Wait message from 'PARENT')   %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%% closing the Parent stream %%%
+stdIoF4(HINT, OS, User, UAtt, _, [], Id, _) :- true |
+    UAtt = [], OS = [cancel(Id, _) | User].
+
+%%% Wait for the 'RESEND' | 'CANCEL' message from PARENT.
+stdIoF4(HINT, OS, User, UAtt, UAbt, [Mes | Prnt], Id, CShut) :- true |
+    (Mes = connect(resend, Dtct, Status) -> OS = [reset(NStat) | NOS],
+        stdIoF42(HINT,
+            NStat,resend,Id,NOS,User,UAtt,UAbt,Prnt,Dtct,Status,[],CShut) ;
+     Mes = connect(cancel, Dtct, Status) -> OS = [reset(NStat) | NOS],
+        stdIoF42(HINT,
+            NStat,cancel,Id,NOS,User,UAtt,UAbt,Prnt,Dtct,Status,[],CShut) ;
+     Mes = desert(Status) -> UAtt = [], OS = [cancel(Id, Status)] ;
+     Mes = forced_desert(Status) -> UAtt = [], OS = [], Status = normal ).
+
+alternatively.
+
+%%% closing the I/O stream %%%
+stdIoF4(HINT,OS,[],UAtt,_,Prnt,_,_) :- true |
+    UAtt=[], OS=[], stdIoFEnd(HINT,Prnt).
+
+
+stdIoF42(HINT,
+    NStat,Mode,Id,OS,User,UAtt,UAbt,[Mes|Prnt],Dtct,Status,STK,CShut) :- true |
+    ( Mes = forced_desert(Stat) -> OS=[], Stat=normal, Dtct=deserted,
+        UAtt=[], Status=aborted, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Stat) -> OS=[], Stat=normal, Dtct=deserted,
+        UAtt=[], Status=aborted, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true ->
+        stdIoF42(HINT,NStat,Mode,Id,
+            OS,User,UAtt,UAbt,Prnt,Dtct,Status,[Mes|STK],CShut) ).
+stdIoF42(HINT,NStat,Mode,Id,OS,User,UAtt,UAbt,Prnt,Dtct,Status,STK,CShut) :-
+        wait(NStat) |
+    ( NStat = normal(PAbt,PAtt,_) -> OS=[{Mode,Id,CMP}|NOS],
+        reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+        waitStdIoF2(CMP,
+            Status,HINT,NOS,PAtt,PAbt,User,UAtt,UAbt,NPrnt,Dtct,CShut,[]) ;
+     otherwise ;
+      true -> Status=NStat, OS=[{Mode,Id,CMP}],
+        reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+        waitStdIoF2(CMP,_,HINT,NOS,_,_,User,UAtt,UAbt,NPrnt,Dtct,CShut,[]) ).
+
+waitStdIoF2(CMP,Status,HINT,OS,PAtt,PAbt,User,UAtt,UAbt,Prnt,Dtct,CShut,STK) :-
+        wait(CMP) | Status=CMP,
+    reverse(STK, NSTK), append(NSTK, Prnt, NPrnt),
+    stdIoF2(HINT, OS, PAtt, PAbt, User, UAtt, UAbt, NPrnt, Dtct, CShut).
+alternatively.
+waitStdIoF2(CMP,Status,HINT,
+            OS,PAtt,PAbt,User,UAtt,UAbt,[Mes|Prnt],Dtct,CShut,STK) :-
+    ( Mes = forced_desert(Stat) -> OS=[], Stat=normal, Dtct=deserted,
+        UAtt=[], Status=aborted, stdIoFEnd(HINT,STK) ;
+      Mes = desert(Stat) -> OS=[], Stat=normal, Dtct=deserted,
+        UAtt=[], Status=aborted, stdIoFEnd(HINT,STK) ;
+     otherwise ;
+      true ->
+        waitStdIoF2(CMP,Status,HINT,
+                OS,PAtt,PAbt,User,UAtt,UAbt,Prnt,Dtct,CShut,[Mes|STK]) ).
+
+%waitStdIoF2(Status,HINT,NOS,PAtt,PAbt,User,UAtt,UAbt,NPrnt,Dtct,CShut) :-
+%        wait(Status) |
+%    stdIoF2(HINT, NOS, PAtt, PAbt, User, UAtt, UAbt, NPrnt, Dtct, CShut).
+
+stdIoFEnd(HINT, []) :- true | true.
+stdIoFEnd(HINT, [Mes | Prnt]) :- true |
+    (Mes = connect(_, Dtct, Status) -> Dtct = closed, Status = normal ;
+     Mes = desert(Status) -> Status = normal ;
+     Mes = forced_desert(Status) -> Status = normal ;
+     Mes = disconnect(Status) -> Status = normal ;
+     Mes = pass_to_block(Status) -> Status = normal ;
+    otherwise ;
+     true -> true ),
+    stdIoFEnd(HINT, Prnt).
+
+%%%%%  Status Checker (input ==> 2)  %%%%%
+
+cancel_end(HINT,Stat,OS,Status,CShut) :- wait(CShut) | Status=abnormal, OS=[].
+alternatively.
+cancel_end(HINT,Stat,OS,Status,CShut) :- wait(Stat) |
+    ( Stat = normal(_,_,ID) -> OS=[cancel(ID,Status)] ;
+     otherwise ;
+      true -> OS = [], Status = Stat ).
+
+reverse(X,Y) :- reverse(X,[],Y).
+reverse([],Y,Z) :- true | Z = Y.
+reverse([X|NX],Y,Z) :- true | reverse(NX,[X|Y],Z).
+
+append([A | X1], Y, Z) :- true | Z = [A | Z1], append(X1, Y, Z1).
+append([], Y, Z) :- true | Z = Y.
+
+error_raise(Data, FString) :- true |
+    Type = illegal_message_to_StdIO_switch,
+    variable:wrap(Data, {_, WData}, 100, 100),
+    shoen:raise(pimos_tag#error, '$PIMOS$'(Type, FString), WData).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of 'Standard I/O Filter' module. (STDIO)  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

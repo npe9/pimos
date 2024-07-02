@@ -1,0 +1,253 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_window_manager.
+:- with_macro pimos.
+:- public manager_a/7,manager_a/8,filter/5.
+
+manager_a(LAb,In,MM,LisVL,EnvVar,Title,Status) :- true |
+        create_window(WS,Ab,At,LisVL,EnvVar,Title),
+        buffer:character_pool(B),
+        WS=[flush(S)|WS1],
+        wait_initialized(LAb,In,WS1,Ab,At,B,MM,Status,S).
+
+manager_a(LAb,In,MM,LisVL,{PD,PL,PSL,PAL,PM,PSM},EnvVar,Title,Status) :- true |
+        create_window(WS,Ab,At,LisVL,EnvVar,Title),
+        buffer:character_pool(B),
+        WS=[print_depth(PD),print_length(PL),print_string_length(PSL),
+            print_atom_length(PAL),flush(S)|WS1],
+        wait_initialized(LAb,In,WS1,Ab,At,B,MM,Status,S).
+
+wait_initialized(LAb,In,WS,Ab,At,B,MM,Status,normal) :- true |
+        Status=normal,
+        manager(LAb,In,WS,Ab,At,B,MM).
+
+
+manager(LAb,_,WS,Ab,_,B,MM) :- wait(LAb) |
+        Ab=abort,B=[],MM=[],
+        WS=[reset(normal(_,_,ID)),cancel(ID,_)].
+manager(LAb,In,WS,Ab,attention,B,MM) :- true |
+        WS=[next_attention(normal(At)),
+            putf(string#"~n~s",[string#" ?? Interruption (h for help): "]),
+            flush(_),getl(Line1)|WS1],
+        check_input(Line1,Line),
+        inspector_command_analyser:analyse_winman_cmd(Line,C,T,B,B1),
+        wait_input(LAb,In,WS1,Ab,At,B1,MM,C,T).
+alternatively.
+manager(LAb,[io_request(CWS,CAt,CAt1)|In],WS,Ab,At,B,MM) :- true |
+        CAt=At,
+        manager_io(LAb,In,WS,Ab,CAt1,B,MM,CWS).
+manager(LAb,[monitor(_,Res)|In],WS,Ab,At,B,MM) :- true |
+        Res=normal(CWS,At,NAt),
+        manager_io(LAb,In,WS,Ab,NAt,B,MM,CWS).
+manager(_,[],WS,Ab,_,B,MM) :- true |
+        Ab=abort,B=[],MM=[],
+        WS=[reset(normal(_,_,ID)),cancel(ID,_)].
+
+check_input(Line1,Line) :- string(Line1,_,_) | Line=Line1.
+otherwise.
+check_input(_,Line) :- true | Line=string#"".
+
+manager_io(LAb,In,WS,Ab,At,B,MM,_) :- wait(LAb) |
+        manager(LAb,In,WS,Ab,At,B,MM).
+manager_io(LAb,In,WS,Ab,At,B,MM,[Msg|CWS]) :- true |
+        WS=[Msg|WS1],
+        manager_io(LAb,In,WS1,Ab,At,B,MM,CWS).
+manager_io(LAb,In,WS,Ab,At,B,MM,[]) :- true |
+        manager(LAb,In,WS,Ab,At,B,MM).
+
+wait_input(LAb,In,WS,Ab,At,B,MM,_,_) :- wait(LAb) |
+        manager(LAb,In,WS,Ab,At,B,MM).
+alternatively.
+wait_input(LAb,In,WS,Ab,At,B,MM,C,T) :- wait(C) |
+        do_wait_input(LAb,In,WS,Ab,At,B,MM,C,T).
+
+do_wait_input(LAb,In,WS,Ab,At,B,MM,continue,_) :- true |
+        manager(LAb,In,WS,Ab,At,B,MM).
+do_wait_input(LAb,In,WS,Ab,At,B,MM,stream_auto_mode,_) :- true |
+        MM=[stream_auto_mode(normal(FStr,Info))|MM1],
+        WS=[putf(FStr,Info),flush(_)|WS1],
+        manager(LAb,In,WS1,Ab,At,B,MM1).
+do_wait_input(LAb,In,WS,Ab,At,B,MM,query_mode,_) :- true |
+        MM=[query_mode(normal(FStr,Info))|MM1],
+        WS=[putf(FStr,Info),flush(_)|WS1],
+        manager(LAb,In,WS1,Ab,At,B,MM1).
+do_wait_input(LAb,In,WS,Ab,At,B,MM,monitored_terms,_) :- true |
+        WS=[do(CWS)|WS1],
+        MM=[monitored_terms(CWS,End)|MM1],
+        manager_wait_mt(LAb,In,WS1,Ab,At,B,MM1,End).
+do_wait_input(_,In,WS,Ab,_,B,MM,exit,_) :- true |
+        Ab=abort,B=[],MM=[],
+        WS=[reset(normal(_,_,ID)),cancel(ID,_)],
+        wait_monitor_manager_terminated(In).
+do_wait_input(LAb,In,WS,Ab,At,B,MM,help,_) :- true |
+        WS=[putf(string#"~s~n",[string#"     <cr> : continue"]),
+%            putf(string#"~s~n",[string#"        i : call inspector"]),
+            putf(string#"~s~n",[string#"      sam : change stream auto mode"]),
+            putf(string#"~s~n",[string#"       qm : change query mode"]),
+            putf(string#"~s~n",[string#"       mt : show monitored terms list"]),
+            putf(string#"~s~n",[string#"       ex : kill all monitoring processes and exit"]),
+            putf(string#"~s~n",[string#"        h : help"]),flush(_)|WS1],
+        query(LAb,In,WS1,Ab,At,B,MM).
+otherwise.
+do_wait_input(LAb,In,WS,Ab,At,B,MM,_,Type) :- true |
+        WS=[error(Type)|WS1],
+        query(LAb,In,WS1,Ab,At,B,MM).
+
+query(LAb,In,WS,Ab,At,B,MM) :- true |
+        WS=[putf(string#"(h for help) ? ",[]),flush(_),getl(Line)|WS1],
+        inspector_command_analyser:analyse_winman_cmd(Line,C,T,B,B1),
+        wait_input(LAb,In,WS1,Ab,At,B1,MM,C,T).
+
+wait_monitor_manager_terminated([]) :- true | true.
+
+manager_wait_mt(LAb,In,WS,Ab,At,B,MM,End) :- wait(End) |
+        manager(LAb,In,WS,Ab,At,B,MM).
+
+
+create_window(WS,Ab,Att,LisVL,EnvVar,Title) :- true |
+        get_device(WS0,Ab,Att,EnvVar,Title,WRS),
+        buffer:interaction_filter(WS1,WS0),
+        variable:pool2(V),
+        put_vars(LisVL,V,V1),
+        filter(WS,WS1,V1,EnvVar,WRS).
+
+get_device(WS,Abort,Att,EnvVar,Title,WRS) :- true |
+        shoen:raise(pimos_tag#task,general_request,GRS),
+        GRS=[window(WRS0),getenv(inspector:font,Res)|GRS1],
+        get_font(Res,Font,GRS1),
+        wait_wrs(WS,Abort,Att,EnvVar,Title,WRS,WRS0,Font).
+
+get_font(normal(Font),Font1,GRS) :- string(Font,N,_),N>0 | Font=Font1,GRS=[].
+otherwise.
+get_font(_,Font,GRS) :- true |
+        GRS=[getenv(listener:font,Res)],
+        get_listener_font(Res,Font).
+
+get_listener_font(normal(Font),Font1) :- string(Font,N,_),N>0 | Font=Font1.
+otherwise.
+get_listener_font(_,Font) :- true | Font=">sys>font>test_11.font".
+
+wait_wrs(WS,Abort,Att,EnvVar,Title,WRS,normal(WRS0,_,_),Font) :- true |
+        WRS0=[create(WS0)|WRS],
+        wait_ws(WS,Abort,Att,EnvVar,Title,WS0,Font).
+
+wait_ws(WS,Abort,Att,EnvVar,Title,normal(WS0,Ab,At),Font) :- vector_element(EnvVar,2,Size) |
+%        WS0=[set_font(string#"font:test_11.font",_),
+        WS0=[set_font(Font,_),
+            set_title(Title,_),
+            reshape(mouse,Size,_),activate(_)|WS],
+%            set_size(char(40,10),_),set_position(mouse,_),activate(_)|WS],
+        Abort=Ab,Att=At.
+
+put_vars([{Name,Val}|VL],V,V1) :- true |
+        V=[put_var(Name,Val)|V0],
+        put_vars(VL,V0,V1).
+put_vars([],V,V1) :- true | V=V1.
+
+filter([wrap(T,WT)|In],Out,V,EnvVar,WRS) :- true |
+        Out=[print_depth(D,D),print_length(L,L)|Out1],
+        variable:black_wrap(T,Res,D,L,V,V1),
+        unify_result(Res,_,WT),
+        filter(In,Out1,V1,EnvVar,WRS).
+filter([wrap(T,NT,WT)|In],Out,V,EnvVar,WRS) :- true |
+        Out=[print_depth(D,D),print_length(L,L)|Out1],
+        variable:black_wrap(T,Res,D,L,V,V1),
+        unify_result(Res,NT,WT),
+        filter(In,Out1,V1,EnvVar,WRS).
+filter([wrap(T,WT,D,L)|In],Out,V,EnvVar,WRS) :- true |
+        variable:black_wrap(T,Res,D,L,V,V1),
+        unify_result(Res,_,WT),
+        filter(In,Out,V1,EnvVar,WRS).
+filter([wrap(T,NT,WT,D,L)|In],Out,V,EnvVar,WRS) :- true |
+        variable:black_wrap(T,Res,D,L,V,V1),
+        unify_result(Res,NT,WT),
+        filter(In,Out,V1,EnvVar,WRS).
+filter([get_value(Name,Val)|In],Out,V,EnvVar,WRS) :- true |
+        V=[get_value(Name,Val)|V1],
+        filter(In,Out,V1,EnvVar,WRS).
+filter([put_var(Name,Val)|In],Out,V,EnvVar,WRS) :- true |
+        V=[put_var(Name,Val)|V1],
+        filter(In,Out,V1,EnvVar,WRS).
+
+%%EnvVar={SAM,QM,Init,Big,LBig,BEEP}
+filter([bigger(Ac)|In],Out,V,EnvVar,WRS) :- vector_element(EnvVar,3,Big) |
+        make_bigger(Big,Ac,Out,Out1,WRS,WRS1),
+        filter(In,Out1,V,EnvVar,WRS1).
+filter([a_little_bigger(Ac)|In],Out,V,EnvVar,WRS) :- vector_element(EnvVar,4,LBig) |
+        make_bigger(LBig,Ac,Out,Out1,WRS,WRS1),
+        filter(In,Out1,V,EnvVar,WRS1).
+
+filter([do(In0)|In],Out,V,EnvVar,WRS) :- true |
+        prepend(In0,In,In1),
+        filter(In1,Out,V,EnvVar,WRS).
+filter([error(Reason)|In],Out,V,EnvVar,WRS) :- true |
+        output_error(Reason,OutStream),
+        prepend(OutStream,In,In1),
+        filter(In1,Out,V,EnvVar,WRS).
+otherwise.
+filter([Msg|In],Out,V,EnvVar,WRS) :- true |
+        Out=[Msg|Out1],
+        filter(In,Out1,V,EnvVar,WRS).
+filter([],Out,V,_,WRS) :- true | Out=[],V=[],WRS=[].
+
+unify_result({NT,WT},NT1,WT1) :- true | NT=NT1,WT=WT1.
+
+prepend([A|X],Y,Z) :- true |
+        Z=[A|Z1],
+        prepend(X,Y,Z1).
+prepend([],Y,Z) :- true | Z=Y.
+
+make_bigger(char(PC,PL),Ac,Out,Out1,WRS,WRS1) :- true |
+        Out=[get_position(normal(X,Y)),get_char_size(normal(C,L)),
+             get_font(normal(Font))|Out0],
+        WRS=[get_max_size(X,Y,Font,normal(C0,L0))|WRS1],
+        get_param(C,~(C+PC),C0,L,~(L+PL),L0,Res),
+        if_make_bigger(Ac,Out0,Out1,Res).
+make_bigger(mouse,Ac,Out,Out1,WRS,WRS1) :- true |
+        Out=[reshape(mouse,mouse,Ac)|Out1],
+        WRS=WRS1.
+
+get_param(C,C1,C0,L,L1,L0,Res) :- true |
+        get_param(C,C1,C0,Res0),
+        get_param(L,L1,L0,Res1),
+        get_param_result(Res0,Res1,C,L,Res).
+
+get_param(C,_,C,Res) :- true | Res=abnormal.
+otherwise.
+get_param(_,C1,C0,Res) :- C1>C0 | Res=normal(C0).
+get_param(_,C1,C0,Res) :- C1=<C0 | Res=normal(C1).
+
+get_param_result(normal(C),normal(L),_,_,Res) :- true | Res=normal(C,L).
+get_param_result(normal(C),abnormal,_,L,Res) :- true | Res=normal(C,L).
+get_param_result(abnormal,normal(L),C,_,Res) :- true | Res=normal(C,L).
+get_param_result(abnormal,abnormal,_,_,Res) :- true | Res=abnormal.
+
+if_make_bigger(Ac,Out,Out1,normal(C,L)) :- true |
+        Out=[set_size(char(C,L),Ac)|Out1].
+if_make_bigger(Ac,Out,Out1,abnormal) :- true |
+        Out=[putf(string#"~s~n",[string#">Cannot make bigger"]),flush(Ac)|Out1].
+
+output_error(unwrapped_illegal_param(M,N),Stream) :- true |
+        Stream=[wrap(M,WM),wrap(N,WN),
+            putf(string#"~s~W : ~W~n",[string#">Illegal parameter: ",WM,WN]),
+            flush(_)].
+output_error(unwrapped_illegal_param(M),Stream) :- true |
+        Stream=[wrap(M,WM),
+            putf(string#"~s~W~n",[string#">Illegal parameter: ",WM]),
+            flush(_)].
+output_error(illegal_param_str(Str),Stream) :- true |
+        Stream=[putf(string#"~s~s~n",[string#">Illegal parameter: ",Str]),
+            flush(_)].
+output_error(illegal_param(M),Stream) :- true |
+        Stream=[putf(string#"~s~T~n",[string#">Illegal parameter: ",M]),flush(_)].
+output_error(unknown,Stream) :- true |
+        Stream=[putf(string#"~s~n",[string#">Unknown command"]),flush(_)].
+output_error(illegal_param,Stream) :- true |
+        Stream=[putf(string#"~s~n",[string#">Illegal parameter"]),flush(_)].
+output_error(abnormal(Info),Stream) :- true |
+        Stream=[print_error(Info),flush(_)].
+

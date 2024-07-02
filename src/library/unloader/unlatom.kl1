@@ -1,0 +1,106 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v15>NewUnloader>unlatom.kl1.20, 23-Feb-90 21:39:16, Edit by hori
+
+:- module kl1_unloaded_atom_table.
+:- public encode/1, decode/3.
+:- with_macro pimos.
+
+decode(In,CT0,CT):- true |
+    pool:keyed_set(IA,1000),
+    decode(In,IA,CT0,CT,[]).
+
+decode([get(ID,Atom)|In],IA,CT0,CT,Stack) :- integer(ID) |
+    IA = [empty(ID,YorN)|IA1],
+    get(YorN,ID,Atom,In,IA1,CT0,CT,Stack).
+decode([put(ID,Name,Atom)|In],IA,CT0,CT,Stack) :- integer(ID) |
+    CT0 = [intern(Name,normal(Atom))|CT1],
+    IA = [put(ID,Atom,_)|IA1],
+    decode(In,IA1,CT1,CT,Stack).
+decode([put_all(All,Status)],IA,CT0,CT,Stack) :- true |
+    put_all(All,IA,CT0,CT,Stack,Status).
+decode([],IA,CT0,CT,Stack) :- true |
+    IA = [],
+    CT0 = CT,
+    cancel(Stack).
+
+get(yes,ID,Atom,In,IA,CT0,CT,Stack) :- true |
+    decode(In,IA,CT0,CT,[get(ID,Atom)|Stack]).
+get(no,ID,Atom,In,IA,CT0,CT,Stack) :- true |
+    IA = [get_and_put(ID,Atom,Atom)|IA1],
+    decode(In,IA1,CT0,CT,Stack).
+
+put_all([{ID,Name}|Rest],IA,CT0,CT,Stack,Status) :- integer(ID), string(Name,_,16) |
+    CT0 = [intern(Name,normal(Atom))|CT1],
+    IA = [put(ID,Atom,_)|IA1],
+    put_all(Rest,IA1,CT1,CT,Stack,Status).
+put_all([],IA,CT0,CT,Stack,Status) :- true |
+    CT0 = CT,
+    resume_get(Stack,IA,Status).
+otherwise.
+put_all(_,IA,CT0,CT,Stack,Status) :- true |
+    IA = [],
+    CT0 = CT,
+    cancel(Stack),
+    Status = abnormal.
+
+resume_get([get(ID,Atom)|Rest],IA,Status) :- true |
+    IA = [empty(ID,YorN)|IA1],
+    check_atom_id(YorN,ID,Atom,Rest,IA1,Status).
+resume_get([],IA,Status) :- true |
+    IA = [],
+    Status = normal.
+
+check_atom_id(no,ID,Atom,Rest,IA,Status) :- true |
+    IA = [get_and_put(ID,Atom,Atom)|IA1],
+    resume_get(Rest,IA1,Status).
+check_atom_id(yes,ID,Atom,Rest,IA,Status) :- true |
+    Status = abnormal,
+    Atom = -1,
+    IA = [],
+    cancel(Rest).
+
+cancel([get(ID,Atom)|Rest]) :- true |
+    Atom = -1,
+    cancel(Rest).
+cancel([]) :- true | true.
+
+encode(In) :- true |
+    atom_table:cache_table(CT),
+    pool:keyed_set(AI,100),
+    encode(In,0,AI,CT).
+
+encode([put(Atom,ID,Name)|In],NewID,AI,CT) :- atom(Atom) |
+    AI = [empty(Atom,YorN)|AI1],
+    put(YorN,In,Atom,ID,Name,NewID,AI1,CT).
+encode([get_all(N,All)],NewID,AI,CT) :- true |
+    AI = [get_all(AIall)],
+    get_all(AIall,0,N,All,CT).
+encode([],NewID,AI,CT) :- true |
+    AI = [],
+    CT = [].
+
+put(no,In,Atom,ID,Name,NewID,AI,CT) :- true |
+    AI = [get_and_put(Atom,ID,ID)|AI1],
+    Name = 0,
+    encode(In,NewID,AI1,CT).
+put(yes,In,Atom,ID,Name,NewID,AI,CT) :- true |
+    ID := ((NewID \/ 16#"8000") << 16) >> 16,   % To Avoid Compiler Bug
+    AI = [put(Atom,NewID,_)|AI1],
+    CT = [get_atom_name(Atom,normal(Name))|CT1],
+    NewID1 := NewID + 1,
+    encode(In,NewID1,AI1,CT1).
+
+get_all([{Atom,ID}|Rest],I,N,All,CT) :- true |
+    CT = [get_atom_name(Atom,normal(Name))|CT1],
+    All = [{ID,Name}|All1],
+    I1 := I + 1,
+    get_all(Rest,I1,N,All1,CT1).
+get_all([],I,N,All,CT) :- true |
+    N = I,
+    All = [],
+    CT = [].

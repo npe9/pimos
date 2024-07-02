@@ -1,0 +1,147 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%  This is a 'jobManager' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module jobManager.
+:- public create/3.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   create(Cnt, Rpt, IoH)       %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+create(Cnt, Rpt, IoH) :- true |
+    jobManager(Cnt, Rpt, Snd, Rcv, IoH), Snd = Rcv.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% jobManager([Mes | Cnt], [Mes | Rpt], [Mes | Snd], [Mes | Rcv], [Mes | IoH]) %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% jobManager handling message %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+jobManager([], Rpt, Snd, Rcv, IoH) :- true | Snd = [],
+    jobManager(_, Rpt, _, Rcv, IoH).
+jobManager(_, Rpt, _, [], IoH) :- true | Rpt = [], IoH = [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% controlling message to jobManager %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%% if ( JOB is ended ) then ( End is instanciated to 'end' by JOB )
+jobManager([job(JobInfo, JobNo, StdMes, Stat, ID, Info)
+            | Cnt], Rpt, Snd, Rcv, IoH) :- true |
+    job:create(job(Stat, JobInfo, StdMes),
+                            JobCnt, JobRpt, JobNo, ID, Info),
+    waitStatus(Stat, JobRpt, Snd),
+    jobManager(Cnt, Rpt, JobCnt, Rcv, IoH).
+%jobManager([subShell(JobGrpInfo, JobNo, StdMes, Info)
+%            | Cnt], Rpt, Snd, Rcv, IoH) :- true |
+%    shellParser:iomParser(JobGrpInfo, SubShell),
+%    job:create(job(SubShell, StdMes),
+%                            JobCnt, JobRpt, JobNo, Info),
+%    JobRpt = Snd,
+%    jobManager(Cnt, Rpt, JobCnt, Rcv, IoH).
+jobManager([last_error(Stat) | Cnt], Rpt, Snd, Rcv, IoH) :- true |
+    Rpt = [last_error(Stat) | NRpt],
+    jobManager(Cnt, NRpt, Snd, Rcv, IoH).
+jobManager([get_last_error(Error) | Cnt], Rpt, Snd, Rcv, IoH) :- true |
+    Rpt = [get_last_error(Error) | NRpt],
+    jobManager(Cnt, NRpt, Snd, Rcv, IoH).
+jobManager([Mes | Cnt], Rpt, Snd, Rcv, IoH) :- atom(Mes) |
+    (Mes = killJob -> Snd = [killJob | NSnd] ;
+     Mes = stopJob -> Snd = [stopJob | NSnd] ;
+     Mes = startJob -> Snd = [addResource, startJob | NSnd] ;
+    otherwise ;
+     true -> NSnd = Snd ),
+    jobManager(Cnt, Rpt, NSnd, Rcv, IoH).
+jobManager([Mes | Cnt], Rpt, Snd, Rcv, IoH) :- vector(Mes, _),
+        vector_element(Mes,0,V0),
+        V0\=createJob, V0\=subShell, V0\=last_error, V0\=get_last_error |
+    (Mes = killJob(JobId) -> Snd = [killJob(JobId) | NSnd] ;
+     Mes = stopJob(JobId) -> Snd = [stopJob(JobId) | NSnd] ;
+     Mes = startJob(JobId) ->
+        Snd = [addResource(JobId), startJob(JobId) | NSnd] ;
+     Mes = jobStatus(Status) ->
+        Snd = [jobStatus(Stat, Stat, Status) | NSnd] ;
+     Mes = set_rscinc(JobNo, Inc) -> Snd = [set_rscinc(JobNo, Inc) | NSnd];
+     Mes = get_rscinc(JobNo, Stat) -> Snd = [get_rscinc(JobNo, Stat) | NSnd] ;
+     Mes = io_no(JobNo, NO) -> Snd = [io_no(JobNo, NO) | NSnd];
+    otherwise ;
+     true -> NSnd = Snd ),
+    jobManager(Cnt, Rpt, NSnd, Rcv, IoH).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% reporting message from jobManager %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+jobManager(Cnt, Rpt, Snd, [Mes | Rcv], IoH) :- atom(Mes) |
+    jobManager(Cnt, Rpt, Snd, Rcv, IoH).
+jobManager(Cnt, Rpt, Snd, [closeIo(JobNo, Status) | Rcv], IoH) :- true |
+    IoH = [kill(JobNo, Status) | NIoH],
+    jobManager(Cnt, Rpt, Snd, Rcv, NIoH).
+jobManager(Cnt, Rpt, Snd, [resourceLow(JobId,IO_NO) | Rcv], IoH) :- true |
+    IoH = [detach(IO_NO, Stat1) | NIoH], Snd = [stopJob(JobId) | NSnd],
+%    check_detach(Stat1, Stat2, NIoH, NNIoH),
+%    waitStatus(Stat2, Snd, [stopJob(JobId) | NSnd]),
+    Rpt = [resourceLow(JobId,IO_NO) | NRpt],
+    jobManager(Cnt, NRpt, NSnd, Rcv, NIoH).
+jobManager(Cnt, Rpt, Snd, [attention(JobId, IO_NO) | Rcv], IoH) :- true |
+    IoH = [detach(IO_NO, Stat1) | NIoH], Snd = [stopJob(JobId) | NSnd],
+%    check_detach(Stat1, Stat2, NIoH, NNIoH),
+%    waitStatus(Stat2, Snd, [stopJob(JobId) | NSnd]),
+    jobManager(Cnt, Rpt, NSnd, Rcv, NIoH).
+jobManager(Cnt, Rpt, Snd, [jobTerminated(JobId,IO_NO) | Rcv], IoH) :- true |
+%    IoH = [detach(IO_NO, Stat1) | NIoH],
+%    check_detach(Stat1, _, NIoH, NNIoH),
+%    jobManager(Cnt, Rpt, Snd, Rcv, NNIoH).
+    jobManager(Cnt, Rpt, Snd, Rcv, IoH).
+jobManager(Cnt, Rpt, Snd, [Mes | Rcv], IoH) :- vector_element(Mes,0,V0),
+        V0\=closeIo, V0\=resourceLow, V0\=attention, V0\=jobTerminated |
+    (Mes = get_rscinc(JobId, Stat) -> Rpt = [illegal_job_no(JobId,Stat)|NRpt];
+     Mes = io_no(JobId, NO) -> NRpt = Rpt, NO = 0 ;
+     Mes = jobCreated(JobId) -> Rpt = [jobCreated(JobId) | NRpt] ;
+     Mes = jobAborted(JobId) -> Rpt = [jobAborted(JobId) | NRpt] ;
+     Mes = jobStopped(JobId) -> Rpt = [jobStopped(JobId) | NRpt] ;
+     Mes = jobStarted(JobId) -> Rpt = [jobStarted(JobId) | NRpt] ;
+     Mes = jobAlreadyStopped(JobId) ->
+        Rpt = [jobAlreadyStopped(JobId) | NRpt] ;
+     Mes = jobNotStopped(JobId) -> Rpt = [jobNotStopped(JobId) | NRpt] ;
+     Mes = resourceAdded(JobId, Inc) ->
+        Rpt = [resourceAdded(JobId, Inc) | NRpt] ;
+     Mes = jobStatus(Stat, Cdr, Status) -> Cdr = [],
+        Rpt = [jobStatus(Stat, Status) | NRpt] ;
+     Mes = jobResourceIncrement(A, B, C) ->
+        Rpt = [jobResourceIncrement(A, B, C) | NRpt] ;
+     Mes = exception(A,B,C) -> Rpt = [exception(A,B,C) | NRpt] ;
+     Mes = illegal_stdio(A) -> Rpt = [illegal_stdio(A) | NRpt] ;
+    otherwise ;
+     true -> NRpt = Rpt ),
+    jobManager(Cnt, NRpt, Snd, Rcv, IoH).
+
+
+waitStatus(Status, Old, New) :- wait(Status) | Old = New.
+
+%check_detach(Stat1, Stat2, IoH, NIoH) :- wait(Stat1) |
+%%    ( Stat1 = normal -> IoH = [attach(0, Stat2, _) | NIoH] ;
+%%      Stat1 = abnormal -> IoH = [attach(0, Stat2, _) | NIoH] ;
+%%      Stat1 = non_existent -> IoH = [attach(0, Stat2, _) | NIoH] ;
+%    ( Stat1 = normal -> Stat2 = normal, IoH = NIoH ;
+%      Stat1 = abnormal -> Stat2 = normal, IoH = NIoH ;
+%      Stat1 = non_existent -> Stat2 = normal, IoH = NIoH ;
+%      Stat1 = non_execute -> Stat2 = normal, IoH = NIoH ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                               %%%%%
+%%%%%  End of 'jobManager' module.  %%%%%
+%%%%%                               %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

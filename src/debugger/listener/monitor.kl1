@@ -1,0 +1,61 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module listener_monitor.
+:- public monitor/6.
+:- with_macro pimos.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Monitor(Rpt,Ctr,IO,Att,Go,Mode)
+%
+%   IO  ::  Standard IO Stream for std_mes
+%   Att ::  Attention for Profiler
+%   Go  ::  Sign of termination for listener_seq_executor
+%   Mode::  invoker | profiler | seq_executor
+
+% Attention handling for Profiler.
+monitor(Rpt,Ctr,IO,Att,Go,Mode) :- wait(Att) | 
+    Ctr=[abort(_)|Ctr1], 
+    monitor(Rpt,Ctr1,IO,_,Go,Mode).
+alternatively.
+monitor(Rpt,Ctr,IO,Att,Go,Mode) :- wait(Rpt) | mon(Rpt,Ctr,IO,Att,Go,Mode).
+
+mon([terminated|_],               Ctr,IO,_,Go,_) :- true| Ctr=[], IO=[], Go=go.
+mon([resource_low|Rpt],           Ctr,IO,ATT,GO,MODE) :- true |
+    Ctr=[add_resource(0,16#"FFFFFFFF")|Ctr1], 
+    monitor(Rpt,Ctr1,IO,ATT,GO,MODE).
+mon([resource_added|Rpt],         Ctr,IO,ATT,GO,MODE) :- true|
+    Ctr=[allow_resource_report|Ctr1],
+    monitor(Rpt,Ctr1,IO,ATT,GO,MODE).
+mon([resource_report_allowed|Rpt],Ctr,IO,ATT,GO,MODE) :- true| monitor(Rpt,Ctr,IO,ATT,GO,MODE).
+mon([aborted|Rpt],                Ctr,IO,ATT,GO,MODE) :- true| monitor(Rpt,Ctr,IO,ATT,GO,MODE).
+mon([return_resource(_,_)|Rpt],   Ctr,IO,ATT,GO,MODE) :- true| monitor(Rpt,Ctr,IO,ATT,GO,MODE).
+mon([exception(raised,{_,get_std_mes,MES},NewCde,NewArg)|Rpt],Ctr,IO,ATT,GO,invoker) :- true|
+    IO={MES,IO1},
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={dummy},
+    monitor(Rpt,Ctr,IO1,ATT,GO,invoker).
+otherwise.
+% For Sequential executor (or Profiler).
+mon([exception(raised,{_Node,Info,Data},NewCde,NewArg)|Rpt],Ctr,IO,Att,Go,Mode) :- true|
+    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+    NewArg={fail},
+    shoen:raise(pimos_tag#error,
+      '$PIMOS$'(illegal_tag_of_raise,
+                """pimos_tag#task"" not available for user defined exception."),
+      shoen:raise(`(pimos_tag#task),Info,Data)),
+    monitor(Rpt,Ctr,IO,Att,Go,Mode).
+%otherwise.
+% For listener (tracer) invoker.
+% Listener program occurs exceptions.
+%mon([exception(Kind,Info,NewCde,NewArg)|Rpt],Ctr,IO,ATT,GO,MODE) :- true|
+%    predicate_to_code(module#listener_utility,dummy,1,NewCde),
+%    NewArg={dummy},
+%    shoen:raise(pimos_tag#error,
+%      '$PIMOS$'(Kind,"Listener program occurs exception."),Info),
+%    monitor(Rpt,Ctr,IO,ATT,GO,MODE).    
+otherwise.
+mon([_|Rpt],Ctr,IO,ATT,GO,MODE) :- true| monitor(Rpt,Ctr,IO,ATT,GO,MODE).

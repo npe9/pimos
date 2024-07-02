@@ -1,0 +1,154 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ :- module std_switch_filter .
+ :- public std_switch_filter /2 .
+:- with_macro pimos.
+
+std_switch_filter(User,OS) :-true|
+        std_switch_filter(User,OS,_,[]) .
+std_switch_filter([User|U2],OS,_,Error) :-true|
+        '+std_switch_command'(User,OS1,Flag,Error),
+        'std_switch_filter$wait'(U2,OS,OS1,Flag,Error) .
+std_switch_filter([],OS,_,Error) :-true|
+        []=OS .
+otherwise .
+std_switch_filter(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        OS =[],
+        raise_error(Error,User) .
+'std_switch_filter$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        std_switch_filter(U2,OS2,_,Error) .
+'std_switch_filter$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+std_switch_command'(attach(_1,_2,_3),OS,_,Error) :-true|
+        '+std_switch_command$wait'(attach(__1,_2,_3),OS,Flag,Error),
+        '+switch_no'(_1,__1,Flag,[switch_no,'attach /3'|Error]) .
+'+std_switch_command'(attach(_1,_2),OS,_,Error) :-true|
+        attach(__1,__2) =OS,
+        '-attach_status'(_1,__1,Flag,[attach_status,'attach /2'|Error]),
+        '-detect'(_2,__2,Flag,[detect,'attach /2'|Error]) .
+'+std_switch_command'(detach(_1,_2),OS,_,Error) :-true|
+        '+std_switch_command$wait'(detach(__1,_2),OS,Flag,Error),
+        '+switch_no'(_1,__1,Flag,[switch_no,'detach /2'|Error]) .
+'+std_switch_command'(detach(_1),OS,_,Error) :-true|
+        detach(__1) =OS,
+        '-detach_status'(_1,__1,Flag,[detach_status,'detach /1'|Error]) .
+'+std_switch_command'(kill(_1,_2),OS,_,Error) :-true|
+        '+std_switch_command$wait'(kill(__1,_2),OS,Flag,Error),
+        '+switch_no_with_all'(_1,__1,Flag,[switch_no_with_all,'kill /2'|Error]) .
+'+std_switch_command'(kill(_1),OS,_,Error) :-true|
+        kill(__1) =OS,
+        '-kill_status'(_1,__1,Flag,[kill_status,'kill /1'|Error]) .
+otherwise .
+'+std_switch_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+std_switch_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+std_switch_command$wait'(attach(__1,_2,_3),OS,_,Error) :-wait(__1)|
+        attach(__1,__2,__3) =OS,
+        '-attach_status'(_2,__2,Flag,[attach_status,'attach /3'|Error]),
+        '-detect'(_3,__3,Flag,[detect,'attach /3'|Error]) .
+'+std_switch_command$wait'(detach(__1,_2),OS,_,Error) :-wait(__1)|
+        detach(__1,__2) =OS,
+        '-detach_status'(_2,__2,Flag,[detach_status,'detach /2'|Error]) .
+'+std_switch_command$wait'(kill(__1,_2),OS,_,Error) :-wait(__1)|
+        kill(__1,__2) =OS,
+        '-kill_status'(_2,__2,Flag,[kill_status,'kill /2'|Error]) .
+'+switch_no'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+switch_no'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-attach_status'(User,OS,_,Error) :-atom(OS)|
+        OS =User .
+'-detect'(User,OS,_,Error) :-atom(OS)|
+        OS =User .
+'-detach_status'(User,OS,_,Error) :-atom(OS)|
+        OS =User .
+'+switch_no_with_all'(all,OS,_,Error) :-true|
+        all =OS .
+'+switch_no_with_all'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+switch_no_with_all'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-kill_status'(User,OS,_,Error) :-atom(OS)|
+        OS =User .
+%%%%% system defined protocols %%%%%%%%%%
+'+ground'(X, Y) :- list(X) | '$$groundl'(X, Y).
+'+ground'(X, Y) :- vector(X,Size),Size \= 0 | 
+        '$$groundv'(X, 0, Size, X2),
+        '$$groundv2'(X2, Y).
+otherwise.
+'+ground'(X, Y) :- wait(X) | Y = X.
+'-ground'(X, Y) :- list(Y) | '$$groundl'(Y, X).
+'-ground'(X, Y) :- vector(Y,Size), Size \= 0 | 
+        '$$groundv'(Y, 0, Size, Y2),
+        '$$groundv2'(Y2, X).
+otherwise.
+'-ground'(X, Y) :- wait(Y) | Y = X.
+'$$groundl'([X1|X2], Y) :- true | '+ground'(X1,X11),
+        '$$groundl2'(X11, X2, Y).
+'$$groundl'([], Y) :- true | Y = [].
+'$$groundl2'(X11, X2, Y) :- wait(X11) |
+        '$$groundl31'(X2, [X11|Tail], Tail, Y).
+'$$groundl31'([X1|X2], Top, Tail, Y) :- true |
+        '+ground'(X1,X11),
+        '$$groundl32'(X11, X2, Top, Tail, Y).
+'$$groundl31'([], Top, Tail, Y) :- true |
+        Tail = [],
+        Top = Y.
+'$$groundl32'(X11, X2, Top, Tail, Y) :- wait(X11), X2 \= [] |
+        Tail = [X11|Tail2],
+        '$$groundl31'(X2, Top, Tail2, Y).
+'$$groundl32'(X11, [], Top, Tail, Y) :- wait(X11) |
+        Tail = [X11],
+        Y = Top.
+'$$groundv2'(X2, Y) :- wait(X2) | X2 = Y.
+'$$groundv'(X, Pos, Size, X2) :- Pos \= Size |
+        vector_element(X, Pos, Elm, NX),
+        '+ground'(Elm,Elm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Elm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Pos, Size, X2) :- wait(Elm), Pos \= Size |
+        vector_element(X, Pos, Nelm, NX),
+        '+ground'(Nelm, Nelm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Nelm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Size, Size, X2) :- wait(Elm) |
+        X = X2. 
+%%%%% to raise error %%%%%%%%%%
+raise_error(Info,Msg):- true |
+        atom_table:cache_table(Atom),
+        formatInfo(Info,[],Fstring,Atom),
+        shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_message_to_PIMOS,Fstring),Msg).
+formatInfo([Infoatom | Info], StringList,Fstring,Atom):- 
+        atom(Infoatom) |
+        Atom = [get_atom_name(Infoatom,normal(InfoString)) | Atail],
+        NSlist = [InfoString | StringList],
+        formatInfo(Info, NSlist, Fstring, Atail).
+formatInfo([], Slist, Fstring, Atom):- true |
+        Atom = [],
+        new_string(New,1,16),
+        set_string_element(New,0,key#lf,NL),
+        format(1,Slist,StringList,NL),
+        builtin#append_string([""|StringList], Fstring).
+format(1,[Info|Tail],StringList,NL):- true |
+        StringList = ["Device : ",Info |Stail2],
+        format(2,Tail,Stail2,NL).
+format(2,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,"Message : ",Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(3,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(_,[],StringList,_):- true |
+        StringList = [].

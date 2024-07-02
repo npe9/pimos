@@ -1,0 +1,580 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>ExFloat>encoder.kl1.5, 06-Oct-92 15:08:17, Edit by hori
+
+:- module kl1_unloaded_file_encoder.
+:- public encode/7, encode_package/8.
+:- public encode/5.
+:- with_macro pimos.
+:- include("pimos.h").
+
+encode(ModuleList,UNLFS0,AT,Comment,MESG0,MESG,Status) :-
+    string(Comment,Length,Size), Length > 0 |
+    kl1_unloader_version:marker(comment,MagicNum),
+    UNLFS0 = [MagicNum,N,16#"FFFF",L1,L2|UNLFS1],
+    L1 := Length >> 16,
+    L2 := Length /\ 16#"FFFF",
+    pack_string_element(Comment,0,Length,Size,UNLFS1,UNLFS2),
+    length(ModuleList,0,N),
+    encode_module(ModuleList,UNLFS2,AT,MESG0,MESG,normal,Status).
+encode(ModuleList,UNLFS0,AT,Comment,MESG0,MESG,Status) :-
+    string(Comment,0,Size) |
+    kl1_unloader_version:marker(module,MagicNum),
+    UNLFS0 = [MagicNum,N,16#"FFFF"|UNLFS1],
+    length(ModuleList,0,N),
+    encode_module(ModuleList,UNLFS1,AT,MESG0,MESG,normal,Status).
+
+encode_package(PackageAtom,ModuleList,UNLFS0,AT0,Comment,MESG0,MESG,Status) :-
+    string(Comment,Length,Size), Length > 0 |
+    kl1_unloader_version:marker(commented_package,MagicNum),
+    UNLFS0 = [MagicNum,N,16#"FFFF",L1,L2|UNLFS1],
+    L1 := Length >> 16,
+    L2 := Length /\ 16#"FFFF",
+    pack_string_element(Comment,0,Length,Size,UNLFS1,UNLFS2),
+    AT0 = [put(PackageAtom,PackageID,PackageName)|AT1],
+    put_atom_name(PackageID,PackageName,UNLFS2,UNLFS3),
+    length(ModuleList,0,N),
+    encode_module(ModuleList,UNLFS3,AT1,MESG0,MESG,normal,Status).
+encode_package(PackageAtom,ModuleList,UNLFS0,AT0,Comment,MESG0,MESG,Status) :-
+    string(Comment,0,Size) |
+    kl1_unloader_version:marker(package,MagicNum),
+    UNLFS0 = [MagicNum,N,16#"FFFF"|UNLFS1],
+    AT0 = [put(PackageAtom,PackageID,PackageName)|AT1],
+    put_atom_name(PackageID,PackageName,UNLFS1,UNLFS2),
+    length(ModuleList,0,N),
+    encode_module(ModuleList,UNLFS2,AT1,MESG0,MESG,normal,Status).
+
+length([_|R],I,N) :- true | I1 := I + 1, length(R,I1,N).
+length([],I,N) :- true | I = N.
+
+encode_module([Module|Rest],UNLFS0,AT0,MESG0,MESG,Status0,Status) :- module(Module,Length) |
+    module_element(Module,0,GCSize),
+    L1 := Length >> 16,
+    L2 := Length /\ 16#"FFFF",
+    UNLFS0 = [L1,L2,GCSize|UNLFS1],
+    GCMax := GCSize + 1,
+    encode_gc_area(Module,1,P,GCMax,UNLFS1,UNLFS2,AT0,AT1,MESG0,MESG1,Status1),
+    encode_pred_table(Module,P,P1,UNLFS2,UNLFS3,AT1,AT2,MESG1,MESG2,Status1,Status2),
+    encode_code(Module,P1,Length,UNLFS3,UNLFS4,AT2,AT3,MESG2,MESG3,Status2,Status3),
+    UNLFS4 = [16#"FFFF"|UNLFS5],
+    check_status(Status0,Status3,Status4,Module,MESG3,MESG4),
+    encode_module(Rest,UNLFS5,AT3,MESG4,MESG,Status4,Status)@priority(*,3000).
+encode_module([],UNLFS0,AT0,MESG0,MESG,normal,Status) :- true |
+    AT0 = [],
+    MESG0 = MESG,
+    Status = normal,
+    UNLFS0 = [16#"0"].
+otherwise.
+encode_module([],UNLFS0,AT0,MESG0,MESG,abnormal,Status) :- true |
+    UNLFS0 = [abort],
+    AT0 = [],
+    MESG0 = MESG,
+    Status = abnormal.
+
+check_status(normal,normal,Status,Module,MESG0,MESG) :- true |
+    Status = normal,
+    module:get_module_name(Module,Package,ModuleName),
+    MESG0 = [message(string#"  ~t::~t unloaded",[Package,ModuleName]),flush(_)|MESG].
+otherwise.
+check_status(normal,Status0,Status,Module,MESG0,MESG) :- true |
+    Status = Status0,
+    module:get_module_name(Module,Package,ModuleName),
+    MESG0 = [error(string#"  ~t::~t unload failed",[Package,ModuleName]),flush(_)|MESG].
+otherwise.
+check_status(Status0,_,Status,Module,MESG0,MESG) :- true | 
+    Status = Status0,
+    MESG = MESG0.
+
+%%%%%%%%%%%%%%%
+%   GC-AREA   %
+%%%%%%%%%%%%%%%
+
+encode_gc_area(Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :- true |
+    P1 := P0 + 1,
+    P2 := P1 + 1,
+    module_element(Module,P0,ModAtom),
+    module_element(Module,P1,PacAtom),
+    AT0 = [put(ModAtom,ModAtomID,ModName),put(PacAtom,PacAtomID,PacName)|AT1],
+    put_atom_name(ModAtomID,ModName,UNLFS0,UNLFS1),
+    put_atom_name(PacAtomID,PacName,UNLFS1,UNLFS2),
+    encode_gc_area_1(Module,P2,P,GCMax,UNLFS2,UNLFS,AT1,AT,MESG0,MESG,Status).
+
+encode_gc_area_1(Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :- P0 < GCMax |
+    module_element(Module,P0,ModElm),
+    P1 := P0 + 1,
+    encode_gc_area_2(ModElm,Module,P1,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status).
+encode_gc_area_1(Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :- P0 >= GCMax |
+    P0 = P,
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    MESG0 = MESG,
+    Status = normal.
+
+encode_gc_area_2(ModElm,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :-
+    ModElm = {(::),Package,ExtModName}, atom(Package), atom(ExtModName) |
+    module_element(Module,P0,PackageRef),
+    check_undef(ModElm,PackageRef,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status).
+otherwise.
+encode_gc_area_2(ModElm,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :-
+    vector(ModElm,Length) |
+    encode_vector(ModElm,Length,UNLFS0,UNLFS1,AT0,AT1),
+    encode_gc_area_1(Module,P0,P,GCMax,UNLFS1,UNLFS,AT1,AT,MESG0,MESG,Status).
+encode_gc_area_2(ModElm,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :-
+    list(ModElm) |
+    encode_list(ModElm,UNLFS0,UNLFS1,AT0,AT1),
+    encode_gc_area_1(Module,P0,P,GCMax,UNLFS1,UNLFS,AT1,AT,MESG0,MESG,Status).
+encode_gc_area_2(ModElm,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :-
+    string(ModElm,Length,Size) |
+    encode_string(ModElm,Length,Size,UNLFS0,UNLFS1),
+    encode_gc_area_1(Module,P0,P,GCMax,UNLFS1,UNLFS,AT0,AT,MESG0,MESG,Status).
+encode_gc_area_2(ModElm,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :-
+    module(ModElm,Length) |
+    get_module_name(ModElm,ExtModAtom),
+    AT0 = [put(ExtModAtom,ExtModAtomID,Name)|AT1],
+    UNLFS0 = [16#"0900"|UNLFS1],
+    put_atom_name(ExtModAtomID,Name,UNLFS1,UNLFS2),
+    package_name(Module,P0,P1,AT1,AT2,UNLFS2,UNLFS3),
+    encode_gc_area_1(Module,P1,P,GCMax,UNLFS3,UNLFS,AT2,AT,MESG0,MESG,Status).
+encode_gc_area_2(0,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :- true |
+    module_element(Module,P0,ExtMod),
+    P1 := P0 + 1,
+    module_element(Module,P1,PredHashKey),
+    P2 := P1 + 1,
+    module_element(Module,P2,ExtModName),
+    encode_ext_call(ExtMod,PredHashKey,ExtModName,Module,UNLFS0,UNLFS1,AT0,AT1),
+    P3 := P2 + 1,
+    package_name(Module,P3,P4,AT1,AT2,UNLFS1,UNLFS2),
+    encode_gc_area_1(Module,P4,P,GCMax,UNLFS2,UNLFS,AT2,AT,MESG0,MESG,Status).
+otherwise.
+encode_gc_area_2(ETC,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :-
+    true |
+    encode(ETC,UNLFS0,UNLFS2,AT0,AT1),
+%%    AT0 = [put(Package,ID,Name)|AT1],
+%%    UNLFS0 = [16#"0000"|UNLFS1],
+%%    put_atom_name(ID,Name,UNLFS1,UNLFS2),
+    encode_gc_area_1(Module,P0,P,GCMax,UNLFS2,UNLFS,AT1,AT,MESG0,MESG,Status).
+
+check_undef(ModElm,0,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :-
+    ModElm = {(::),PackageAtom,ExtModAtom} |
+    AT0 = [put(ExtModAtom,ExtModAtomID,Name)|AT1],
+    UNLFS0 = [16#"0900"|UNLFS1],
+    put_atom_name(ExtModAtomID,Name,UNLFS1,UNLFS2),
+    UNLFS2 = [16#"0100"|UNLFS3],
+    P1 := P0 + 1,
+    encode_gc_area_1(Module,P1,P,GCMax,UNLFS3,UNLFS,AT1,AT,MESG0,MESG,Status).
+check_undef(ModElm,PackageAtom,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :-
+    ModElm = {(::),PackageAtom,ExtModAtom}, atom(PackageAtom) |
+    AT0 = [put(ExtModAtom,ExtModAtomID,Name),
+           put(PackageAtom,PackageAtomID,PackageName)|AT1],
+    UNLFS0 = [16#"0900"|UNLFS1],
+    put_atom_name(ExtModAtomID,Name,UNLFS1,UNLFS2),
+    UNLFS2 = [16#"0000"|UNLFS3],
+    put_atom_name(PackageAtomID,PackageName,UNLFS3,UNLFS4),
+    P1 := P0 + 1,
+    encode_gc_area_1(Module,P1,P,GCMax,UNLFS2,UNLFS,AT2,AT,MESG0,MESG,Status).
+otherwise.
+check_undef(ModElm,PackageRef,Module,P0,P,GCMax,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,Status) :-
+    encode_vector(ModElm,3,UNLFS0,UNLFS1,AT0,AT1),
+    encode_gc_area_1(Module,P0,P,GCMax,UNLFS1,UNLFS,AT1,AT,MESG0,MESG,Status).
+
+encode_ext_call(ExtMod,PredHashKey,ExtModAtom,Module,UNLFS0,UNLFS,AT0,AT) :-
+    module(ExtMod,_), atom(PredHashKey), atom(ExtModAtom) |
+    decode_pred_hash_key(PredHashKey,PredAtom,Arity),
+    AT0 = [put(ExtModAtom,ExtModAtomID,ExtModName),put(PredAtom,PredAtomID,PredName)|AT],
+    UNLFS0 = [16#"0A00"|UNLFS1],
+    put_atom_name(ExtModAtomID,ExtModName,UNLFS1,UNLFS2),
+    put_atom_name(PredAtomID,PredName,UNLFS2,UNLFS3),
+    UNLFS3 = [Arity|UNLFS].
+encode_ext_call({(::),PacName,ModName},PredHashKey,ExtModAtom,Module,UNLFS0,UNLFS,AT0,AT) :- 
+    atom(PacName), atom(ModName), 
+    atom(PredHashKey), atom(ExtModAtom) |      % Undefined Predicate and/or Module
+    decode_pred_hash_key(PredHashKey,PredAtom,Arity),
+    AT0 = [put(ExtModAtom,ExtModAtomID,ExtModName),put(PredAtom,PredAtomID,PredName)|AT],
+    UNLFS0 = [16#"0A00"|UNLFS1],
+    put_atom_name(ExtModAtomID,ExtModName,UNLFS1,UNLFS2),
+    put_atom_name(PredAtomID,PredName,UNLFS2,UNLFS3),
+    UNLFS3 = [Arity|UNLFS].
+:- if_equal(machine_type, mpsi).
+decode_pred_hash_key(Key,PredName,Arity) :-
+    atom(Key), tag_and_value(Key,_,Value) |
+    Arity := Value >> 24,
+    Pred := ( Value - Arity ) /\ 16#"FFFFFF",
+    new_instruction(PredName,02,Pred).
+:- end_if.
+
+get_module_name(Module,Name) :- module(Module,Size) |
+    module_element(Module,1,Name).
+
+package_name(Module,P0,P,AT0,AT,UNLFS0,UNLFS) :- true |
+    module_element(Module,P0,PackageAtom),
+    P := P0 + 1,
+    package_name_0(PackageAtom,AT0,AT,UNLFS0,UNLFS).
+
+package_name_0(PackageAtom,AT0,AT,UNLFS0,UNLFS) :- atom(PackageAtom) |
+    AT0 = [put(PackageAtom,PackageAtomID,PackageName)|AT],
+    UNLFS0 = [16#"0000"|UNLFS1],
+    put_atom_name(PackageAtomID,PackageName,UNLFS1,UNLFS).
+package_name_0(0,AT0,AT,UNLFS0,UNLFS) :- true |
+    AT0 = AT,
+    UNLFS0 = [16#"0100"|UNLFS].
+
+%%%%%%%%%%%%%%%%%%%%%%%%
+%   Pred Table Entry   %
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+encode_pred_table(Module,P0,P,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,abnormal,Status) :- true |
+    P0 = P,
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    MESG0 = MESG,
+    Status = abnormal.
+encode_pred_table(Module,P0,P,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,normal,Status) :- true |
+    module_element(Module,P0,Mask),
+    HashSize := Mask + 1,
+    P1 := P0 + 1,
+    UNLFS0 = [16#"1000",HashSize,EntryNo|UNLFS1],
+    analyze_public(Module,P1,P,0,EntryNo,HashSize,UNLFS1,UNLFS,AT0,AT),
+    MESG0 = MESG,
+    Status = normal.
+
+analyze_public(Module,P0,P,N0,EntryNo,HashSize,UNLFS0,UNLFS,AT0,AT) :- HashSize > 0 |
+    module_element(Module,P0,HashIndex),
+    N := HashIndex >> 16,
+    Q := HashIndex /\ 16#"FFFF" + P0,
+    analyze_collisions(Module,Q,N,UNLFS0,UNLFS1,AT0,AT1),
+    P1 := P0 + 1,
+    H1 := HashSize - 1,
+    N1 := N0 + N,
+    analyze_public(Module,P1,P,N1,EntryNo,H1,UNLFS1,UNLFS,AT1,AT).
+analyze_public(_,P0,P,N0,EntryNo,0,UNLFS0,UNLFS,AT0,AT) :- true |
+    P := P0 + N0 * 2,
+    EntryNo := N0,
+    UNLFS0 = UNLFS,
+    AT0 = AT.
+
+analyze_collisions(Module,Q0,N,UNLFS0,UNLFS,AT0,AT) :- N > 0 |
+    module_element(Module,Q0,Key),
+    decode_pred_hash_key(Key,PredAtom,Arity),
+    Q1 := Q0 + 1,
+    AT0 = [put(PredAtom,PredAtomID,PredName)|AT1],
+    module_element(Module,Q1,Offset),
+    Loc := Offset + Q1 + 1,
+    Loc1 := Loc >> 16,
+    Loc2 := Loc /\ 16#"FFFF",
+    put_atom_name(PredAtomID,PredName,UNLFS0,UNLFS1),
+    UNLFS1 = [Arity,Loc1,Loc2|UNLFS2],
+    Q2 := Q1 + 1,
+    N1 := N - 1,
+    analyze_collisions(Module,Q2,N1,UNLFS2,UNLFS,AT1,AT).
+analyze_collisions(_,_,0,UNLFS0,UNLFS,AT0,AT) :- true |
+    UNLFS0 = UNLFS,
+    AT0 = AT.
+
+%%%%%%%%%%%%%
+%   CODE    %
+%%%%%%%%%%%%%
+
+encode_code(Module,P,Length,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,abnormal,Status) :- true |
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    MESG0 = MESG,
+    Status = abnormal.
+encode_code(Module,P,Length,UNLFS0,UNLFS,AT0,AT,MESG0,MESG,normal,Status) :- true |
+    MESG0 = MESG,
+    Status = normal,
+    CodeSize := Length - P,
+    S1 := CodeSize >> 16,
+    S2 := CodeSize /\ 16#"FFFF",
+    UNLFS0 = [S1,S2|UNLFS1],
+    encode_code(Module,P,Length,UNLFS1,UNLFS,AT0,AT).
+
+encode_code(Module,P,Length,UNLFS0,UNLFS,AT0,AT) :- P < Length |
+    module_element(Module,P,KLB),
+    tag_and_value(KLB,Tag,OP),
+    OP1 := OP >> 28,
+    OP2 := ( OP >> 24 ) /\ 16#"F",
+    OPR := OP /\ 16#"FFFFFF",
+    P1 := P + 1,
+    encode_code_1(Tag,OP1,OP2,OPR,KLB,Module,P1,Length,UNLFS0,UNLFS,AT0,AT).
+encode_code(Module,P,Length,UNLFS0,UNLFS,AT0,AT) :- P >= Length |
+    UNLFS0 = UNLFS,
+    AT0 = AT.
+
+:- if_equal(machine_type, mpsi).
+encode_code_1(16#"23",16#"0",Reg,OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |   % set_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [put(Atom,AtomID,Name)|AT1],
+    TAG := 16#"2300" \/ Reg,
+    UNLFS0 = [TAG|UNLFS1],
+    put_atom_name(AtomID,Name,UNLFS1,UNLFS2),
+    encode_code(Module,P,Len,UNLFS2,UNLFS,AT1,AT).
+encode_code_1(16#"23",16#"2",16#"3",OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |  % write_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [put(Atom,AtomID,Name)|AT1],
+    UNLFS0 = [16#"2323"|UNLFS1],
+    put_atom_name(AtomID,Name,UNLFS1,UNLFS2),
+    encode_code(Module,P,Len,UNLFS2,UNLFS,AT1,AT).
+encode_code_1(16#"23",16#"4",Reg,OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |   % put_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [put(Atom,AtomID,Name)|AT1],
+    TAG := 16#"2340" \/ Reg,
+    UNLFS0 = [TAG|UNLFS1],
+    put_atom_name(AtomID,Name,UNLFS1,UNLFS2),
+    encode_code(Module,P,Len,UNLFS2,UNLFS,AT1,AT).
+encode_code_1(16#"23",16#"5",Reg,OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |   % put_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [put(Atom,AtomID,Name)|AT1],
+    TAG := 16#"2350" \/ Reg,
+    UNLFS0 = [TAG|UNLFS1],
+    put_atom_name(AtomID,Name,UNLFS1,UNLFS2),
+    encode_code(Module,P,Len,UNLFS2,UNLFS,AT1,AT).
+encode_code_1(16#"23",16#"8",Reg,OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |   % wait_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [put(Atom,AtomID,Name)|AT1],
+    TAG := 16#"2380" \/ Reg,
+    UNLFS0 = [TAG|UNLFS1],
+    put_atom_name(AtomID,Name,UNLFS1,UNLFS2),
+    encode_code(Module,P,Len,UNLFS2,UNLFS,AT1,AT).
+encode_code_1(16#"23",16#"9",Reg,OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |   % wait_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [put(Atom,AtomID,Name)|AT1],
+    TAG := 16#"2390" \/ Reg,
+    UNLFS0 = [TAG|UNLFS1],
+    put_atom_name(AtomID,Name,UNLFS1,UNLFS2),
+    encode_code(Module,P,Len,UNLFS2,UNLFS,AT1,AT).
+encode_code_1(16#"23",16#"B",16#"3",OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |   % read_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [put(Atom,AtomID,Name)|AT1],
+    UNLFS0 = [16#"23B3"|UNLFS1],
+    put_atom_name(AtomID,Name,UNLFS1,UNLFS2),
+    encode_code(Module,P,Len,UNLFS2,UNLFS,AT1,AT).
+encode_code_1(16#"23",16#"C",Reg,OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |   % get_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [put(Atom,AtomID,Name)|AT1],
+    TAG := 16#"23C0" \/ Reg,
+    UNLFS0 = [TAG|UNLFS1],
+    put_atom_name(AtomID,Name,UNLFS1,UNLFS2),
+    encode_code(Module,P,Len,UNLFS2,UNLFS,AT1,AT).
+encode_code_1(16#"23",16#"D",Reg,OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |   % get_atom
+    new_instruction(Atom,02,OPR),
+    AT0 = [put(Atom,AtomID,Name)|AT1],
+    TAG := 16#"23D0" \/ Reg,
+    UNLFS0 = [TAG|UNLFS1],
+    put_atom_name(AtomID,Name,UNLFS1,UNLFS2),
+    encode_code(Module,P,Len,UNLFS2,UNLFS,AT1,AT).
+:- end_if.
+encode_code_1(16#"23",16#"2",16#"D",OPR,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |   % hash_on_c
+    encode(KLB,UNLFS0,UNLFS1,AT0,AT1),
+    module_element(Module,P,LELS),
+    encode(LELS,UNLFS1,UNLFS2,AT1,AT2),
+    HashSize := OPR /\ 16#"FFFF" + 1,
+    UNLFS2 = [16#"1100",HashSize,EntryNo|UNLFS3],
+    P1 := P + 1,
+    hash_on_c_index(Module,P1,P2,0,EntryNo,HashSize,UNLFS3,UNLFS4,AT2,AT3),
+    encode_code(Module,P2,Len,UNLFS4,UNLFS,AT3,AT).
+otherwise.
+encode_code_1(_,_,_,_,KLB,Module,P,Len,UNLFS0,UNLFS,AT0,AT) :- true |
+    encode(KLB,UNLFS0,UNLFS1,AT0,AT1),
+    encode_code(Module,P,Len,UNLFS1,UNLFS,AT1,AT).
+
+hash_on_c_index(Module,P0,P,N0,EntryNo,HashSize,UNLFS0,UNLFS,AT0,AT) :- HashSize > 0 |
+    module_element(Module,P0,Index),
+    hash_index(Index,Cols,Offset),
+    Q := Offset + P0,
+    hash_on_c_entry(Module,Q,Cols,UNLFS0,UNLFS1,AT0,AT1),
+    P1 := P0 + 1,
+    M1 := HashSize - 1,
+    N1 := N0 + Cols,
+    hash_on_c_index(Module,P1,P,N1,EntryNo,M1,UNLFS1,UNLFS,AT1,AT).
+hash_on_c_index(_,P0,P,N0,EntryNo,0,UNLFS0,UNLFS,AT0,AT) :- true |
+    P := P0 + N0 * 2,
+    EntryNo = N0,
+    UNLFS0 = UNLFS,
+    AT0 = AT.
+
+hash_index(Atom,Cols,Offset) :- atom(Atom) |
+    Cols = 0, Offset = 0.
+hash_index(Index,Cols,Offset) :- integer(Index) |
+    Cols := Index >> 16,
+    Offset := Index /\ 16#"FFFF".
+
+hash_on_c_entry(Module,Q0,N,UNLFS0,UNLFS,AT0,AT) :- N > 0 |
+    module_element(Module,Q0,Const),
+    encode(Const,UNLFS0,UNLFS1,AT0,AT1),
+    Q1 := Q0 + 1,
+    module_element(Module,Q1,Offset),
+    Loc := Offset + Q1 + 2,
+    L1 := Loc >> 16,
+    L2 := Loc /\ 16#"FFFF",
+    UNLFS1 = [L1,L2|UNLFS2],
+    Q2 := Q1 + 1,
+    N1 := N - 1,
+    hash_on_c_entry(Module,Q2,N1,UNLFS2,UNLFS,AT1,AT).
+hash_on_c_entry(_,_,0,UNLFS0,UNLFS,AT0,AT) :- true |
+    UNLFS0 = UNLFS,
+    AT0 = AT.
+
+tag_and_value(Obj,Tag,Value) :- 
+    wait(Obj),
+    tag_and_value(Obj,Tag1,Value1) |
+    Tag = Tag1,
+    Value = Value1.
+
+%%%%%%%%%%%%%%%%%%
+%   ATOM-TABLE   %
+%%%%%%%%%%%%%%%%%%
+
+put_atom_name(AtomID,0,UNLFS0,UNLFS) :- true |
+    UNLFS0 = [AtomID|UNLFS].
+put_atom_name(AtomID,Name,UNLFS0,UNLFS) :- string(Name,Length,16) |
+    L1 := Length >> 16,
+    L2 := Length /\ 16#"FFFF",
+    UNLFS0 = [AtomID,L1,L2|UNLFS1],
+    put_atom_name(Name,0,Length,UNLFS1,UNLFS).
+
+put_atom_name(Name,P,Length,UNLFS0,UNLFS) :- P < Length |
+    string_element(Name,P,Char,NewName),
+    UNLFS0 = [Char|UNLFS1],
+    P1 := P + 1,
+    put_atom_name(NewName,P1,Length,UNLFS1,UNLFS).
+put_atom_name(Name,P,Length,UNLFS0,UNLFS) :- P >= Length |
+    UNLFS = UNLFS0.
+
+%%%%%%%%%%%%%%%
+%   ENCODER   %
+%%%%%%%%%%%%%%%
+
+encode(Atom,UNLFS0,UNLFS,AT0,AT) :- atom(Atom) |
+    AT0 = [put(Atom,ID,Name)|AT],
+    UNLFS0 = [16#"0000"|UNLFS1],
+    put_atom_name(ID,Name,UNLFS1,UNLFS).
+encode(Integer,UNLFS0,UNLFS,AT0,AT) :- integer(Integer) |
+    encode_integer(Integer,UNLFS0,UNLFS),
+    AT0 = AT.
+:- switch(extended_floating_point).
+:- case(yes).
+encode(ExFloat,UNLFS0,UNLFS,AT0,AT) :- extended_floating_point(ExFloat) |
+    extended_floating_point_to_binary(ExFloat,Bin0,Bin1,Bin2),
+%%    UNLFS0 = [16#"0500",Bin0,Bin1,Bin2|UNLFS],
+    Bin0Hi := (Bin0 /\ 16#"ffff0000") >> 16,
+    Bin0Low := Bin0 /\ 16#"0000ffff",
+    Bin1Hi := (Bin1 /\ 16#"ffff0000") >> 16,
+    Bin1Low := Bin1 /\ 16#"0000ffff",
+    Bin2Hi := (Bin2 /\ 16#"ffff0000") >> 16,
+    Bin2Low := Bin2 /\ 16#"0000ffff",
+    UNLFS0 = [16#"0500",Bin0Hi,Bin0Low,Bin1Hi,Bin1Low,Bin2Hi,Bin2Low|UNLFS],
+    AT0 = AT.
+:- end_switch.
+encode(Vector,UNLFS0,UNLFS,AT0,AT) :- vector(Vector,Length) |
+    encode_vector(Vector,Length,UNLFS0,UNLFS,AT0,AT).
+encode(List,UNLFS0,UNLFS,AT0,AT) :- list(List) |
+    encode_list(List,UNLFS0,UNLFS,AT0,AT).
+encode(String,UNLFS0,UNLFS,AT0,AT) :- string(String,Length,Size) |
+    encode_string(String,Length,Size,UNLFS0,UNLFS),
+    AT0 = AT.
+encode(Module,UNLFS0,UNLFS,AT0,AT) :- module(Module,_) |
+    module:get_module_name(Module,PackageAtom,ExtModAtom),
+    AT0 = [put(ExtModAtom,ExtModAtomID,ExtModName),
+           put(PackageAtom,PackageAtomID,PackageName)|AT],
+    UNLFS0 = [16#"1900"|UNLFS1],
+    put_atom_name(ExtModAtomID,ExtModName,UNLFS1,UNLFS2),
+    put_atom_name(PackageAtomID,PackageName,UNLFS2,UNLFS).
+otherwise.
+encode(KLB,UNLFS0,UNLFS,AT0,AT) :- true |
+    tag_and_value(KLB,Tag,Value),
+    VAL1 := Value >> 16,
+    VAL2 := Value /\ 16#"FFFF",
+    UNLFS0 = [Tag,VAL1,VAL2|UNLFS],
+    AT0 = AT.
+
+encode_integer(SPInt,UNLFS0,UNLFS) :- 0 =< SPInt, SPInt < 16#"FF" |
+    INT := 16#"0100" \/ SPInt,
+    UNLFS0 = [INT|UNLFS].
+encode_integer(SMInt,UNLFS0,UNLFS) :- 0 > SMInt, SMInt > 16#"FFFFFF00" |
+    INT := 16#"0200" \/ ( SMInt /\ 16#"FF" ),
+    UNLFS0 = [INT|UNLFS].
+otherwise.
+encode_integer(LInt,UNLFS0,UNLFS) :- true |
+    INT1 := LInt >> 16,
+    INT2 := LInt /\ 16#"FFFF",
+    UNLFS0 = [16#"0300",INT1,INT2|UNLFS].
+
+encode_vector(Vector,Length,UNLFS0,UNLFS,AT0,AT) :- true |
+    L1 := Length >> 16,
+    L2 := Length /\ 16#"FFFF",
+    UNLFS0 = [16#"0700",L1,L2|UNLFS1],
+    encode_vector(0,Length,Vector,UNLFS1,UNLFS,AT0,AT).
+
+encode_vector(P,Length,Vector,UNLFS0,UNLFS,AT0,AT) :- P < Length |
+    vector_element(Vector,P,Elm,NewVector),
+    encode(Elm,UNLFS0,UNLFS1,AT0,AT1),
+    P1 := P + 1,
+    encode_vector(P1,Length,NewVector,UNLFS1,UNLFS,AT1,AT).
+otherwise.
+encode_vector(_,_,_,UNLFS0,UNLFS,AT0,AT) :- true |
+    UNLFS0 = UNLFS,
+    AT0 = AT.
+
+encode_list(List,UNLFS0,UNLFS,AT0,AT) :- true |
+    UNLFS0 = [16#"0800",L1,L2|UNLFS1],
+    L1 := Length >> 16,
+    L2 := Length /\ 16#"FFFF",
+    encode_list(List,0,Length,UNLFS1,UNLFS,AT0,AT).
+
+encode_list([Car|List],N,Length,UNLFS0,UNLFS,AT0,AT) :- true |
+    N1 := N + 1,
+    encode(Car,UNLFS0,UNLFS1,AT0,AT1),
+    encode_list(List,N1,Length,UNLFS1,UNLFS,AT1,AT).
+otherwise.
+encode_list(Cdr,N,Length,UNLFS0,UNLFS,AT0,AT) :- true |
+    Length := N + 1,
+    encode(Cdr,UNLFS0,UNLFS,AT0,AT).
+
+%%encode_string(String,Length,16,UNLFS0,UNLFS) :- true |
+%%    TAG := 16#"0610",
+%%    L1 := Length >> 16,
+%%    L2 := Length /\ 16#"FFFF",
+%%    UNLFS0 = [TAG,L1,L2|UNLFS1],
+%%    put_atom_name(String,0,Length,UNLFS1,UNLFS).
+%%otherwise.
+encode_string(String,Length,Size,UNLFS0,UNLFS) :- true |
+    TAG := 16#"0600" \/ Size,
+    L1 := Length >> 16,
+    L2 := Length /\ 16#"FFFF",
+    UNLFS0 = [TAG,L1,L2|UNLFS1],
+    pack_string_element(String,0,Length,Size,UNLFS1,UNLFS).
+
+pack_string_element(String,P,Length,Size,UNLFS0,UNLFS) :- P < Length |
+    pack(0,String,P,P1,Length,Size,0,Word),
+    W1 := Word >> 16,
+    W2 := Word /\ 16#"FFFF",
+    UNLFS0 = [W1,W2|UNLFS1],
+    pack_string_element(String,P1,Length,Size,UNLFS1,UNLFS).
+pack_string_element(String,P,Length,Size,UNLFS0,UNLFS) :- P >= Length |
+    UNLFS0 = UNLFS.
+
+pack(B0,String,P0,P,Length,32,W0,Word) :- P0 < Length |
+    string_element(String,P0,Elm,NewString),
+    P := P0 + 1,
+    Word = Elm.
+otherwise.
+pack(B0,String,P0,P,Length,Size,W0,Word) :- P0 < Length, B0 < 32 |
+    string_element(String,P0,Elm,NewString),
+    W1 := ( W0 << Size ) \/ Elm,
+    B1 := B0 + Size,
+    P1 := P0 + 1,
+    pack(B1,NewString,P1,P,Length,Size,W1,Word).
+pack(32,String,P0,P,Length,Size,W0,Word) :- P0 < Length |
+    P0 = P,
+    Word = W0.
+pack(32,String,P0,P,Length,Size,W0,Word) :- P0 >= Length |
+    P0 = P,
+    Word = W0.
+pack(B0,String,P0,P,Length,Size,W0,Word) :- P0 >= Length, B0 < 32 |
+    P0 = P,
+    Word := W0 << ( 32 - B0 ).

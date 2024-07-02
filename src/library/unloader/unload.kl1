@@ -1,0 +1,329 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Unloader>unload.kl1.9, 09-Jul-92 12:10:24, Edit by hori
+
+:- module unload.
+:- public go/0, go/2, go/3, usage/1.
+:- public comment/2.
+:- public do/5.
+:- public package/2, package/3.
+:- public program/2, program/5, program/7.
+:- public unload/5, unload/7.
+:- public create_file_device/4.
+:- with_macro pimos.
+
+usage(Usage) :- true |
+    Usage = [{string#"Usage : unload([ModuleName, ...], FileNameString)~n",[]},
+             {string#"        unload(ModuleName, FileNameString)~n",[]},
+             {string#"        unload(ModuleName, FileNameString, CommentString)~n",[]},
+             {string#"        unload:package(PackageNameAtom, FileNameString)~n",[]},
+             {string#"        unload:package(PackageNameAtom, FileNameString, CommentString)~n",[]},
+             {string#"        unload:program(TopModuleName, FileNameString)~n",[]}].
+
+comment(FileName,Comment) :- true |
+    load:comment(FileName,Comment).
+
+go :- true | usage:go(unload).
+
+go(ModuleNameList,FileName) :- string(FileName,_,16) |
+    kl1_library_message:message(MESG0),
+    unload(ModuleNameList,FileName,string#"",MESG0,MESG1,Status),
+    check_status(Status,MESG1,[]).
+otherwise.
+go(_,_) :- true | usage:go(unload).
+
+go(ModuleNameList,FileName,Comment) :-
+    string(FileName,_,16), string(Comment,_,16) |
+    kl1_library_message:message(MESG0),
+    unload(ModuleNameList,FileName,Comment,MESG0,MESG1,Status),
+    check_status(Status,MESG1,[]).
+otherwise.
+go(_,_,_) :- true | usage:go(unload).
+
+do(ModuleNameList,FileName,STDOUT,STDMES,Status) :- true |
+    kl1_library_message:message(MESG0,STDOUT,STDMES),
+    unload(ModuleNameList,FileName,string#"",MESG0,MESG1,Status),
+    check_status(Status,MESG1,[]).
+
+unload(ModuleNames,FileName,MESG0,MESG,Status) :- true |
+    unload(ModuleNames,FileName,string#"",MESG0,MESG,Status).
+
+unload(ModuleNames,FileName,Comment,MESG0,MESG,Status) :- list(ModuleNames) |
+    module_table:cache_table(MT),
+    get_modules(ModuleNames,Modules,MT,MESG0,MESG1,normal,Status1),
+    unload_modules(Status1,Modules,FileName,Comment,MESG1,MESG,Status).
+unload(ModuleName,FileName,Comment,MESG0,MESG,Status) :- atom(ModuleName) |
+    unload([ModuleName],FileName,Comment,MESG0,MESG,Status).
+unload(ModuleName,FileName,Comment,MESG0,MESG,Status) :- 
+    ModuleName = {(::),Package,ModName}, atom(Package), atom(ModName) |
+    unload([ModuleName],FileName,Comment,MESG0,MESG,Status).
+otherwise.
+unload(ModuleName,FileName,Comment,MESG0,MESG,Status) :- true |
+    usage:go(unload).
+
+unload(ModuleNames,FileName,VP0,VP,MESG0,MESG,Status) :- list(ModuleNames) |
+    VP0 = [get_file_request(FR),
+           get_module_table(MT)|VP],
+    get_modules(ModuleNames,Modules,MT,MESG0,MESG1,normal,Status1),
+    unload_modules(Status1,Modules,FileName,FR,string#"",MESG1,MESG,Status).
+unload([],FileName,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = VP,
+    MESG0 = [warning(string#"nothing to unload",[])|MESG],
+    Status = normal.
+
+unload_modules(normal,Modules,FileName,Comment,MESG0,MESG,Status) :- true |
+    create_file_device(MESG0,MESG1,FR,Status1),
+    unload_modules(Status1,Modules,FileName,FR,Comment,MESG1,MESG,Status).
+otherwise.
+unload_modules(_,Modules,FileName,Comment,MESG0,MESG,Status) :- true |
+    MESG0 = MESG,
+    Status = abnormal.
+
+get_modules([ModuleName|Rest],Modules0,MT0,MESG0,MESG,Status0,Status) :- atom(ModuleName) |
+    MT0 = [get_module(ModuleName,Result)|MT1],
+    check_module(Result,ModuleName,Modules0,Modules1,MESG0,MESG1,Status0,Status1),
+    get_modules(Rest,Modules1,MT1,MESG1,MESG,Status1,Status).
+get_modules([ModuleName|Rest],Modules0,MT0,MESG0,MESG,Status0,Status) :- 
+    ModuleName = {(::),Package,ModName}, atom(Package), atom(ModName), ModName \= (*) |
+    MT0 = [get_module(ModuleName,Result)|MT1],
+    check_module(Result,ModuleName,Modules0,Modules1,MESG0,MESG1,Status0,Status1),
+    get_modules(Rest,Modules1,MT1,MESG1,MESG,Status1,Status).
+get_modules([{(::),Package,(*)}|Rest],Modules0,MT0,MESG0,MESG,Status0,Status) :- 
+    atom(Package) |
+    MT0 = [get_all_modules(Package,Result)|MT1],
+    check_all_modules(Result,Package,Modules0,Modules1,MESG0,MESG1,Status0,Status1),
+    get_modules(Rest,Modules1,MT1,MESG1,MESG,Status1,Status).
+get_modules([],Modules,MT,MESG0,MESG,Status0,Status) :- true |
+    Modules = [],
+    MT = [],
+    MESG0 = MESG,
+    Status = Status0.
+otherwise.
+get_modules([ModuleSpec|Rest],Modules,MT,MESG0,MESG,Status0,Status) :- true |
+    MESG0 = [error(string#"illegal module specification : ~t",[ModuleSpec])|MESG1],
+    get_modules(Rest,Modules,MT,MESG1,MESG,abnormal,Status).
+
+check_module(normal(Module),_,Modules0,Modules1,MESG0,MESG,Status0,Status) :- true |
+    Modules0 = [Module|Modules1],
+    MESG0 = MESG,
+    Status = Status0.
+otherwise.
+check_module(_,ModuleName,Modules0,Modules,MESG0,MESG,Status0,Status) :- true |
+    Modules = Modules0,
+    MESG0 = [error(string#"Non existent module : ~t",[ModuleName])|MESG],
+    Status = abnormal.
+
+check_all_modules(normal(ModuleList),Package,Modules0,Modules,MESG0,MESG,Status0,Status) :- 
+    true |
+    transform(ModuleList,Modules0,Modules),
+    MESG0 = MESG,
+    Status = Status0.
+otherwise.
+check_all_modules(_,Package,Modules0,Modules,MESG0,MESG,Status0,Status) :- true |
+    Modules = Modules0,
+    MESG0 = [error(string#"Unable to get any module in package : ~t",[Package])|MESG],
+    Status = abnormal.
+
+check_status(normal,MESG0,MESG) :- true |
+    MESG0 = [message(string#"Unload Succeeded",[])|MESG].
+check_status(normal(_),MESG0,MESG) :- true |
+    MESG0 = [message(string#"Unload Succeeded",[])|MESG].
+check_status(usage,MESG0,MESG) :- true |
+    MESG0 = MESG.
+otherwise.
+check_status(_,MESG0,MESG) :- true |
+    MESG0 = [message(string#"Unload Failed",[])|MESG].
+
+unload_modules(normal,Modules,FileName,FR,Comment,MESG0,MESG,Status) :-
+    string(FileName,_,16) |
+    kl1_library_file_utility:default_file_extension(FileName,"sav",FileNameExt),
+    FR = [open(FileNameExt,write_binary(Result))],
+    check_write_open_status(Result,FileName,Modules,Comment,MESG0,MESG,Status).
+otherwise.
+unload_modules(_,_,_,FR,Comment,MESG0,MESG,Status) :- true |
+    FR = [],
+    MESG0 = MESG,
+    Status = abnormal.
+
+check_write_open_status(normal(FS0,_,_),FileName,ModuleList,Comment,MESG0,MESG,Status) :- true |
+    FS0 = [pathname(normal(PathName))|FS1],
+    MESG0 = [message(string#"Unload File : ~s",[PathName])|MESG1],
+    kl1_unloaded_file_encoder(0,ModuleList,UNLFS,AT,Comment,MESG1,MESG2,Status1)@priority(*,3000),
+    unload_file(UNLFS,FS1,0,string#"",0,0,MESG3,MESG4,normal,Status2)@priority(*,3500),
+    kl1_unloaded_atom_table(AT),
+    check_unload(Status1,Status2,Status,PathName,MESG2,MESG3,MESG4,MESG).
+otherwise.
+check_write_open_status(_,FileName,_,Comment,MESG0,MESG,Status) :- true |
+    MESG0 = [error(string#"Unable to open file : ~s",[FileName])|MESG],
+    Status = abnormal.
+
+kl1_unloaded_atom_table(AT) :- true |
+    kl1_unloaded_atom_table:encode(AT).
+
+kl1_unloaded_file_encoder(0,ModuleList,UNLFS,AT,Comment,MESG3,MESG4,Status2) :- true |
+    kl1_unloaded_file_encoder:encode(ModuleList,UNLFS,AT,Comment,MESG3,MESG4,Status2).
+kl1_unloaded_file_encoder(PackageName,ModuleList,UNLFS,AT,Comment,MESG3,MESG4,Status2) :- 
+    atom(PackageName) |
+    kl1_unloaded_file_encoder:
+        encode_package(PackageName,ModuleList,UNLFS,AT,Comment,MESG3,MESG4,Status2).
+
+%% UNLOAD PACKAGE
+
+package(PackageName,FileName) :- atom(PackageName), string(FileName,_,16) |
+    kl1_library_message:message(MESG0),
+    kl1_library_file_utility:default_file_extension(FileName,"sav",FileNameExt),
+    create_file_device(MESG0,MESG1,[open(FileNameExt,write_binary(FS))],Status),
+    module_table:cache_table([get_all_modules(PackageName,AllModules)]),
+    unload_package(Status,FS,AllModules,PackageName,FileName,string#"",MESG1).
+otherwise.
+package(_,_) :- true |
+    usage:go(unload).
+
+package(PackageName,FileName,Comment) :-
+    atom(PackageName), string(FileName,_,16), string(Comment,_,16) |
+    kl1_library_message:message(MESG0),
+    kl1_library_file_utility:default_file_extension(FileName,"sav",FileNameExt),
+    create_file_device(MESG0,MESG1,[open(FileNameExt,write_binary(FS))],Status),
+    module_table:cache_table([get_all_modules(PackageName,AllModules)]),
+    unload_package(Status,FS,AllModules,PackageName,FileName,Comment,MESG1).
+otherwise.
+package(_,_,_) :- true |
+    usage:go(unload).
+
+unload_package(normal,normal(FS0,_,_),normal(AllModules),PackageName,FileName,Comment,MESG0) :-
+    true |
+    transform(AllModules,ModuleList,[]),
+    FS0 = [pathname(normal(PathName))|FS1],
+    MESG0 = [message(string#"Unload File : ~s",[PathName])|MESG1],
+    kl1_unloaded_file_encoder(PackageName,ModuleList,UNLFS,AT,Comment,MESG1,MESG2,Status1)
+                                                                     @priority(*,3000),
+    unload_file(UNLFS,FS1,0,string#"",0,0,MESG3,MESG4,normal,Status2)@priority(*,3500),
+    kl1_unloaded_atom_table(AT),
+    check_unload(Status1,Status2,Status,PathName,MESG2,MESG3,MESG4,MESG5),
+    check_status(Status,MESG5,[]).
+otherwise.
+unload_package(normal,normal(FS,_,_),_,PackageName,_,_,MESG0) :- true |
+    FS = [],
+    MESG0 = [error(string#"Unable to get modules in the package : ~t",[PackageName])].
+otherwise.
+unload_package(normal,_,_,_,FileName,_,MESG0) :- true |
+    MESG0 = [error(string#"Unable to open file : ~s",[FileName])].
+otherwise.
+unload_package(_,_,_,_,_,_,MESG0) :- true |
+    MESG0 = [error(string#"Unable to open file : ~s",[FileName])].
+
+transform([{_,Module,_}|AllModules],ModuleList,Tail) :- true |
+    ModuleList= [Module|Rest],
+    transform(AllModules,Rest,Tail).
+transform([],ModuleList,Tail) :- true |
+    ModuleList = Tail.
+
+%% UNLOAD PROGRAM(S)
+
+program(TopModuleNames,FileName) :- list(TopModuleNames), string(FileName,_,16) |
+    kl1_library_message:message(MESG0),
+    relink:search_program_modules(TopModuleNames,MESG0,MESG1,Modules,Status0),
+    unload_modules(Status0,Modules,FileName,string#"",MESG1,MESG2,Status1),
+    check_status(Status1,MESG2,[]).
+otherwise.
+program(TopModuleName,FileName) :- true |
+    program([TopModuleName],FileName).
+
+program([],FileName,MESG0,MESG,Status) :- true |
+    MESG0 = [warning("nothing to unload",[])|MESG],
+    Status = normal.
+program(TopModuleNames,FileName,MESG0,MESG,Status) :-
+    list(TopModuleNames), string(FileName,_,16) |
+    kl1_library_message:message(MESG0),
+    relink:search_program_modules(TopModuleNames,MESG0,MESG1,Modules,Status0),
+    unload_modules(Status0,Modules,FileName,string#"",MESG1,MESG,Status).
+
+program([],FileName,VP0,VP,MESG0,MESG,Status) :- true |
+    VP0 = VP,
+    MESG0 = [warning("nothing to unload",[])|MESG],
+    Status = normal.
+program(TopModuleNames,FileName,VP0,VP,MESG0,MESG,Status) :- list(TopModuleNames) |
+    relink:search_program_modules(TopModuleNames,VP0,VP,MESG0,MESG1,Modules,Status0),
+    unload_modules(Status0,Modules,FileName,string#"",MESG1,MESG,Status).
+
+%% UNLOADED FILE
+
+unload_file([Word|UNLFS],FS,P,Buff,BuffSize,CheckSum,MESG0,MESG,Status0,Status) :-
+    integer(Word), P < BuffSize |
+    set_string_element(Buff,P,Word,NewBuff),
+    P1 := P + 1,
+    CheckSum1 := CheckSum xor Word,
+    unload_file(UNLFS,FS,P1,NewBuff,BuffSize,CheckSum1,MESG0,MESG,Status0,Status).
+unload_file([],FS,P,Buff,BuffSize,CheckSum,MESG0,MESG,normal,Status) :-
+    P < BuffSize |
+    set_string_element(Buff,P,CheckSum,Buff0),
+    P1 := P + 1,
+    builtin#substring(Buff0,0,P1,NewBuff,_),
+    FS = [putb(NewBuff,St)],
+    check_putb(St,MESG0,MESG,normal,Status).
+unload_file([],FS,P,Buff,BuffSize,CheckSum,MESG0,MESG,abnormal,Status) :- true |
+    MESG0 = MESG,
+    Status = abnormal.
+unload_file([abort],FS,_,_,_,_,MESG0,MESG,Status0,Status) :- true |
+    FS = [],
+    MESG0 = MESG,
+    Status = abnormal.
+otherwise.
+unload_file(UNLFS,FS,P,Buff,BuffSize,CheckSum,MESG0,MESG,Status0,Status) :-
+    P >= BuffSize, BuffSize > 0 |
+    FS = [putb(Buff,St)|FS1],
+    check_putb(St,MESG0,MESG1,Status0,Status1),
+    kl1_unloader_version:buffer_size(BuffSize),
+    new_string(Buff0,BuffSize,16),
+    unload_file(UNLFS,FS1,0,Buff0,BuffSize,CheckSum,MESG1,MESG,Status1,Status).
+unload_file(UNLFS,FS,P,Buff,0,CheckSum,MESG0,MESG,Status0,Status) :- true |
+    kl1_unloader_version:buffer_size(BuffSize),
+    new_string(Buff0,BuffSize,16),
+    unload_file(UNLFS,FS,0,Buff0,BuffSize,CheckSum,MESG0,MESG,Status0,Status).
+
+check_putb(normal,MESG0,MESG,normal,Status) :- true |
+    MESG0 = MESG,
+    Status = normal.
+otherwise.
+check_putb(_,MESG0,MESG,normal,Status) :- true |
+    MESG0 = [error(string#"Unloaded File Write Error",[])|MESG],
+    Status = abnormal.
+otherwise.
+check_putb(_,MESG0,MESG,_,Status) :- true |
+    MESG0 = MESG,
+    Status = abnormal.
+
+check_unload(abnormal,_,Status,_,MESG2,MESG3,MESG4,MESG) :- true |
+    Status = abnormal,
+    MESG2 = MESG.
+check_unload(normal,normal,Status,PathName,MESG2,MESG3,MESG4,MESG) :- true |
+    Status = normal(PathName),
+    MESG2 = MESG3,
+    MESG4 = MESG.
+check_unload(normal,abnormal,Status,_,MESG2,MESG3,MESG4,MESG) :- true |
+    Status = abnormal,
+    MESG2 = MESG3,
+    MESG4 = MESG.
+
+%%%%%%%%%%%%%%%%%
+%   utilities   %
+%%%%%%%%%%%%%%%%%
+
+create_file_device(MESG0,MESG,FR,Status):- true |
+    shoen:raise(pimos_tag#task,general_request,[file(Status1)]),
+    check_FR_status(Status1,FR,MESG0,MESG,Status).
+
+check_FR_status(normal(FR0,_,_),FR,MESG0,MESG,Status) :- true |
+    FR0 = FR,
+    MESG0 = MESG,
+    Status = normal.
+otherwise.
+check_FR_status(_,FR,MESG0,MESG,Status) :- true |
+    FR = [],
+    Status = end_of_compile,
+    MESG0 = [error(string#"Unable to open file request device",[])|MESG].

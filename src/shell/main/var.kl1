@@ -1,0 +1,62 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a SHELL 'variable' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module shl_var.
+:- public expand/4.
+
+%
+% expand(VectorIncluded$VAR,NCmd,P,NP)
+%                  ---->
+%   NCmd = VectorExcluded$VAR
+%
+% atom | vector$1 | vector$2 | vector$3 ( | string | list )
+expand(Cmd,NCmd,P,NP) :- true |
+    ( atom(Cmd) -> NCmd=Cmd, NP=P ;
+      vector(Cmd,1) ->
+        set_vector_element(Cmd,0,Elm1,NElm1,NCmd),  expand(Elm1,NElm1,P,NP) ;
+      vector(Cmd,2), vector_element(Cmd,0,VAR), VAR \= '$' ->
+        set_vector_element(Cmd,0,Elm1,NElm1,Cmd1),  expand(Elm1,NElm1,P,P1),
+        set_vector_element(Cmd1,1,Elm2,NElm2,NCmd), expand(Elm2,NElm2,P1,NP) ;
+      vector(Cmd,3) ->
+        set_vector_element(Cmd,0,Elm1,NElm1,Cmd1),  expand(Elm1,NElm1,P,P1),
+        set_vector_element(Cmd1,1,Elm2,NElm2,Cmd2), expand(Elm2,NElm2,P1,P2),
+        set_vector_element(Cmd2,2,Elm3,NElm3,NCmd), expand(Elm3,NElm3,P2,NP) ;
+      vector(Cmd,2), vector_element(Cmd,0,VAR), VAR = '$' ->
+        set_vector_element(Cmd,1,NAME,_,_),
+        expand_variable(NAME,NCmd,P,NP) ;
+     otherwise;
+      true -> NCmd=Cmd, NP=P ).
+
+expand_variable(NAME,VALUE,P,NP) :- true |
+    ( atom(NAME) ->
+        P = [do([get_if_any(NAME,RESULT)|REM]) | NP],
+        check_shell_var(NAME,RESULT,VALUE,REM) ;
+     otherwise;
+        true -> NP=P, expand_env_var(NAME,VALUE) ).
+
+check_shell_var(NAME,RESULT,VALUE,REM) :- true |
+    ( RESULT = {} -> REM=[], expand_env_var(NAME,VALUE) ;
+      RESULT = {X} -> VALUE=X, REM = [put(NAME,VALUE,_)] ).
+
+expand_env_var(NAME,VALUE) :- true |
+    shoen:raise(pimos_tag#task,general_request,[getenv(NAME,RESULT)]),
+    check_env_var(NAME,RESULT,VALUE).
+
+check_env_var(NAME,RESULT,VALUE) :- true |
+    ( RESULT = normal(X) -> VALUE=X ;
+     otherwise;
+      true -> VALUE = {'$',NAME} ).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of SHELL 'shl_var' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

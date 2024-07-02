@@ -1,0 +1,107 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module confirm_device.
+:- with_macro pimos.
+:- public check/5.
+
+check(Str,Name,Pass,Result,Ab):-
+   true|
+   mdlib#current_cluster(Node,_),
+   string_io_request_device:driver([reset(ST0)|Next],Str,Ab,
+%                                    {0,[0],{0,0,"me","me",""},Node},
+                                    {0,[0],{0,0,Name,Pass,""},Node},
+                                                        _,SCont,SAb),
+   wait_check0(ST0,Next,Ab,Name,Pass,SCont,SAb,Result).
+
+wait_check0(normal(NAb,Att,_),Next,Ab,Name,Pass,SCont,SAb,Result):-
+   true|
+   wait_check(normal(Next,NAb,Att),Ab,Name,Pass,Result),
+   merge(SCont,SContOut),
+   dummy(SContOut,SAb).
+otherwise.
+wait_check0(_,Next,Ab,Name,Pass,SCont,SAb,Result):-
+   true|
+   Next = [],
+   Result = abnormal.
+
+%%%%%    UInfo = {Fep,IONode,Uid,RU,RP,Gids}.
+
+wait_check(Status,Ab,Name,Pass,Result):-
+    wait(Ab)|
+    Result = aborted.
+alternatively.
+wait_check(Status,Ab,Name,Pass,Result):-
+    atom(Status)|
+    Status = Result.
+wait_check(normal(Stream,NAb,Att),Ab,Name,Pass,Result):-
+    true|
+    Stream = [create("simpos_user_device",User)],
+    wait_request(User,NAb,Ab,Name,Pass,Result).
+
+wait_request(Status,NAb,Ab,Name,Pass,Result):-
+    wait(Ab) |
+    Result = aborted.
+alternatively.
+wait_request(Status,NAb,Ab,Name,Pass,Result):-
+    atom(Status)|
+    Status = Result.
+wait_request(normal(User),NAb,Ab,Name,Pass,Result):-
+    true|
+    User = [reset(Status)|UserN],
+    wait_request(normal(Abort,Att,_),UserN,NAb,Ab,Name,Pass,Result).
+
+wait_request(_,User,NAb,Ab,Name,Pass,Result):-
+    wait(Ab)|
+    User = [],
+    NAb = abort,
+    Result = abnormal.
+alternatively.
+wait_request(normal(Abort,Att,_),User,NAb,Ab,Name,Pass,Result):-
+    true|
+    encode(Name,Pass,NamePass),
+    User = [io(0,NamePass,Status)],
+    wait_user(Status,Abort,Ab,Result).
+wait_request(Status,User,NAb,Ab,Name,Pass,Result):-
+    atom(Status)|
+    User = [],
+    Result = abnormal.
+
+wait_user(_,Abort,Ab,Result):-
+    wait(Ab)|
+    Ab = Abort,
+    Result = abnormal.
+alternatively.
+wait_user(normal(Dir),Abort,Ab,Result):-
+    true|
+    Result = normal(Dir).
+wait_user(Status,Abort,Ab,Result):-
+    atom(Status)|
+    Result = abnormal.
+
+encode(Name,Pass,NamePass):-
+    string(Name,N,_),
+    string(Pass,M,_)|
+    builtin#append_string(["  ",Name,Pass],NamePass0),
+    set_string_element(NamePass0,0,N,NamePass1),
+    set_string_element(NamePass1,1,M,NamePass).
+
+dummy(SCont,SAb):-
+    wait(SAb) | true.
+alternatively.
+dummy([],SAb):-
+    true| true.
+dummy([add_resource(Type,Name,Result)|SCont],SAb):-
+    true|
+    Result = normal(CCont,CAb),
+    dummy(CCont,CAb),
+    dummy(SCont,SAb).
+dummy([absolute_id(Result)|SCont],SAb):-
+    true|
+    Result = normal(0),
+    dummy(SCont,SAb).
+

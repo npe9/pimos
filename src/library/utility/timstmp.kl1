@@ -1,0 +1,39 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v29>Util>timstmp.kl1.6, 09-Sep-91 11:10:45, Edit by hori
+
+:- module module_information.
+:- with_macro pimos.
+:- public version/1.
+:- public new_stamp/4.
+:- public link_stamp/5.
+:- public get_attributes/2.
+
+version(MagicNum) :- true |             % Upper Byte is Compiler Version
+    MagicNum = 16#"00270001".           % Lower Byte is Time Stamp Format
+
+new_stamp(MagicNum,IP0,IP,ModInfo) :- true |
+    version(MagicNum),
+    IP0 = [get_date_time(Date,Time),
+           source_file_info({InLang,FileName,SDate,STime}),
+           get_dependency(Depends)|IP],
+    new_vector(ModInfo0,8),
+    set_vector_element(ModInfo0,0,_,Date,ModInfo1),
+    set_vector_element(ModInfo1,1,_,Time,ModInfo2),
+    set_vector_element(ModInfo2,2,_,Date,ModInfo3),
+    set_vector_element(ModInfo3,3,_,Time,ModInfo4),
+    set_vector_element(ModInfo4,4,_,FileName,ModInfo5),
+    set_vector_element(ModInfo5,5,_,SDate,ModInfo6),
+    set_vector_element(ModInfo6,6,_,STime,ModInfo7),
+    set_vector_element(ModInfo7,7,_,Depends,ModInfo).
+
+link_stamp(MagicNum,Date,Time,OldInfo,NewInfo) :- true |
+    set_vector_element(OldInfo,2,_,Date,NewInfo0),
+    set_vector_element(NewInfo0,3,_,Time,NewInfo).
+
+get_attributes(Module,Status) :- module(Module,_) |
+    module_utility:get_attributes(Module,Status).

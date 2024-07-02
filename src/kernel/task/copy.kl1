@@ -1,0 +1,332 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module copy.
+:- with_macro pimos.
+:- public copy/3, sync_copy/3, flash_copy/4.
+
+copy(A1, A2, A3) :-
+    atom(A1) |
+        A2 = A1, A3 = A1.
+copy(A1, A2, A3) :-
+    integer(A1) |
+        A2 = A1, A3 = A1.
+copy(A1, A2, A3) :-
+    string(A1, Size, _),
+    Size \= 0|
+        builtin#substring(A1, 0, Size, A3, A2).
+copy(A1, A2, A3) :-
+    string(A1, 0, _)|
+    new_string(A2,0,16),
+    new_string(A3,0,16).
+copy(A1, A2, A31) :-
+    vector(A1, Size) |
+        new_vector(A3, Size),
+        copy(~(Size-1), A1, A2, A3, A31).
+copy([A | L], A2, A3) :-
+    atom(A) |
+        A2 = [A | L1],
+        A3 = [A | L2],
+        copy(L, L1, L2).
+copy([A | L], A2, A3) :-
+    integer(A) |
+        A2 = [A | L1],
+        A3 = [A | L2],
+        copy(L, L1, L2).
+copy([A | L], A2, A3) :-
+    string(A, Size, _),
+    Size \= 0 |
+        builtin#substring(A, 0, Size, A11, A1),
+        A2 = [A1 | L1],
+        A3 = [A11 | L2],
+        copy(L, L1, L2).
+copy([A | L], A2, A3) :-
+    string(A, 0, _) |
+        new_string(A1,0,16),
+        new_string(A11,0,16),
+        A2 = [A1 | L1],
+        A3 = [A11 | L2],
+        copy(L, L1, L2).
+copy([A | L], A2, A3) :-
+    vector(A, Size) |
+        new_vector(A20, Size),
+        copy(~(Size - 1), A, A1, A20, A21),
+        A2 = [A1 | L1],
+        A3 = [A21 | L2],
+        copy(L, L1, L2).
+copy([A | L], A2, A3) :-
+    list(A) |
+        copy(A, A1, A11),
+        A2 = [A1 | L1],
+        A3 = [A11 | L2],
+        copy(L, L1, L2).
+
+copy(P, A1, A2, A3, A32) :-
+    P > -1, vector_element(A1, P, E), atom(E) |
+        set_vector_element(A3, P, _, E, A31),
+        copy(~(P-1), A1, A2, A31, A32).
+copy(P, A1, A2, A3, A32) :-
+    P > -1, vector_element(A1, P, E), integer(E) |
+        set_vector_element(A3, P, _, E, A31),
+        copy(~(P-1), A1, A2, A31, A32).
+copy(P, A1, A21, A3, A32) :-
+    P > -1, vector_element(A1, P, E), string(E, Size, _), Size \= 0 |
+        set_vector_element(A1, P, E1, E2, A2),
+        builtin#substring(E1, 0, Size, E3, E2),
+        set_vector_element(A3, P, _, E3, A31),
+        copy(~(P-1), A2, A21, A31, A32).
+copy(P, A1, A21, A3, A32) :-
+    P > -1, vector_element(A1, P, E), string(E, 0, _) |
+        set_vector_element(A1, P, E1, E2, A2),
+        new_string(E2,0,16),
+        new_string(E3,0,16),
+        set_vector_element(A3, P, _, E3, A31),
+        copy(~(P-1), A2, A21, A31, A32).
+copy(P, A1, A21, A3, A32) :-
+    P > -1, vector_element(A1, P, E), vector(E, Size) |
+        set_vector_element(A1, P, E1, E2, A2),
+        new_vector(E3, Size),
+        copy(~(Size - 1), E1, E2, E3, E4),
+        set_vector_element(A3, P, _, E4, A31),
+        copy(~(P-1), A2, A21, A31, A32).
+copy(P, A1, A21, A3, A32) :-
+    P > -1, vector_element(A1, P, E), list(E) |
+        set_vector_element(A1, P, E1, E2, A2),
+        copy(E1, E2, E3),
+        set_vector_element(A3, P, _, E3, A31),
+        copy(~(P-1), A2, A21, A31, A32).
+copy(-1, A1, A21, A3, A32) :- true |
+        A1 = A21, A3 = A32.
+
+%
+% same as above, but return arguments are bound only when copying is over.
+%
+
+sync_copy(A1, A2, A3) :-
+    atom(A1) |
+        A2 = A1, A3 = A1.
+sync_copy(A1, A2, A3) :-
+    integer(A1) |
+        A2 = A1, A3 = A1.
+sync_copy(A1, A2, A3) :-
+    string(A1, Size, _), Size \= 0 |
+        builtin#substring(A1, 0, Size, A3, A2).
+sync_copy(A1, A2, A3) :-
+    string(A1, 0, _) |
+        new_string(A2,0,16),
+        new_string(A3,0,16).
+sync_copy(A1, A2s, A31s) :-
+    vector(A1, Size) |
+        new_vector(A3, Size),
+        sync_copy(~(Size-1), A1, A2, A3, A31),
+        (wait(A2) -> A2 = A2s, A31 = A31s).
+sync_copy(A1, A2s, A3s) :-
+    list(A1) |
+        sync_copy(A1, A2, A3, S),
+        (wait(S) -> A2 = A2s, A3 = A3s).
+
+sync_copy([A | L], A2, A3, S) :-
+    atom(A) |
+        A2 = [A | L1],
+        A3 = [A | L2],
+        sync_copy(L, L1, L2, S).
+sync_copy([A | L], A2, A3, S) :-
+    integer(A) |
+        A2 = [A | L1],
+        A3 = [A | L2],
+        sync_copy(L, L1, L2, S).
+sync_copy([A | L], A2, A3, S) :-
+    string(A, Size, _), Size \= 0 |
+        builtin#substring(A, 0, Size, A11, A1),
+        (wait(A11) ->
+            A2 = [A1 | L1],
+            A3 = [A11 | L2],
+            sync_copy(L, L1, L2, S)).
+sync_copy([A | L], A2, A3, S) :-
+    string(A, 0, _) |
+        new_string(A1 ,0,16),
+        new_string(A11,0,16),
+        (wait(A11) ->
+            A2 = [A1 | L1],
+            A3 = [A11 | L2],
+            sync_copy(L, L1, L2, S)).
+sync_copy([A | L], A2, A3, S) :-
+    vector(A, Size) |
+        new_vector(A20, Size),
+        sync_copy(~(Size - 1), A, A1, A20, A21),
+        (wait(A21) ->
+            A2 = [A1 | L1],
+            A3 = [A21 | L2],
+            sync_copy(L, L1, L2, S)).
+sync_copy([A | L], A2, A3, S) :-
+    list(A) |
+        sync_copy(A, A1, A11, S1),
+        (wait(S1) ->
+            A2 = [A1 | L1],
+            A3 = [A11 | L2],
+            sync_copy(L, L1, L2, S)).
+sync_copy([], A2, A3, S) :- true |
+        A2 = [], A3 = [], S = 1.
+
+sync_copy(P, A1, A2, A3, A32) :-
+    P > -1, vector_element(A1, P, E), atom(E) |
+        set_vector_element(A3, P, _, E, A31),
+        sync_copy(~(P-1), A1, A2, A31, A32).
+sync_copy(P, A1, A2, A3, A32) :-
+    P > -1, vector_element(A1, P, E), integer(E) |
+        set_vector_element(A3, P, _, E, A31),
+        sync_copy(~(P-1), A1, A2, A31, A32).
+sync_copy(P, A1, A21, A3, A32) :-
+    P > -1, vector_element(A1, P, E), string(E, 0, _) |
+        set_vector_element(A1, P, E1, E2, A2),
+        new_string(E2,0,16),
+        new_string(E3,0,16),
+        (wait(E3) ->
+            set_vector_element(A3, P, _, E3, A31),
+            sync_copy(~(P-1), A2, A21, A31, A32)).
+sync_copy(P, A1, A21, A3, A32) :-
+    P > -1, vector_element(A1, P, E), string(E, Size, _), Size \= 0 |
+        set_vector_element(A1, P, E1, E2, A2),
+        builtin#substring(E1, 0, Size, E3, E2),
+        (wait(E3) ->
+            set_vector_element(A3, P, _, E3, A31),
+            sync_copy(~(P-1), A2, A21, A31, A32)).
+sync_copy(P, A1, A21, A3, A32) :-
+    P > -1, vector_element(A1, P, E), vector(E, Size) |
+        set_vector_element(A1, P, E1, E2, A2),
+        new_vector(E3, Size),
+        sync_copy(~(Size - 1), E1, E2, E3, E4),
+        (wait(E4) ->
+            set_vector_element(A3, P, _, E4, A31),
+            sync_copy(~(P-1), A2, A21, A31, A32)).
+sync_copy(P, A1, A21, A3, A32) :-
+    P > -1, vector_element(A1, P, E), list(E) |
+        set_vector_element(A1, P, E1, E2, A2),
+        sync_copy(E1, E2, E3, S),
+        (wait(S) ->
+            set_vector_element(A3, P, _, E3, A31),
+            sync_copy(~(P-1), A2, A21, A31, A32)).
+sync_copy(-1, A1, A21, A3, A32) :- true |
+        A1 = A21, A3 = A32.
+
+%
+% same as copy/3, but unbound data does not stop copy.
+%
+
+flash_copy(A1, A2, A3, S) :-
+    atom(A1) |
+        A2 = A1, A3 = A1, S = 1.
+flash_copy(A1, A2, A3, S) :-
+    integer(A1) |
+        A2 = A1, A3 = A1, S = 1.
+flash_copy(A1, A2, A3s, S) :-
+    string(A1, Size, _), Size \= 0 |
+        builtin#substring(A1, 0, Size, A3, A2),
+        (wait(A3) -> A3s = A3, S = 1).
+flash_copy(A1, A2, A3s, S) :-
+    string(A1, 0, _) |
+        new_string(A3,0,16),
+        new_string(A2,0,16),
+        (wait(A3) -> A3s = A3, S = 1).
+flash_copy(A1, A2, A31, S) :-
+    vector(A1, Size) |
+        new_vector(A3, Size),
+        flash_copy(~(Size-1), A1, A2, A3, A31, S).
+flash_copy(A1, A2, A3, S) :-
+    list(A1) |
+        flash_copy_l(A1, A2, A3, S).
+alternatively.
+flash_copy(A1, A2, _, S) :- true | A2 = A1, S = 1.
+
+flash_copy_l([A | L], A2, A3, S) :-
+    atom(A) |
+        A2 = [A | L1],
+        A3 = [A | L2],
+        flash_copy_l(L, L1, L2, S).
+flash_copy_l([A | L], A2, A3, S) :-
+    integer(A) |
+        A2 = [A | L1],
+        A3 = [A | L2],
+        flash_copy_l(L, L1, L2, S).
+flash_copy_l([A | L], A2, A3, S) :-
+    string(A, Size, _), Size \= 0 |
+        builtin#substring(A, 0, Size, A11, A1),
+        (wait(A1) ->
+            A2 = [A1 | L1],
+            A3 = [A11 | L2],
+            flash_copy_l(L, L1, L2, S)).
+flash_copy_l([A | L], A2, A3, S) :-
+    string(A, 0, _) |
+        new_string(A11,0,16),
+        new_string(A1 ,0,16),
+        (wait(A1) ->
+            A2 = [A1 | L1],
+            A3 = [A11 | L2],
+            flash_copy_l(L, L1, L2, S)).
+flash_copy_l([A | L], A2, A3, S) :-
+    vector(A, Size) |
+        new_vector(A20, Size),
+        flash_copy(~(Size - 1), A, A1, A20, A21, S1),
+        A2 = [A1 | L1],
+        A3 = [A21 | L2],
+        (wait(S1) -> flash_copy_l(L, L1, L2, S)).
+flash_copy_l([A | L], A2, A3, S) :-
+    list(A) |
+        flash_copy_l(A, A1, A11, S1),
+        A2 = [A1 | L1],
+        A3 = [A11 | L2],
+        (wait(S1) -> flash_copy_l(L, L1, L2, S)).
+flash_copy_l([], A2, A3, S) :- true |
+        A2 = [], A3 = [], S = 1.
+alternatively.
+flash_copy_l([A | L], A2, A3, S) :- true |
+        A2 = [A | L1],
+        A3 = [_ | L2],
+        flash_copy_l(L, L1, L2, S).
+
+flash_copy(P, A1, A2, A3, A32, S) :-
+    P > -1, vector_element(A1, P, E), atom(E) |
+        set_vector_element(A3, P, _, E, A31),
+        flash_copy(~(P-1), A1, A2, A31, A32, S).
+flash_copy(P, A1, A2, A3, A32, S) :-
+    P > -1, vector_element(A1, P, E), integer(E) |
+        set_vector_element(A3, P, _, E, A31),
+        flash_copy(~(P-1), A1, A2, A31, A32, S).
+flash_copy(P, A1, A21, A3, A32, S) :-
+    P > -1, vector_element(A1, P, E), string(E, Size, _), Size \= 0 |
+        set_vector_element(A1, P, E1, E2, A2),
+        builtin#substring(E1, 0, Size, E3, E2),
+        (wait(E3) ->
+           set_vector_element(A3, P, _, E3, A31),
+           flash_copy(~(P-1), A2, A21, A31, A32, S)).
+flash_copy(P, A1, A21, A3, A32, S) :-
+    P > -1, vector_element(A1, P, E), string(E, 0, _) |
+        set_vector_element(A1, P, E1, E2, A2),
+        new_string(E2,0,16),
+        new_string(E3,0,16),
+        (wait(E3) ->
+           set_vector_element(A3, P, _, E3, A31),
+           flash_copy(~(P-1), A2, A21, A31, A32, S)).
+flash_copy(P, A1, A21, A3, A32, S) :-
+    P > -1, vector_element(A1, P, E), vector(E, Size) |
+        set_vector_element(A1, P, E1, E2, A2),
+        new_vector(E3, Size),
+        flash_copy(~(Size - 1), E1, E2, E3, E4, S1),
+        set_vector_element(A3, P, _, E4, A31),
+        (wait(S1) -> flash_copy(~(P-1), A2, A21, A31, A32, S)).
+flash_copy(P, A1, A21, A3, A32, S) :-
+    P > -1, vector_element(A1, P, E), list(E) |
+        set_vector_element(A1, P, E1, E2, A2),
+        flash_copy_l(E1, E2, E3, S1),
+        set_vector_element(A3, P, _, E3, A31),
+        (wait(S1) -> flash_copy(~(P-1), A2, A21, A31, A32, S)).
+flash_copy(-1, A1, A21, A3, A32, S) :- true |
+        A1 = A21, A3 = A32, S = 1.
+alternatively.
+flash_copy(P, A1, A21, A3, A32, S) :-
+    P > -1 |
+        set_vector_element(A3, P, _, _, A31),
+        flash_copy(~(P-1), A1, A21, A31, A32, S).

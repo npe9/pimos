@@ -1,0 +1,152 @@
+% icpsi606::>sys>user>yashiro>V35>scsi>scsi_handler.kl1.2, 12-Aug-92 19:54:35, Edit by yashiro
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>user>yashiro>V33>scsi>scsi_handler.kl1.10, 14-Apr-92 21:50:57, Edit by yashiro
+:- module scsi.
+:- include("pimos.h").
+%:- with_macro scsi_library. % to debug 
+:- with_macro pimos. % to debug 
+
+:- switch(fep_interface).
+:- case(scsi).
+:- public create/2, version/1.
+version(A) :-
+    true |
+%        A=string#"SCSI KL1 Handler Release 1.0 22-Dec-1990".
+%        A=string#"SCSI KL1 Handler Release 1.2 08-Apr-1991".
+%        A=string#"SCSI KL1 Handler Release 1.3 15-Apr-1991".
+%        A=string#"SCSI KL1 Handler Release 1.4 30-Apr-1991".
+%        A=string#"SCSI KL1 Handler Release 1.5 11-May-91  19:59:11".
+%        A=string#"SCSI KL1 Handler Release 2.0 30-June-91".
+        A=string#"SCSI KL1 Handler Release 2.1 03-Feb-92".
+
+%==========%
+% create/2 %
+%==========%
+create(SCSI_PORT,Result) :-
+    integer(SCSI_PORT) |
+        Result=normal(SCSI_REQ),
+        scsi#scsi_init(SCSI_Obj,_,Info),
+        merge(FROM_USER,TO_SCSI),
+        request_manager(SCSI_REQ,FROM_USER,Info),
+        object_manager(TO_SCSI,SCSI_Obj).
+
+%-------------------%
+% request_manager/3 %
+%-------------------%
+request_manager([get_info(Result)|NSCSI_REQ],SCSI_OUT,
+                {Max_Buffer,Max_Transfer_Buffer,Ext_LUN,Reserved}):-
+    integer(Max_Buffer),
+    integer(Ext_LUN),
+    Max_LUN := 2048 * Ext_LUN |
+        Result=normal(Max_LUN,Max_Buffer),
+        request_manager(NSCSI_REQ,SCSI_OUT,{Max_Buffer,Max_Transfer_Buffer,Ext_LUN,Reserved}).
+
+request_manager([processor(Unit,LUN,Result)|NSCSI_REQ], SCSI_OUT, Attributes):-
+    true |
+        set_vector_element(Attributes,2,Ext_LUN,Ext_LUN,NAttributes),
+        check(Unit, LUN, Ext_LUN,  ArgsStatus),
+        request_manager1(ArgsStatus, processor, NSCSI_REQ, SCSI_OUT, NAttributes,  Result).
+request_manager([direct_access(Unit,LUN, Result)|NSCSI_REQ], SCSI_OUT, Attributes):-
+    true |
+        set_vector_element(Attributes,2,Ext_LUN,Ext_LUN,NAttributes),
+        check(Unit, LUN, Ext_LUN,  ArgsStatus),
+        request_manager1(ArgsStatus, direct_access, NSCSI_REQ, SCSI_OUT, NAttributes,  Result).
+request_manager([sequential_access(Unit,LUN, Result)|NSCSI_REQ], SCSI_OUT, Attributes):-
+    true |
+        set_vector_element(Attributes,2,Ext_LUN,Ext_LUN,NAttributes),
+        check(Unit, LUN, Ext_LUN,  ArgsStatus),
+        request_manager1(ArgsStatus, sequential_access, NSCSI_REQ, SCSI_OUT, NAttributes,  Result).
+
+request_manager([], SCSI_OUT, _) :-
+    true |
+        SCSI_OUT=[].
+
+otherwise.
+request_manager([{Type,_,_,Result}|NSCSI_REQ],SCSI_OUT,Info):-
+    atom(Type) |
+        Result=abnormal(not_implemented),
+        request_manager(NSCSI_REQ,SCSI_OUT,Info).
+
+%--------------------%
+% request_manager1/6 %
+%--------------------%
+request_manager1(normal(Unit, LUN), processor, SCSI_REQ, SCSI_OUT, Attributes,  Result):-
+    true|
+        SCSI_OUT={SCSI_OUT1, SCSI_OUT2},
+        Result=normal(Processor),
+        scsi_processor:processor_manager(Processor,SCSI_OUT1,Unit,LUN),
+        request_manager(SCSI_REQ, SCSI_OUT2, Attributes).
+request_manager1(normal(Unit, LUN), direct_access, SCSI_REQ, SCSI_OUT, Attributes,  Result):-
+    true |
+        set_vector_element(Attributes,0,Max_buffer,Max_buffer,NAttributes),
+        SCSI_OUT={SCSI_OUT1, SCSI_OUT2},
+        Result=normal(DASD),
+        scsi_direct_access:device_manager(DASD, SCSI_OUT1, Unit, LUN, Max_buffer),
+        request_manager(SCSI_REQ, SCSI_OUT2, NAttributes).
+request_manager1(normal(Unit, LUN), sequential_access, SCSI_REQ, SCSI_OUT, Attributes,  Result):-
+    true |
+        set_vector_element(Attributes,0,Max_buffer,Max_buffer,NAttributes),
+        SCSI_OUT={SCSI_OUT1, SCSI_OUT2},
+        Result=normal(DASD),
+        scsi_sequential_access:device_manager(DASD, SCSI_OUT1, Unit, LUN),
+        request_manager(SCSI_REQ, SCSI_OUT2, NAttributes).
+otherwise.
+request_manager1(Abnormal, _, SCSI_REQ, SCSI_OUT, Attributes,  Result):-
+    true |
+        Result = Abnormal,
+        request_manager(SCSI_REQ, SCSI_OUT, Attributes).
+
+%---------%
+% check/4 %
+%---------%
+check(Unit, LUN, MaxLUN,  ArgsStatus):-
+    integer(Unit),
+    Unit >= 0,
+    Unit =< 7 |
+        check_lun(LUN, MaxLUN, Unit, ArgsStatus).
+otherwise.
+check(Unit, _, _,  ArgsStatus):-
+        ArgsStatus = abnormal(illegal_parameter(unit(Unit))).
+
+%-------------%
+% check_lun/4 %
+%-------------%
+check_lun(LUN, ExtLUN, Unit,  ArgsStatus):-
+    integer(LUN),
+    LUN  >= 0,
+    LUN  =< ((ExtLUN * 2040) + 7) |
+        ArgsStatus = normal(Unit, LUN).
+otherwise.
+check_lun(LUN, _, _,  ArgsStatus):-
+    true |
+        ArgsStatus = abnormal(illegal_parameter(lun(LUN))).
+
+%------------------%
+% object_manager/2 %
+%------------------%
+object_manager(FROM_USER,SCSI_OBJ) :-
+    wait(SCSI_OBJ) |
+        command_executer(FROM_USER,SCSI_OBJ).
+
+%--------------------%
+% command_executer/2 %
+%--------------------%
+command_executer([command(V,NewData,TransferredLength,ID,Result)|NFROM_USER],SCSI_OBJ) :-
+% V = {Unit,LUN,Command,Length,Direction,Data,Datap}
+    true |
+        scsi#scsi_command(SCSI_OBJ,V,NewData,TransferredLength,ID,Result,NewSCSI_OBJ),
+        object_manager(NFROM_USER,NewSCSI_OBJ).
+command_executer([],SCSI_OBJ) :-
+    true |
+        scsi#scsi_end(SCSI_OBJ).
+:-default.
+:- public dummy/0.
+
+dummy :- true.
+
+:-end_switch.

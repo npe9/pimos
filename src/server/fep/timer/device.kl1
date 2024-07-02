@@ -1,0 +1,259 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module device_driver.
+:- with_macro pimos.
+:- public resend/6,cancel/4,abort_msg/3,abort_all_msg/3,
+wait_fepvar_closed/1,
+return_values/2,return_values_req/2,
+return_ab_status/3,return_ab_status/2,return_ab_status/4,if_close_fepvar/1,
+device_info/5,
+terminate/8,disconnected/9,terminate_fep/7,
+abort/5.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% resend(DS,DS1,T,T1,ID,S)
+%% cancel(T,T1,ID,S)
+%%      DS,DS1  :: Device stream
+%%      T,T1    :: Output stream to the keyed_bag which is used to store the
+%%                      list of the aborted requests with the key ID.
+%%      ID      :: ID number for aborted messages
+%%      S       :: Status
+
+resend(DS,DS1,T,T1,ID,S) :- true |
+        T=[get_if_any(ID,X)|T1],
+        if_resend(X,DS,DS1,S).
+
+if_resend({Req},DS,DS1,S) :- true |
+        S=normal,
+        prepend(Req,DS,DS1).
+if_resend({},DS,DS1,S) :- true |
+        S=abnormal,
+        DS=DS1.
+
+prepend([Req|R],DS,DS1) :- true |
+        DS1=[Req|DS2],
+        prepend(R,DS,DS2).
+prepend([],DS,DS1) :- true | DS1=DS.
+
+cancel(T,T1,ID,S) :- true |
+        T=[get_if_any(ID,X)|T1],
+        if_cancel(X,S).
+
+if_cancel({Req},S) :- true |
+        S=normal,
+        abort_msg(Req,_,_).
+if_cancel({},S) :- true | S=abnormal.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_values(Req,Val)
+%%          for device_drivers only
+%%      Req     :: io_request message
+%%      Val     :: Values from fep (vector)
+
+return_values(Req,Val) :- vector(Req,M),vector(Val,N) |
+        set_vector_element(Req,~(M-1),Args,0,_),
+        return_values(N,Val,Args).
+
+return_values(0,_,Args) :- true | Args=normal.
+return_values(N,Val,Args) :- N>0 |
+        new_vector(Args0,~(N+1)),
+        set_vector_element(Args0,0,_,normal,Args1),
+        set_values(N,Val,Args,Args1).
+
+set_values(N,Val,Args1,Args) :- N>0 |
+        N1:=N-1,
+        set_vector_element(Val,N1,V,0,Val1),
+        set_vector_element(Args,N,_,V,Args0),
+        set_values(N1,Val1,Args1,Args0).
+set_values(0,_,Args1,Args) :- true | Args1=Args.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_values_req(Req,Val)
+%%          for request_device_drivers only
+%%      Req     :: io_request message
+%%      Val     :: Values from fep (vector)
+%%                 Each element is wrapped in the form of in(F) (or out(F)).
+
+return_values_req(Req,Val) :- vector(Req,M),vector(Val,N) |
+        set_vector_element(Req,~(M-1),Args,0,_),
+        return_values_req(N,Val,Args).
+
+return_values_req(0,_,Args) :- true | Args=normal.
+return_values_req(N,Val,Args) :- N>0 |
+        new_vector(Args0,~(N+1)),
+        set_vector_element(Args0,0,_,normal,Args1),
+        set_values_req(N,Val,Args,Args1).
+
+set_values_req(N,Val,Args1,Args) :- N>0 |
+        N1:=N-1,
+        set_vector_element(Val,N1,in(V),0,Val1),
+        set_vector_element(Args,N,_,V,Args0),
+        set_values_req(N1,Val1,Args1,Args0).
+set_values_req(0,_,Args1,Args) :- true | Args1=Args.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_ab_status(Req,Status)
+%% return_ab_status(Req,Status,S,S1)
+
+return_ab_status(Req,Status) :- vector(Req,N) |
+        set_vector_element(Req,~(N-1),Status,0,_).
+
+return_ab_status(Req,Status,S,S1) :- vector(Req,N) |
+        S=S1,
+        set_vector_element(Req,~(N-1),Status,0,_).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_ab_status(Req,Val,Status)
+%%          for request_device_driver only
+
+return_ab_status(Req,Val,Status) :- true |
+        return_ab_status(Req,Status),
+        if_close_fepvar(Val).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% if_close_fepvar(Val)
+%%          for request_device_drivers only
+%%      Val     :: Values from fep (vector)
+%%                 Each element is wrapped in the form of in(F) or out(F).
+%%                      (except fep_attributes)
+
+if_close_fepvar(Val) :- vector(Val,N) |
+        if_close_fepvar(Val,N).
+
+if_close_fepvar(Val,N) :- N >= 7 | true.
+if_close_fepvar(Val,N) :- N>0,N < 7 |
+        N1:=N-1,
+        set_vector_element(Val,N1,F,0,Val1),
+        close_fepvar(F),
+        if_close_fepvar(Val1,N1).
+if_close_fepvar(_,0) :- true | true.
+
+close_fepvar(out(F)) :- true | F=fep#nil.
+close_fepvar(in(_)) :- true | true.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% If={CInfo,Conf,SCont,SAb},
+%% CInfo={Uid,Gids,Remote,Node},
+%% Remote={Fep,IONode,RUser,RPass,Dir}
+device_info(cinfo,If,If1,E,E1) :- true |
+        set_vector_element(If,0,E,E1,If1).
+device_info(conf,If,If1,E,E1) :- true |
+        set_vector_element(If,1,E,E1,If1).
+device_info(scont,If,If1,E,E1) :- true |
+        set_vector_element(If,2,E,E1,If1).
+device_info(sab,If,If1,E,E1) :- true |
+        set_vector_element(If,3,E,E1,If1).
+device_info(uid,If,If1,E,E1) :- true |
+        set_vector_element(If,0,CInfo,CInfo1,If1),
+        set_vector_element(CInfo,0,E,E1,CInfo1).
+device_info(gids,If,If1,E,E1) :- true |
+        set_vector_element(If,0,CInfo,CInfo1,If1),
+        set_vector_element(CInfo,1,E,E1,CInfo1).
+device_info(remote,If,If1,E,E1) :- true |
+        set_vector_element(If,0,CInfo,CInfo1,If1),
+        set_vector_element(CInfo,2,E,E1,CInfo1).
+device_info(node,If,If1,E,E1) :- true |
+        set_vector_element(If,0,CInfo,CInfo1,If1),
+        set_vector_element(CInfo,3,E,E1,CInfo1).
+device_info(fep,If,If1,E,E1) :- true |
+        set_vector_element(If,0,CInfo,CInfo1,If1),
+        set_vector_element(CInfo,2,Remote,Remote1,CInfo1),
+        set_vector_element(Remote,0,E,E1,Remote1).
+device_info(ionode,If,If1,E,E1) :- true |
+        set_vector_element(If,0,CInfo,CInfo1,If1),
+        set_vector_element(CInfo,2,Remote,Remote1,CInfo1),
+        set_vector_element(Remote,1,E,E1,Remote1).
+device_info(ruser,If,If1,E,E1) :- true |
+        set_vector_element(If,0,CInfo,CInfo1,If1),
+        set_vector_element(CInfo,2,Remote,Remote1,CInfo1),
+        set_vector_element(Remote,2,E,E1,Remote1).
+device_info(rpass,If,If1,E,E1) :- true |
+        set_vector_element(If,0,CInfo,CInfo1,If1),
+        set_vector_element(CInfo,2,Remote,Remote1,CInfo1),
+        set_vector_element(Remote,3,E,E1,Remote1).
+device_info(dir,If,If1,E,E1) :- true |
+        set_vector_element(If,0,CInfo,CInfo1,If1),
+        set_vector_element(CInfo,2,Remote,Remote1,CInfo1),
+        set_vector_element(Remote,4,E,E1,Remote1).
+
+
+terminate({_,Conf,SCont,_},Status,F,T,Att,AbF,A,A1) :- true |
+        Conf=[],
+        F={fep#reset,AbF1,AtF1,S0,F1},
+        T=[get_all(A2)],
+        Att=[],
+        AbF=fep#nil,
+        A1=[],
+        abort_all_msg(A2,S,S1),
+        abort_msg(A,S1,normal),
+        terminate_fep(SCont,Status,S,AbF1,AtF1,S0,F1).
+
+disconnected(CAb,DS,F,T,{_,Conf,SCont,_},A,A1,Att,AbF) :- true |
+        Conf=[],
+        F=fep#nil,
+        AbF=fep#nil,
+        T=[get_all(A2)],
+        A1=[],
+        abort_all_msg(A2,S,S1),
+        abort_msg(A,S1,normal),
+        return_disconnected(CAb,DS,SCont,Att,S).
+
+return_disconnected(CAb,_,SCont,_,_) :- wait(CAb) | SCont=[].
+alternatively.
+return_disconnected(CAb,[Req|DS],SCont,Att,S) :- true |
+        return_ab_status(Req,disconnected,S,S1),
+        return_disconnected(CAb,DS,SCont,Att,S1).
+return_disconnected(_,[],SCont,Att,normal) :- true | SCont=[],Att=[].
+
+abort_all_msg([{_,A}|A1],S,S1) :- true |
+        abort_msg(A,S,S0),
+        abort_all_msg(A1,S0,S1).
+abort_all_msg([],S,S1) :- true | S=S1.
+
+abort_msg([Req|R],S,S1) :- true |
+        return_ab_status(Req,aborted,S,S0),
+        abort_msg(R,S0,S1).
+abort_msg([],S,S1) :- true | S=S1.
+
+%% If={UInfo,Conf,SCont,SAb}
+abort({_,Conf,SCont,_},F,T,S,AbF) :- true |
+        AbF=fep#abort,
+        Conf=[],
+        abort_2(SCont,F,T,S).
+
+abort_2(SCont,F,T,S) :- wait(S) |
+        F={fep#reset,AbF1,AtF1,S0,F1},
+        T=[],
+        terminate_fep(SCont,_,normal,AbF1,AtF1,S0,F1).
+
+terminate_fep(SCont,Status,S,AbF,AtF,fep#normal,F) :- true |
+        F=fep#nil,
+        AbF=fep#nil,
+        wait_fepvar_closed(SCont,Status,S,AtF).
+otherwise.
+terminate_fep(SCont,Status,S,AbF,_,S0,F) :- true |
+        F=fep#nil,
+        AbF=fep#nil,
+        get_status(SCont,Status,S,S0).
+
+wait_fepvar_closed(SCont,Status,normal,AtF) :- wait(AtF) |
+        SCont=[],
+        Status=normal.
+
+get_status(SCont,Status,normal,fep#abnormal) :- true | SCont=[],Status=abnormal.
+get_status(SCont,Status,normal,fep#aborted) :- true | SCont=[],Status=aborted.
+get_status(SCont,Status,normal,fep#disconnected) :- true | SCont=[],Status=disconnected.
+otherwise.
+get_status(SCont,Status,_,S0) :- true | SCont=[],Status=S0.
+
+
+
+wait_fepvar_closed(AtF) :- wait(AtF) | true.

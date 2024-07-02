@@ -1,0 +1,302 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ :- module std_in_filter .
+ :- public std_in_filter /2 .
+:- with_macro pimos.
+
+std_in_filter(User,OS) :-true|
+        std_in_filter(User,OS,_,[]) .
+std_in_filter([User|U2],OS,_,Error) :-true|
+        '+std_in_command'(User,OS1,Flag,Error),
+        'std_in_filter$wait'(U2,OS,OS1,Flag,Error) .
+std_in_filter([],OS,_,Error) :-true|
+        [] =OS .
+otherwise .
+std_in_filter(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        OS =[],
+        raise_error(Error,User) .
+'std_in_filter$wait'(U2,OS,OS1,_,Error) :-wait(OS1)|
+        OS =[OS1|OS2],
+        std_in_filter(U2,OS2,_,Error) .
+'std_in_filter$wait'(U2,OS,OS1,fail,Error) :-true|
+        true .
+'+std_in_command'(get_attributes(_1),OS,_,Error) :-true|
+        get_attributes(__1) =OS,
+        '-get_attributes$$$enu$1'(_1,__1,Flag,['get_attributes /1'|Error]) .
+'+std_in_command'(reset(_1),OS,_,Error) :-true|
+        reset(__1) =OS,
+        '-reset$$$enu$1'(_1,__1,Flag,['reset /1'|Error]) .
+'+std_in_command'(next_attention(_1),OS,_,Error) :-true|
+        next_attention(__1) =OS,
+        '-next_attention$$$enu$1'(_1,__1,Flag,['next_attention /1'|Error]) .
+'+std_in_command'(resend(_1,_2),OS,_,Error) :-true|
+        '+std_in_command$wait'(resend(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'resend /2'|Error]) .
+'+std_in_command'(cancel(_1,_2),OS,_,Error) :-true|
+        '+std_in_command$wait'(cancel(__1,_2),OS,Flag,Error),
+        '+msgid'(_1,__1,Flag,[msgid,'cancel /2'|Error]) .
+otherwise .
+'+std_in_command'(User,OS,Flag,Error) :-true|
+        '+input_command'(User,OS,Flag,Error) .
+'+std_in_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+std_in_command$wait'(resend(__1,_2),OS,_,Error) :-wait(__1)|
+        resend(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['resend /2'|Error]) .
+'+std_in_command$wait'(cancel(__1,_2),OS,_,Error) :-wait(__1)|
+        cancel(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['cancel /2'|Error]) .
+'+input_command'(getb(_1,_2),OS,_,Error) :-true|
+        '+input_command$wait'(getb(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb /2'|Error]) .
+'+input_command'(ungetb(_1,_2),OS,_,Error) :-true|
+        '+input_command$wait'(ungetb(__1,_2),OS,Flag,Error),
+        '+ungetb$string$1'(_1,__1,Flag,[ungetb,'ungetb /2'|Error]) .
+'+input_command'(prompt(_1,_2),OS,_,Error) :-true|
+        '+input_command$wait'(prompt(__1,_2),OS,Flag,Error),
+        '+prompt$string$1'(_1,__1,Flag,[prompt,'prompt /2'|Error]) .
+'+input_command'(getb_noecho(_1,_2),OS,_,Error) :-true|
+        '+input_command$wait'(getb_noecho(__1,_2),OS,Flag,Error),
+        '+blocksize'(_1,__1,Flag,[blocksize,'getb_noecho /2'|Error]) .
+'+input_command'(get_attributes(_1),OS,_,Error) :-true|
+        get_attributes(__1) =OS,
+        '-attributes_status'(_1,__1,Flag,['get_attributes /1'|Error]) .
+otherwise .
+'+input_command'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+input_command$wait'(User,OS,fail,Error) :-true|
+        true .
+'+input_command$wait'(getb(__1,_2),OS,_,Error) :-wait(__1)|
+        getb(__1,__2) =OS,
+        '-getb$$$enu$1'(_2,__2,Flag,['getb /2'|Error]) .
+'+input_command$wait'(ungetb(__1,_2),OS,_,Error) :-wait(__1)|
+        ungetb(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['ungetb /2'|Error]) .
+'+input_command$wait'(prompt(__1,_2),OS,_,Error) :-wait(__1)|
+        prompt(__1,__2) =OS,
+        '-status'(_2,__2,Flag,['prompt /2'|Error]) .
+'+input_command$wait'(getb_noecho(__1,_2),OS,_,Error) :-wait(__1)|
+        getb_noecho(__1,__2) =OS,
+        '-getb_noecho$$$enu$1'(_2,__2,Flag,['getb_noecho /2'|Error]) .
+'+ungetb$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+ungetb$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'+prompt$string$1'(User,OS,_,Error) :-string(User,_,_)|
+        User =OS .
+otherwise .
+'+prompt$string$1'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-get_attributes$$$enu$1'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-device_type'(_1,__1,Flag,[device_type|Error]),
+        '-normal$$$list$1'(_2,__2,Flag,Error) .
+'-get_attributes$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-get_attributes$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-get_attributes$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-reset$$$enu$1'(User,normal(__1,__2,__3),_,Error) :-true|
+        User =normal(__1,_2,_3),
+        '-attention'(_2,__2,Flag,[attention|Error]),
+        '-msgid'(_3,__3,Flag,[msgid|Error]) .
+'-reset$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-reset$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-reset$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-next_attention$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-attention'(_1,__1,Flag,Error) .
+'-next_attention$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-next_attention$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-next_attention$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+msgid'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+msgid'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-status'(User,normal,_,Error) :-true|
+        User =normal .
+'-status'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-status'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-status'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'+blocksize'(User,OS,_,Error) :-integer(User)|
+        User =OS .
+otherwise .
+'+blocksize'(User,OS,Flag,Error) :-true|
+        Flag = fail,
+        raise_error(Error,User) .
+'-getb$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$1'(_1,__1,Flag,Error) .
+'-getb$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb$$$enu$1'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$1'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-getb_noecho$$$enu$1'(User,normal(__1),_,Error) :-true|
+        User =normal(_1),
+        '-normal$string$2'(_1,__1,Flag,Error) .
+'-getb_noecho$$$enu$1'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-getb_noecho$$$enu$1'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-getb_noecho$$$enu$1'(User,end_of_file,_,Error) :-true|
+        User =end_of_file .
+'-getb_noecho$$$enu$1'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$string$2'(User,OS,_,Error) :-string(OS,_,_)|
+        OS =User .
+'-attributes_status'(User,normal(__1,__2),_,Error) :-true|
+        User =normal(_1,_2),
+        '-normal$atom$1'(_1,__1,Flag,Error),
+        '-normal$$$list$2'(_2,__2,Flag,Error) .
+'-attributes_status'(User,abnormal,_,Error) :-true|
+        User =abnormal .
+'-attributes_status'(User,aborted,_,Error) :-true|
+        User =aborted .
+'-attributes_status'(User,disconnected,_,Error) :-true|
+        User =disconnected .
+'-normal$atom$1'(User,OS,_,Error) :-atom(OS)|
+        OS =User .
+'-device_type'(User,OS,_,Error) :-atom(OS)|
+        OS =User .
+'-normal$$$list$1'(User,[OS|OS2],Flag,Error) :-true|
+        '-device_attribute'(User1,OS,Flag,[device_attribute|Error]),
+        '-normal$$$list$1$wait'(User,OS2,User1,Flag,[device_attribute|Error]) .
+'-normal$$$list$1'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$1$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$1'(User2,OS2,Flag,Error) .
+'-attention'(User,attention,_,Error) :-true|
+        User =attention .
+'-attention'(User,[],_,Error) :-true|
+        User =[] .
+'-msgid'(User,OS,_,Error) :-integer(OS)|
+        OS =User .
+'-normal$$$list$2'(User,[OS|OS2],Flag,Error) :-true|
+        '-attributes_list'(User1,OS,Flag,Error),
+        '-normal$$$list$2$wait'(User,OS2,User1,Flag,Error) .
+'-normal$$$list$2'(User,[],Flag,Error) :-true|
+        User =[] .
+'-normal$$$list$2$wait'(User,OS2,User1,Flag,Error) :-wait(User1)|
+        User =[User1|User2],
+        '-normal$$$list$2'(User2,OS2,Flag,Error) .
+'-device_attribute'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+'-attributes_list'(Out,In,Flag,Error) :-vector(In,Size),vector_element(In,0,Elm)|
+        '-attributes_list$vect1'(In,Elm,1,Size,In2,Flag,Error),
+        '-attributes_list$wait'(In2,Out,Flag,Error) .
+'-attributes_list$wait'(In2,Out,Flag,Error) :-wait(In2)|
+        Out =In2 .
+'-attributes_list$vect1'(Vector,Elm,Pos,Size,In2,Flag,Error) :-Pos \=Size|
+        '-attributes_list$ground$1'(Elm2,Elm,Flag,Error),
+        '-attributes_list$vect2'(Vector,Pos,Elm2,Size,In2,Flag,Error) .
+'-attributes_list$vect1'(Vector,Elm,Size,Size,In2,Flag,Error) :-true|
+        '-attributes_list$ground$1'(Elm2,Elm,Flag,Error),
+        '-attributes_list$vect2'(Vector,Size,Elm2,Size,In2,Flag,Error) .
+'-attributes_list$vect2'(Vector,Pos,Elm2,Size,In2,Flag,Error) :-wait(Elm2),Pos \=Size,vector_element(Vector,Pos,Nelm)|
+        Npos :=Pos + 1,
+        '-attributes_list$vect1'(Vector,Nelm,Npos,Size,In2,Flag,Error) .
+'-attributes_list$vect2'(Vector,Size,Elm2,Size,In2,Flag,Error) :-wait(Elm2)|
+        Vector =In2 .
+'-attributes_list$ground$1'(User,OS,_,Error) :-true|
+        '-ground'(OS2,OS),
+        OS2 =User .
+%%%%% system defined protocols %%%%%%%%%%
+'+ground'(X, Y) :- list(X) | '$$groundl'(X, Y).
+'+ground'(X, Y) :- vector(X,Size),Size \= 0 | 
+        '$$groundv'(X, 0, Size, X2),
+        '$$groundv2'(X2, Y).
+otherwise.
+'+ground'(X, Y) :- wait(X) | Y = X.
+'-ground'(X, Y) :- list(Y) | '$$groundl'(Y, X).
+'-ground'(X, Y) :- vector(Y,Size), Size \= 0 | 
+        '$$groundv'(Y, 0, Size, Y2),
+        '$$groundv2'(Y2, X).
+otherwise.
+'-ground'(X, Y) :- wait(Y) | Y = X.
+'$$groundl'([X1|X2], Y) :- true | '+ground'(X1,X11),
+        '$$groundl2'(X11, X2, Y).
+'$$groundl'([], Y) :- true | Y = [].
+'$$groundl2'(X11, X2, Y) :- wait(X11) |
+        '$$groundl31'(X2, [X11|Tail], Tail, Y).
+'$$groundl31'([X1|X2], Top, Tail, Y) :- true |
+        '+ground'(X1,X11),
+        '$$groundl32'(X11, X2, Top, Tail, Y).
+'$$groundl31'([], Top, Tail, Y) :- true |
+        Tail = [],
+        Top = Y.
+'$$groundl32'(X11, X2, Top, Tail, Y) :- wait(X11), X2 \= [] |
+        Tail = [X11|Tail2],
+        '$$groundl31'(X2, Top, Tail2, Y).
+'$$groundl32'(X11, [], Top, Tail, Y) :- wait(X11) |
+        Tail = [X11],
+        Y = Top.
+'$$groundv2'(X2, Y) :- wait(X2) | X2 = Y.
+'$$groundv'(X, Pos, Size, X2) :- Pos \= Size |
+        vector_element(X, Pos, Elm, NX),
+        '+ground'(Elm,Elm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Elm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Pos, Size, X2) :- wait(Elm), Pos \= Size |
+        vector_element(X, Pos, Nelm, NX),
+        '+ground'(Nelm, Nelm2),
+        Npos := Pos + 1,
+        '$$groundv3'(Nelm2, NX, Npos, Size, X2).
+'$$groundv3'(Elm, X, Size, Size, X2) :- wait(Elm) |
+        X = X2. 
+%%%%% to raise error %%%%%%%%%%
+raise_error(Info,Msg):- true |
+        atom_table:cache_table(Atom),
+        formatInfo(Info,[],Fstring,Atom),
+        shoen:raise(pimos_tag#error,'$PIMOS$'(illegal_message_to_STDIN,Fstring),Msg).
+formatInfo([Infoatom | Info], StringList,Fstring,Atom):- 
+        atom(Infoatom) |
+        Atom = [get_atom_name(Infoatom,normal(InfoString)) | Atail],
+        NSlist = [InfoString | StringList],
+        formatInfo(Info, NSlist, Fstring, Atail).
+formatInfo([], Slist, Fstring, Atom):- true |
+        Atom = [],
+        new_string(New,1,16),
+        set_string_element(New,0,key#lf,NL),
+        format(1,Slist,StringList,NL),
+        builtin#append_string([""|StringList], Fstring).
+format(1,[Info|Tail],StringList,NL):- true |
+        StringList = ["Device : ",Info |Stail2],
+        format(2,Tail,Stail2,NL).
+format(2,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,"Message : ",Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(3,[Info|Tail],StringList,NL):- true |
+        StringList = [NL,Info | Stail2],
+        format(3,Tail,Stail2,NL).
+format(_,[],StringList,_):- true |
+        StringList = [].

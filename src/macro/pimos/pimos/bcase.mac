@@ -1,0 +1,240 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- if_not_defined(included).
+:- macro_module  case_macro.
+:- with_macro    pimos.
+:- inherit_macro pimos.
+:- end_if.
+
+%% body case_macro expander
+%%
+
+vector({atom(':-'), H0, vector({atom('|'), G0, B0})}) =>
+      vector({atom('`'), vector({atom(':-'), H1, vector({atom('|'), G0, B1})})})
+      with_predicates ExCls :- as_a_clause |
+  {{get_functor_arity(H0, Func, Ari, H1)}},
+    case_expansion(ExCls, [], no, outside, B0, B1, vector({H1,G0}), Func/Ari).
+
+:- local_implicit info:shared, stream:oldnew, excls:oldnew, sw:shared, braket:shared.
+
+case_expansion(vector({atom(','), X, Y}), Z, O, P) --> true |
+   Z=vector({atom(','), X1, Y1}),
+   case_expansion(X, X1, vector({O,Y}), P),
+   case_expansion(Y, Y1, vector({O,X}), P).
+case_expansion(vector({vector(X)}), Z, O, P) --> vector(X, N) |
+   Z=vector({vector(X1)}),
+   case_expansion_vector(0, N, X, X1, O, P).
+% for '-->' clause
+case_expansion(vector({atom('-->;'), Braket, ArgList, X, Y}), Z, O, P) --> true |
+ {{case_expand_(&info, &stream, &excls, yes, Braket, vector({atom(';'), X, Y}), Z, O, P, ArgList)}}.
+case_expansion(vector({atom('-->->'), Braket, ArgList, X, Y}), Z, O, P) --> true |
+ {{case_expand_(&info, &stream, &excls, yes, Braket, vector({atom('->'), X, Y}), Z, O, P, ArgList)}}.
+% for ':-' clause
+case_expansion(vector({atom(';'), X, Y}), Z, O, P) --> true |
+   case_expand(vector({atom(';'), X, Y}), Z, O, P).
+case_expansion(vector({atom('->'), X, Y}), Z, O, P) --> true |
+   case_expand(vector({atom('->'), X, Y}), Z, O, P).
+%
+otherwise.
+case_expansion(X, Z, _, _) --> true | X=Z.
+
+case_expansion_vector(A, N, X0, X, O, P) --> A<N |
+   A1 := A+1,
+ {{set_vector_element(X0, A, Goal, NewGoal, X1)}},
+   case_expansion(Goal, NewGoal, vector({X1,O}), P),
+   case_expansion_vector(A1, N, X1, X, vector({Goal,O}), P).
+case_expansion_vector(N, N, X0, X, _, _) --> true | X0=X.
+
+case_expand(Cases, Call, Outside, Func/Ari) --> true |
+   &stream <<= [new_predicate_name(Func/Ari, Predname)],
+ {{list_variables(Vars1, [], Cases, []),
+   list_variables(Vars2, [], Outside, []),
+   intersection(Vars1, Vars2, Vars),
+   generate_case_head([atom(Predname)|Vars], Call0),
+   get_functor_arity(Call0, Func_case, Ari_case, Call)}},
+   case_expand_clauses(Cases, Call, Func_case/Ari_case).
+
+case_expand_(Cases, Call, Outside, Func/Ari, ArgList) --> true |
+   &stream <<= [new_predicate_name(Func/Ari, Predname)],
+ {{list_variables(Vars1, [], Cases, []),
+   list_variables(Vars2, [], Outside, []),
+   intersection(Vars1, Vars2, Vars0),
+ {{append_variable(ArgList, Vars0, Vars)}},
+   generate_case_head([atom(Predname)|Vars], Call),
+   generate_case_head([atom(Predname)|Vars0], Call0),
+   get_functor_arity(Call0, Func_case, Ari_case, Call00)}},
+   case_expand_clauses(Cases, Call00, Func_case/Ari_case).
+
+append_variable([], Vars0, Vars) :- true | Vars0=Vars.
+append_variable([One|Cdr], Vars0, Vars) :- true |
+   Vars=[One|Vars1],
+   append_variable(Cdr, Vars0, Vars1).
+
+:- local_implicit vars:oldnew.
+
+list_variables(variable(N), Y) --> true |
+   find_or_insert(variable(N), Y).
+list_variables(list([X|Y]), Z) --> true |
+ {{list_variables(Vars, [], X, Z)}},
+   list_variables(Y, Vars).
+list_variables(vector(X), Z) --> true |
+ {{get_args_to_list(Y, [], X)}},
+   list_variables(Y, Z).
+list_variables([X|Y], Z) --> true |
+ {{list_variables(Vars, [], X, Z)}},
+   list_variables(Y, Vars).
+otherwise.
+list_variables(_, Y) --> true |
+   output_list(Y).
+
+get_args_to_list(X) --> vector(X, Size)|
+   copy_args_to_list(0, Size, X).
+
+copy_args_to_list(A, N, X) --> A < N |
+ {{set_vector_element(X, A, E, [], X1)}},
+   &vars <<= [E],
+   A1 := A+1,
+   copy_args_to_list(A1, N, X1).
+copy_args_to_list(N, N, _) --> true | true.
+
+find_or_insert(X, []) --> true | &vars <<= [X].
+find_or_insert(X, [X|Cdr]) --> true |
+   &vars <<= [X],
+   output_list(Cdr).
+otherwise.
+find_or_insert(X, [Y|Cdr]) --> true |
+   &vars <<= [Y],
+   find_or_insert(X, Cdr).
+
+output_list([]) --> true | true.
+output_list([A|Cdr]) --> true |
+   &vars <<= [A],
+   output_list(Cdr).
+
+intersection([], _, Z) :- true | Z=[].
+intersection([A|X], Y, Z) :- true |
+   intersection(X, Y, W),
+   find_and_insert(Z, W, Y, A).
+
+find_and_insert([], _) --> true | true.
+find_and_insert([A|_], A) --> true | &vars <<= [A].
+otherwise.
+find_and_insert([_|X], B) --> true | find_and_insert(X, B).
+
+get_functor_arity(vector(Vect0), Func, Ari, WVect) :- vector(Vect0, N) |
+    set_vector_element(Vect0, 0, WFunc0, WFunc, Vect1),
+    get_functor(WFunc0, Func, WFunc),
+    Ari := N-1,
+    WVect=vector(Vect1).
+get_functor_arity(atom(Atom0), Func, Ari, WAtom) :- true |
+    Ari=0, Func=Atom0, WAtom=atom(Atom0).
+
+get_functor(atom(Func0), Func, WFunc) :- true |
+    Func0=Func, WFunc=atom(Func0).
+
+generate_case_head([F], WCall) :- true | WCall=F.
+otherwise.
+generate_case_head(List, WCall) :- true |
+   length(0, N, List, List1),
+   new_vector(Call0, N),
+   copy_list_to_vector(0, List1, Call0, Call),
+   WCall=vector(Call).
+
+length(N0, N, [One|Rest], List) :- true |
+   N1 := N0+1,
+   List=[One|List1],
+   length(N1, N, Rest, List1).
+length(N0, N, [], List) :- true | N0=N, List=[].
+
+copy_list_to_vector(N, [H|T], Vector0, Vector) :- true |
+   set_vector_element(Vector0, N, _, H, Vector1),
+   N1 := N+1,
+   copy_list_to_vector(N1, T, Vector1, Vector).
+copy_list_to_vector(_, [], Vector0, Vector) :- true | Vector0=Vector.
+
+:- local_implicit info:shared, stream:oldnew, excls:oldnew, sw:shared, braket:shared.
+
+case_expand_clauses(vector({vector(X)}), Call, Pred) --> vector(X, N) |
+ {{convert_case_vector(0, N, X, NewX)}},
+   case_expand_clauses(NewX, Call, Pred).
+case_expand_clauses(vector({atom(';'), atom(otherwise), Z}), Call, Pred) --> true |
+   &excls <<= [atom(otherwise)],
+   case_expand_clauses(Z, Call, Pred).
+case_expand_clauses(vector({atom(';'), atom(alternatively), Z}), Call, Pred) --> true |
+   &excls <<= [atom(alternatively)],
+   case_expand_clauses(Z, Call, Pred).
+case_expand_clauses(vector({atom('->'), X, vector({vector(Y)})}), Call, Pred) --> vector(Y, N) |
+   case_expansion_vector(0, N, Y, B, vector({Call,X}), Pred),
+ {{make_term(&info, &stream, &excls, &sw, &braket, Call, X, vector({vector(B)}))}}.
+otherwise.
+case_expand_clauses(vector({atom(';'), vector({atom('->'), X, Y}), Z}), Call, Pred) --> true |
+ {{make_term(&info, &stream, &excls, &sw, &braket, Call, X, B)}},
+   case_expand_clauses(Z, Call, Pred),
+   case_expansion(Y, B, vector({Call,X}), Pred).
+case_expand_clauses(vector({atom('->'), X, Y}), Call, Pred) --> true |
+ {{make_term(&info, &stream, &excls, &sw, &braket, Call, X, B)}},
+   case_expansion(Y, B, vector({Call,X}), Pred).
+otherwise.
+case_expand_clauses(X, _, _) --> true |
+   &stream <<= [error(string#"illegal case : ~t", [X])].
+
+convert_case_vector(0, N, X0, Term) :- true |
+   convert_case_vector(0, N, X0, Term, atom(true)).
+
+convert_case_vector(A, N, X0, Terms0, Terms) :- A<N |
+   set_vector_element(X0, A, Term, [], X1),
+   convert_case_one_term(Term, NewTerm),
+   Terms0=vector({atom(','), NewTerm, Terms1}),
+   A1 := A+1,
+   convert_case_vector(A1, N, X1, Terms1, Terms).
+convert_case_vector(N, N, _, Terms0, Terms) :- true | Terms0=Terms.
+
+convert_case_one_term(vector({atom(';'), vector({atom('->'), X, Y}), Z}), New0) :- true |
+   convert_term_to_vector(Y, NewY),
+   New0=vector({atom(';'), vector({atom('->'), X, vector({NewY})}), New}),
+   convert_case_one_term(Z, New).
+convert_case_one_term(vector({atom('->'), X, Y}), New0) :- true |
+   convert_term_to_vector(Y, NewY),
+   New0=vector({atom('->'), X, vector({NewY})}).
+
+make_term(Call, X, B) --> &sw=no |
+   Cls0=vector({atom(':-'), Call, vector({atom('|'), X, B})}),
+%% {{macro#expand_macro(as_a_clause, _, Cls0, Cls1)}},
+%%   &excls <<= [vector({atom('``'), Cls1})].
+   &excls <<= [Cls0].
+make_term(Call, X, B0) --> &sw=yes, &braket=inside |
+ {{convert_term_to_vector(B0, B1)}},
+   Cls0=vector({atom('-->'), Call, vector({atom('|'), X, vector({vector(B1)})})}),
+%% {{macro#expand_macro(as_a_clause, _, Cls0, Cls1)}},
+%%   &excls <<= [vector({atom('``'), Cls1})].
+   &excls <<= [Cls0].
+otherwise.
+make_term(Call, X, B) --> true |
+   Cls0=vector({atom('-->'), Call, vector({atom('|'), X, B})}),
+%% {{macro#expand_macro(as_a_clause, _, Cls0, Cls1)}},
+%%   &excls <<= [vector({atom('``'), Cls1})].
+   &excls <<= [Cls0].
+
+convert_term_to_vector(Y, NewY) :- true |
+   term_length(Y, 0, N, YY),
+   new_vector(NewY0, N),
+   set_elem(0, N, YY, NewY0, NewY).
+
+term_length(vector({atom(','), X, Y}), A, N, YY) :- true |
+   YY=vector({atom(','), X, YYT}),
+   A1 := A+1,
+   term_length(Y, A1, N, YYT).
+otherwise.
+term_length(Y, A, N, YY) :- true | Y=YY, N := A+1.
+
+set_elem(A, N, vector({atom(','), X, Y}), VY0, VY) :- A<N |
+   set_vector_element(VY0, A, _, X, VY1),
+   A1 := A+1,
+   set_elem(A1, N, Y, VY1, VY).
+set_elem(N, N, X, VY0, VY) :- true |
+   set_vector_element(VY0, N, _, X, VY).

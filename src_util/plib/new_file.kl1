@@ -1,0 +1,172 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+% icpsi329::>sys>user>yashiro>PIMOS_TOOL>LIBRARY>new_file.kl1.19, 27-Nov-90 20:02:02, Edit by yashiro
+:- with_macro pimos.
+:- module '$plib$file'.
+:- public fopen/5, fopen/8, fopent/3, fopent/6, directory/4, directory/7.
+
+fopen(Pathname,Mode,File,Abort,Attention) :-
+    string(Pathname,_,_) |
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[file(St)|GR1],
+        check_file_request(St,GR1,FR,plib_fopen),
+        check_open_mode(FR,Pathname,Mode,File,Abort,Attention).
+otherwise.
+fopen(Pathname,_,_,_,Attention) :-
+    true|
+        Attention=[],
+        '$plib$error':error(plib_fopen,string#"illegal input",Pathname).
+
+directory(Pathname,File,Abort,Attention) :-
+    string(Pathname,_,_) |
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[file(St)|GR1],
+        check_file_request(St,GR1,FR,plib_fopen),
+        check_open_mode(FR,Pathname,directory,File,Abort,Attention).
+otherwise.
+directory(Pathname,_,_,Attention) :-
+    true|
+        Attention=[],
+        '$plib$error':error(plib_fopen,string#"illegal input",Pathname).
+
+
+directory(Node,Username,Password,Pathname,Directory,Abort,Attention):-
+    true |
+        '$plib$error':string_or_integer(Node,plib_fopen,1,_,_,NNode),
+        '$plib$error':string(Pathname,plib_fopen,2,_,_,NPathname),
+        '$plib$error':string(Username,plib_fopen,3,_,_,NUsername),
+        '$plib$error':string(Password,plib_fopen,4,_,_,NPassword),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[file(St)|GR1],
+        check_file_request(St,GR1,FR,plib_fopen),
+        check_open_mode(FR,NPathname,directory,Directory,Abort,Attention).
+
+fopen(Node,Username,Password,Pathname,Mode,File,Abort,Attention):-
+    true |
+        '$plib$error':string_or_integer(Node,plib_fopen,1,_,_,NNode),
+        '$plib$error':string(Pathname,plib_fopen,2,_,_,NPathname),
+        '$plib$error':string(Username,plib_fopen,3,_,_,NUsername),
+        '$plib$error':string(Password,plib_fopen,4,_,_,NPassword),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[file(St)|GR1],
+        check_file_request(St,GR1,FR,plib_fopen),
+        check_open_mode(FR,NPathname,Mode,File,Abort,Attention).
+
+fopent(Pathname,Mode,File) :-
+    string(Pathname,_,_) |
+        shoen:raise(pimos_tag#task,general_request,GR),
+        GR=[file(St)|GR1],
+        check_file_request(St,GR1,FR,plib_fopent),
+        check_open_mode_with_buffer(FR,Pathname,Mode,File).
+otherwise.
+fopent(Pathname,_,_) :-
+    true|
+        '$plib$error':error(plib_fopent,string#"illegal input",Pathname).
+
+fopent(Node,Username,Password,Pathname,Mode,File):-
+    true |
+        '$plib$error':string_or_integer(Node,plib_fopent,1,_,_,NNode),
+        '$plib$error':string(Pathname,plib_fopent,2,_,_,NPathname),
+        '$plib$error':string(Username,plib_fopent,3,_,_,NUsername),
+        '$plib$error':string(Password,plib_fopent,4,_,_,NPassword),
+        shoen:raise(pimos_tag#task,general_request(NNode,NUsername,NPassword),GR),
+        GR=[file(St)|GR1],
+        check_file_request(St,GR1,FR,plib_fopent),
+        check_open_mode_with_buffer(FR,NPathname,Mode,File).
+
+check_file_request(normal(FR,_,_),GR,NFR,_) :-
+    true |
+        FR=NFR,
+        GR=[].
+otherwise.
+check_file_request(_,GR,_,ID) :-
+    true |
+        GR=[connection(St)],
+        '$plib$error':check_connection(St,ID).
+
+check_open_mode(FR,Pathname,read,File,Abort,Attention) :-
+    true |
+        FR=[open(Pathname,read(St))],
+        check_file_device_status(St,read,Pathname,File,Abort,Attention).
+check_open_mode(FR,Pathname,write,File,Abort,Attention) :-
+    true |
+        FR=[open(Pathname,write(St))],
+        check_file_device_status(St,write,Pathname,File,Abort,Attention).
+check_open_mode(FR,Pathname,append,File,Abort,Attention) :-
+    true |
+        FR=[open(Pathname,append(St))],
+        check_file_device_status(St,append,Pathname,File,Abort,Attention).
+check_open_mode(FR,Pathname,directory,Dir,Abort,Attention) :-
+    true |
+        FR=[directory(Pathname,St)],
+        check_file_device_status(St,directory,Pathname,Dir,Abort,Attention).
+otherwise.
+check_open_mode(FR,Pathname,_,_,_,_) :-
+    true |
+        FR=[],
+        '$plib$error':error(plib_fopen,string#"illegal input",Pathname).
+
+check_file_device_status(normal(File,Abort,Attention),_,_,NFile,NAbort,NAttention) :-
+    true |
+        File=NFile,
+        Abort=NAbort,
+        Attention=NAttention.
+otherwise.
+check_file_device_status(_,read,Pathname,NFile,_,NAttention) :-
+    true |
+        NFile=[],NAttention=[],
+        '$plib$error':error(plib_fopen,string#"cannot open by read",Pathname). 
+check_file_device_status(_,write,Pathname,NFile,_,NAttention) :-
+    true |
+        NFile=[],NAttention=[],
+        '$plib$error':error(plib_fopen,string#"cannot open by write",Pathname).
+check_file_device_status(_,append,Pathname,NFile,_,NAttention) :-
+    true |
+        NFile=[],NAttention=[],
+        '$plib$error':error(plib_fopen,string#"cannot open by append",Pathname).
+check_file_device_status(_,directory,Pathname,NDir,_,NAttention) :-
+    true |
+        NDir=[],NAttention=[],
+        '$plib$error':error(plib_directory,string#"cannot open directory",Pathname).
+
+
+check_open_mode_with_buffer(FR,Pathname,read,File) :-
+    true |
+        FR=[open(Pathname,read(St))],
+        check_file_device_status(St,read,Pathname,File).
+check_open_mode_with_buffer(FR,Pathname,write,File) :-
+    true |
+        FR=[open(Pathname,write(St))],
+        check_file_device_status(St,write,Pathname,File).
+check_open_mode_with_buffer(FR,Pathname,append,File) :-
+    true |
+        FR=[open(Pathname,append(St))],
+        check_file_device_status(St,append,Pathname,File).
+otherwise.
+check_open_mode_with_buffer(FR,Pathname,_,_) :-
+    true |
+        FR=[],
+        '$plib$error':error(plib_fopent,string#"illegal input",Pathname).
+
+check_file_device_status(normal(File,_,_),read,_,NFile) :-
+    true |
+        buffer:input_filter(NFile,File).
+check_file_device_status(normal(File,_,_),write,_,NFile) :-
+    true |
+        buffer:output_filter(NFile,File).
+check_file_device_status(normal(File,_,_),append,_,NFile) :-
+    true |
+        buffer:output_filter(NFile,File).
+otherwise.
+check_file_device_status(_,read,Pathname,NFile) :-
+    true |
+        NFile=[],
+        '$plib$error':error(plib_fopent,string#"cannot open by read",Pathname). 
+check_file_device_status(_,write,Pathname,NFile) :-
+    true |
+        NFile=[],
+        '$plib$error':error(plib_fopent,string#"cannot open by write",Pathname).
+check_file_device_status(_,append,Pathname,NFile) :-
+    true |
+        NFile=[],
+        '$plib$error':error(plib_fopent,string#"cannot open by append",Pathname).

@@ -1,0 +1,270 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module system_timer_device.
+:- with_macro pimos.
+:- public driver/6.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver(CAbort,DS,Out,ID,If,ADT)
+%%      CAbort  :: Termination variable from the client task
+%%                 = abort ; []
+%%      DS      :: Input stream from the client task
+%%      Out     :: Output stream to system_timer (merged)
+%%      ID      :: Relative system timer ID (for user)
+%%      ADT     :: Absolute date and time information
+%%                 = {Date,Sign,TimeEq}
+%%                  Date    :: Date (integer)
+%%                  Sign    :: Sign of time equation
+%%                              '+' when absolute time >= system timer time
+%%                              '-' when absolute time < system timer time
+%%                  TimeEq  :: Time equation between system_timer and absolute time (double)
+%%      If      :: ={0,Conf,SCont,SAbort}
+%%                 Conf  :: Output stream to confirmation device
+%%                 SCont :: Server control stream
+%%                 SAbort:: Server control abortion variable
+
+driver(CAbort,DS,Out,ReID,If,ADT) :- true |
+        id_table:id_table(T),
+        get_info(ReID,ADT,V),
+        driver_0(CAbort,DS,Out,T,If,V,_,A,A).
+
+get_info(ReID,{Date,Sign,TimeEq},V) :- true |
+        current_node(AbsID,_),
+        V={AbsID,ReID,msec,Date,Sign,TimeEq,_,P,P,[]}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_0(CAb,DS,Out,T,If,V,Att,A,A1)
+%%      T       :: Output stream to the keyed_bag which is used to store the
+%%                      list of the aborted requests with the key ID.
+%%      V       :: Device information
+%%                 = {AbsID,ReID,MyUnit,Date,Sign,TimeEq,PAb,PP,P,P1}
+%%                  AbsID   :: Absolute system timer ID (= cluster ID)
+%%                  ReID    :: Relative system timer ID (for user)
+%%                  MyUnit  :: Time unit of the user_system_timer (atom)
+%%                  Date    :: Date (integer)
+%%                  Sign    :: Sign of time equation
+%%                              '+' when absolute time >= system_timer
+%%                              '-' when absolute time < system_timer
+%%                  TimeEq  :: Time equation between system_timer and absolute time (double)
+%%                  PAb     :: Abortion variable for on_at/on_after processes
+%%                  PP      :: Termination variable for on_at/on_after processes
+%%                  P,P1    :: Short-circuit variables for on_at/on_after processes
+%%      Att     :: Attention line to OS
+%%      A,A1    :: d-list for aborted messages
+
+driver_0(CAb,_,Out,T,If,V,Att,_,_) :- wait(CAb) |
+        abort(Out,T,If,V,Att).
+alternatively.
+driver_0(CAb,[reset(Args)|DS],Out,T,If,V,Att,A,A1) :- true |
+        Att=[],A1=[],
+        T=[put_with_new_id(ID,A)|T1],
+        Args=normal(Ab1,Att1,ID),
+        driver_1(CAb,DS,Out,T1,If,V,Att1,Ab1).
+driver_0(CAb,[close(S)|_],Out,T,If,V,Att,A,A1) :- true |
+        terminate(CAb,_,Out,T,If,V,Att,A,A1,S).
+driver_0(CAb,[Req|DS],Out,T,If,V,Att,A,A1) :-
+    vector_element(Req,0,MsgName),MsgName\=reset,MsgName\=close |
+        A1=[Req|A2],
+        driver_0(CAb,DS,Out,T,If,V,Att,A,A2).
+driver_0(CAb,[],Out,T,If,V,Att,A,A1) :- true |
+        terminate(CAb,_,Out,T,If,V,Att,A,A1,_).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_1(CAb,DS,Out,T,If,V,Att,Ab)
+%%      Ab      :: Abort line from OS
+%%      V       :: Device information
+%%                 = {AbsID,ReID,MyUnit,Date,Sign,TimeEq,PAb,PP,P,P1}
+driver_1(CAb,_,Out,T,If,V,Att,_) :- wait(CAb) |
+        abort(Out,T,If,V,Att).
+driver_1(CAb,DS,Out,T,If,V,Att,Ab) :- wait(Ab) |
+        set_vector_element(V,6,abort,_,V1),
+        driver_0(CAb,DS,Out,T,If,V1,Att,A,A).
+alternatively.
+driver_1(CAb,[Req|DS],Out,T,If,V,Att,Ab) :- system_timer(U,L) |
+        timer_calc:dbl_to_bignum(U,L,Now),
+        io_req(CAb,DS,Out,T,If,V,Att,Ab,Req,Now).
+driver_1(CAb,[],Out,T,If,V,Att,Ab) :- true |
+        terminate(CAb,Ab,Out,T,If,V,Att,_).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% io_req(CAb,DS,Out,T,If,V,Att,Ab,Req,TimeStamp)
+%%      Req     :: IO_request message
+%%      Stamp   :: Time_stamp (when the message was received)
+
+io_req(CAb,DS,Out,T,If,V,Att,_,reset(Args),_) :- true |
+        Att=[],
+        T=[put_with_new_id(ID,[])|T1],
+        Args=normal(Ab1,Att1,ID),
+        set_vector_element(V,6,abort,_,V1),
+        driver_1(CAb,DS,Out,T1,If,V1,Att1,Ab1).
+io_req(CAb,DS,Out,T,If,V,Att,Ab,next_attention(Args),_) :- true |
+        Att=[],
+        Args=normal(Att1),
+        driver_1(CAb,DS,Out,T,If,V,Att1,Ab).
+io_req(CAb,DS,Out,T,If,V,Att,Ab,resend(ID,S),_) :- true |
+        device_driver:resend(DS,DS1,T,T1,ID,S),
+        driver_1(CAb,DS1,Out,T1,If,V,Att,Ab).
+io_req(CAb,DS,Out,T,If,V,Att,Ab,cancel(ID,S),_) :- true |
+        device_driver:cancel(T,T1,ID,S),
+        driver_1(CAb,DS,Out,T1,If,V,Att,Ab).
+
+io_req(CAb,_,Out,T,If,V,Att,Ab,close(S),_) :- true |
+        terminate(CAb,Ab,Out,T,If,V,Att,S).
+
+io_req(CAb,DS,Out,T,If,V,Att,Ab,get_count(Args),Stamp) :- true |
+        Args=normal(Cnt),
+        get_date_time(Stamp,V,V1,_,Cnt),
+        driver_1(CAb,DS,Out,T,If,V1,Att,Ab).
+io_req(CAb,DS,Out,T,If,V,Att,Ab,get_date_time(Args),Stamp) :- true |
+        Args=normal(Date,Time),
+        get_date_time(Stamp,V,V1,Date,Time),
+        driver_1(CAb,DS,Out,T,If,V1,Att,Ab).
+io_req(CAb,DS,Out,T,If,V,Att,Ab,where(Args),_) :- true |
+        where(V,V1,Args),
+        driver_1(CAb,DS,Out,T,If,V1,Att,Ab).
+
+io_req(CAb,DS,Out,T,If,V,Att,Ab,set_time_unit(Unit,S),_) :- true |
+        set_time_unit(V,V1,Unit,S),
+        driver_1(CAb,DS,Out,T,If,V1,Att,Ab).
+io_req(CAb,DS,Out,T,If,V,Att,Ab,get_time_unit(Args),_) :- true |
+        get_time_unit(V,V1,Args),
+        driver_1(CAb,DS,Out,T,If,V1,Att,Ab).
+
+io_req(CAb,DS,Out,T,If,V,Att,Ab,on_at(Cnt,Args),Stamp) :- true |
+        if_on_at(CAb,Ab,Stamp,Out,Out1,V,V1,Cnt,Args),
+        driver_1(CAb,DS,Out1,T,If,V1,Att,Ab).
+io_req(CAb,DS,Out,T,If,V,Att,Ab,on_after(Cnt,Args),Stamp) :- true |
+        if_on_after(CAb,Ab,Stamp,Out,Out1,V,V1,Cnt,Args),
+        driver_1(CAb,DS,Out1,T,If,V1,Att,Ab).
+
+%% V={AbsID,ReID,MyUnit,Date,Sign,TimeEq,PAb,PP,P,P1}
+
+get_date_time(Stamp,V,V1,Date,Time) :-
+    V={_,_,MyU,D,'+',Eq,_,_,_,_} |
+        V=V1,
+        mdlib#add_bignum(Stamp,Eq,Time0),
+        timer_calc:trans({mdlib#system_timer_unit,Time0},{MyU,Time1}),
+        timer_calc:a_day({MyU,Day}),
+        adjust_day_time(D,Time1,Day,Date,Time).
+get_date_time(Stamp,V,V1,Date,Time) :-
+    V={_,_,MyU,D,'-',Eq,_,_,_,_} |
+        V=V1,
+        mdlib#subtract_bignum(Stamp,Eq,_,Time0),
+        timer_calc:trans({mdlib#system_timer_unit,Time0},{MyU,Time1}),
+        timer_calc:a_day({MyU,Day}),
+        adjust_day_time(D,Time1,Day,Date,Time).
+
+adjust_day_time(D,Time0,Day,Date,Time) :-
+    mdlib#bignum_not_less_than(Day,Time0) |
+        Date=D,
+        bignum:construct('+',Time0,Time).
+adjust_day_time(D,Time0,Day,Date,Time) :-
+    mdlib#bignum_less_than(Day,Time0) |
+        bignum:construct('+',Day,DayB),
+        bignum:construct('+',Time0,TimeB),
+        bignum:divide(TimeB,DayB,D1,Time),
+        bignum:add(D,D1,Date).
+
+where(V,V1,Args) :- true |
+        set_vector_element(V,1,ReID,ReID,V1),
+        Args=normal(ReID).
+
+set_time_unit(V,V1,Unit,S) :- true |
+        S=normal,
+        set_vector_element(V,2,_,Unit,V1).
+
+get_time_unit(V,V1,Args) :- true |
+        Args=normal(Unit),
+        set_vector_element(V,2,Unit,Unit,V1).
+
+if_on_at(CAb,Ab,Stamp,Out,Out1,V,V1,Cnt,Args) :- true |
+        timer_calc:count_check(Cnt,Res),
+        on_at(CAb,Ab,Stamp,Out,Out1,V,V1,Res,Args).
+
+%% V={AbsID,ReID,MyUnit,Date,Sign,TimeEq,PAb,PP,P,P1}
+
+on_at(CAb,Ab,Stamp,Out,Out1,V,V1,normal(Cnt),Args) :-
+    V={AbsID,ReID,MyU,D,Sign,Eq,PAb,PP,P,P1} |
+        V1={AbsID,ReID,MyU,D,Sign,Eq,PAb,PP,P,P0},
+        timer_calc:trans({MyU,Cnt},{mdlib#system_timer_unit,Cnt0}),
+        get_on_at_time(Stamp,Cnt0,Res,Sign,Eq),
+        if_set_alarm_on_at(CAb,Ab,Out,Out1,PAb,P0,P1,Args,Res).
+on_at(_,_,_,Out,Out1,V,V1,abnormal,Args) :- true |
+        Out=Out1,V=V1,Args=abnormal.
+
+get_on_at_time(Stamp,Cnt,Res,'+',Eq) :- true |
+        mdlib#subtract_bignum(Cnt,Eq,Borr,At),
+        if_future(Stamp,At,Res,Borr).
+get_on_at_time(Stamp,Cnt,Res,'-',Eq) :- true |
+        mdlib#add_bignum(Cnt,Eq,At),
+        if_future(Stamp,At,Res,0).
+
+if_future(Stamp,At,Res,0) :- mdlib#bignum_less_than(Stamp,At) | Res=normal(At).
+if_future(Stamp,At,Res,0) :- mdlib#bignum_not_less_than(Stamp,At) | Res=normal.
+if_future(_,_,Res,1) :- true | Res=normal.
+
+if_set_alarm_on_at(CAb,Ab,Out,Out1,PAb,P,P1,Args,normal(At)) :- true |
+        Out=[on_at(Ab,At,Res)|Out1],
+        wait_msg_received(CAb,PAb,P,P1,Args,Res).
+if_set_alarm_on_at(_,_,Out,Out1,_,P,P1,Args,normal) :- true |
+        Out=Out1,P=P1,Args=normal(wake_up).
+
+wait_msg_received(CAb,PAb,P,P1,Args,normal(W0)) :- true |
+        Args=normal(W),
+        wake_up(CAb,PAb,W0,W,P,P1).
+otherwise.
+wait_msg_received(_,_,P,P1,Args,S) :- true | P=P1,Args=S.
+
+wake_up(CAb,_,_,W,P,P1) :- wait(CAb) | W=aborted,P=P1.
+wake_up(_,PAb,_,W,P,P1) :- wait(PAb) | W=aborted,P=P1.
+wake_up(_,_,W0,W,P,P1) :- wait(W0) | W=W0,P=P1.
+
+if_on_after(CAb,Ab,Stamp,Out,Out1,V,V1,Cnt,Args) :- 
+        timer_calc:count_check(Cnt,Res),
+        on_after(CAb,Ab,Stamp,Out,Out1,V,V1,Res,Args).
+
+on_after(CAb,Ab,Stamp,Out,Out1,V,V1,normal(Cnt),Args) :-
+    V={AbsID,ReID,MyU,D,Sign,Eq,PAb,PP,P,P1} |
+        V1={AbsID,ReID,MyU,D,Sign,Eq,PAb,PP,P,P0},
+        timer_calc:trans({MyU,Cnt},{mdlib#system_timer_unit,Cnt0}),
+        set_alarm_on_after(CAb,Ab,Stamp,Out,Out1,PAb,P0,P1,Cnt0,Args).
+
+set_alarm_on_after(CAb,Ab,Stamp,Out,Out1,PAb,P,P1,Cnt,Args) :- wait(Cnt) |
+        mdlib#add_bignum(Stamp,Cnt,At),
+        Out=[on_at(Ab,At,Res)|Out1],
+        wait_msg_received(CAb,PAb,P,P1,Args,Res).
+
+
+terminate(CAb,Ab,Out,T,If,V,Att,Status) :- true |
+        terminate(CAb,Ab,Out,T,If,V,Att,A,A,Status).
+
+terminate(CAb,Ab,Out,T,If,V,Att,A,A1,Status) :-
+    V={_,_,_,_,_,_,PAb,PP,P,P1} |
+        Out=[],
+        T=[get_all(A2)],
+        A1=[],
+        device_driver:abort_all_msg(A2,S,S1),
+        device_driver:abort_msg(A,S1,normal),
+        P=P1,
+        wait_stopwatch_terminated(CAb,Ab,If,PAb,PP,Att,Status,S).
+
+wait_stopwatch_terminated(CAb,Ab,If,PAb,PP,Att,Status,S) :- wait(Ab) |
+        PAb=abort,
+        wait_stopwatch_terminated(CAb,_,If,_,PP,Att,Status,S).
+wait_stopwatch_terminated(CAb,_,If,_,_,Att,Status,_) :- wait(CAb),
+    If={_,Conf,SCont,_} |
+        Conf=[],SCont=[],
+        Att=[],Status=normal.
+wait_stopwatch_terminated(_,_,{_,Conf,SCont,_},_,[],Att,Status,normal) :- true |
+        Conf=[],SCont=[],
+        Att=[],Status=normal.
+
+abort(Out,T,{_,Conf,SCont,_},_,Att) :- true |
+        Out=[],T=[],
+        Conf=[],SCont=[],Att=[].

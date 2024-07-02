@@ -1,0 +1,684 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module task_handler.
+:- with_macro pimos.
+:- public handler/10, handler/11, ohandler/5, reverse_id/3.
+%
+% Ins = {Cont,SRep,MonIn,PShut}
+% Outs= {Rep,SCont,MonOut}
+% Tools = {Atom,Module,User,Timer,Devs,Stdio}
+% Info = {Uid,Gids,FEP,IONode,RUser,RPass}
+% Env: environment variable pool
+%
+
+
+handler(ID,Task,Shoen,Monitor,PShut,Shut,Tools,Info,Rsc,Env):-
+   true|
+   set_vector_element(Task,0,Cont,0,Task1),
+   set_vector_element(Shoen,1,SRep,0,Shoen1),
+   set_vector_element(Monitor,0,MonIn,0,Monitor1),
+   set_vector_element(Task1,1,Rep,0,_),
+   set_vector_element(Shoen1,0,SCont,0,_),
+   set_vector_element(Monitor1,1,MonOut,0,_),
+   merge(OutI,OutO),
+   shoen_checker(SRep,SRep1,SCont,SCont1,PShut),
+   ihandler(PShut,Cont,SRep1,MonIn,Child,OutO,Stream),
+   ohandler(Stream,{Rep,SCont1,MonOut,Child,OutI,Shut},Tools,
+                   {normal([]),Rsc,{STB,STB},1,Info,ID},Env).
+handler(ID,Task,Shoen,Monitor,PShut,Shut,Tools,Info,Rsc,Env,App):-
+   true|
+   set_vector_element(Task,0,Cont,0,Task1),
+   set_vector_element(Shoen,1,SRep,0,Shoen1),
+   set_vector_element(Monitor,0,MonIn,0,Monitor1),
+   set_vector_element(Task1,1,Rep,0,_),
+   set_vector_element(Shoen1,0,SCont,0,_),
+   set_vector_element(Monitor1,1,MonOut,0,_),
+   merge(OutI,OutO),
+   shoen_checker(SRep,SRep1,SCont,SCont1,PShut),
+   append(App,Child,ChildIn),
+   ihandler(PShut,Cont,SRep1,MonIn,ChildIn,OutO,Stream),
+   ohandler(Stream,{Rep,SCont1,MonOut,Child,OutI,Shut},Tools,
+                   {normal([]),Rsc,{STB,STB},1,Info,ID},Env).
+
+%
+% input-merger
+% ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,^ToOut)
+% OutIn: from ohandler & general request handlers
+%
+
+ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOut):-
+   wait(PShut)|
+   ToOut = [shoen(abort),control_close|ToOutN],
+   ihandler(_,_,SRep,MonIn,CIn,OutIn,ToOutN).
+alternatively.
+ihandler(_,_,_,_,_,[],ToOut):-
+   true|
+   ToOut = [].
+ihandler(PShut,Cont,SRep,MonIn,CIn,
+         [add_monitor(Type,Name,Status)|OutIn],ToOut):-
+    true|
+    ToOut = [get_condition(Cond,ID)|ToOutN],
+    add_monitor(Cond,ID,Type,Name,Status,
+                   PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+ihandler(PShut,Cont,SRep,MonIn,CIn,[Msg|OutIn],ToOut):-
+   vector(Msg,4),
+   vector_element(Msg,0,Func),
+   Func \= add_monitor|
+   ToOut = [internal(Msg)|ToOutN],
+   ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+ihandler(PShut,Cont,SRep,MonIn,CIn,[Msg|OutIn],ToOut):-
+   vector(Msg,N),
+   N \= 4|
+   ToOut = [internal(Msg)|ToOutN],
+   ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+ihandler(PShut,Cont,SRep,MonIn,CIn,[Msg|OutIn],ToOut):-
+   atom(Msg)|
+   ToOut = [internal(Msg)|ToOutN],
+   ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+alternatively.
+ihandler(_,_,SRep,[],_,OutIn,ToOut):-
+   true|
+   ToOut = [terminate|ToOutN],
+   ihandler(_,_,SRep,_,_,OutIn,ToOutN).
+ihandler(PShut,Cont,SRep,[Msg|MonIn],CIn,OutIn,ToOut):-
+   true|
+   ToOut = [monitor(Msg)|ToOutN],
+   ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+alternatively.
+ihandler(_,_,SRep,MonIn,[],OutIn,ToOut):-
+   true|
+   ToOut = [children_close|ToOutN],
+   ihandler(_,_,SRep,MonIn,_,OutIn,ToOutN).
+ihandler(PShut,Cont,SRep,MonIn,
+         [add_monitor(Type,Name,Status)|CIn],OutIn,ToOut):-
+    true|
+    ToOut = [get_condition(Cond,ID)|ToOutN],
+    add_monitor(Cond,ID,Type,Name,Status,
+                   PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+ihandler(PShut,Cont,SRep,MonIn,[Msg|CIn],OutIn,ToOut):-
+   atom(Msg)|
+   ToOut = [children(Msg)|ToOutN],
+   ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+ihandler(PShut,Cont,SRep,MonIn,[Msg|CIn],OutIn,ToOut):-
+   vector(Msg,4),
+   vector_element(Msg,0,Func),
+   Func \= add_monitor|
+   ToOut = [children(Msg)|ToOutN],
+   ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+ihandler(PShut,Cont,SRep,MonIn,[Msg|CIn],OutIn,ToOut):-
+   vector(Msg,N),
+   N \= 4|
+   ToOut = [children(Msg)|ToOutN],
+   ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+alternatively.
+ihandler(_,_,[],MonIn,CIn,OutIn,ToOut):-
+   true|
+   ToOut = [shoen_close|ToOutN],
+   ihandler(_,_,_,MonIn,CIn,OutIn,ToOutN).
+ihandler(PShut,Cont,[Msg|SRep],MonIn,CIn,OutIn,ToOut):-
+   true|
+   ToOut = [shoen(Msg)|ToOutN],
+   ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+alternatively.
+ihandler(PShut,[],SRep,MonIn,CIn,OutIn,ToOut):-
+   true|
+   ToOut = [control_close|ToOutN],
+   ihandler(PShut,_,SRep,MonIn,CIn,OutIn,ToOutN).
+ihandler(PShut,[Msg|Cont],SRep,MonIn,CIn,OutIn,ToOut):-
+   true|
+   ToOut = [control(Msg)|ToOutN],
+   ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOutN).
+
+% output distributor
+%
+%   ohandler(Stream,{Rep,SCont,MonOut,Child,Out,Shut},
+%                   {Atom,Module,User,Timer,Devs,Stdio}
+%                   {{Status,StopReason},
+%                    Resource_limit,
+%                    {STTop,STBottom},IDs,
+%                    {Uid,Gids,IONode,RUser,RPass},ID},
+%                   Environment).
+%
+
+ohandler([shoen(abort)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[abort|SCont],SCont,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([shoen(stopped)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,0,[stopped(Reason,Cancel)|Rep],Rep,Out0),
+    set_vector_element(Info,0,ST,STN,InfoN),
+    set_vector_element(ST,1,Res,[stop(none)|Res],STN),
+    set_vector_element(Out0,5,Shut,Shut,Out1),
+    set_vector_element(Out1,4,Ins,InN,OutN),
+    Ins = {In1,InN},
+    fire_task(none,Cancel,Reason,Shut,In1),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([monitor(abort_all(Uid))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,4,Us,UsN,InfoN),
+    set_vector_element(Us,0,UID,UID,UsN),
+    set_vector_element(Outs,1,SCont,SContN,Out1),
+    set_vector_element(Out1,3,[abort_all(Uid)|Child],Child,OutN),
+    abort_with_uid(Uid,UID,SCont,SContN,_),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([monitor(abort([],Uid))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,4,Us,UsN,InfoN),
+    set_vector_element(Us,0,UID,UID,UsN),
+    set_vector_element(Outs,1,SCont,SContN,OutN),
+    abort_with_uid(Uid,UID,SCont,SContN,_),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([monitor(abort(Addr,Uid))|Stream],Outs,Tools,Info,Env):-
+    list(Addr)|
+    set_vector_element(Outs,3,[abort(Addr,Uid)|Child],Child,OutsN),
+    ohandler(Stream,OutsN,Tools,Info,Env).
+ohandler([monitor(abort(*,Uid))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,3,[abort_all(Uid)|Child],Child,OutsN),
+    ohandler(Stream,OutsN,Tools,Info,Env).
+ohandler([monitor(status(Addr,Type,Verb,Result))|Stream],Outs,Tools,Info,Env):-
+    true|
+    task_status:handler(Verb,Type,Addr,Result,Stream,Outs,Tools,Info,Env).
+ohandler([monitor(status_all(Type,Verb,Result))|Stream],Outs,Tools,Info,Env):-
+    true|
+    task_status:ahandler(Verb,Type,Result,Stream,Outs,Tools,Info,Env).
+ohandler([children(abort(Addr,Uid))|Stream],Outs,Tools,Info,Env):-
+    true|
+    ohandler(Stream,Outs,Tools,Info,Env).
+ohandler([children(abort_all(Uid))|Stream],Outs,Tools,Info,Env):-
+    true|
+    ohandler(Stream,Outs,Tools,Info,Env).
+ohandler([children(abort_up(Addr,Uid))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[abort_up(Addr,Uid)|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([children(abort_top(Addr,Uid))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[abort_top(Addr,Uid)|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([children(shut_down)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[shut_down|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([children(show_console)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[show_console|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([children(console(Com,Var))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[console(Com,Var)|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([shoen(terminated)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,0,Rep,RepN,Out1),
+    set_vector_element(Out1,5,Shut,ShutN,OutN),
+    set_vector_element(Info,0,ST,STN,InfoN),
+    terminate_status(ST,STN,Rep,RepN,Shut,ShutN),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([shoen(resource_low)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,0,Rep,RepN,OutN),
+    set_vector_element(Info,0,ST,STN,InfoN),
+    resource_low_check(ST,STN,Rep,RepN),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([shoen(resource_report_allowed)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,0,[resource_report_allowed|Next],Next,OutN),
+    set_vector_element(Info,0,ST,STN,InfoN),
+    cancel_limit(ST,STN),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([shoen(started)|Stream],Outs,Tools,Info,Env):-
+    true|
+    ohandler(Stream,Outs,Tools,Info,Env).
+ohandler([shoen(statistics_started)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,0,Rep,RepN,OutN),
+    set_vector_element(Info,2,STS,STSN,InfoN),
+    set_vector_element(STS,0,STT,STTN,STSN),
+    statistics_started_check(STT,Rep,RepN,STTN),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([shoen(statistics(STH,STL))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,2,STS,STSN,InfoN),
+    set_vector_element(STS,0,STT,STTN,STSN),
+    set_vector_element(Outs,0,Rep,RepN,OutN),
+    post_statistics(STT,STTN,Rep,RepN,STH,STL),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([children(terminate)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[terminate|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([monitor(terminate)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,3,[],_,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([children_close|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[],_,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([monitor_close|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,4,[terminate|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([terminate|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[],_,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([shoen_close|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,0,[],_,Out1),
+    set_vector_element(Out1,4,[],_,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([],_,Tools,_,Env):-
+    true|
+    close_tools(Tools),
+    Env = [].
+ohandler([shoen(get_condition(Cond))|Stream],
+         Outs,Tools,Info,Env):-
+    set_vector_element(Info,0,St,StN,InfoN),
+    set_vector_element(St,0,Cond,Cond,StN),
+    ohandler(Stream,Outs,Tools,InfoN,Env).
+ohandler([get_condition(Cond,ID0)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,0,St,StN,Info0),
+    set_vector_element(St,0,Cond,Cond,StN),
+    set_vector_element(Info0,3,ID,ID1,Info1),
+    set_vector_element(Info1,5,TID,TID2,InfoN),
+    copy:copy(TID,TID1,TID2),
+    ID1 := ID + 1,
+    ID0 = [ID|TID1],
+    ohandler(Stream,Outs,Tools,InfoN,Env).
+ohandler([children(get_puid(PUID))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[get_uid(PUID)|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([children(get_uid(Uid))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,4,US,USN,InfoN),
+    set_vector_element(US,0,Uid,Uid,USN),
+    ohandler(Stream,Outs,Tools,InfoN,Env).
+ohandler([children(status_top(Addr,Type,Verb,Result))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,2,[status_top(Addr,Type,Verb,Result)|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([children(status_up([N|Addr],Type,Verb,Result))|Stream],Outs,Tools,Info,Env):-
+    N < -1,
+    N1 := N + 1|
+   set_vector_element(Outs,2,[status_up([N1|Addr],Type,Verb,Result)|Next],Next,OutN),
+   ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([children(status_up([-1|Addr],Type,Verb,Result))|Stream],Outs,Tools,Info,Env):-
+   true|
+   set_vector_element(Outs,2,[status_own(Addr,Type,Verb,Result)|Next],Next,OutN),
+   ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([children(status_all(Type,Verb,Result))|Stream],Outs,Tools,Info,Env):-
+    true|
+    Result = [],
+    ohandler(Stream,Outs,Tools,Info,Env).
+ohandler([children(status(Addr,Type,Verb,Result))|Stream],Outs,Tools,Info,Env):-
+    true|
+    Result = [],
+    ohandler(Stream,Outs,Tools,Info,Env).
+%alternatively.
+ohandler([control_close|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,3,[terminate|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([control(abort([],Status))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[abort|Next],Next,OutN),
+    Status = normal,
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([control(abort(Status))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[abort|Next],Next,OutN),
+    Status = normal,
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([control(status(ID,Type,Verb,Result))|Stream],Outs,Tools,Info,Env):-
+    true|
+    ohandler([internal(status(ID,Type,Verb,Result))|Stream],Outs,Tools,Info,Env).
+ohandler([control(abort)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[abort|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([control(id(Status))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,5,ID,IDN,InfoN),
+    ID = [N|IDD],
+    IDN = [N|IDD],
+    Status = normal(N),
+    ohandler(Stream,Outs,Tools,InfoN,Env).
+ohandler([control(absolute_id(Status))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,5,ID,IDN,InfoN),
+    reverse_id(ID,RID,IDN),
+    Status = normal(RID),
+    ohandler(Stream,Outs,Tools,InfoN,Env).
+ohandler([control(abort(Addr,Status))|Stream],Outs,Tools,Info,Env):-
+    Addr \= []|
+    ohandler([internal(abort(Addr,Status))|Stream],Outs,Tools,Info,Env).
+ohandler([control(statistics)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[statistics|Next],Next,OutN),
+    set_vector_element(Info,2,ST,STN,InfoN),
+    set_vector_element(ST,1,[statistics(report)|STB],STB,STN),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([control(add_resource(ReH,ReL))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[add_resource(ReH,ReL)|Next],Next,OutN),
+    set_vector_element(Info,1,{ResH,ResL},{ResHN,ResLN},InfoN),
+    add_resource(ReH,ReL,ResH,ResL,ResHN,ResLN),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([control(reset(Status))|Stream],Outs,Tools,Info,Env):-
+    true|
+    Status = abnormal,
+    ohandler(Stream,Outs,Tools,Info,Env).
+ohandler([control(next_attention(Status))|Stream],Outs,Tools,Info,Env):-
+    true|
+    Status = abnormal,
+    ohandler(Stream,Outs,Tools,Info,Env).
+ohandler([control(resend(Id,Status))|Stream],Outs,Tools,Info,Env):-
+    true|
+    Status = abnormal,
+    ohandler(Stream,Outs,Tools,Info,Env).
+ohandler([control(cancel(Id,Status))|Stream],Outs,Tools,Info,Env):-
+    true|
+    Status = abnormal,
+    ohandler(Stream,Outs,Tools,Info,Env).
+%alternatively.
+ohandler([internal(change_stop_reason(Old,New))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,0,{Cond,St},{Cond,StN},InfoN),
+    change_stop_reason(St,Old,New,StN),
+    ohandler(Stream,Outs,Tools,InfoN,Env).
+ohandler([internal(cancel_stop_reason(Reason))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,0,{Cond,St},{Cond,StN},InfoN),
+    set_vector_element(Outs,1,SCont,SContN,OutN),
+    cancel_stop_reason(Cond,Reason,St,StN,SCont,SContN),
+    ohandler(Stream,OutN,Tools,InfoN,Env).
+ohandler([internal(register(Name,Prot,Result))|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Info,5,ID,IDN,InfoN),
+    copy:copy(ID,ID1,IDN),
+    set_vector_element(Outs,5,Shut,Shut,OutN),
+    set_vector_element(Tools,4,[register(Name,{ID1,Prot},Shut,Result)|Rsc],Rsc,ToolN),
+    ohandler(Stream,OutN,ToolN,InfoN,Env).
+%alternatively.
+ohandler([shoen(exception(raised,{Node,Type,ExcInfo},NCode,NArgv))|Stream],Outs,Tools,Info,Env):-
+    true|
+    raise_handler:handler(Type,{Node,ExcInfo},NCode,NArgv,
+                                   Stream,Outs,Tools,Info,Env).
+otherwise.
+ohandler([shoen(Msg)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,0,[Msg|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+ohandler([internal(Msg)|Stream],Outs,Tools,Info,Env):-
+    true|
+    internal_handler:handler(Msg,Stream,Outs,Tools,Info,Env).
+ohandler([control(Msg)|Stream],Outs,Tools,Info,Env):-
+    true|
+    set_vector_element(Outs,1,[Msg|Next],Next,OutN),
+    ohandler(Stream,OutN,Tools,Info,Env).
+
+%%%%%%%%%%%%%%%%%%%%%%
+%
+%   utilities
+%
+%%%%%%%%%%%%%%%%%%%%%%
+shoen_checker(SRep,SRep1,SCont,SCont1,PShut):-
+    true|
+    shoen_checker(SRep,SRep1,SCont,SCont1,PShut,normal).
+shoen_checker(SRep,SRep1,SCont,SCont1,PShut,St):-
+    wait(PShut)|
+    SRep1 = [get_condition(Cond)|SRep2],
+    shoen_abort(Cond,SCont,SCont1,SRep2,St).
+shoen_checker(SRep,SRep1,SCont,[],PShut,St):-
+    true|
+    SCont = [],
+    shoen_checker(SRep,SRep1,_,_,PShut,St).
+shoen_checker(SRep,SRep1,SCont,[Msg|SCont1],PShut,St):-
+    true|
+    SCont = [Msg|SContN],
+    shoen_checker(SRep,SRep1,SContN,SCont1,PShut,St).
+shoen_checker([],SRep1,_,_,PShut,St):-
+    true|
+    SRep1 = [].
+shoen_checker([Msg|SRep],SRep1,SCont,SCont1,PShut,St):-
+    Msg \= aborted|
+    SRep1 = [Msg|SRep1N],
+    shoen_checker(SRep,SRep1N,SCont,SCont1,PShut,St).
+shoen_checker([aborted|SRep],SRep1,SCont,SCont1,PShut,normal):-
+    true|
+    SRep1 = [aborted|SRep1N],
+    shoen_checker(SRep,SRep1N,SCont,SCont1,PShut,aborted).
+shoen_checker([aborted|SRep],SRep1,SCont,SCont1,PShut,aborted):-
+    true|
+    shoen_checker(SRep,SRep1,SCont,SCont1,PShut,aborted).
+
+shoen_abort(Cond,SCont,SCont1,SRep,St):-
+    Cond \= terminating,
+    Cond \= shut_terminating|
+    shoen_abort(SCont,SCont1,SRep,St).
+otherwise.
+shoen_abort(_,SCont,SCont1,SRep,_):-
+    true|
+    shoen_abort1(SCont,SCont1,SRep).
+
+shoen_abort(SCont,SCont1,SRep1,normal):-
+    true|
+    SRep1 = [aborted,terminated|SRep1N],
+    shoen_abort1(SCont,SCont1,SRep1N).
+shoen_abort(SCont,SCont1,SRep1,aborted):-
+    true|
+    SRep1 = [terminated|SRep1N],
+    shoen_abort1(SCont,SCont1,SRep1N).
+
+shoen_abort1(SCont,[],SRep1):-
+    true|
+    SCont = [],
+    SRep1 = [].
+shoen_abort1(SCont,[Msg|SCont1],SRep1):-
+    true|
+    SCont = [Msg|SContN],
+    shoen_abort1(SContN,SCont1,SRep1).
+
+fire_task(Reason0,Cancel,Reason,Shut,In):-
+    wait(Shut)|
+    In = [].
+fire_task(Reason0,Cancel,[],Shut,In):-
+    true|
+    cancel_stop(Cancel,Reason0,Shut,In).
+fire_task(Reason0,Cancel,[Reason|Next],Shut,In):-
+    wait(Reason)|
+    In = [change_stop_reason(Reason0,Reason)|InN],
+    fire_task(Reason,Cancel,Next,Shut,InN).
+fire_task(Reason0,Cancel,_,_,In):-
+    wait(Cancel)|
+    In = [cancel_stop_reason(Reason0)].
+
+cancel_stop_reason(terminating,Reason,St,StN,SCont,SContN):-
+    true|
+    St = StN,
+    SCont = SContN.
+cancel_stop_reason(shut_terminating,_,St,StN,SCont,SContN):-
+    true|
+    St = StN,
+    SCont = SContN.
+otherwise.
+cancel_stop_reason(Cond,Reason,[],StN,SCont,SContN):-
+    true|
+    St = StN,
+    SCont = SContN.
+cancel_stop_reason(_,Reason,[stop(Reason)],StN,SCont,SContN):-
+    true|
+    StN = [],
+    SCont = [start|SContN].
+otherwise.
+cancel_stop_reason(_,Reason,[stop(Reason)|St],StN,SCont,SContN):-
+    true|
+    St = StN,
+    SCont = SContN.
+otherwise.
+cancel_stop_reason(_,Reason,[S|St],StN,SCont,SContN):-
+    true|
+    StN = [S|StNN],
+    SCont = SContN,
+    cancel_stop_reason(Reason,St,StNN).
+
+cancel_stop_reason(Reason,[],StN):-
+    true|
+    StN = [].
+cancel_stop_reason(Reason,[stop(Reason)|St],StN):-
+    true|
+    StN = St.
+otherwise.
+cancel_stop_reason(Reason,[R0|St],StN):-
+    true|
+    StN = [R0|StNN],
+    cancel_stop_reason(Reason,St,StNN).
+
+cancel_stop(Cancel,Reason,Shut,In):-
+    wait(Shut)|
+    In = [].
+cancel_stop(Cancel,Reason,Shut,In):-
+    wait(Cancel)|
+    In = [cancel_stop_reason(Reason)].
+
+abort_with_uid(0,_,SCont,SContN,Status):-
+    true|
+    Status = normal,
+    SCont = [abort|SContN].
+otherwise.
+abort_with_uid(UID,UID,SCont,SContN,Status):-
+    true|
+    Status = normal,
+    SCont = [abort|SContN].
+otherwise.
+abort_with_uid(_,_,SCont,SContN,Status):-
+    true|
+    Status = abnormal,
+    SCont = SContN.
+
+terminate_status({ST,Reason},STN,Rep,RepN,Shut,ShutN):-
+    ST \= normal,
+    ST \= resource_low,
+    ST \= stop|
+    STN = {ST,Reason},
+    Rep = RepN, Shut = ShutN.
+otherwise.
+terminate_status(_,STN,Rep,RepN,Shut,_):-
+    true|
+    STN = terminating([]),
+    Rep = [terminated|RepN],
+    Shut = abort.
+resource_low_check({Cond,Reason},STN,Rep,RepN):-
+    Cond \= normal,
+    Cond \= stop,
+    Cond \= resource_low|
+    STN = {Cond,Reason},
+    Rep = RepN.
+otherwise.
+resource_low_check(ST,STN,Rep,RepN):-
+    true|
+    ST = STN,
+    Rep = [resource_low|RepN].
+
+cancel_limit({resource_low,Reason},STN):- 
+    true|
+    STN = {normal,Reason}.
+otherwise.
+cancel_limit(ST,STN):-
+    true|
+    ST = STN.
+
+statistics_started_check([statistics(report)|STT2],Rep,RepN,STTN):-
+    true|
+    Rep = [statistics_started|RepN],
+    STTN = [statistics(report)|STT2].
+otherwise.
+statistics_started_check(STT,Rep,RepN,STTN):-
+    true|
+    STT = STTN,
+    Rep = RepN.
+
+post_statistics([statistics(report)|STT],STTN,Rep,RepN,STH,STL):-
+    true|
+    Rep = [statistics(STH,STL)|RepN],
+    STT = STTN.
+post_statistics([statistics(ignore)|STT],STTN,Rep,RepN,_,_):-
+    true|
+    Rep = RepN,
+    STT = STTN.
+post_statistics([statistics(status(Values))|STT],STTN,Rep,RepN,STH,STL):-
+    true|
+    Rep = RepN,
+    STT = STTN,
+    Values = {STH,STL}.
+
+close_tools(Tools):-
+    vector(Tools,N)|
+    close_tools(N,Tools).
+close_tools(0,_):- true| true.
+close_tools(N,Tools):-
+    N1 := N - 1|
+    set_vector_element(Tools,N1,[],0,ToolsN),
+    close_tools(N1,ToolsN).
+
+reverse_id(ID,RID,IDN):-
+    true|
+    reverse_id(ID,[],RID,IDN).
+reverse_id([],ID,RID,IDN):-
+    true|
+    ID = RID,
+    IDN = [].
+reverse_id([N|ID],ID2,RID,IDN):-
+    true|
+    IDN = [N|IDN2],
+    reverse_id(ID,[N|ID2],RID,IDN2).
+
+add_resource(A1,A2,B1,B2,C1,C2):-
+    true|
+    double_num:add(A1,A2,B1,B2,C1,C2).
+
+change_stop_reason([],_,_,StN):-
+    true|
+    StN = [].
+change_stop_reason([stop(Old)|St],Old,New,StN):-
+    true|
+    StN = [stop(New)|St].
+otherwise.
+change_stop_reason([Msg|St],Old,New,StN):-
+    true|
+    StN = [Msg|StN2],
+    change_stop_reason(St,Old,New,StN2).
+
+
+append([],Child,ChildIn):-
+    true|
+    Child = ChildIn.
+append([Msg|App],Child,ChildIn):-
+    true|
+    ChildIn = [Msg|ChildInN],
+    append(App,Child,ChildInN).
+
+add_monitor(Cond,ID,Type,Name,Status,
+                   PShut,Cont,SRep,MonIn,CIn,OutIn,ToOut):-
+    Cond \= terminating,
+    Cond \= shut_terminating|
+    Status = normal(HI,HO),
+    resource_monitor:monitor(ID,Type,Name,CIn,NewCIn,HI,HO),
+    ihandler(PShut,Cont,SRep,MonIn,NewCIn,OutIn,ToOut).
+otherwise.
+add_monitor(Cond,ID,Type,Name,Status,
+                   PShut,Cont,SRep,MonIn,CIn,OutIn,ToOut):-
+    true|
+    Status = abnormal,
+    ihandler(PShut,Cont,SRep,MonIn,CIn,OutIn,ToOut).
+
+

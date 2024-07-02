@@ -1,0 +1,49 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module monitor_manager_manager.
+:- with_macro pimos.
+:- public manager/1.
+
+manager(In) :- true |
+        manager(In,1,S,S).
+
+manager([get_id(ID)|In],N,S,S1) :- true |
+        ID:=N,
+        manager(In,~(N+1),S,S1).
+manager([get_stream(Str)|In],N,S,S1) :- true |
+        S1=[Str|S2],
+        manager(In,N,S,S2).
+manager([silent_mode(Param,Res)|In],N,S,S1) :- true |
+        silent_mode(Param,Res,S,S1,NS,NS1),
+        manager(In,N,NS,NS1).
+manager([],_,S,S1) :- true |
+        S1=[],
+        close_streams(S).
+
+silent_mode(all_on,Res,S,S1,NS,NS1) :- true |
+        S1=[],
+        Res=normal(string#"~s~n",
+            [string#" Monitor: silent_mode = on"]),
+        broadcast_silent_mode(S,T,T,NS,NS1,on).
+silent_mode(all_off,Res,S,S1,NS,NS1) :- true |
+        S1=[],
+        Res=normal(string#"~s~n",
+            [string#" Monitor: silent_mode = off"]),
+        broadcast_silent_mode(S,T,T,NS,NS1,off).
+
+broadcast_silent_mode([Out|S],T,T1,NS,NS1,Param) :- true |
+        Out=[silent_mode(Param)|Out1],
+        T1=[Out1|T2],
+        broadcast_silent_mode(S,T,T2,NS,NS1,Param).
+broadcast_silent_mode([],T,T1,NS,NS1,_) :- true |
+        T=NS,T1=NS1.
+
+close_streams([Out|S]) :- true |
+        Out=[],
+        close_streams(S).
+close_streams([]) :- true | true.
+

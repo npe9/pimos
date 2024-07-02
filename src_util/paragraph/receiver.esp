@@ -1,0 +1,1446 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+
+add_operator((::),xfx,90).
+class receiver has
+nature  dev ;
+    attribute color ;
+
+   :kill(Class);
+
+instance
+    attribute view,
+              kind,
+              type,
+              cycle,
+              pe,
+              max_value,
+              from,
+              num,
+              pred_num,
+              all_flag,
+              menu_activity,
+              pred_pool,
+              window_list,
+              graph_list,
+              view_select,
+              start_pe,
+              view_mode,
+              d_map,
+              window_init := nil,
+              goal_name := "goal",
+              exectime := nil;
+
+    :io(Obj,ID,String,Res):- ID =\= 0 , ID =\= 3,!,
+        execute(ID, String,Obj),
+        Res="normal";
+
+    :send(Obj,color(Code),Res):-!,
+       ( :get_plane_count(#bitmap,PCount),
+          PCount >= 6,
+          Code = color ,!, Color = color ;
+         Color = mono ),
+        #receiver!color := Color,
+        Res="normal";
+
+    :send(Obj,view_mode(act),Res):-!,
+       Obj!view_mode := act,
+       Obj!view := pe_view,
+       Res="normal";
+    :send(Obj,view_mode(View_Mode),Res):-!,
+       Obj!view_mode := View_Mode,
+       Res="normal";
+
+    :send(Obj,goal_name(Goal_Name),Res):-!,
+       Obj!goal_name := Goal_Name,
+       Res="normal";
+
+    :send(Obj,window_init(Home),Res):-
+       :append(#string,[Home,">paragraph.init"],FileName),
+       :open(#binary_file,F,FileName,shared),!,
+       :create(#standard_input_file,IF,F),
+       :gett(IF,Term),
+       :close_input(IF),
+       :freeze(#frozen_term,Term,FTerm),
+       Obj!window_init := FTerm,
+       Res="normal";
+    :send(Obj,window_init(Home),Res):-!,
+       Res="normal";
+
+%%%%% scale %%%%%
+
+   :send(Obj,scale(Wid,Gid),Res):-
+       :get_at(Obj!window_list,W,Wid),
+       W!scale_mode = all,!,
+       W!scale_mode := part,
+       View = Obj!view,
+       ( ( View = overall_what_when,!;
+           View = what_when,!; 
+           View = when_where ),!, 
+           :send(Obj,time_scale_large(Wid,Gid),Res) ;
+         :send(Obj,node_scale_large(Wid,Gid),Res)) ;
+   :send(Obj,scale(Wid,Gid),Res):-
+       :get_at(Obj!window_list,W,Wid),
+       W!scale_mode = part,!,
+       W!scale_mode := all,
+       View = Obj!view,
+       ( ( View = overall_what_when,!;
+           View = what_when,!; 
+           View = when_where ),!, 
+           :send(Obj,time_scale_small(Wid,Gid),Res) ;
+         :send(Obj,node_scale_small(Wid,Gid),Res)) ;
+          
+%%%%% scroll time %%%%%
+
+   :send(Obj,time_scale_small(Wid,Gid),Res):-
+         View = Obj!view,
+       ( View = overall_what_when,!;
+         View = what_when ; 
+         View = when_where),
+         :get_at(Obj!window_list,W,Wid),
+         :get_size(W,Width,Height),
+         W!pre_width = Width,
+         W!pre_height = Height,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!scale_change = yes,!,
+        GDev!layout = Layout,
+        ( View = overall_what_when,!,
+          :clear(Layout,W) ;
+          :clear(W) ),
+        :time_scale_small(Layout),
+        Res="normal";
+   :send(Obj,time_scale_small(Wid,Gid),Res):-
+        Res="normal";
+        
+
+   :send(Obj,time_scale_large(Wid,Gid),Res):-
+        View = Obj!view,
+        ( View = overall_what_when,!;
+          View = what_when ;
+          View = when_where),
+         :get_at(Obj!window_list,W,Wid),
+         :get_size(W,Width,Height),
+         W!pre_width = Width,
+         W!pre_height = Height,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!scale_change = yes,!,
+        GDev!layout = Layout,
+        ( View = overall_what_when,!,
+          :clear(Layout,W);
+          :clear(W) ),
+        :time_scale_large(Layout),
+        Res="normal";
+   :send(Obj,time_scale_large(Wid,Gid),Res):-
+        Res="normal";
+
+   :send(Obj,previous_page_time(Wid,Gid),Res):-
+        View = Obj!view,
+        ( View = overall_what_when,!;
+          View = what_when,!;
+          View = when_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :previous_page_time(Layout),
+        Res="normal";
+   :send(Obj,previous_page_time(Wid,Gid),Res):-
+        Res="normal";
+        
+   :send(Obj,previous_time(Wid,Gid),Res):-
+         View = Obj!view,
+        ( View = overall_what_when,!;
+          View = what_when ; 
+          View = when_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :previous_time(Layout),
+        Res="normal";
+   :send(Obj,previous_time(Wid,Gid),Res):-
+        Res="normal";
+
+   :send(Obj,next_page_time(Wid,Gid),Res):-
+         View = Obj!view,
+        ( View = overall_what_when,!;
+          View = what_when;
+          View = when_where,!),!,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :next_page_time(Layout),
+        Res="normal";
+   :send(Obj,next_page_time(Wid,Gid),Res):-
+        Res="normal";
+
+   :send(Obj,next_time(Wid,Gid),Res):-
+          View = Obj!view,
+        ( View = overall_what_when,!;
+          View = what_when,!;
+          View = when_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :next_time(Layout),
+        Res="normal";
+   :send(Obj,next_time(Wid,Gid),Res):-
+        Res="normal";
+
+   :send(Obj,top_time(Wid,Gid),Res):-
+         View = Obj!view,
+        ( View = overall_what_when,!;
+          View = what_when ; 
+          View = when_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :top_time(Layout),
+        Res="normal";
+   :send(Obj,top_time(Wid,Gid),Res):-
+        Res="normal";
+
+   :send(Obj,bottom_time(Wid,Gid),Res):-
+          View = Obj!view,
+        ( View = overall_what_when,!;
+          View = what_when,!;
+          View = when_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :bottom_time(Layout),
+        Res="normal";
+   :send(Obj,bottom_time(Wid,Gid),Res):-
+        Res="normal";
+
+
+%%%%% node scroll  ( not when_where )%%%%%
+
+   :send(Obj,node_scale_small(Wid,Gid),Res):-
+         View = Obj!view,
+       ( View = overall_what_where,!;
+         View = what_where ),
+         :get_at(Obj!window_list,W,Wid),
+         :get_size(W,Width,Height),
+         W!pre_width = Width,
+         W!pre_height = Height,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!scale_change = yes,!,
+        GDev!layout = Layout,
+        ( View = overall_what_where,!,
+          :clear(Layout,W) ;
+          :clear(W) ),
+        :node_scale_small(Layout),
+        Res="normal";
+   :send(Obj,node_scale_small(Wid,Gid),Res):-
+        Res="normal";
+        
+
+   :send(Obj,node_scale_large(Wid,Gid),Res):-
+        View = Obj!view,
+        ( View = overall_what_where,!;
+          View = what_where ),
+         :get_at(Obj!window_list,W,Wid),
+         :get_size(W,Width,Height),
+         W!pre_width = Width,
+         W!pre_height = Height,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!scale_change = yes,!,
+        GDev!layout = Layout,
+        ( View = overall_what_where,!,
+          :clear(Layout,W);
+          :clear(W) ),
+        W!scale_mode := part,
+        :node_scale_large(Layout),
+        Res="normal";
+   :send(Obj,node_scale_large(Wid,Gid),Res):-
+        Res="normal";
+
+   :send(Obj,previous_page_node(Wid,Gid),Res):-
+        View = Obj!view,
+        ( View = overall_what_where,!;
+          View = what_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :previous_page_node(Layout),
+        Res="normal";
+   :send(Obj,previous_page_node(Wid,Gid),Res):-
+        Obj!view =  when_where,!,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :previous_page_node(Layout),
+        Res="normal";
+   :send(Obj,previous_page_node(Wid,Gid),Res):-
+        Res="normal";
+        
+   :send(Obj,previous_node(Wid,Gid),Res):-
+         View = Obj!view,
+        ( View = overall_what_where,!;
+          View = what_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :previous_node(Layout),
+        Res="normal";
+   :send(Obj,previous_node(Wid,Gid),Res):-
+        Obj!view =  when_where,!,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :previous_node(Layout),
+        Res="normal";
+   :send(Obj,previous_node(Wid,Gid),Res):-
+        Res="normal";
+
+   :send(Obj,next_page_node(Wid,Gid),Res):-
+         View = Obj!view,
+        ( View = overall_what_where,!;
+          View = what_where,!),!,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :next_page_node(Layout),
+        Res="normal";
+   :send(Obj,next_page_node(Wid,Gid),Res):-
+        Obj!view =  when_where,!,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :next_page_node(Layout),
+        Res="normal";
+
+   :send(Obj,next_page_node(Wid,Gid),Res):-
+        Res="normal";
+
+   :send(Obj,next_node(Wid,Gid),Res):-
+          View = Obj!view,
+        ( View = overall_what_where,!;
+          View = what_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :next_node(Layout),
+        Res="normal";
+   :send(Obj,next_node(Wid,Gid),Res):-
+        Obj!view =  when_where,!,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :next_node(Layout),
+        Res="normal";
+   :send(Obj,next_node(Wid,Gid),Res):-
+        Res="normal";
+
+   :send(Obj,top_node(Wid,Gid),Res):-
+         View = Obj!view,
+        ( View = overall_what_where,!;
+          View = what_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :top_node(Layout),
+        Res="normal";
+   :send(Obj,top_node(Wid,Gid),Res):-
+        Obj!view =  when_where,!,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :top_node(Layout),
+        Res="normal";
+   :send(Obj,top_node(Wid,Gid),Res):-
+        Res="normal";
+
+  :send(Obj,bottom_node(Wid,Gid),Res):-
+          View = Obj!view,
+        ( View = overall_what_where,!;
+          View = what_where,!),
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :bottom_node(Layout),
+        Res="normal";
+   :send(Obj,bottom_node(Wid,Gid),Res):-
+        Obj!view =  when_where,!,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,
+        W!scale_mode = part,!,
+        :get_at(Obj!graph_list,GDev,Gid),
+        GDev!layout = Layout,
+        :bottom_node(Layout),
+        Res="normal";
+   :send(Obj,bottom_node(Wid,Gid),Res):-
+        Res="normal";
+
+%%%%% predicate scroll %%%%%%
+   :send(Obj,previous_page_predicate(Wid,Gid),Res):-
+        Obj!view = predicate,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,!,
+        :previous_page_predicate(W),
+        Res="normal";
+   :send(Obj,previous_page_predicate(Wid,Gid),Res):-
+        :get_at(Obj!window_list,W,Wid),
+        :clear(W),
+        :get_size(W,Width0,Height0),
+        W!pre_width := Width0,
+        W!pre_height := Height0,
+        :get_at(Obj!graph_list,GDev,Gid),
+        :clear(GDev!graph_list),
+        GDev!layout := nil,
+        predicate_execute(Wid,Gid,Obj),
+        :draw(GDev),
+        Res="normal";
+ 
+  :send(Obj,previous_predicate(Wid,Gid),Res):-
+        Obj!view = predicate,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,!,
+        :previous_predicate(W),
+        Res="normal";
+   :send(Obj,previous_predicate(Wid,Gid),Res):-
+        :get_at(Obj!window_list,W,Wid),
+        :clear(W),
+        :get_size(W,Width0,Height0),
+        W!pre_width := Width0,
+        W!pre_height := Height0,
+        :get_at(Obj!graph_list,GDev,Gid),
+        :clear(GDev!graph_list),
+        GDev!layout := nil,
+        predicate_execute(Wid,Gid,Obj),
+        :draw(GDev),
+        Res="normal";
+       
+   :send(Obj,next_page_predicate(Wid,Gid),Res):-
+        Obj!view = predicate,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,!,
+        :next_page_predicate(W),
+        Res="normal";
+   :send(Obj,next_page_predicate(Wid,Gid),Res):-
+        :get_at(Obj!window_list,W,Wid),
+        :clear(W),
+        :get_size(W,Width0,Height0),
+        W!pre_width := Width0,
+        W!pre_height := Height0,
+        :get_at(Obj!graph_list,GDev,Gid),
+        :clear(GDev!graph_list),
+        GDev!layout := nil,
+        predicate_execute(Wid,Gid,Obj),
+        :draw(GDev),
+        Res="normal";
+
+   :send(Obj,next_predicate(Wid,Gid),Res):-
+        Obj!view = predicate,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,!,
+        :next_predicate(W),
+        Res="normal";
+   :send(Obj,next_predicate(Wid,Gid),Res):-
+        :get_at(Obj!window_list,W,Wid),
+        :clear(W),
+        :get_size(W,Width0,Height0),
+        W!pre_width := Width0,
+        W!pre_height := Height0,
+        :get_at(Obj!graph_list,GDev,Gid),
+        :clear(GDev!graph_list),
+        GDev!layout := nil,
+        predicate_execute(Wid,Gid,Obj),
+        :draw(GDev),
+        Res="normal";
+
+ 
+   :send(Obj,top_predicate(Wid,Gid),Res):-
+        Obj!view = predicate,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,!,
+        :top_predicate(W),
+        Res="normal";
+   :send(Obj,top_predicate(Wid,Gid),Res):-
+        :get_at(Obj!window_list,W,Wid),
+        :clear(W),
+        :get_size(W,Width0,Height0),
+        W!pre_width := Width0,
+        W!pre_height := Height0,
+        :get_at(Obj!graph_list,GDev,Gid),
+        :clear(GDev!graph_list),
+        GDev!layout := nil,
+        predicate_execute(Wid,Gid,Obj),
+        :draw(GDev),
+        Res="normal";
+
+   :send(Obj,bottom_predicate(Wid,Gid),Res):-
+        Obj!view = predicate,
+        :get_at(Obj!window_list,W,Wid),
+        :get_size(W,Width,Height),
+        W!pre_width = Width,
+        W!pre_height = Height,!,
+        :bottom_predicate(W),
+        Res="normal";
+   :send(Obj,bottom_predicate(Wid,Gid),Res):-
+        :get_at(Obj!window_list,W,Wid),
+        :clear(W),
+        :get_size(W,Width0,Height0),
+        W!pre_width := Width0,
+        W!pre_height := Height0,
+        :get_at(Obj!graph_list,GDev,Gid),
+        :clear(GDev!graph_list),
+        GDev!layout := nil,
+        predicate_execute(Wid,Gid,Obj),
+        :draw(GDev),
+        Res="normal";
+
+ 
+    :send(Obj,read_code,Code):- !,
+        V = Obj!view_select,
+        ( Obj!menu_activity = deactivate,!,
+          :activate(V),
+          Obj!menu_activity := activate ; true ),
+        repeat,
+        :read(V,Code0),
+        ( Code0 = code(window,C),!,
+          ( Obj!view_mode = pe,!,
+            check_window_command(C,Code) ;
+            Code = Code0 ), true ;
+          Code0 = code(do_it,{history,_}),!,Code=Code0 ;
+          Code0 = code(do_it,renew),!,Code=Code0 ;
+          Code0 = code(do_it,{load,_}),!,Code=Code0 ;
+          Code0 = code(do_it,{save,_,_}),!,Code=Code0 ;
+          Code0 = code(do_it,{remove,_}),!,Code=Code0 ;
+          Code0 = code(do_it,{what,_,nil}),!,Code=Code0 ;
+          %%%% new %%%%
+          Code0 = code(do_it,{what,_,unchange}),!,fail ;
+          Code0 = code(do_it,{what,predicate,PredList}),!,
+          Code=Code0,
+          :send(Obj,renew_pred_pool(PredList),Res);
+          Code0 = code(exit,_),!,Code=Code0 ;
+          Code0 = code(do_it,C),!, 
+          ( Obj!view_mode = pe,!,
+            check_do_it_command(C,Code);
+            Code = Code0 ),
+          :deactivate(V),
+          Obj!menu_activity := deactivate ),!;
+
+   :send(Obj,set_what_items(PredList,Mode,PE,Cycle,ExecTime),Res):-!, 
+        V = Obj!view_select,
+        :create(#list_index,L),
+       (  Mode = pe,!,
+          All = 100 * PE * Cycle,
+          remake_pred_pool(PredList,All,PredList1) ;
+          PredList1 = PredList ),
+        set_pred_pool(L,PredList1),
+        :get_what_manipulator(V,WM),
+        :activate(WM),
+        :add_items(WM,PredList1),
+        :deactivate(WM),!,
+        Obj!pred_pool := L,
+        Obj!all_flag := yes,
+        Obj!exectime := ExecTime,
+        Res="normal";
+
+   :send(Obj,renew_pred_pool(all),Res):-
+        Obj!all_flag = yes,!,
+        Res="normal";
+   :send(Obj,renew_pred_pool(all),Res):-!, 
+        Obj!all_flag := yes, 
+        Obj!pred_pool = L,
+        :get_contents(L,Contents),
+        renew_all_pred(Contents),
+        Res="normal";
+ 
+   :send(Obj,renew_pred_pool(PredList),Res):-!,
+        Obj!all_flag := no, 
+        Obj!pred_pool = L,
+        :get_contents_with_key(L,ContentsWithKeys),
+        renew_pred_pool(ContentsWithKeys,PredList,L),
+        Res="normal";
+
+   :send(Obj,add_history_items(GoalList),Res):- !,
+        V = Obj!view_select,
+        :get_history_manipulator(V,HM),
+        :add_items(HM,GoalList),
+        Res="normal"; 
+
+   :send(Obj,add_history_item(Goal),Res):-!, 
+        V = Obj!view_select,
+        :get_history_manipulator(V,HM),
+        :add_item(HM,Goal),
+        Res="normal";
+ 
+   :send(Obj,set_history_item(Hid),Res):-!,
+        V = Obj!view_select,
+        :get_history_manipulator(V,HM),
+        :set_item(HM,Hid),
+        Res="normal";
+
+   :send(Obj,loaded(Flag),Res):-!,
+        V = Obj!view_select,
+        :get_history_manipulator(V,HM),
+        :loaded(HM,Flag),
+        Res="normal";
+ 
+   :send(Obj,saved(Flag),Res):-!,
+        V = Obj!view_select,
+        :get_history_manipulator(V,HM),
+        :saved(HM,Flag),
+        Res="normal";
+ 
+%%% editted by kubo %%%%%%% 
+    %%% for Processor-configration-map-view %%% 
+    :send(Obj,init(pe_view,PE,Wid),Res):-!,
+        :send(Obj!d_map,init(pe_view,PE,Wid),Res);
+    %%% for overall_stack-map-view %%%
+    :send(Obj,init(overall_stack_view,PE,Wid),Res):-!,
+        :send(Obj!d_map,init(overall_stack_view,PE,Wid),Res);
+    %%% for stack-map-view %%%
+    :send(Obj,init(stack_view,PE,Wid),Res):-!,
+        :send(Obj!d_map,init(stack_view,PE,Wid),Res);
+    %%% for horizontal-tree-view %%%
+    :send(Obj,init(htree_view),Res):-!,
+        :send(Obj!d_map,init(htree_view),Res);
+    :send(Obj,init(htree_view,{Id,Nid},Depth,Wid),Res):-!,
+        :send(Obj!d_map,init(htree_view,{Id,Nid},Depth,Wid),Res);
+
+    :send(Obj,event(Event),Res):-!,
+        :send(Obj!d_map,event(Event),Res);
+
+   :send(Obj,Term,Ans):- !,Ans="abnormal";
+
+   :cut_off(Obj):-!;
+
+local
+
+     
+     execute(1,_,Obj):-!,
+        Obj!all_flag := no,
+        Obj!menu_activity := deactivate,
+        :create(#monogyny_list_index,L),
+        Obj!window_list := L,
+        :create(#monogyny_list_index,GL),
+        Obj!graph_list := GL,
+        :create(#view_selector,V),
+        Obj!view_select := V,
+        :create(#d_map,Map,Obj),
+        Obj!d_map := Map;
+ 
+     execute(2,_,Obj):-!,
+       :kill(Obj!view_select),
+       :kill(Obj!d_map);
+
+%%%%%% :send(Obj,init(....),Res) 
+     execute(10,String,Obj):-string(String,5,_),!,
+       string_element(String, 0, ViewId),
+       string_element(String, 1, Cy),
+       string_element(String, 2, PE),
+       string_element(String, 3, Wid),
+       string_element(String, 4, Gid),
+       trans(ViewId,View),
+       Type = nil ,
+       Obj!type := Type,
+       Obj!cycle := Cy,
+       Obj!pe := PE,
+       send_init(Obj,View,Type,Obj,Wid,Gid);
+
+     execute(10,String,Obj):-string(String,8,_),!,
+       string_element(String, 0, ViewId),
+       string_element(String, 1, Cy),
+       string_element(String, 2, PE),
+       string_element(String, 3, TypeId),
+       string_element(String, 4, SPE),
+       string_element(String, 5, Num),
+       string_element(String, 6, Wid),
+       string_element(String, 7, Gid),
+       trans(ViewId,View),
+       trans(TypeId,Type),
+       Obj!type := Type,
+       Obj!cycle := Cy,
+       Obj!pe := PE,
+       Obj!start_pe := SPE ,
+       Obj!num := Num,
+       send_init(Obj,View,Type,Obj,Wid,Gid);
+
+     execute(10,String,Obj):-string(String,9,_),!,
+       string_element(String, 0, ViewId),
+       string_element(String, 1, Cy),
+       string_element(String, 2, PE),
+       string_element(String, 3, TypeId),
+       string_element(String, 4, From),
+       string_element(String, 5, SPE),
+       string_element(String, 6, N),
+       string_element(String, 7, Wid),
+       string_element(String, 8, Gid),
+       trans(ViewId,View),
+       trans(TypeId,Type),
+       Obj!type := Type,
+       Obj!cycle := Cy,
+       Obj!pe := PE,
+       Obj!from := From ,
+       Obj!start_pe := SPE ,
+       Obj!num := N,
+       send_init(Obj,View,Type,Obj,Wid,Gid);
+
+     execute(10,String,Obj):-string(String,11,_),
+       string_element(String, 0, ViewId),
+       string_element(String, 1, Cy),
+       string_element(String, 2, PE),
+       string_element(String, 3, Max1),
+       string_element(String, 4, Max2),
+       string_element(String, 5, TypeId),
+       string_element(String, 6, SPE),
+       string_element(String, 7, Wid),
+       string_element(String, 8, Gid),
+       trans(ViewId,View),
+       trans(TypeId,Type),
+       Obj!type := Type,
+       Obj!cycle := Cy,
+       Obj!pe := PE,
+       Max = Max1*65536 + Max2,
+       Obj!max_value := Max,
+       Obj!start_pe := SPE ,
+       send_init(Obj,View,Type,Obj,Wid,Gid);
+
+%%%%%%%   :send(Obj,predicate(Wid,Gid),Res)
+   execute(11,String,Obj):- !,
+       string(String,Size,_),
+       string_element(String, Size-2, Wid),
+       string_element(String, Size-1, Gid),
+       predicate_execute(Wid,Gid,Obj);
+
+%%%%%%  :send(Obj,all(List,Wid,Gid),Res) 
+  execute(12,String,Obj):- !,
+       string(String,Size,_),
+       string_element(String, Size-2, Wid),
+       string_element(String, Size-1, Gid),
+       :get_at(Obj!window_list,W,Wid),
+       :get_at(Obj!graph_list,Dev,Gid),
+       :set_all_value(Dev,Obj!type,String,Obj),
+       :layout(Dev);
+
+%%%%%  :send(Obj,{List,Wid,Gid},Res)
+   execute(13,String,Obj):- !,
+       string(String,Size,_),
+       string_element(String, Size-2, Wid),
+       string_element(String, Size-1, Gid),
+       :get_at(Obj!window_list,W,Wid),
+       :get_size(W,Limit,_),
+       :get_at(Obj!graph_list,Dev,Gid),
+       Dev!limit := Limit,
+       send_string(Obj!view,Obj!type,String,Obj,Dev),
+       :layout(Dev);
+   
+%%%%%  :send(Obj,draw(Wid,Gid),Res)
+   execute(14,String,Obj):- !,
+       string_element(String, 0, Wid),
+       string_element(String, 1, Gid),
+       :get_at(Obj!graph_list,Dev,Gid),
+       :get_at(Obj!window_list,W,Wid),
+       :draw(Dev);
+
+   predicate_execute(Wid,Gid,Obj):-!,
+       :get_at(Obj!window_list,W,Wid),
+       :get_size(W,Width,Height),
+       :get_contents(Obj!pred_pool,PredList),
+       set_predicate(PredList,NewPred),
+        ( 150 < Width,
+          Width < 400 ,!,
+          :draw_all_list(W,Width-10,NewPred,Obj!exectime);
+          400 =< Width,!, 
+          ListWidth = Width*2/3 - 10,
+          :draw_all_list(W,ListWidth,NewPred,Obj!exectime),
+          Obj!view = View,
+          Obj!type = Type,
+          Obj!max_value = Max,
+          count(NewPred,0,PredN),
+          Obj!pred_num := PredN,
+          new_heap_vector(Red,PredN),
+          new_heap_vector(Sus,PredN),
+          make_pred_set(0,PredN,NewPred,Red,Sus),
+          :get_at(Obj!graph_list,Dev1,Gid),
+          :clear(Dev1!graph_list),
+          draw_predicate(W,Obj!cycle,Obj!pe,Obj,Dev1),
+          :set_value(Dev1,rs,{reduction_suspension,Red,Sus},Obj),
+          :layout(Dev1), ! ;
+          true );
+
+    trans(1,predicate):-!;
+    trans(2,what_where):-!;
+    trans(3,overall_what_where):-!;
+    trans(4,what_when):-!;
+    trans(5,overall_what_when):-!;
+    trans(6,when_where):-!;
+    trans(7,r):-!;
+    trans(8,s):-!;
+    trans(9,rs):-!;
+    
+
+%%%%%%%
+    send_init(Obj,View,Type,Obj,Wid,Gid):-!,
+         View_mode = Obj!view_mode,
+        ( View_mode = pe,!,
+          make_pe_title(Obj,PString),
+          make_window_title(View_mode,View,Type,Wid,Title0,Obj!goal_name),
+          :append(#string,[Title0,PString],Title);
+          make_window_title(View_mode,View,Type,Wid,Title,Obj!goal_name) ),
+         WinList = Obj!window_list,
+         ( :get_at(WinList,W,Wid),!,
+         ( View=when_where,!,
+           W!scale_mode := all ; true  ),
+          W!view := View,
+          W!view_mode := View_mode,
+          :clear(W),
+          :set_title(W,Title) ;
+          :get_contents(WinList,Con),
+          :get_size(#screen,SW,SH),
+         ( Obj!window_init = nil,!,
+           Term = [] ;
+           :melt(Obj!window_init,Term) ),
+           window_init(Term,Con,X,Y,Width,Height,SW,SH,Wid),
+           :create(#g_window,W,[position(X,Y),size(Width,Height),title(Title),
+                   w_id(Wid),g_id(Gid),view(View)],Obj!view_select,#receiver!color,View_mode),!,
+           :put_at(WinList,W,Wid);
+          true ),
+          :get_size(W,Width0,Height0),
+          W!pre_width := Width0,
+          W!pre_height := Height0,
+          Obj!view := View,
+          :create(#g_dev,View,Obj!max_value,Dev),
+          :put_at(Obj!graph_list,Dev,Gid),
+          Dev!w := W,
+          draw_graph(View,W,Obj!cycle,Obj!pe,Obj,Dev);
+
+%%%%%%%%%%
+
+    draw_graph(when_where,W,Cy,PE,Obj,Dev):-!,
+         :get_size(W,Width,Height),
+         H0 = Height-50,
+         ( Cy * 50 + 130 > Width,!, Wid = nil ;
+           Wid = Cy * 50 + 130 ),
+        ( PE =< 10 ,!,
+           ( H0 - 30 > 10 * 50 ,!, H = PE*50 ;
+             H0 - 30 > 10 * 30 ,!, H = PE*30 ;
+             H0 - 30 > 10 * 20 ,!, H = PE*20 ;
+             H0 - 30 > 10 * 7 ,!, H = PE*7 ;
+             H = ( H0 - 30)*PE/10 ); 
+           H = H0 ),
+         Obj!start_pe = SPE,
+         :hg(Dev,[space(0),area(Wid,nil),start(35,30),
+                     height(H),name("T","Node"),scale(SPE,1,PE)]);
+    draw_graph(overall_what_where,W,Cy,PE,Obj,Dev):- !,
+         :get_size(W,Width,Height),
+         W0 = Width-300,
+         ( W0 < 200,!,
+           :v(Dev,[width(Width-100)]);
+           ( PE =< 10 ,!,
+           ( PE * 50 > W0,!,Wid = W0 ;
+             Wid = PE * 50 + 55); Wid = W0 ),
+           :v(Dev,[width(Wid)]));
+    draw_graph(what_where,W,Cy,PE,Obj,Dev):- !,
+         :get_size(W,Width,Height),
+         W0 = Width-100,
+         ( PE * 50 > W0,!, Wid = W0 ;
+           Wid = PE * 50 + 55),
+         :v(Dev,[from(Obj!from),space(18),width(Wid)]) ;
+    draw_graph(overall_what_when,W,Cy,PE,Obj,Dev):- !,
+         :get_size(W,Width,Height),
+         W0 = Width-300,
+         ( W0 < 200,!,
+           W1 = Width-100,
+           :v(Dev,[width(W1)]);
+           ( Cy < 10,!,
+            ( Cy * 140 > W0,!, Wid = W0 ;
+              Wid = Cy * 140 ); Wid = W0 ),
+           :v(Dev,[width(Wid)]));
+    draw_graph(what_when,W,Cy,PE,Obj,Dev):- !,
+         :get_size(W,Width,Height),
+         W0 = Width-100,
+         ( Cy * 140 > W0,!, Wid = W0 ;
+           Wid = Cy * 140 ),
+         :v(Dev,[from(Obj!from),space(22),width(Wid)]) ;
+    draw_graph(predicate,W,_,_,Obj,Dev):-!;
+    
+    draw_predicate(W,_,_,Obj,Dev):-!,
+         :get_size(W,Width,Height),
+         Obj!pred_num = PredN,
+         ( PredN * 30 > Height - 50 ,!, H = Height-50 ;
+           H = PredN * 30 ),
+          X =  Width*2/3,
+         :h(Dev,[space(10),position(X,10),height(H),min(110)]) ;
+
+%%%%%% msg %%%%%%
+    make_window_title(msg,when_where,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"  When x Where   Received Message"],Title);
+    make_window_title(msg,when_where,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"  When x Where   Sent Message"],Title);
+    make_window_title(msg,what_where,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"  What x Where   Received Message"],Title);
+    make_window_title(msg,what_where,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x Where   Sent Message"],Title);
+    make_window_title(msg,what_where,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x Where   Received&Sent Message"],Title);
+    make_window_title(msg,overall_what_where,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x Where   Received Message"],Title);
+    make_window_title(msg,overall_what_where,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x Where   Sent Message"],Title);
+    make_window_title(msg,overall_what_where,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x Where   Received&Sent Message"],Title);
+    make_window_title(msg,what_when,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x When   Received Message"],Title);
+    make_window_title(msg,what_when,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x When   Sent Message"],Title);
+    make_window_title(msg,what_when,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x When   Received&Sent Message"],Title);
+    make_window_title(msg,overall_what_when,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x When   Received Message"],Title);
+    make_window_title(msg,overall_what_when,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x When   Sent Message"],Title);
+    make_window_title(msg,overall_what_when,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x When   Received&Sent Message"],Title);
+    make_window_title(msg,predicate,_,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Result   Received & Sent Message   "],Title);
+%%%%% pe %%%%%
+
+    make_window_title(pe,when_where,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"  When x Where   "],Title);
+    make_window_title(pe,when_where,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"  When x Where   "],Title);
+    make_window_title(pe,what_where,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"  What x Where   "],Title);
+    make_window_title(pe,what_where,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x Where   "],Title);
+    make_window_title(pe,what_where,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x Where   "],Title);
+    make_window_title(pe,overall_what_where,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x Where   "],Title);
+    make_window_title(pe,overall_what_where,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x Where   "],Title);
+    make_window_title(pe,overall_what_where,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x Where   "],Title);
+    make_window_title(pe,what_when,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x When   "],Title);
+    make_window_title(pe,what_when,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x When   "],Title);
+    make_window_title(pe,what_when,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x When   "],Title);
+    make_window_title(pe,overall_what_when,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x When   "],Title);
+    make_window_title(pe,overall_what_when,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x When   "],Title);
+    make_window_title(pe,overall_what_when,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x When   "],Title);
+    make_window_title(pe,predicate,_,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Result   "],Title);
+%%%%% goal %%%%%
+    make_window_title(VMode,when_where,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"  When x Where   Reduction "],Title);
+    make_window_title(VMode,when_where,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"  When x Where   Suspension"],Title);
+    make_window_title(VMode,what_where,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"  What x Where   Reduction"],Title);
+    make_window_title(VMode,what_where,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x Where   Suspension"],Title);
+    make_window_title(VMode,what_where,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x Where   Reduction&Suspension"],Title);
+    make_window_title(VMode,overall_what_where,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x Where   Reduction"],Title);
+    make_window_title(VMode,overall_what_where,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x Where   Suspension"],Title);
+    make_window_title(VMode,overall_what_where,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x Where   Reduction&Suspension"],Title);
+    make_window_title(VMode,what_when,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x When   Reduction"],Title);
+    make_window_title(VMode,what_when,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x When   Suspension"],Title);
+    make_window_title(VMode,what_when,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    What x When   Reduction&Suspension"],Title);
+    make_window_title(VMode,overall_what_when,r,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x When   Reduction"],Title);
+    make_window_title(VMode,overall_what_when,s,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x When   Suspension"],Title);
+    make_window_title(VMode,overall_what_when,rs,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Overall What x When   Reduction&Suspension"],Title);
+    make_window_title(VMode,predicate,_,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] ",Goal,"    Result   Reduction&Suspension"],Title);
+
+    make_window_title(_,_,_,Id,Title,Goal):-!,
+         :get_number_string(#symbolizer,Id,Id1),
+         :append(#string,[" [",Id1,"] Visual Profile"],Title);
+
+   send_string(overall_what_where,rs,String,Obj,Dev):-!,
+       Obj!pe = PE,
+       send(rs,Obj,String,0,1,PE,Dev);
+ 
+   send_string(overall_what_when,rs,String,Obj,Dev):-!,
+       Obj!cycle = Cycle,
+       send(rs,Obj,String,0,1,Cycle,Dev);
+
+   send_string(what_where,rs,String,Obj,Dev):-!,
+       string(String,Length,_),
+       Obj!pe = PE,
+       Num = ( Length-2 )/(4*PE+1),
+       send(rs,Obj,String,0,Num,PE,Dev);
+
+   send_string(what_where,Type,String,Obj,Dev):-!,
+       string(String,Length,_),
+       Obj!pe = PE,
+       Num = ( Length-2 )/(2*PE+1),
+       send(Type,Obj,String,0,Num,PE,Dev);
+
+   send_string(what_when,rs,String,Obj,Dev):-!,
+       string(String,Length,_),
+       Obj!cycle = Cycle,
+       Num = ( Length-2 )/(4*Cycle+1),
+       send(rs,Obj,String,0,Num,Cycle,Dev);
+   send_string(what_when,Type,String,Obj,Dev):-!,
+       string(String,Length,_),
+       Obj!cycle = Cycle,
+       Num = ( Length-2 )/(2*Cycle+1),
+       send(Type,Obj,String,0,Num,Cycle,Dev);
+
+   send_string(when_where,Type,String,Obj,Dev):-!,
+       Obj!cycle = Cycle,
+       Obj!pe = PE,
+       send(Type,Obj,String,0,Cycle,PE,Dev);
+        
+   send(Type,Obj,String,N,N,_,Dev):-!;
+   send(rs,Obj,String,C,N,Elm,Dev):-!,
+       string_element(String,C*Elm*4+C,Id),
+       new_heap_vector(Num1,Elm),
+       new_heap_vector(Num2,Elm),
+       create_vector(2,String,C*Elm*4+C+1,0,Elm,Num1),
+       create_vector(2,String,C*Elm*4+C+3,0,Elm,Num2),
+       (  Id = 0,!, 
+          send_dev(Obj,{Id,Num1,Num2},Dev);
+          integer(Id),!,
+          :get_at(Obj!pred_pool,Pred,Id),
+          send_dev(Obj,{Pred,Num1,Num2},Dev);
+          send_dev(Obj,{Id,Num1,Num2},Dev) ),
+       C1 = C+1,
+       send(rs,Obj,String,C1,N,Elm,Dev);
+   send(Type,Obj,String,C,N,Elm,Dev):-!,
+       string_element(String,C*(Elm*2+1),Id),
+       new_heap_vector(Num,Elm),
+       create_vector(1,String,C*Elm*2+C+1,0,Elm,Num),
+       ( Obj!view = when_where,!,
+         send_dev(Obj,{Id,Num},Dev);
+         integer(Id),!,
+         :get_at(Obj!pred_pool,Pred,Id),
+         send_dev(Obj,{Pred,Num},Dev);
+         send_dev(Obj,{Id,Num},Dev) ),
+       C1 = C+1,
+       send(Type,Obj,String,C1,N,Elm,Dev);
+  
+
+   create_vector(U,String,P,Elm,Elm,Num):-!;
+   create_vector(U,String,P,C,Elm,Num):-!,
+       string_element(String,P,Data1),
+       string_element(String,P+1,Data2),
+       Data = Data1*65536 + Data2,
+       set_vector_element(Num,C,Data),
+       create_vector(U,String,P+U*2,C+1,Elm,Num);
+   
+       
+   send_dev(Obj,{Pred,Num},Dev):- 
+        atomic(Pred),!,
+        ( integer(Pred),!, :get_number_string(#symbolizer,Pred,P1);
+          atom(Pred),!, :get_atom_string(#symbolizer,Pred,P1) ),
+        :set_value(Dev,Obj!type,{P1,Num},Obj);
+
+   send_dev(Obj,{Vect,Num},Dev):-
+        heap_vector(Vect,_),!,
+        get_pred_string(Vect,PredString),
+        :set_value(Dev,Obj!type,{PredString,Num},Obj);
+ 
+ %%%%%% R & S %%%%%%
+    send_dev(Obj,{Pred,Num1,Num2},Dev):- 
+        atomic(Pred),!,
+        ( integer(Pred),!, :get_number_string(#symbolizer,Pred,P1);
+          atom(Pred),!, :get_atom_string(#symbolizer,Pred,P1) ),
+        :set_value(Dev,Obj!type,{P1,Num1,Num2},Obj);
+
+   send_dev(Obj,{Vect,Num1,Num2},Dev):- 
+        heap_vector(Vect,_),!,
+        get_pred_string(Vect,PredString),
+        :set_value(Dev,Obj!type,{PredString,Num1,Num2},Obj);
+ 
+   make_pred_set(N,N,[],NewVectR0,NewVectS0):-!;
+   make_pred_set(C,PredN,[Vect|RV],NewVectR0,NewVectS0):-
+       heap_vector(Vect,Length),!,
+       pred_set(Length,Vect,Data,Data1),
+       set_vector_element(NewVectR0,C,Data),
+       set_vector_element(NewVectS0,C,Data1), 
+       make_pred_set(C+1,PredN,RV,NewVectR0,NewVectS0);
+
+    pred_set(8,Vect,R1,S1):-!,
+        vector_element(Vect,5,R),
+        vector_element(Vect,6,S),
+        R1 = R,
+        S1 = S;
+    pred_set(7,Vect,R1,S1):-!,
+        vector_element(Vect,4,R),
+        vector_element(Vect,5,S),
+        R1 = R,
+        S1 = S;
+    pred_set(5,Vect,R1,S1):-!,
+        vector_element(Vect,2,R),
+        vector_element(Vect,3,S),
+        R1 = R,
+        S1 = S;
+   
+   count([],C,Ans):-!,
+       Ans = C;
+   count([H|T],C,Ans):-!,
+       C1 = C+1,
+       count(T,C1,Ans);
+
+    get_graph([],[]):- !;
+    get_graph([Dev|Dev1],[Dev!g|G1]):- !,
+      get_graph(Dev1,G1);
+
+   reverse(List,Ans):-
+      reverse(List,[],Ans);
+   reverse([],Rev,Rev):- !;
+   reverse([H|T],Rev,Ans):- !,
+      reverse(T,[H|Rev],Ans);
+
+   window_init([],WinList,X,Y,W,H,SW,SH,_):-!,
+      select_position(WinList,X,Y,W,H,SW,SH);
+   window_init([{Id,Attribute}|R],WinList,NewX,NewY,NewW,NewH,SW,SH,Id):-!,
+      set_window_attribute(Attribute,WinList,X,Y,W,H,NewX,NewY,NewW,NewH,SW,SH);
+   window_init([{Id,Attribute}|R],WinList,X,Y,W,H,SW,SH,WId):-!,
+      window_init(R,WinList,X,Y,W,H,SW,SH,WId);
+   
+   set_window_attribute([],WinList,X,Y,W,H,NewX,NewY,NewW,NewH,SW,SH):-!,
+      select_position(WinList,X,Y,W,H,SW,SH),
+      ( 350 < W, W < SW,!, 
+        NewW = W;
+        W =< 350,!,
+        NewW = 350;
+        W >= SW,!,
+        NewW = SW ),
+      ( X + NewW >= SW ,!,
+        NewX = 0 ;
+        NewX = X ),
+      ( 350 < H, H < SH,!, 
+        NewH = H;
+        H =< 350,!,
+        NewH = 350;
+        H >= SH,!,
+        NewH = SH ),
+      ( Y + NewH >= SH ,
+        NewY = 0 ;
+        NewY = Y );
+   set_window_attribute([size(W,H)|R],WinList,X,Y,W,H,NewX,NewY,NewW,NewH,SW,SH):-!,
+     set_window_attribute(R,WinList,X,Y,W,H,NewX,NewY,NewW,NewH,SW,SH);
+   set_window_attribute([position(X,Y)|R],WinList,X,Y,W,H,NewX,NewY,NewW,NewH,SW,SH):-!,
+     set_window_attribute(R,WinList,X,Y,W,H,NewX,NewY,NewW,NewH,SW,SH);
+   set_window_attribute([Other|R],WinList,X,Y,W,H,NewX,NewY,NewW,NewH,SW,SH):-!,
+     set_window_attribute(R,WinList,X,Y,W,H,NewX,NewY,NewW,NewH,SW,SH);
+  
+   select_position([],X,Y,W,H,SW,SH):-!,
+        ( unbound(W),unbound(H),!,
+        ( SW >= 1024 ,!, W = 900 ;
+          W = SW - 20 ),
+        ( SH >= 763 ,!, H = 600 ;
+          H = SH - 20 );
+         true ),
+       ( unbound(X),unbound(Y),!,
+         X = 30, Y = 0 ;
+         true );      
+    select_position(WinList,X,Y,W,H,SW,SH):-
+       ( unbound(W),unbound(H),!,
+        ( SW >= 1024 ,!, W = 900 ;
+          W = SW - 20 ),
+        ( SH >= 763 ,!, H = 600 ;
+          H = SH - 20 );
+          true ),
+      ( unbound(X),unbound(Y),!,
+        last(WinList,LastWin),
+        NewX = LastWin!x + 20,
+        NewY = LastWin!y + 20,
+        ( NewX + W + 40 < SW ,
+          NewY + H + 40 < SH ,!,
+          X = NewX, Y = NewY ;
+          X = 30, Y = 0 );
+        true );
+ 
+    last([H|T],Last):-
+        T = [],!,
+        Last = H;
+    last([H|T],Last):- !,
+        last(T,Last);
+           
+    set_pred_pool(L,[]):-!;
+    set_pred_pool(L,[{Pack,Mod,Pred,Ar,R,S,Id}|Rest]):-!,
+        new_heap_vector(Vect,8),
+        set_vector_element(Vect,0,set),
+        set_vector_element(Vect,1,Pack),
+        set_vector_element(Vect,2,Mod),
+        set_vector_element(Vect,3,Pred),
+        set_vector_element(Vect,4,Ar),
+        set_vector_element(Vect,5,R),
+        set_vector_element(Vect,6,S),
+        :add_at(L,Vect,Id),
+        set_pred_pool(L,Rest);
+    set_pred_pool(L,[{Pack,Mod,Pred,R,S,Id}|Rest]):-!,
+        new_heap_vector(Vect,7),
+        set_vector_element(Vect,0,set),
+        set_vector_element(Vect,1,Pack),
+        set_vector_element(Vect,2,Mod),
+        set_vector_element(Vect,3,Pred),
+        set_vector_element(Vect,4,R),
+        set_vector_element(Vect,5,S),
+        :add_at(L,Vect,Id),
+        set_pred_pool(L,Rest);
+    set_pred_pool(L,[{Pred,R,S,Id}|Rest]):-!,
+        new_heap_vector(Vect,5),
+        set_vector_element(Vect,0,set),
+        set_vector_element(Vect,1,Pred),
+        set_vector_element(Vect,2,R),
+        set_vector_element(Vect,3,S),
+        :add_at(L,Vect,Id),
+        set_pred_pool(L,Rest);
+
+  remake_pred_pool([],_,L):-!,L = [];
+  remake_pred_pool([{Pred,R,S,Id}|Rest],All,L):-!,
+        R1 = R * 100 / All,
+        L = [{Pred,R1,S,Id}|RL],
+        remake_pred_pool(Rest,All,RL);
+  
+   get_pred_string(Vect,PredS):-
+        heap_vector(Vect,8),!,
+        vector_element(Vect,1,Pack),
+        vector_element(Vect,2,Mod),
+        vector_element(Vect,3,Pred),
+        vector_element(Vect,4,Ar),
+        :get_atom_string(#symbolizer,Pack,Pack1),
+        :get_atom_string(#symbolizer,Mod,M1),
+        :get_atom_string(#symbolizer,Pred,P1),
+        :get_number_string(#symbolizer,Ar,A1),
+        :append(#string,[Pack1,"::",M1,":",P1,"/",A1],PredS);
+   get_pred_string(Vect,PredS):-
+        heap_vector(Vect,7),!,
+        vector_element(Vect,1,Pack),
+        vector_element(Vect,2,Mod),
+        vector_element(Vect,3,Pred),
+        :get_atom_string(#symbolizer,Pack,Pack1),
+        :get_atom_string(#symbolizer,Mod,M1),
+        :get_atom_string(#symbolizer,Pred,P1),
+        :append(#string,[Pack1,"::",M1,":",P1],PredS);
+   get_pred_string(Vect,PredS):-
+        heap_vector(Vect,5),!,
+        vector_element(Vect,1,P),
+        :get_atom_string(#symbolizer,P,PredS);
+
+%   get_pred_string(Vect,Pred):-
+%        heap_vector(Vect,8),!,
+%        vector_element(Vect,7,Pred);
+%   get_pred_string(Vect,Pred):-
+%        heap_vector(Vect,7),!,
+%        vector_element(Vect,6,Pred);
+%   get_pred_string(Vect,Pred):-
+%        heap_vector(Vect,5),!,
+%        vector_element(Vect,4,Pred);
+
+   set_predicate([],[]):-!;
+   set_predicate([Vect|Rest],List):-
+       vector_element(Vect,0,Ans),
+       Ans = set,!,
+       List = [Vect|RL],
+       set_predicate(Rest,RL);
+   set_predicate([Vect|Rest],List):-
+       set_predicate(Rest,List);
+
+   renew_pred_pool([],_,Pool):-!;
+   renew_pred_pool([{Vect,Id}|Rest],PredList,Pool):-
+       renew_pool(Vect,Id,PredList,NewPredList,Pool),
+       renew_pred_pool(Rest,NewPredList,Pool);
+  
+   renew_pool(V,Id,[],[],Pool):-!,
+       set_vector_element(V,0,reset);
+   renew_pool(V,Id,[Id|RestId],RestId,Pool):-!,
+       set_vector_element(V,0,set);
+   renew_pool(V,Id,[Other|PoolR],[Other|NewId],Pool):-
+       renew_pool(V,Id,PoolR,NewId,Pool);
+  
+   renew_all_pred([]):-!;
+   renew_all_pred([V|Rest]):-
+       set_vector_element(V,0,set),
+       renew_all_pred(Rest);
+  
+   make_pe_title(Obj,PString):-
+       :get_contents(Obj!pred_pool,PredList),
+       set_pe_predicate(['GC',receive,send,compute],PredList,NewPred,Obj),
+       NewPred = [GCD,DD,ED,CD],!,
+       Msg = DD + ED,
+       :get_number_string(#symbolizer,GCD,SG),
+       :get_number_string(#symbolizer,Msg,SM),
+       :get_number_string(#symbolizer,CD,SC),
+       :append(#string,["Comp:",SC,"% Msg:",SM,"% GC:",SG,"%"],PString);
+    make_pe_title(Obj,PString):-
+       PString = "ProcessorProfile";
+    
+   set_pe_predicate([],_,[],Obj):-!;
+   set_pe_predicate([I|RI],[Vect|Rest],List,Obj):-
+       vector_element(Vect,1,Ans),
+       Ans = I,!,
+       vector_element(Vect,2,D),
+       List = [D|RL],
+       :get_contents(Obj!pred_pool,PredList),
+       set_pe_predicate(RI,PredList,RL,Obj);
+   set_pe_predicate([I|RI],[],List,Obj):-!,
+       List = [0|RL],
+       :get_contents(Obj!pred_pool,PredList),
+       set_pe_predicate(RI,PredList,RL,Obj);
+   set_pe_predicate([I|RI],[Vect|Rest],List,Obj):-
+       set_pe_predicate([I|RI],Rest,List,Obj);
+
+check_window_command(plot(View,s,From,N,Wid,Gid),Code):-!, fail;
+check_window_command(plot(View,rs,From,N,Wid,Gid),Code):-!, fail;
+check_window_command(plot(View,s,Wid,Gid),Code) :-!, fail;
+check_window_command(plot(View,rs,Wid,Gid),Code) :-!, fail ;
+check_window_command(plot(View,s,To,Wid,Gid),Code):-!, fail ;
+check_window_command(plot(View,rs,To,Wid,Gid),Code):-!, fail ;
+check_window_command(Code0,Code):-!,
+        Code = code(window,Code0);
+
+check_do_it_command(plot(View,s,From,N,Wid,Gid),Code):-!,
+        Code = code(do_it,plot(View,r,From,N,Wid,Gid));
+check_do_it_command(plot(View,rs,From,N,Wid,Gid),Code):-!,
+        Code = code(do_it,plot(View,r,From,N,Wid,Gid));
+check_do_it_command(plot(View,s,Wid,Gid),Code) :-!,
+        Code = code(do_it,plot(View,r,Wid,Gid));
+check_do_it_command(plot(View,rs,Wid,Gid),Code) :-!,
+        Code = code(do_it,plot(View,r,Wid,Gid));
+check_do_it_command(plot(View,s,To,Wid,Gid),Code):-!,
+        Code = code(do_it,plot(View,r,To,Wid,Gid));
+check_do_it_command(plot(View,rs,To,Wid,Gid),Code):-!,
+        Code = code(do_it,plot(View,r,To,Wid,Gid));
+check_do_it_command(Code0,Code):-!,
+        Code = code(do_it,Code0);
+
+       
+end. 

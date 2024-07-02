@@ -1,0 +1,130 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+pipereq_filter = -piperscstream(pipereq_command).
+%pipereq_filter = stream(pipereq_command).
+
+pipereq_command = aa_command & {
+        make( -piperscstream(pipe_cnt_command)#pipe_cnt)# ;
+        release( dev_mode(pipe_id)#, -status )# ;
+        create( dev_mode(pipe_id)# , -piperscstream(pipe_io_command)#pipe_io)#
+}.
+
+pipe_id_with_mode = pipe_id & dev_mode(pipe_id).
+
+dev_mode(p) = {
+        in(p) ;
+        out(p) ;
+        inter(p) ;
+        in_out(p) ;
+        in_inter(p) ;
+        out_inter(p) ;
+        in_out_inter(p)
+}.
+
+piperscstream(p) = {
+        normal(-stream(p)) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+pipe_cnt_command = aa_command & {
+    attach( -status, -detect# )# ;
+    get_id( -status(pipe_id#) )#
+}.
+
+pipe_io_command = aa_command & input_command & output_command
+    & stdio_special_command & common_command .
+
+detect = {
+    full ;
+    broken ;
+    closed ;
+    []
+}.
+
+pipe_id = atom.
+
+%%%%%%%%%%
+rscstream(p) = {
+        normal(-stream(p), -abort, attention) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+aa_command = {
+        reset(-status(-abort, attention# , msgid# ))# ;
+        next_attention( -status(attention))# ;
+        resend( msgid# , -status)# ;
+        cancel( msgid# , -status)#
+}.
+
+input_command = {
+        getb( blocksize# , -eofstatus(string))# ;
+        getb_noecho( blocksize# , -eofstatus(string))# ;
+        ungetb( string#ungetb , -status)# ;
+        prompt( string#prompt, -status)# 
+}.
+
+output_command = {
+        putb( string#put_data, -status)# ;
+        flush( -status)#
+}.
+
+common_command = {
+    get_attributes( -status(device_type#, list(device_attribute#)) )#
+}.
+
+device_type = atom.
+device_attribute = ground.
+
+stdio_special_command = {
+        switch( -status )# ;
+        am_I_there( -status)#
+}.
+
+status = {
+        normal ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+status(p) = {
+        normal(p) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+status(x,y) = {
+        normal(x,y) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+status(x,y,z) = {
+        normal(x,y,z) ;
+        abnormal ;
+        aborted ;
+        disconnected
+}.
+
+eofstatus(p) = {
+        normal(p) ;
+        abnormal ;
+        aborted ;
+        end_of_file ;
+        disconnected
+}.
+
+msgid = integer.
+abort = any.
+blocksize = integer.
+attention = {attention ; []}.

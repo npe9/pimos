@@ -1,0 +1,242 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module telnet_server.
+:- with_macro pimos.
+%:- public go/3, go/2.
+:- public go/1.
+
+
+%%
+%% toplevel
+%%
+
+%go(OK1,OK,Abort):- wait(OK1) | go(OK,Abort).
+
+%go(OK,Abort):- true |
+%    shoen:raise(pimos_tag#task,general_request,GR),
+%    stdio_server:go(GR,GROut),
+%    GROut=[register(telnet_server,{0,0,4},Result)|Next],
+%    init_server(Result,OK,Abort,Next).
+
+%go(Port):- integer(Port) |
+%    shoen:raise(pimos_tag#task,general_request,GR),
+%    stdio_server:go(GR,GROut),
+%    GROut=[register(telnet_server,{0,0,4},Result)|Next],
+%    init_server(Result,OK,Abort,Next,Port).
+
+%go(Port):- integer(Port) | go2([telnet(nil,nil,Port)]).
+go(FepList):- true |
+%go2(FepList):- true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    stdio_server:go(GR,GROut),
+    GROut=[register(telnet_server,{0,0,4},Result)],
+%    GROut=[register(telnet_test,{202,1,7},Result)],
+    init_server_multi(Result,FepList).
+
+
+%%
+%% init_server_multi
+%%
+init_server_multi(normal(RSt,RAb,_),FepList):- true |
+    pool:keyed_set(Pool),
+    init_server0(RSt,RAb,FepList,Pool).
+otherwise.
+init_server_multi(_,_):- true | true.
+
+
+init_server0(RSt,RAb,[],Pool):- true | wait_(RSt,RAb,Pool).
+init_server0(RSt,RAb,[telnet(Fep,Node,Port)|Next],Pool):- true |
+    shoen:raise(pimos_tag#task,general_request(Fep),GR),
+%    shoen:raise(pimos_tag#task,general_request,GR),
+    stdio_server:go(GR,GROut),
+    GROut=[socket(Res)],
+    init_server1(Res,RSt,RAb,Next,Pool,telnet(Fep,Node,Port)).
+
+
+init_server1(normal(SRD,_,_),RSt,RAb,FepList,Pool,telnet(Fep,Node,Port))
+:- true |
+    SRD=[listen({Port},5,Res)],
+    init_server2(Res,RSt,RAb,FepList,Pool,telnet(Fep,Node,Port)).
+otherwise.
+init_server1(_,RSt,RAb,FepList,Pool,telnet(Fep,Node,Port)):- true |
+    init_server0(RSt,RAb,FepList,Pool).
+
+
+init_server2(normal(SD,SAb,_),RSt,RAb,FepList,Pool,telnet(Fep,Node,Port))
+:- true |
+    SD=[set_option([reuseaddr,keepalive],Res)|NSD],
+    init_server3(Res,NSD,SAb,RSt,RAb,FepList,Pool,telnet(Fep,Node,Port)).
+otherwise.
+init_server2(_,RSt,RAb,FepList,Pool,telnet(Fep,Node,Port)):- true |
+    init_server0(RSt,RAb,FepList,Pool).
+
+
+init_server3(normal,SD,SAb,RSt,RAb,FepList,Pool,telnet(Fep,Node,Port))
+:- true |
+    SD=[receive_timeout(0,Res)|NSD],
+    init_server4(Res,NSD,SAb,RSt,RAb,FepList,Pool,telnet(Fep,Node,Port)).
+otherwise.
+init_server3(_,SD,SAb,RSt,RAb,FepList,Pool,telnet(Fep,Node,Port))
+:- true |
+    SD=[],SAb=abort,
+    init_server0(RSt,RAb,FepList,Pool).
+
+
+init_server4(normal,SD,SAb,RSt,RAb,FepList,Pool,telnet(Fep,Node,Port))
+:- true |
+%    Pool=[put(telnet(Fep,Node,Port),{SD,SAb},_)|NP],
+    Pool=[put(Fep,{SD,SAb},_)|NP],
+    init_server0(RSt,RAb,FepList,NP).
+otherwise.
+init_server4(_,SD,SAb,RSt,RAb,FepList,Pool,telnet(Fep,Node,Port))
+:- true |
+    SD=[],SAb=abort,
+    init_server0(RSt,RAb,FepList,Pool).
+
+
+
+%%
+%% wait_
+%%
+%  RSt  : register ==> normal(RSt,_,_)
+%  RAb  : register ==> normal(_,RAb,_)
+%  Pool : keyed_set => {SD,SAb} socket_device for telnet-server
+
+wait_(RSt,RAb,Pool):- true |
+    predicate_to_code(module#telnet_filter,telnet_filter,3,Code),
+    RSt=[get_request(Code,"telnet_server",Res)|RStN],
+    wait_1(Res,RStN,RAb,Pool,Code).
+
+
+wait_1(general_request(CS,Ab,At,_,FInfo,User),RSt,RAb,Pool,Code)
+:- true |
+    FInfo=[],
+    User=normal(In),
+    RSt=[get_request(Code,"telnet_server",Res)|RStN],
+    wait_1(Res,RStN,RAb,P2,Code),
+    merge({P1,P2},Pool),
+    wait_15(In,CS,Ab,At,P1,attention).
+otherwise.
+wait_1(_,RSt,RAb,Pool,Code):- true |
+    RSt=[],RAb=abort,
+    Pool=[get_all(List)],
+    close_server(List).
+
+
+wait_15(In,CS,Ab,At,Pool,RAt):- wait(At) |
+    CS=[],Ab=abort,Pool=[],RAt=attention.
+alternatively.
+wait_15([],CS,Ab,At,Pool,RAt):- true |
+    CS=[],Ab=abort,Pool=[],RAt=attention.
+wait_15([create({_,Fep},OutInfo)|InN],CS,Ab,At,Pool,RAt)
+:- true |
+    Pool=[do([get_if_any(Fep,Val)|NP])],
+    wait_17(Val,Fep,OutInfo,InN,CS,Ab,At,NP,RAt).
+%wait_15([create(_,OutInfo)|InN],CS,Ab,At,Pool,RAt)
+%:- true |
+%    Fep=0,
+%    Pool=[do([get_if_any(Fep,Val)|NP])],
+%    wait_17(Val,Fep,OutInfo,InN,CS,Ab,At,NP,RAt).
+
+%wait_15([create(telnet(Fep,Node,Port),OutInfo)|InN],CS,Ab,At,Pool,RAt)
+%:- true |
+%    Pool=[do([get_if_any(telnet(Fep,Node,Port),Val)|NP])],
+%    wait_17(Val,telnet(Fep,Node,Port),OutInfo,InN,CS,Ab,At,NP,RAt).
+%wait_15([create(_,OutInfo)|InN],CS,Ab,At,Pool,RAt)
+%:- true |
+%    Pool=[do([get_all([{telnet(Fep,Node,Port),Val}])|NP])],
+%    wait_17({Val},telnet(Fep,Node,Port),OutInfo,InN,CS,Ab,At,NP,RAt).
+%wait_15([create(_,OutInfo)|InN],CS,Ab,At,Pool,RAt)
+%:- true |
+%    Fep=0,Node=0,Port=23,
+%    Pool=[do([get_if_any(telnet(Fep,Node,Port),Val)|NP])],
+%    wait_17(Val,telnet(Fep,Node,Port),OutInfo,InN,CS,Ab,At,NP,RAt).
+%%%%%%%%%%%%%
+% almost nop
+%%%%%%%%%%%%%
+wait_15([reset(Ret)|InN],CS,Ab,At,Pool,RAt)
+:- true |
+    RAt=attention,
+    Ret=normal(NewAb,NewAt,1),
+    wait_15(InN,CS,Ab,At,Pool,NewAt).
+wait_15([next_attention(Ret)|InN],CS,Ab,At,Pool,RAt)
+:- true |
+    RAt=attention,
+    Ret=normal(NewAt),
+    wait_15(InN,CS,Ab,At,Pool,NewAt).
+wait_15([resend(_,Ret)|InN],CS,Ab,At,Pool,RAt)
+:- true |
+    Ret=normal,
+    wait_15(InN,CS,Ab,At,Pool,RAt).
+wait_15([cancel(_,Ret)|InN],CS,Ab,At,Pool,RAt)
+:- true |
+    Ret=normal,
+    wait_15(InN,CS,Ab,At,Pool,RAt).
+
+
+%wait_17({},telnet(Fep,Node,Port),OutInfo,In,CS,Ab,At,NP,RAt)
+wait_17({},Fep,OutInfo,In,CS,Ab,At,NP,RAt)
+:- true |
+    NP=[],
+    OutInfo=abnormal,
+    CS=[],Ab=abort,
+    wait_16(In,At,RAt).
+%wait_17({{SD,SAb}},telnet(Fep,Node,Port),OutInfo,In,CS,Ab,At,NP,RAt)
+wait_17({{SD,SAb}},Fep,OutInfo,In,CS,Ab,At,NP,RAt)
+:- true |
+    SD=[accept(Res)|NSD],
+%    NP=[put(telnet(Fep,Node,Port),{NSD,SAb},_)],
+    NP=[put(Fep,{NSD,SAb},_)],
+    wait_2(OutInfo,Res,In,CS,Ab,At,RAt).
+
+
+
+wait_2(OutInfo,normal(Add,Stream,_,_),In,CS,Ab,At,RAt):- wait(Add) |
+    OutInfo=normal(IO),
+    wait_16(In,At,RAt),
+    CS=[add_resource(telnet,connect,Result)|CSN],
+    wait_add_resource(Result),
+    telnet_session:session(IO,Add,Stream,CSN,Ab,At,Abort,Options),
+    pool:keyed_set([put(1,on,_),put(3,on,_)|Options]).
+otherwise.
+wait_2(OutInfo,_,In,CS,Ab,At,RAt):- true |
+    OutInfo=abnormal,
+    CS=[],Ab=abort,
+    wait_16(In,At,RAt).
+
+
+wait_add_resource(normal(CS,_)):- true | CS=[].
+otherwise.
+wait_add_resource(_):- true | true.
+
+
+close_server([]):- true | true.
+%close_server([{telnet(Fep,Node,Port),{SD,SAb}}|Next]):- true |
+close_server([{Fep,{SD,SAb}}|Next]):- true |
+    SD=[],SAb=abort,
+    close_server(Next).
+
+
+wait_16(_,At,RAt):- wait(At) | RAt=attention.
+alternatively.
+wait_16([],At,RAt):- true | RAt=attention.
+wait_16([create(_,OutInfo)|InN],At,RAt):- true |
+    OutInfo=abnormal,
+    wait_16(InN,At,RAt).
+wait_16([reset(Res)|InN],At,RAt):- true |
+    Res=abnormal,
+    wait_16(InN,At,RAt).
+wait_16([next_attention(Res)|InN],At,RAt):- true |
+    Res=abnormal,
+    wait_16(InN,At,RAt).
+wait_16([resend(_,Res)|InN],At,RAt):- true |
+    Res=abnormal,
+    wait_16(InN,At,RAt).
+wait_16([cancel(_,Res)|InN],At,RAt):- true |
+    Res=abnormal,
+    wait_16(InN,At,RAt).

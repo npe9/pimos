@@ -1,0 +1,682 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module profiler_data_mgr.
+:- public go/2.
+
+
+    go([],Dev):- true | Dev = [].
+    go([{ViewMode,_,_,[],Result,PE,SPE}|InStream],Dev):- true |
+        Result = "normal",
+        go(InStream,Dev).
+    go([color(Color)|InStream],Dev):- true |
+       Dev = [send(color(Color),Ans)|Dev1],
+       go(InStream,Dev1).
+    go([home(Dir)|InStream],Dev):- true |
+       Dev = [send(window_init(Dir),Ans)|Dev1],
+       go(InStream,Dev1).
+    go([set_what_items(GoalList,VM,PE,Cycle,ExecTime)|InStream],Dev):- true |
+       Dev = [send(set_what_items(GoalList,VM,PE,Cycle,ExecTime),Ans)|Dev1],
+       go(InStream,Dev1).
+    go([add_history_items(GoalList)|InStream],Dev):- true |
+       Dev = [send(add_history_items(GoalList),Ans)|Dev1],
+       go(InStream,Dev1).
+    go([set_history_item(Goal)|InStream],Dev):- true |
+       Dev = [send(set_history_item(Goal),Ans)|Dev1],
+       go(InStream,Dev1).
+    go([loaded(Flag)|InStream],Dev):- true |
+       Dev = [send(loaded(Flag),Ans)|Dev1],
+       go(InStream,Dev1).
+    go([saved(Flag)|InStream],Dev):- true |
+       Dev = [send(saved(Flag),Ans)|Dev1],
+       go(InStream,Dev1).
+    go([act(Int,Red,Info,Result,PE,SPE)|InStream],Dev):- wait(Red) |
+       Dev = [send(view_mode(act),Ans)|Dev1],
+       act_data_manager:go([act(Red,Info,Result,PE,SPE)|InStream],InStream1,Dev1,Dev2),
+       go(InStream1,Dev2).
+  otherwise.
+  
+    go([{ViewMode,Int,Ci,Profile,Result,PE,SPE}|InStream],Dev):- wait(Ci) |
+        make_WhenxWhere(Profile,PE,SPE,Ci,WhenWhere,R1),
+        make_What(ViewMode,Profile,PE,SPE,Ci,R_WhatWhere,S_WhatWhere,R_WhatWhen,S_WhatWhen,R2),
+        end_check(Result,R1,R2),
+        handler(Req,PE,SPE,Ci,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode),
+        Dev = [send(view_mode(ViewMode),Ans),send(goal_name(Int),Ans2)|Dev1],
+        go1(InStream,Ci,PE,SPE,Profile,Req,Dev1).
+    go([read_code(Code)|InStream],Dev):- true |
+        Dev = [send(read_code,Ans)|Dev1],
+        check_read(Ans,Result,Code,InStream,Dev1).
+    go([command(Term,In,In1)|InStream],Dev):- true |
+        In = In1,
+        go(InStream,Dev).
+  otherwise.
+    go([_UnKnown|InStream],Dev):- true |
+        go(InStream,Dev).
+
+    go1([],Ci,PE,SPE,Profile,Req,Dev):- true | Req = [], Dev = [].
+    go1([command(Term,In,In1)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+      profiler_view_mgr:command(Term,PE,Req,Req1,In,In1,Dev,Dev1),
+      go1(InStream,Ci,PE,SPE,Profile,Req1,Dev1).
+    go1([predicate(PredList)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+      Req = [predicate(PredList)|Req1],
+      go1(InStream,Ci,PE,SPE,Profile,Req1,Dev).
+    go1([total(RTotal,STotal)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+      Req = [total(RTotal,STotal)|Req1],
+      go1(InStream,Ci,PE,SPE,Profile,Req1,Dev).
+    go1([act(Int,Red,Info,Result,PE0,SPE0)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+      Req = [],
+      go([act(Int,Red,Info,Result,PE0,SPE0)|InStream],Dev).
+ otherwise. 
+   go1([{ViewMode,Int,C,P,Result,PE0,SPE0}|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+      Req = [],
+      go([{ViewMode,Int,C,P,Result,PE0,SPE0}|InStream],Dev).
+    go1([{ViewMode,[],Result}|InStream],Ci,PE,SPE,Profile,Req,Dev):- true|
+        Result = "normal",
+        go1(InStream,Ci,PE,SPE,Profile,Req,Dev).
+    go1([{ViewMode,all,Result}|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+        Result = "normal",
+        go1(InStream,Ci,PE,SPE,Profile,Req,Dev).
+    go1([{ViewMode,WhatList,Result}|InStream],Ci,PE,SPE,Profile,Req,Dev):- list(WhatList) |
+        remake_goal(WhatList,Profile,NewProfile),
+        make_WhenxWhere(NewProfile,PE,SPE,Ci,WhenWhere,R1),
+        make_What(ViewMode,NewProfile,PE,SPE,Ci,R_WhatWhere,S_WhatWhere,R_WhatWhen,S_WhatWhen,R2),
+        end_check(Result,R1,R2),
+        handler(NewReq,PE,SPE,Ci,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode),
+        go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev).
+    go1([read_code(Code)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+       Dev = [send(read_code,Ans)|Dev1],
+       check_read1(Ans,Result,Code,InStream,Ci,PE,SPE,Profile,Req,Dev1).
+    go1([set_what_items(GoalList,VM,PE0,Cycle,ExecTime)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+       Dev = [send(set_what_items(GoalList,VM,PE0,Cycle,ExecTime),Ans)|Dev1],
+       go1(InStream,Ci,PE,SPE,Profile,Req,Dev1).
+    go1([add_history_items(GoalList)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+       Dev = [send(add_history_items(GoalList),Ans)|Dev1],
+       go1(InStream,Ci,PE,SPE,Profile,Req,Dev1).
+    go1([add_history_item(Goal)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+       Dev = [send(add_history_item(Goal),Ans)|Dev1],
+       go1(InStream,Ci,PE,SPE,Profile,Req,Dev1).
+    go1([set_history_item(Goal)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+       Dev = [send(set_history_item(Goal),Ans)|Dev1],
+       go1(InStream,Ci,PE,SPE,Profile,Req,Dev1).
+    go1([loaded(Flag)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+       Dev = [send(loaded(Flag),Ans)|Dev1],
+       go1(InStream,Ci,PE,SPE,Profile,Req,Dev1).
+    go1([saved(Flag)|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+       Dev = [send(saved(Flag),Ans)|Dev1],
+       go1(InStream,Ci,PE,SPE,Profile,Req,Dev1).
+  otherwise.
+    go1([_UnKnown|InStream],Ci,PE,SPE,Profile,Req,Dev):- true |
+        go1(InStream,Ci,PE,SPE,Profile,Req,Dev).
+
+    go2([],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true | Req = [], NewReq = [], Dev = [].
+    go2([command(Term,In,In1)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+      profiler_view_mgr:command(Term,PE,NewReq,Req1,In,In1,Dev,Dev1),
+      go2(InStream,Ci,PE,SPE,Profile,Req,Req1,Dev1).
+    go2([predicate(PredList)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+      NewReq = [predicate(PredList)|Req1],
+      go2(InStream,Ci,PE,SPE,Profile,Req,Req1,Dev).
+    go2([total(RTotal,STotal)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+      NewReq = [total(RTotal,STotal)|Req1],
+      go2(InStream,Ci,PE,SPE,Profile,Req,Req1,Dev).
+    go2([act(Int,Red,Info,Result,PE0,SPE0)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+      NewReq = [],
+      Req = [],
+      go([act(Int,Red,Info,Result,PE0,SPE0)|InStream],Dev).
+ otherwise.
+    go2([{ViewMode,Int,C,P,Result,PE0,SPE0}|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+      NewReq = [],
+      Req = [],
+      go([{ViewMode,Int,C,P,Result,PE0,SPE0}|InStream],Dev).
+    go2([{ViewMode,[],Result}|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+        Result = "normal",
+        go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev).
+    go2([{ViewMode,all,Result}|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+        NewReq = [],
+        go1([{ViewMode,all,Result}|InStream],Ci,PE,SPE,Profile,Req,Dev).
+    go2([{ViewMode,WhatList,Result}|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- list(WhatList) |
+        NewReq = [],
+        go1([{ViewMode,WhatList,Result}|InStream],Ci,PE,SPE,Profile,Req,Dev).
+    go2([read_code(Code)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+       Dev = [send(read_code,Ans)|Dev1],
+       check_read2(Ans,Result,Code,InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev1).
+    go2([set_what_items(GoalList,VM,PE0,Cycle,ExecTime)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+       Dev = [send(set_what_items(GoalList,VM,PE0,Cycle,ExecTime),Ans)|Dev1],
+       go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev1).
+    go2([add_history_items(GoalList)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+       Dev = [send(add_history_items(GoalList),Ans)|Dev1],
+       go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev1).
+    go2([add_history_item(Goal)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+       Dev = [send(add_history_item(Goal),Ans)|Dev1],
+       go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev1).
+    go2([set_history_item(Goal)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+       Dev = [send(set_history_item(Goal),Ans)|Dev1],
+       go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev1).
+    go2([loaded(Flag)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+       Dev = [send(loaded(Flag),Ans)|Dev1],
+       go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev1).
+    go2([saved(Flag)|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+       Dev = [send(saved(Flag),Ans)|Dev1],
+       go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev1).
+  otherwise.
+    go2([_UnKnown|InStream],Ci,PE,SPE,Profile,Req,NewReq,Dev):- true |
+        go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev).
+
+    end_check(Result,R1,R2):- true |
+      merge({R1,R2},R),
+      end_check(R,Result).
+
+    end_check(R,Result):- wait(R)|
+      Result = "normal".
+
+    check_read(Ans,Result,Code,InStream,Dev):- Ans = normal(CodeA)|
+      Code = CodeA,
+      Result = "normal",
+      go(InStream,Dev).
+    check_read1(Ans,Result,Code,InStream,Ci,PE,SPE,Profile,Req,Dev):- Ans = normal(CodeA)|
+      Code = CodeA,
+      Result = "normal",
+      go1(InStream,Ci,PE,SPE,Profile,Req,Dev).
+    check_read2(Ans,Result,Code,InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev):- Ans = normal(CodeA)|
+      Code = CodeA,
+      Result = "normal",
+      go2(InStream,Ci,PE,SPE,Profile,Req,NewReq,Dev).
+ 
+%%%%%%% set DATA %%%%%%%    
+    remake_goal(WhatL,[],Profile):- true|
+        Profile = [].
+    remake_goal(WhatL,[profile(C,[])|RP0],Profile):- true |
+        Profile = [profile(C,[])|RP],
+        remake_goal(WhatL,RP0,RP).
+ otherwise. 
+    remake_goal(WhatL,[profile(C,Data)|RP0],Profile):- list(Data)|
+        remake(WhatL,Data,NewData),
+        Profile = [profile(C,NewData)|RP],
+        remake_goal(WhatL,RP0,RP).
+
+    remake(WhatList,[],NewData):- true |
+        NewData = [].
+    remake(WhatList,[pe(C_PE,PredList)|RPred],NewData):- true |
+        remake_what(WhatList,PredList,NewPredList),
+        check_remake_list(NewPredList,NewData,C_PE,NewR),
+        remake(WhatList,RPred,NewR).
+
+    check_remake_list(NewPredList,NewData,C_PE,NewR):-
+        wait(NewPredList)|
+        ( NewPredList = [] -> NewData = NewR ;
+          list(NewPredList) -> 
+          NewData = [pe(C_PE,NewPredList)|NewR] ).
+    
+    remake_what(WhatList,[],NewPredList):- true |
+        NewPredList = [].
+    remake_what(WhatList,[{Pred,R,S}|PredR],NewPredList):- true |
+        match(WhatList,Pred,Ans),
+        ( Ans = no -> NewPredList = RNewP ;
+          Ans = yes -> NewPredList = [{Pred,R,S}|RNewP]),
+        remake_what(WhatList,PredR,RNewP).
+
+    match([],Pred,Ans):- true |
+        Ans = no.
+    match([Pred|R],Pred,Ans):- true |
+        Ans = yes.
+ otherwise. 
+    match([What|R],Pred,Ans):- true |
+        match(R,Pred,Ans).
+          
+%%%%%%% make data %%%%%
+
+    make_WhenxWhere([],PE,SPE,Ci,When_Where_Set,R1):- true|
+        When_Where_Set=[],R1=[].
+    make_WhenxWhere([profile(C,[])|R],PE,SPE,Ci,When_Where_Set,R1):-true|
+        N:=4+2*PE,
+        new_vector(NewV,N),
+%        set_vector_element(NewV,0,_,Start,NewV1),
+%        set_vector_element(NewV1,1,_,End,NewV2),
+        When_Where_Set=[{C,NewV}|WhenWhere],
+        make_WhenxWhere(R,PE,SPE,Ci,WhenWhere,R1).
+  otherwise.
+    make_WhenxWhere([profile(C,Data)|R],PE,SPE,Ci,When_Where_Set,R1):-
+        list(Data) |
+        N:=4+2*PE,
+        new_vector(NewV,N),
+%        vector_element(Term,1,Start,_),
+%        vector_element(Term,2,End,_),
+%        set_vector_element(NewV,0,_,Start,NewV1),
+%        set_vector_element(NewV1,1,_,End,NewV2),
+        cal(Data,NewV,NewVect,PE,SPE,Ci,C),
+        When_Where_Set=[{C,NewVect}|WhenWhere],
+        make_WhenxWhere(R,PE,SPE,Ci,WhenWhere,R1).
+
+   cal([],V,NewV,PE,SPE,AllC,C):-
+        true |V=NewV.
+   cal([pe(RC_PE,[])|R],V,NewV,PE,SPE,AllC,C):- true |
+        cal(R,V,NewV,PE,SPE,AllC,C).
+   cal([pe(RC_PE,PredList)|R],V,NewV,PE,SPE,AllC,C):- 
+        list(PredList)|
+        pred_sum(PredList,0,0,PE,RC_PE,SPE,AllC,C,V,V2),
+        cal(R,V2,NewV,PE,SPE,AllC,C).
+
+   pred_sum([],RCount,SCount,PE,RC_PE,SPE,AllC,C,V,NewVector):-true |
+        C_PE := RC_PE-SPE,
+        Po:=4+2*C_PE,
+        R := RCount+AllR,
+        S := SCount+AllS,
+        set_vector_element(V,Po,_,RCount,V2),
+        Po2 := Po+1,
+        set_vector_element(V2,Po2,_,SCount,V3),
+        vector_element(V3,2,AllR,V4),
+        vector_element(V4,3,AllS,V5),
+        set_vector_element(V5,2,_,R,V6),
+        set_vector_element(V6,3,_,S,NewVector).
+  otherwise.
+    pred_sum([{PredNum,R,S}|Next],RCount,SCount,PE,RC_PE,SPE,AllC,C,V,NewVector):- true |
+        NewR:=RCount+R,
+        NewS:=SCount+S,
+        Cycle := C-1,
+        pred_sum(Next,NewR,NewS,PE,RC_PE,SPE,AllC,C,V,NewVector).
+
+
+    make_What(ViewMode,Profile,PE,SPE,Ci,R_WhatWhere,S_WhatWhere,R_WhatWhen,S_WhatWhen,R1):- true |
+        pool:keyed_set(Pre_Set,10),
+        set_pred(Profile,PE,SPE,Ci,Pre_Set,[get_all(Pre)]),
+        sort(ViewMode,Pre,r,R_WhatWhere,R_WhatWhen,R2),
+        sort(ViewMode,Pre,s,S_WhatWhere,S_WhatWhen,R3),
+        merge({R2,R3},R1).
+
+    set_pred([],PE,SPE,Ci,PredSet,PredL):- true|
+        PredSet=PredL.
+    set_pred([profile(C,[])|R],PE,SPE,Ci,PredSet,PredL):-true|
+        set_pred(R,PE,SPE,Ci,PredSet,PredL).
+    set_pred([profile(C,Data)|R],PE,SPE,Ci,PredSet,PredL):-list(Data) |
+        cal_predicate(Data,PE,SPE,Ci,C,PredSet,PP),
+        set_pred(R,PE,SPE,Ci,PP,PredL).
+ 
+   cal_predicate([],PE,SPE,AllC,C,PredSet,PredL):- true |
+        PredL=PredSet.
+   cal_predicate([pe(RC_PE,[])|R],PE,SPE,AllC,C,PredSet,PredL):- true |
+        cal_predicate(R,PE,SPE,AllC,C,PredSet,PredL).
+   cal_predicate([pe(RC_PE,PredList)|R],PE,SPE,AllC,C,PredSet,PredL):- list(PredList) |
+        pred_sum(PredList,PE,RC_PE,SPE,AllC,C,PredSet,PP),
+        cal_predicate(R,PE,SPE,AllC,C,PP,PredL).
+
+   pred_sum([],PE,RC_PE,SPE,AllC,C,PredSet,PredL):-true |
+        PredL=PredSet.
+  otherwise.
+   pred_sum([{PredNum,R,S}|Next],PE,RC_PE,SPE,AllC,C,PredSet,PredL):- true |
+        cal_pred(PredNum,R,S,RC_PE,PE,SPE,Cycle,AllC,PredSet,PP),
+        Cycle := C-1,
+        pred_sum(Next,PE,RC_PE,SPE,AllC,C,PP,PredL).
+
+    cal_pred(Pred,R,S,RC_PE,PE,SPE,Cycle,AllC,Pre_Set,P):- true|
+        Pre_Set=[get_if_any(Pred,Vect),put(Pred,NewVect,_)|P],
+        set_value(Vect,R,S,RC_PE,PE,SPE,Cycle,AllC,NewVect).
+
+    set_value({},R,S,RC_PE,PE,SPE,Cycle,AllC,Data):- true | 
+        N := 2 + 2*PE,
+        C_PE := RC_PE-SPE,
+        Pos := 2 + 2*C_PE,
+        new_vector(NewV,N),
+        set_vector_element(NewV,0,_,R,NewV1),
+        set_vector_element(NewV1,1,_,S,NewV2),
+        set_vector_element(NewV2,Pos,_,R,NewV3),
+        Pos2 := Pos + 1,
+        set_vector_element(NewV3,Pos2,_,S,NewVect),
+        CN := 2 + 2*AllC,
+        CPos := 2 + 2*Cycle,
+        new_vector(NewVC,CN),
+        set_vector_element(NewVC,0,_,R,NewVC1),
+        set_vector_element(NewVC1,1,_,S,NewVC2),
+        set_vector_element(NewVC2,CPos,_,R,NewVC3),
+        CPos2 := CPos + 1,
+        set_vector_element(NewVC3,CPos2,_,S,CNewVect),
+        Data = {NewVect,CNewVect}.
+    set_value({{V,CV}},R,S,RC_PE,PE,SPE,Cycle,AllC,Data):- true | 
+        N := 2 + 2*PE,
+        C_PE := RC_PE-SPE,
+        Pos := 2 + 2*C_PE,
+        vector_element(V,0,AllR0,V1),
+        vector_element(V1,1,AllS0,V2),
+        AllR := AllR0+R,
+        AllS := AllS0+S,
+        vector_element(V2,Pos,R0,V3),
+        Pos2 := Pos+1,
+        vector_element(V3,Pos2,S0,V4),
+        NewR := R0+R,
+        NewS := S0+S,
+        set_vector_element(V4,0,_,AllR,V5),
+        set_vector_element(V5,1,_,AllS,V6),
+        set_vector_element(V6,Pos,_,NewR,V7),
+        set_vector_element(V7,Pos2,_,NewS,NewVect),
+        CN := 2 + 2*AllC,
+        CPos := 2 + 2*Cycle,
+        vector_element(CV,0,CAllR0,CV1),
+        vector_element(CV1,1,CAllS0,CV2),
+        CAllR := CAllR0+R,
+        CAllS := CAllS0+S,
+        vector_element(CV2,CPos,CR0,CV3),
+        CPos2 := CPos+1,
+        vector_element(CV3,CPos2,CS0,CV4),
+        CNewR := CR0+R,
+        CNewS := CS0+S,
+        set_vector_element(CV4,0,_,CAllR,CV5),
+        set_vector_element(CV5,1,_,CAllS,CV6),
+        set_vector_element(CV6,CPos,_,CNewR,CV7),
+        set_vector_element(CV7,CPos2,_,CNewS,CNewVect),
+        Data = {NewVect,CNewVect}.
+ 
+%%%%%% sort %%%%%%
+ 
+   sort(pe,WhatWhere,Type,V,V2,R):-  true |
+     sort1(WhatWhere,V,[],V2,[],R).
+otherwise.
+   sort(ViewMode,WhatWhere,Type,V,V2,R):-  true |
+     qsort(WhatWhere,Type,V,[],V2,[],R).
+
+
+   sort1([{Pred,{Vect,Vect2}}|RV],V,VV,V2,VV2,Result):- true |
+     Vs = [{Pred,Vect}|VV] ,
+     Vs2 = [{Pred,Vect2}|VV2],
+     sort1(RV,V,Vs,V2,Vs2,Result).
+   sort1([],V,VV,V2,VV2,Result):- true |
+     V = VV ,
+     V2 = VV2,
+     Result = [].
+
+  qsort([],Type,V,NV,V2,NV2,R):- true |
+     V=NV , V2=NV2, R = [].
+  otherwise.
+   qsort([{Pred,{Vect,Vect2}}|RV],Type,V,NV,V2,NV2,Result):- true |
+    ( Type = r -> Po := 0 ;
+      Type = s -> Po := 1 ),
+     vector_element(Vect,Po,Data,Vect1),
+     part(RV,Data,Type,S,L),
+     qsort(S,Type,V,[{Pred,Vect}|Vs],V2,[{Pred,Vect2}|Vs2],Result1),
+     qsort(L,Type,Vs,NV,Vs2,NV2,Result2),
+     merge({Result1,Result2},Result).
+ 
+   part([],_,_,S,L):- true |
+     S = [], L = [].
+ otherwise. 
+   part([{Pred,{Vect,Vect2}}|Xs],X,Type,S,L0):- true |
+    ( Type = r -> Po := 0 ;
+      Type = s -> Po := 1 ),
+     vector_element(Vect,Po,Data,Vect1),
+     part1(Data,X,Type,Xs,S,L0,Pred,Vect1,Vect2).
+
+   part1(Data,X,Type,Xs,S,L0,Pred,Vect,Vect2):-
+     X >= Data |
+     L0 = [{Pred,{Vect,Vect2}}|L1],
+     part(Xs,X,Type,S,L1).
+   part1(Data,X,Type,Xs,S0,L,Pred,Vect,Vect2):-
+     X < Data |
+     S0 = [{Pred,{Vect,Vect2}}|S1],
+     part(Xs,X,Type,S1,L).
+
+
+%%%%%%% handler %%%%%%%%
+   handler([get(when_where,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        V=WhenWhere,
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+   handler([get(what_when,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        V=WhatWhen,
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+   handler([get(what_where,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        V=WhatWhere,
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+
+   handler([get(when_where,Type,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+       ( Type=r -> Po:=4;
+         Type=s -> Po:=5 ),
+        make_set(WhenWhere,Po,PE,V),
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+   handler([get(what_when,Type,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        ( Type=r -> V0 = R_WhatWhen, Po:=0 ;
+          Type=s -> V0 = S_WhatWhen, Po:=1 ),
+        make_set(V0,Po,Cy,V),
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+   handler([get(what_where,Type,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        ( Type=r -> V0 = R_WhatWhere, Po:=0 ;
+          Type=s -> V0 = S_WhatWhere, Po:=1 ),
+        make_set(V0,Po,PE,V),
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+
+   handler([max(N,what_when,Type,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        ( Type=r -> V0 = R_WhatWhen ;
+          Type=s -> V0 = S_WhatWhen ),
+        max(V0,0,N,V),
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+   handler([max(N,what_where,Type,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        ( Type=r -> V0 = R_WhatWhere ;
+          Type=s -> V0 = S_WhatWhere ),
+        max(V0,0,N,V),
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+
+   handler([max_and_else(N,what_when,Type,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        ( Type=r , R_WhatWhen = [] -> V0 = [];
+          Type=s , S_WhatWhen = [] -> V0 = [];
+          otherwise;
+          Type=r -> V0 = R_WhatWhen,
+                    V0 = [{Pred,Vect}|NextV],
+                    vector(Vect,Size,_);
+          Type=s -> V0 = S_WhatWhen,
+                    V0 = [{Pred,Vect}|NextV],
+                    vector(Vect,Size,_) ),
+        max_and_else(ViewMode,what_when,V0,0,N,V,Size),
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+   handler([max_and_else(N,what_where,Type,V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        ( Type=r , R_WhatWhere = [] -> V0 = [];
+          Type=s , S_WhatWhere = [] -> V0 = [];
+          otherwise;
+          Type=r -> V0 = R_WhatWhere,
+                    V0 = [{Pred,Vect}|NextV],
+                    vector(Vect,Size,_);
+          Type=s -> V0 = S_WhatWhere,
+                    V0 = [{Pred,Vect}|NextV],
+                    vector(Vect,Size,_) ),
+        max_and_else(ViewMode,what_where,V0,0,N,V,Size),
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+
+   handler([total(R,S)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+      V0 = R_WhatWhen,
+      cal_total(V0,0,0,R,0,S),
+      handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+
+   handler([predicate(V)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+      V0 = R_WhatWhen,
+      make_predicate_list(V0,V),
+      handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+
+   handler([pe(Num)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        Num = PE ,
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+
+   handler([start_pe(Num)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        Num = SPE ,
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+
+   handler([cy(Num)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        Num = Cy ,
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+    handler([view(View)|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+        View = ViewMode ,
+        handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+ 
+  handler([],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true | true .
+
+ otherwise. 
+
+  handler([UnKnown|Req],PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode):- true |
+       handler(Req,PE,SPE,Cy,WhenWhere,R_WhatWhen,S_WhatWhen,R_WhatWhere,S_WhatWhere,ViewMode).
+
+%%%%%%%
+   make_pe_cy(WhenWhere,V,PE,MaxPE,Cy):- PE=MaxPE |
+        V = [].
+ otherwise.
+   make_pe_cy(WhenWhere,V,PE,MaxPE,Cy):- true |
+        L := Cy*2,
+        new_vector(Vect,L),
+        set_vect(WhenWhere,PE,0,Vect,NewVect),
+        V = [{PE,NewVect}|V1],
+        Next := PE+1,
+        make_pe_cy(WhenWhere,V1,Next,MaxPE,Cy).
+
+   set_vect([],PE,P,Vect,NewVect):- true |
+        NewVect=Vect.
+  otherwise.
+   set_vect([{Ci,V}|RV],PE,P,Vect,NewVect):- true |
+        Pos := 4+PE*2,
+        Pos2 := Pos+1,
+        vector_element(V,Pos,R,_),
+        vector_element(V,Pos2,S,_),
+        set_vector_element(Vect,P,_,R,Vect1),
+        P2 := P+1,
+        set_vector_element(Vect1,P2,_,S,Vect2),
+        Next := P2+1,
+        set_vect(RV,PE,Next,Vect2,NewVect).
+
+   make_pe_cy(Type,WhenWhere,V,PE,MaxPE,Cy):- PE=MaxPE |
+        V = [].
+ otherwise.
+   make_pe_cy(Type,WhenWhere,V,PE,MaxPE,Cy):- true |
+        new_vector(Vect,Cy),
+        set_vect(Type,WhenWhere,PE,0,Vect,NewVect),
+        V = [{PE,NewVect}|V1],
+        Next := PE+1,
+        make_pe_cy(Type,WhenWhere,V1,Next,MaxPE,Cy).
+
+   set_vect(Type,[],PE,P,Vect,NewVect):- true |
+        NewVect=Vect.
+  otherwise.
+   set_vect(Type,[{Ci,V}|RV],PE,P,Vect,NewVect):- true |
+        ( Type = r -> Pos := 4+PE*2;
+          Type = s-> Pos := 4+PE*2+1 ),
+        vector_element(V,Pos,Data,_),
+        set_vector_element(Vect,P,_,Data,Vect1),
+        P2 := P+1,
+        set_vect(Type,RV,PE,P2,Vect1,NewVect).
+
+   make_set([],C,N,V):- true |
+        V = [].
+  otherwise.
+   make_set([{Key,Vect}|RV],C,N,V):- true |
+        new_vector(NewVect0,N),
+        V = [{Key,NewVect}|NextV],
+        set(C,Vect,0,N,NewVect0,NewVect),
+        make_set(RV,C,N,NextV).
+
+   set(C,Vect,Count,N,NewVect0,NewVect):- Count=N |
+        NewVect=NewVect0.
+  otherwise.
+   set(C,Vect,Count,N,NewVect0,NewVect):- true |
+        vector_element(Vect,C,Data,Vect1),
+        set_vector_element(NewVect0,Count,_,Data,NewVect1),
+        NextC := C+2,
+        NextCount := Count+1,
+        set(NextC,Vect1,NextCount,N,NewVect1,NewVect).
+
+  max(V0,N,N,V1):- true |
+     V1 = [].
+  max([],N,M,V1):- true |
+     V1 = [].
+ otherwise.
+  max(V0,C,N,V1):- true |
+    V0 = [X|R],
+    V1 = [X|V2],
+    Next := C + 1,
+    max(R,Next,N,V2).
+
+  pred([],V0,V1):- true |
+     V1 = [].
+ otherwise.
+  pred([Pred|R],V0,V1):- true |
+    get_pred(V0,Pred,V1,V2),
+    pred(R,V0,V2).
+
+  get_pred([{Pred,Vect}|R],Pred,V1,V2):- true |
+    V1 = [{Pred,Vect}|V2].
+  get_pred([],Pred,V1,V2):- true |
+    V1 = V2.
+ otherwise.
+  get_pred([Data|R],Pred,V1,V2):- true |
+    get_pred(R,Pred,V1,V2).
+
+  get_mod(P,C,N,[],V1):- true |
+    V1 = [].
+  get_mod(P,N,N,R,V1):- true |
+    V1 = [].
+ otherwise.
+  get_mod(PackageModule,C,N,[{{:,PackageModule,Pred},Vect}|R],V1):- true |
+    V1 = [{{:,PackageModule,Pred},Vect}|V],
+    C1 := C+1,
+    get_mod(PackageModule,C1,N,R,V).
+ otherwise.
+  get_mod(M,C,N,[Data|R],V1):- true |
+    get_mod(M,C,N,R,V1).
+
+  get_pack(Pack,N,N,R,V1):- true |
+    V1 = [].
+  get_pack(Pack,C,N,[],V1):- true |
+    V1 = [].
+ otherwise.
+  get_pack(Package,C,N,[{{:,{::,Package,Module},Pred},Vect}|R],V1):- true |
+    V1 = [{{:,{::,Package,Module},Pred},Vect}|V],
+    C1 := C + 1,
+    get_pack(Package,C1,N,R,V).
+ otherwise.
+  get_pack(P,C,N,[Data|R],V1):- true |
+    get_pack(P,C,N,R,V1).
+
+  max_and_else(ViewMode,Type,[],N,M,V1,Size):- true |
+    V1 = [].
+ otherwise.
+  max_and_else(ViewMode,Type,V0,N,N,V1,Size):- true |
+    new_vector(NewVect,Size),
+    sum_else(ViewMode,Type,V0,NewVect,ElseVect),
+    V1 = [{0,ElseVect}].
+ otherwise.
+  max_and_else(ViewMode,Type,V0,C,N,V1,Size):- true |
+    V0 = [X|R],
+    V1 = [X|V2],
+    Next := C + 1,
+    max_and_else(ViewMode,Type,R,Next,N,V2,Size).
+
+  sum_else(ViewMode,Type,[],EVect,ElseVect):- true |
+    ElseVect = EVect.
+ otherwise.     
+  sum_else(ViewMode,Type,[{Pred,Vect}|R],EVect,ElseVect):- vector(Vect,N) |
+    sum(ViewMode,Type,0,N,Vect,EVect,NewVect),
+    sum_else(ViewMode,Type,R,NewVect,ElseVect).
+
+  sum(ViewMode,Type,N,N,Vect,EVect,ElseV):- true |
+    ElseV = EVect. 
+ otherwise.     
+  sum(ViewMode,Type,C,N,Vect,EVect,ElseV):- true |
+    vector_element(Vect,C,Data,Vect1),
+    vector_element(EVect,C,Data0,EVect1),
+    NewData := Data + Data0,
+    set_vector_element(EVect1,C,_,NewData,EVect2),
+    C1 := C+1,
+    sum(ViewMode,Type,C1,N,Vect1,EVect2,ElseV).
+
+  cal_total([],Po,RCount,RAll,SCount,SAll):- true |
+    RAll = RCount,
+    SAll = SCount.
+  cal_total([{Pred,Vect}|R],Po,RCount,RAll,SCount,SAll):- vector(Vect,N)|
+    vector_element(Vect,Po,Data,Vect1),
+    Po2 := Po + 1,
+    vector_element(Vect1,Po2,Data2,Vect2),
+    NextRC := RCount + Data,
+    NextSC := SCount + Data2,
+    cal_total(R,Po,NextRC,RAll,NextSC,SAll). 
+
+  make_predicate_list([],VList):- true |
+    VList=[].
+  make_predicate_list([{Pred,Vect}|Rest],VList):- vector(Vect,N)|
+    vector_element(Vect,0,R,Vect1),
+    vector_element(Vect1,1,S,Vect2),
+    VList = [{Pred,R,S}|RVL],
+    make_predicate_list(Rest,RVL). 

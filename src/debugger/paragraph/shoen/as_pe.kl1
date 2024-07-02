@@ -1,0 +1,82 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module as_make_pe_data.
+:- with_macro pimos.
+:- public go/3.
+
+    go(In,Out,Max):- true |
+        filter(In,1,Max,Out).
+
+    filter([],C,Max,Out):- true |
+        Out = [],Max:=C-1.
+    filter([List|RList],C,Max,Out):-true |
+        counter(List,0,Buf),
+        Out = [profile(C,Buf)|Out1],
+        NC := C + 1,
+        filter(RList,NC,Max,Out1).
+
+counter([],PE,Buf) :- true |
+    Buf = [].
+counter([{_PE,DataOfNode}|List],PE,Buf) :- true |
+    cal(DataOfNode,PE,NPE,Buf,RBuf),
+    counter(List,NPE,RBuf).
+ 
+cal({Vec1,_,_,_,String2,_,Vec3},C,Next,Buf,RBuf):- vector(Vec1,PE) |
+   get_string(Vec1,String2,Vec3,C,0,PE,Buf,RBuf),
+   Next := C + PE.
+
+get_string(Vec1,String2,Vec3,PE,AllPE,AllPE,Buf,RBuf):- true |
+    RBuf = Buf.
+otherwise.
+get_string(Vec1,String2,Vec3,PE,Count,AllPE,Buf,RBuf):- true |
+   set_vector_element(Vec1,Count,String1,[],Vec12),
+   set_vector_element(Vec3,Count,String3,[],Vec32),
+   string_element(String1,1,RunTime,NewString1),
+   string_element(NewString1,2,IdlingTime,_),
+   string_element(String2,2,GCTime,String22),
+   string_element(String3,1,DecodeTime,NString),
+   string_element(NString,0,EncodeTime,_),
+   minas_check_int(RunTime,NRunTime),
+   minas_check_int(IdlingTime,NIdlingTime),
+   minas_check_int(DecodeTime,NDecodeTime),
+   minas_check_int(EncodeTime,NEncodeTime),
+   minas_check_int(GCTime,NGCTime),
+   Run :=  NRunTime -  NDecodeTime - NEncodeTime - NGCTime ,
+   cal_total(NRunTime,NIdlingTime,Total),
+   minas_check_int(Run,NRun),
+   count_check(Total,NRun,RunP),
+   count_check(Total,NDecodeTime,DecodeP),
+   count_check(Total,NEncodeTime,EncodeP),
+   count_check(Total,NGCTime,GCP),
+   List = [{1,GCP,0},{2,DecodeP,0},{3,EncodeP,0},{4,RunP,0}],
+   C := PE + Count,
+   Buf = [pe(C,List)|RB],
+   Next := Count + 1,
+   get_string(Vec12,String22,Vec32,PE,Next,AllPE,RB,RBuf).
+
+minas_check_int(Data,NData):- Data =< 0 | NData = 0.
+minas_check_int(Data,NData):- Data > 0 | NData = Data.
+
+count_check(0,_,P):- true | P = 0.
+count_check(Total,0,P):- Total > 0 | 
+   P = 0.
+count_check(Total,Time,P):- Total > 0 , Time > 0 | 
+   integer_to_floating_point(Time,FTime),
+   integer_to_floating_point(Total,FTotal),
+   FP $:= ( FTime * 100.0 ) / FTotal,
+   floating_point_to_integer(FP,P) .
+
+cal_total(RunTime,IdlingTime,Total):-  
+   2147483647 - RunTime =< IdlingTime |
+   Total = 2147483647.
+cal_total(RunTime,IdlingTime,Total):-  
+   2147483647 - IdlingTime =< RunTime |
+   Total = 2147483647.
+otherwise.
+cal_total(RunTime,IdlingTime,Total):- true |
+   Total :=  RunTime + IdlingTime.

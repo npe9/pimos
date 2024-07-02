@@ -1,0 +1,180 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector.
+:- with_macro pimos.
+:- public go/1,go/2,inspector/8.
+
+go(X) :- true |
+        shoen:raise(pimos_tag#shell,get_std(io),WS),
+        go(X,WS).
+
+go(X,WS) :- true |
+        listener_var_manager:create(LisV),
+        merge(LisV1,LisV),
+        WS=[reset(normal(_,At,_))|WS1],
+        buffer:interaction_filter(IO,WS1),
+        inspector_io_manager_for_shell:manager(IO1,IO),
+        merge(IO2,IO1),
+        dummy_monitor_manager_for_shell(MM),
+        inspector(_,0,X,LisV1,IO2,At,_,MM,shell).
+
+dummy_monitor_manager_for_shell([]) :- true | true.
+
+inspector(Abort,TID,X,VarMan,WS,At,At1,MM) :- true |
+        inspector(Abort,TID,X,VarMan,WS,At,At1,MM,listener).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% inspector(Abort,TID,X,VarMan,WS,At,At1,MM,Owner)
+%%      Abort   :: Termination variable
+%%      TID     :: Tracer window ID
+%%      X       :: Data to be inspected
+%%      VarMan  :: Output stream to the listener_var_manager
+%%      WS      :: Output stream to the listener window
+%%      At,At1  :: Attention variables of the listener window
+%%       MM     :: Output stream to the monitor_manager
+%%                  (send requests for monitor process invokation, etc)
+%%      Owner   :: Who called the inspector
+
+inspector(Abort,_,_,V,WS,At,At1,MM,_) :- wait(Abort) |
+        V=[],WS=[],At=At1,MM=[].
+alternatively.
+inspector(Abort,TID,X,LisV,WS,At,At1,MM,Owner) :- true |
+        merge(WS1,WS),
+        inspector_var_manager:manager(V,LisV),
+        V=[put_forcibly(string#"ROOT",X)|V1],
+        inspector_io_manager:manager(NWS,At,At1,WS1,IR,Owner),
+        merge(NWS1,NWS),
+        inspector_data_stack:stack(S),
+        inspector_break_level_manager:manager(BL),
+        BL=[put(listener)|BL1],
+        buffer:character_pool(B),
+        B=[add_op(95,fy,'>'),add_op(95,xfy,'>')|B1],
+        insp(Abort,TID,X,IR,NWS1,B1,V1,S,BL1,MM,Owner).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% insp(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner)
+%%      IR      :: Input stream from the inspector_io_manager (merged)
+%%                 (receives 'abort' messages which means 'to go to the inspector top level')
+%%      B       :: Stream to the buffer:character_pool
+%%      V       :: Output stream to the inspector_var_manager (merged)
+%%      S       :: Output stream to the inspector_data_stack
+%%                      (inspecting informations are stored)
+%%      BL      :: Output stream to the pool:stack
+%%                      ( break level informations of inspectors are stored)
+%%                      elements are {Level,X,InStreamForStack}
+
+insp(Abort,_,_,_,WS,B,V,S,BL,MM,_) :- wait(Abort) |
+        WS=[],B=[],V=[],S=[],BL=[],MM=[].
+insp(Abort,TID,X,[_|IR],WS,B,V,S,BL,MM,Owner) :- true |
+        insp(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner).
+alternatively.
+insp(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner) :- true |
+        WS=[prompt_and_getl(Abort,X,X1,Line)|WS1],
+        wait_input(Abort,TID,X1,IR,WS1,B,V,S,BL,MM,Owner,Line).
+
+insp(Abort,_,_,_,WS,B,V,S,BL,MM,_,_) :- wait(Abort) |
+        WS=[],B=[],V=[],S=[],BL=[],MM=[].
+insp(Abort,TID,X,[_|IR],WS,B,V,S,BL,MM,Owner,Ac) :- true |
+        insp(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Ac).
+alternatively.
+insp(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Ac) :- wait(Ac) |
+        WS=[prompt_and_getl(Abort,X,X1,Line)|WS1],
+        wait_input(Abort,TID,X1,IR,WS1,B,V,S,BL,MM,Owner,Line).
+
+wait_input(Abort,_,_,_,WS,B,V,S,BL,MM,_,_) :- wait(Abort) |
+        WS=[],B=[],V=[],S=[],BL=[],MM=[].
+wait_input(Abort,TID,X,[_|IR],WS,B,V,S,BL,MM,Owner,Line) :- true |
+        wait_input(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Line).
+alternatively.
+wait_input(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Line) :- wait(Line) |
+        inspector_command_analyser:analyse(Line,Cmd,Type,B,B1,V,V1,Owner),
+        execute(Abort,TID,X,IR,WS,B1,V1,S,BL,MM,Owner,Cmd,Type).
+
+execute(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Cmd,inspect) :- true |
+        inspector_cmd_inspect:execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,S,S1,Cmd),
+        insp(Abort,TID,X1,IR1,WS1,B,V1,S1,BL,MM,Owner).
+execute(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Cmd,monitor) :- true |
+        inspector_cmd_monitor:execute(Abort,TID,X,X1,IR,IR1,WS,WS1,B,B1,V,V1,S,S1,MM,MM1,Cmd,Ac),
+        insp(Abort,TID,X1,IR1,WS1,B1,V1,S1,BL,MM1,Owner,Ac).
+execute(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Cmd,var_pool) :- true |
+        inspector_cmd_varpool:execute(Abort,X,X1,IR,IR1,WS,WS1,V,V1,Cmd),
+        insp(Abort,TID,X1,IR1,WS1,B,V1,S,BL,MM,Owner).
+execute(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Cmd,env) :- true |
+        inspector_cmd_environment:execute(Abort,WS,WS1,B,B1,V,V1,Cmd),
+        insp(Abort,TID,X,IR,WS1,B1,V1,S,BL,MM,Owner).
+execute(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Cmd,basic) :- true |
+        inspector_cmd_basic:execute(WS,WS1,Cmd),
+        insp(Abort,TID,X,IR,WS1,B,V,S,BL,MM,Owner).
+execute(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,_,[]) :- true |
+        insp(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner).
+execute(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Cmd,basic0) :- true |
+        execute_cmd_basic0(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,Cmd).
+otherwise.
+execute(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,_,Type) :- true |
+        WS=[error(Type)|WS1],
+        insp(Abort,TID,X,IR,WS1,B,V,S,BL,MM,Owner).
+
+
+execute_cmd_basic0(Abort,TID,_,IR,WS,B,V,S,BL,MM,Owner,exit) :- true |
+        V=[],S=[],
+        BL=[get(Info)|BL1],
+        up_1_level(Abort,TID,Info,IR,WS,B,BL1,MM,Owner).
+execute_cmd_basic0(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,fork) :- true |
+        BL=[get(Info)|BL1],
+        fork(Abort,TID,X,IR,WS,B,V,S,BL1,MM,Owner,Info).
+execute_cmd_basic0(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,inspect(X1)) :- true |
+        V=[get_listener_var_manager(LV)|V1],
+        inspector_var_manager:manager(NV,LV),
+        NV=[put_forcibly(string#"ROOT",X1)|NV1],
+        BL=[put_with_level(L,X,V1,S)|BL1],
+        inspector_data_stack:stack(NS),
+        WS=[putf(string#"~s~t~n",[string#">Inspector break level: ",L])|WS1],
+        insp(Abort,TID,X1,IR,WS1,B,NV1,NS,BL1,MM,Owner).
+
+up_1_level(_,_,Info,_,WS,B,BL,MM,_) :- atom(Info) |
+        WS=[],B=[],BL=[],MM=[].
+up_1_level(Abort,TID,{Level,X,V,S},IR,WS,B,BL,MM,Owner) :- true |
+        WS=[putf(string#"~s~t~n",[string#">Inspector break level: ",Level])|WS1],
+        insp(Abort,TID,X,IR,WS1,B,V,S,BL,MM,Owner).
+
+fork(Abort,TID,CX,IR,WS,B,CV,CS,BL,MM,Owner,{Level,X,V,S}) :- true |
+        WS=[putf(string#"~s~t~n",[string#">Inspector break level: ",Level]),
+            getenv_all(Envs)|WS1],
+        V=[get_listener_varlist(LisVL)|V1],
+        MM=[get_envvar(EnvVar),get_idmanager(NIDM)|MM1],
+        create_child_insp(Abort,CX,CV,CS,LisVL,Envs,EnvVar,NIDM),
+        insp(Abort,TID,X,IR,WS1,B,V1,S,BL,MM1,Owner).
+fork(Abort,TID,X,_,WS,B,V,S,BL,MM,_,listener) :- true |
+        WS=[getenv_all(Envs)],
+        BL=[put(inspector)|BL1],
+        MM=[get_idmanager(NIDM),get_envvar(EnvVar)],
+        V=[get_listener_varlist(LisVL)|V0],
+        inspector_window_manager:manager_a(Abort,Win,NMM1,LisVL,Envs,EnvVar,string#"INSPECTOR",_),
+        Win=[io_request(NWS,NAt,NAt1)|Win1],
+        V0={V1,V2},
+        inspector_io_manager:manager(NNWS,NAt,NAt1,NWS,NIR,inspector,Envs),
+        merge({NMM0,NMM1},NMM),
+        monitor_manager:manager1(Abort,_,NMM,V1,NIDM,Win1),
+        insp(Abort,TID,X,NIR,NNWS,B,V2,S,BL1,NMM0,inspector).
+fork(Abort,TID,X,IR,WS,B,V,S,BL,MM,Owner,inspector) :- true |
+        BL=[put(inspector)|BL1],
+        insp(Abort,TID,X,IR,WS,B,V,S,BL1,MM,Owner).
+
+create_child_insp(Abort,CX,CV,CS,LisVL,Envs,EnvVar,NIDM) :- true |
+        inspector_window_manager:manager_a(Abort,Win,CMM1,LisVL,Envs,EnvVar,string#"INSPECTOR",_),
+        Win=[io_request(CWS,CAt,CAt1)|Win1],
+        inspector_io_manager:manager(NCWS,CAt,CAt1,CWS,CIR,inspector,Envs),
+        inspector_break_level_manager:manager(CBL),
+        CBL=[put(inspector)|CBL1],
+        buffer:character_pool(CB),
+        CB=[add_op(95,fy,'>'),add_op(95,xfy,'>')|CB1],
+        CV={CV0,CV1},
+        merge({CMM0,CMM1},CMM),
+        monitor_manager:manager1(Abort,_,CMM,CV0,NIDM,Win1),
+        insp(Abort,-1,CX,CIR,NCWS,CB1,CV1,CS,CBL1,CMM0,inspector).
+

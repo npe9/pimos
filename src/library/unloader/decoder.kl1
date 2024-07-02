@@ -1,0 +1,583 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>ExFloat>decoder.kl1.3, 06-Oct-92 15:10:25, Edit by hori
+
+:- module kl1_unloaded_file_decoder.
+:- public decode/8.
+:- public decode/6.
+:- public load_module/11.
+:- with_macro pimos.
+:- include("pimos.h").
+
+decode(UNLFS0,AT0,ModList0,Date,Time,MESG0,MESG,Status) :- true |
+    kl1_unloader_version:marker(module,MagicNum1),
+    kl1_unloader_version:marker(package,MagicNum2),
+    kl1_unloader_version:marker(comment,MagicNum3),
+    kl1_unloader_version:marker(commented_package,MagicNum4),
+    UNLFS0 = [MagicNum0,N,Mark|UNLFS1],
+    check_magic_number(MagicNum0,MagicNum1,MagicNum2,MagicNum3,MagicNum4,
+                        N,Mark,UNLFS1,AT0,ModList0,Date,Time,MESG0,MESG,Status).
+
+check_magic_number(MagicNum,MagicNum,_,_,_,N,16#"FFFF",UNLFS0,AT0,ModList0,
+                        Date,Time,MESG0,MESG,Status) :- true |
+    load_modules(N,UNLFS0,AT0,0,ModList0,Date,Time,MESG0,MESG,normal,Status).   % Load Module(s)
+check_magic_number(MagicNum,_,MagicNum,_,_,N,16#"FFFF",UNLFS0,AT0,ModList0,
+                        Date,Time,MESG0,MESG,Status) :- true |
+    load_package(N,UNLFS0,AT0,ModList0,Date,Time,MESG0,MESG,Status).  % Load Package
+check_magic_number(MagicNum,_,_,MagicNum,_,N,16#"FFFF",UNLFS0,AT0,ModList0,
+                        Date,Time,MESG0,MESG,Status) :- true |
+    UNLFS0 = [L1,L2|UNLFS1],
+    Length := ( L1 << 16 ) \/ L2,
+    decode_string(String,Length,16,UNLFS1,UNLFS2,normal),
+    MESG0 = [message(string#"~s",[String])|MESG1],
+    load_modules(N,UNLFS2,AT0,0,ModList0,Date,Time,MESG1,MESG,normal,Status).   % Load Module(s)
+check_magic_number(MagicNum,_,_,_,MagicNum,N,16#"FFFF",UNLFS0,AT0,ModList0,
+                        Date,Time,MESG0,MESG,Status) :- true |
+    UNLFS0 = [L1,L2|UNLFS1],
+    Length := ( L1 << 16 ) \/ L2,
+    decode_string(String,Length,16,UNLFS1,UNLFS2,normal),
+    MESG0 = [message(string#"~s",[String])|MESG1],
+    load_package(N,UNLFS2,AT0,ModList0,Date,Time,MESG1,MESG,Status).   % Load Commented Package
+otherwise.
+check_magic_number(_,_,_,_,_,_,_,UNLFS0,AT0,ModList0,Date,Time,MESG0,MESG,Status) :- true |
+    UNLFS0 = [],
+    AT0 = [],
+    ModList0 = [],
+    MESG0 = [error(string#"not an unloaded file",[])|MESG],
+    Status = abnormal.
+
+load_package(N,UNLFS0,AT0,ModList0,Date,Time,MESG0,MESG,Status) :- true |
+    get_atom_name(PackageAtom,UNLFS0,UNLFS1,AT0,AT1),
+    load_modules(N,UNLFS1,AT1,PackageAtom,ModList0,Date,Time,MESG0,MESG,normal,Status).
+
+load_modules(0,UNLFS0,AT0,Package,ModList0,Date,Time,MESG0,MESG,normal,Status) :- true |
+    UNLFS0 = [N|UNLFS1],
+    AT0 = [put_all(Table,Status1)],
+    decode_atom_table(N,UNLFS1,Table,Status2),
+    ModList0 = [],
+    MESG0 = MESG,
+    set_status(Status1,Status2,Status).
+load_modules(N,UNLFS0,AT0,Package,ModList0,Date,Time,MESG0,MESG,normal,Status) :- N > 0 |
+    load_module(ML,Package,UNLFS0,UNLFS1,AT0,AT1,Date,Time,MESG0,MESG1,Status1),
+    ModList0 = [ML|ModList1],
+    N1 := N - 1,
+    load_modules(N1,UNLFS1,AT1,Package,ModList1,Date,Time,MESG1,MESG,Status1,Status).
+otherwise.
+load_modules(N,UNLFS0,AT0,Package,ModList0,Date,Time,MESG0,MESG,_,Status) :- true |
+    UNLFS0 = [],
+    AT0 = [],
+    ModList0 = [],
+    MESG0 = [error(string#"Illegal Unloaded File",[])|MESG],
+    Status = abnormal.
+
+load_module(ML,Package,UNLFS0,UNLFS,AT0,AT,Date,Time,MESG0,MESG,Status) :- true |
+    UNLFS0 = [L1,L2,SizeOfGcArea|UNLFS1],
+    ML = { module( ModuleName,
+                   SizeOfGcArea,
+                   ListOfGcArea,
+                   SizeOfHashTable,
+                   SizeOfIndexTable,
+                   ListOfIndexTable,
+                   SizeOfCodeArea,
+                   ListOfCode ),
+           OriginalPackage, Package },
+    decode_module_name(UNLFS1,UNLFS2,ModuleName,OriginalPackage,AT0,AT1,Status1),
+    decode_module_info(Status1,UNLFS2,UNLFS3,ListOfGcArea,AT1,AT2,Date,Time,Status2),
+    decode_index_table(Status2,UNLFS3,UNLFS4,SizeOfHashTable,SizeOfIndexTable,ListOfIndexTable,
+                                            AT2,AT3,Status3),
+    decode_code_area(Status3,UNLFS4,UNLFS,SizeOfCodeArea,ListOfCode,AT3,AT,Status),
+    MESG0 = MESG.
+
+set_status(normal,normal,Status) :- true | Status = normal.
+otherwise.
+set_status(_,_,Status) :- true | Status = abnormal.
+
+%%set_status([normal|Rest],Status) :- true |
+%%    set_status(Rest,Status).
+%%set_status([],Status) :- true | Status = normal.
+%%otherwise.
+%%set_status(_,Status) :- true | Status = abnormal.
+
+decode_module_name(UNLFS0,UNLFS,ModuleAtom,Package,AT0,AT,Status) :- true |
+    get_atom_name(ModuleAtom,UNLFS0,UNLFS1,AT0,AT1),
+    get_atom_name(Package,UNLFS1,UNLFS,AT1,AT),
+    Status = normal.
+
+decode_module_info(normal,UNLFS0,UNLFS,ListOfGcArea,AT0,AT,Date,Time,Status) :-
+    decode(UNLFS0,UNLFS1,Object,AT0,AT1,St),
+    decodeModInfo_0(St,Object,UNLFS1,UNLFS,ListOfGcArea,AT1,AT,Date,Time,Status).
+otherwise.
+decode_module_info(_,UNLFS0,UNLFS,ListOfGcArea,AT0,AT,Date,Time,Status) :-
+    UNLFS0 = UNLFS,
+    ListOfGcArea = [],
+    AT0 = AT,
+    Status = abnormal.
+
+decodeModInfo_0(normal,MagicNum,UNLFS0,UNLFS,ListOfGcArea,AT0,AT,Date,Time,Status) :-
+    integer(MagicNum) |
+    decode(UNLFS0,UNLFS1,InfoVec,AT0,AT1,St),
+    decodeModInfo_1(St,InfoVec,MagicNum,UNLFS1,UNLFS,ListOfGcArea,AT1,AT,Date,Time,Status).
+otherwise.
+decodeModInfo_0(St,Object,UNLFS0,UNLFS,ListOfGcArea,AT0,AT,Date,Time,Status) :- true |
+    check_GC_element(St,Object,UNLFS0,UNLFS,ListOfGcArea,AT0,AT,Status).
+
+decodeModInfo_1(normal,InfoVec,MagicNum,UNLFS0,UNLFS,ListOfGcArea,AT0,AT,Date,Time,Status) :-
+    vector(InfoVec,_) |
+    module_information:link_stamp(MagicNum,Date,Time,InfoVec,NewInfo),
+    ListOfGcArea = [MagicNum,NewInfo|ListOfGcArea0],
+    decode_GC_area(normal,UNLFS0,UNLFS,ListOfGcArea0,AT0,AT,Status).
+otherwise.
+decodeModInfo_1(_,_,_,UNLFS0,UNLFS,ListOfGcArea,AT0,AT,Date,Time,Status) :- true |
+    UNLFS0 = UNLFS,
+    ListOfGcArea = [],
+    AT0 = AT,
+    Status = abnormal.
+
+decode_GC_area(normal,UNLFS0,UNLFS,ListOfGcArea,AT0,AT,Status) :- true |
+    decode(UNLFS0,UNLFS1,Object,AT0,AT1,St),
+    check_GC_element(St,Object,UNLFS1,UNLFS,ListOfGcArea,AT1,AT,Status).
+otherwise.
+decode_GC_area(_,UNLFS0,UNLFS,ListOfGcArea,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    ListOfGcArea = [],
+    AT0 = AT,
+    Status = abnormal.
+
+check_GC_element(end,16#"1000",UNLFS0,UNLFS,GcArea,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    GcArea = [],
+    AT0 = AT,
+    Status = normal.
+check_GC_element(extCall,ExtCall,UNLFS0,UNLFS,GcArea,AT0,AT,Status) :- true |
+    GcArea = [ExtCall|Rest],
+    decode_GC_area(normal,UNLFS0,UNLFS,Rest,AT0,AT,Status).
+check_GC_element((module),Module,UNLFS0,UNLFS,GcArea,AT0,AT,Status) :- true |
+    GcArea = [Module|Rest],
+    decode_GC_area(normal,UNLFS0,UNLFS,Rest,AT0,AT,Status).
+check_GC_element(normal,Structure,UNLFS0,UNLFS,GcArea,AT0,AT,Status) :- true |
+    GcArea = [struct(Structure)|Rest],
+    decode_GC_area(normal,UNLFS0,UNLFS,Rest,AT0,AT,Status).
+otherwise.
+check_GC_element(_,_,UNLFS0,UNLFS,GcArea,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    GcArea = [],
+    AT0 = AT,
+    Status = abnormal.
+
+decode_index_table(normal,UNLFS0,UNLFS,HashSize,TableSize,PredList,AT0,AT,Status) :- true |
+    UNLFS0 = [HashSize,EntryNo|UNLFS1],
+    TableSize := EntryNo * 2,
+    decode_entry_table(EntryNo,UNLFS1,UNLFS,PredList,AT0,AT,Status).
+otherwise.
+decode_index_table(_,UNLFS0,UNLFS,HashSize,TableSize,PredList,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    PredList = [],
+    AT0 = AT,
+    Status = abnormal.
+
+decode_entry_table(EntryNo,UNLFS0,UNLFS,PredList,AT0,AT,Status) :- EntryNo > 0 |
+    get_atom_name(PredAtom,UNLFS0,UNLFS1,AT0,AT1),
+    UNLFS1 = [Arity,Loc1,Loc2|UNLFS2],
+    Loc := ( Loc1 << 16 ) \/ Loc2,
+    N1 := EntryNo - 1,
+    PredList = [pred(PredAtom/Arity),pointer(Loc)|Rest],
+    decode_entry_table(N1,UNLFS2,UNLFS,Rest,AT1,AT,Status).
+decode_entry_table(0,UNLFS0,UNLFS,PredList,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    PredList = [],
+    AT0 = AT,
+    Status = normal.
+otherwise.
+decode_entry_table(_,UNLFS0,UNLFS,PredList,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    PredList = [],
+    AT0 = AT,
+    Status = abnormal.
+
+%%%%%%%%%%%%%
+%   CODE    %
+%%%%%%%%%%%%%
+
+decode_code_area(normal,UNLFS0,UNLFS,SizeOfCodeArea,ListOfCodeArea,AT0,AT,Status) :- true |
+    UNLFS0 = [S1,S2|UNLFS1],
+    SizeOfCodeArea := ( S1 << 16 ) \/ S2,
+    decode_code(UNLFS1,UNLFS,ListOfCodeArea,AT0,AT,Status).
+otherwise.
+decode_code_area(_,UNLFS0,UNLFS,SizeOfCodeArea,ListOfCodeArea,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    ListOfCodeArea = [],
+    AT0 = AT,
+    Status = abnormal.
+
+decode_code(UNLFS0,UNLFS,Codes,AT0,AT,Status) :- true |
+    UNLFS0 = [Tag|UNLFS1],
+    decode_code(Tag,UNLFS1,UNLFS,Codes,AT0,AT,Status).
+
+decode_code(Tag,UNLFS0,UNLFS,Codes,AT0,AT,Status) :- true |
+    TAG := Tag >> 8,
+    OPR := Tag /\ 16#"FF",
+    decode_code(TAG,OPR,Codes,UNLFS0,UNLFS,AT0,AT,Status).
+
+decode_code(16#"23",OPR,Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    get_atom_name(Atom,UNLFS0,UNLFS1,AT0,AT1),
+    Codes0 = [{atom,{16#"23",OPR,Atom}}|Codes1],
+    decode_code(UNLFS1,UNLFS,Codes1,AT1,AT,Status).
+decode_code(16#"00",Tag,Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- Tag > 0 |
+    UNLFS0 = [V1,V2|UNLFS1],
+    decode_code_0(V1,V2,Tag,Code),
+    Codes0 = [Code|Codes1],
+    decode_code(UNLFS1,UNLFS,Codes1,AT0,AT,Status).
+decode_code(16#"11",16#"00",Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    Codes0 = [{table,{Size,Contents}}|Codes1],
+    UNLFS0 = [Size,EntryNo|UNLFS1],
+    decode_hash_on_c(EntryNo,Contents,Codes1,UNLFS1,UNLFS,AT0,AT,Status).
+decode_code(16#"FF",16#"FF",Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    Codes0 = [],
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Status = normal.
+otherwise.
+decode_code(T1,T2,Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    decode_atomic(T1,T2,UNLFS0,UNLFS1,Object,AT0,AT1,St),
+    check_decoded_code(St,Object,Codes0,UNLFS1,UNLFS,AT1,AT,Status).
+
+decode_code_0(V1,V2,Tag,Code) :- integer(V1), integer(V2) |
+    Value := ( V1 << 16 ) \/ V2,
+    Code = {Tag,Value}.
+
+decode_hash_on_c(EntryNo,Contents,Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- EntryNo > 0 |
+    decode_atomic(UNLFS0,UNLFS1,Const,AT0,AT1,St),
+    N1 := EntryNo - 1,
+    check_decoded_constant(St,Const,Contents,N1,Codes0,UNLFS1,UNLFS,AT1,AT,Status).
+otherwise.
+decode_hash_on_c(0,Contents,Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    Contents = [],
+    decode_code(UNLFS0,UNLFS,Codes0,AT0,AT,Status).
+
+check_decoded_constant(normal,Const,Contents,N,Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    UNLFS0 = [L1,L2|UNLFS1],
+%%    Loc := ( L1 << 16 ) \/ L2,
+    Loc := L2,
+    Contents = [(Const = Loc)|Rest],
+    decode_hash_on_c(N,Rest,Codes0,UNLFS1,UNLFS,AT0,AT,Status).
+otherwise.
+check_decoded_constant(_,_,Contents,N,Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    Contents = [],
+    Codes0 = [],
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Status = abnormal.
+
+check_decoded_code(normal,Object,Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    Codes0 = [Object|Codes1],
+    decode_code(UNLFS0,UNLFS,Codes1,AT0,AT,Status).
+otherwise.
+check_decoded_code(_,_,Codes0,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    Codes0 = [],
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Status = abnormal.
+
+decode(UNLFS0,UNLFS,Object,AT0,AT,Status) :- true |
+    UNLFS0 = [Tag|UNLFS1],
+    TAG := Tag >> 8,
+    OPR := Tag /\ 16#"FF",
+    decode_0(TAG,OPR,UNLFS1,UNLFS,Object,AT0,AT,Status).
+
+decode_0(TAG,OPR,UNLFS0,UNLFS,Object,AT0,AT,Status) :- TAG =< 3 |
+    decode_atomic(TAG,OPR,UNLFS0,UNLFS,Object,AT0,AT,Status).
+otherwise.
+decode_0(TAG,OPR,UNLFS0,UNLFS,Object,AT0,AT,Status) :- true |
+    decode_structure(TAG,OPR,UNLFS0,UNLFS,Object,AT0,AT,Status).
+
+decode_atomic(UNLFS0,UNLFS,Object,AT0,AT,Status) :- true |
+    UNLFS0 = [Tag|UNLFS1],
+    TAG := Tag >> 8,
+    OPR := Tag /\ 16#"FF",
+    decode_atomic(TAG,OPR,UNLFS1,UNLFS,Object,AT0,AT,Status).
+
+decode_atomic(16#"00",16#"00",UNLFS0,UNLFS,Atom,AT0,AT,Status) :- true |
+    get_atom_name(Atom,UNLFS0,UNLFS,AT0,AT),
+    Status = normal.
+decode_atomic(16#"01",SPInt,UNLFS0,UNLFS,SmallPositiveInteger,AT0,AT,Status) :- true |
+    SPInt = SmallPositiveInteger,
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Status = normal.
+decode_atomic(16#"02",SMInt,UNLFS0,UNLFS,SmallNegativeInteger,AT0,AT,Status) :- true |
+    SmallNegativeInteger := SMInt \/ 16#"FFFFFF00",
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Status = normal.
+decode_atomic(16#"03",_,UNLFS0,UNLFS,LargeInteger,AT0,AT,Status) :- true |
+    UNLFS0 = [Upper,Lower|UNLFS],
+    LargeInteger := ( Upper << 16 ) \/ Lower,
+    AT0 = AT,
+    Status = normal.
+decode_atomic(16#"00",TAG,UNLFS0,UNLFS,Object,AT0,AT,Status) :- TAG > 0 |
+    UNLFS0 = [V1,V2|UNLFS],
+    VALUE := ( V1 << 16 ) \/ V2,
+    new_instruction(Object,TAG,VALUE),
+    AT0 = AT,
+    Status = normal.
+otherwise.
+decode_atomic(_,_,UNLFS0,UNLFS,Object,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    Object = 0,
+    AT0 = AT,
+    Status = abnormal.
+
+%%decode_structure(UNLFS0,UNLFS,Object,AT0,AT,Status) :- true |
+%%    UNLFS0 = [Tag|UNLFS1],
+%%    TAG := Tag >> 8,
+%%    OPR := Tag /\ 16#"FF",
+%%    decode_structure(TAG,OPR,UNLFS1,UNLFS,Object,AT0,AT,Status).
+
+:- switch(extended_floating_point).
+:- case(yes).
+decode_structure(16#"05",16#"00",UNLFS0,UNLFS,Struct,AT0,AT,Status) :- true |
+%    UNLFS0 = [Bin0,Bin1,Bin2|UNLFS],
+    UNLFS0 = [Bin0Hi,Bin0Low,Bin1Hi,Bin1Low,Bin2Hi,Bin2Low|UNLFS],
+    Bin0 := (Bin0Hi << 16) \/ Bin0Low,
+    Bin1 := (Bin1Hi << 16) \/ Bin1Low,
+    Bin2 := (Bin2Hi << 16) \/ Bin2Low,
+    binary_to_extended_floating_point(Bin0,Bin1,Bin2,ExFloat),
+    Struct = ExFloat,
+    AT0 = AT,
+    Status = normal.
+:- case(no).
+decode_structure(16#"05",16#"00",UNLFS0,UNLFS,Struct,AT0,AT,Status) :- true |
+    UNLFS0 = [Bin0,Bin1,Bin2|UNLFS],
+    Struct = extended_floating_point,
+    AT0 = AT,
+    Status = abnormal.
+:- end_switch.
+decode_structure(16#"06",Size,UNLFS0,UNLFS,Struct,AT0,AT,Status) :- true |
+    UNLFS0 = [L1,L2|UNLFS1],
+    Length := ( L1 << 16 ) \/ L2,
+    decode_string(String,Length,Size,UNLFS1,UNLFS,Status),
+    Struct = String,
+    AT0 = AT.
+decode_structure(16#"07",16#"00",UNLFS0,UNLFS,Struct,AT0,AT,Status) :- true |
+    UNLFS0 = [L1,L2|UNLFS1],
+    Length := ( L1 << 16 ) \/ L2,
+    decode_vector(Vector,Length,UNLFS1,UNLFS,AT0,AT,Status),
+    Struct = Vector.
+decode_structure(16#"08",16#"00",UNLFS0,UNLFS,Struct,AT0,AT,Status) :- true |
+    UNLFS0 = [L1,L2|UNLFS1],
+    Length := ( L1 << 16 ) \/ L2 - 1,
+    decode_list(List,0,Length,UNLFS1,UNLFS,AT0,AT,Status),
+    Struct = List.
+decode_structure(16#"09",16#"00",UNLFS0,UNLFS,Module,AT0,AT,Status) :- true |
+    get_atom_name(ModuleName,UNLFS0,UNLFS1,AT0,AT1),
+    get_package_name(Package,UNLFS1,UNLFS,AT1,AT),
+    Module = module({(::),Package,ModuleName}),
+    Status = (module).
+decode_structure(16#"19",16#"00",UNLFS0,UNLFS,Module,AT0,AT,Status) :- true |
+    get_atom_name(ModuleName,UNLFS0,UNLFS1,AT0,AT1),% Added 90/9/19 to handle #module_table#
+    get_atom_name(Package,UNLFS1,UNLFS,AT1,AT),
+    Module = module({(::),Package,ModuleName}),
+    Status = (module).
+decode_structure(16#"0A",16#"00",UNLFS0,UNLFS,ExtCall,AT0,AT,Status) :- true |
+    get_atom_name(ModuleAtom,UNLFS0,UNLFS1,AT0,AT1),
+    get_atom_name(PredAtom,UNLFS1,UNLFS2,AT1,AT2),
+    UNLFS2 = [Arity|UNLFS3],
+    get_package_name(Package,UNLFS3,UNLFS,AT2,AT),
+    ExtCall = extCall({(::),Package,ModuleAtom},pred(PredAtom/Arity)),
+    Status = extCall.
+decode_structure(16#"10",16#"00",UNLFS0,UNLFS,Mark,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    Mark = 16#"1000",
+    AT0 = AT,
+    Status = end.
+otherwise.
+decode_structure(_,_,UNLFS0,UNLFS,Struct,AT0,AT,Status) :- true |
+    UNLFS0 = UNLFS,
+    Struct = [],
+    AT0 = AT,
+    Status = abnormal.
+
+decode_string(String,Length,1,UNLFS0,UNLFS,Status) :- Length >= 0 |
+    new_string(String0,Length,1),
+    decode_string(String0,String,0,Length,1,UNLFS0,UNLFS,Status).
+decode_string(String,Length,8,UNLFS0,UNLFS,Status) :- Length >= 0 |
+    new_string(String0,Length,8),
+    decode_string(String0,String,0,Length,8,UNLFS0,UNLFS,Status).
+decode_string(String,Length,16,UNLFS0,UNLFS,Status) :- Length >= 0 |
+    new_string(String0,Length,16),
+%%    get_name(0,Length,String0,String,UNLFS0,UNLFS),
+%%    Status = normal.
+    decode_string(String0,String,0,Length,16,UNLFS0,UNLFS,Status).
+decode_string(String,Length,32,UNLFS0,UNLFS,Status) :- Length >= 0 |
+    new_string(String0,Length,32),
+    decode_string(String0,String,0,Length,32,UNLFS0,UNLFS,Status).
+otherwise.
+decode_string(String,Length,Size,UNLFS0,UNLFS,Status) :- true |
+    String = [],
+    UNLFS0 = UNLFS,
+    Status = abnormal.
+
+decode_string(String0,String,P,Length,Size,UNLFS0,UNLFS,Status) :- P < Length |
+    UNLFS0 = [W1,W2|UNLFS1],
+    Word := ( W1 << 16) \/ W2,
+    unpack_string(String0,String,P,Length,32,Size,Word,UNLFS1,UNLFS,Status).
+decode_string(String0,String,P,Length,Size,UNLFS0,UNLFS,Status) :- P >= Length |
+    String0 = String,
+    UNLFS0 = UNLFS,
+    Status = normal.
+
+unpack_string(String0,String,P,Length,B0,Size,Word,UNLFS0,UNLFS,Status) :-
+    P < Length, B0 > 0 |
+    Elm := ( ( Word << ( 32 - B0 ) ) >> ( 32 - Size ) ),
+    set_string_element(String0,P,Elm,String1),
+    P1 := P + 1,
+    B1 := B0 - Size,
+    unpack_string(String1,String,P1,Length,B1,Size,Word,UNLFS0,UNLFS,Status).
+unpack_string(String0,String,P,Length,0,Size,Word,UNLFS0,UNLFS,Status) :- P < Length |
+    decode_string(String0,String,P,Length,Size,UNLFS0,UNLFS,Status).
+unpack_string(String0,String,P,Length,_,Size,Word,UNLFS0,UNLFS,Status) :- P >= Length |
+    String0 = String,
+    UNLFS0 = UNLFS,
+    Status = normal.
+
+decode_vector(Vector,Length,UNLFS0,UNLFS,AT0,AT,Status) :- Length >= 0 |
+    new_vector(Vector0,Length),
+    decode_vector(Vector0,Vector,0,Length,UNLFS0,UNLFS,AT0,AT,Status).
+otherwise.
+decode_vector(Vector,Length,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    Vector = [],
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Status = abnormal.
+
+decode_vector(Vector0,Vector,P,Length,UNLFS0,UNLFS,AT0,AT,Status) :- P < Length |
+    decode(UNLFS0,UNLFS1,Object,AT0,AT1,St),
+    decode_vector(St,Object,Vector0,Vector,P,Length,UNLFS1,UNLFS,AT1,AT,Status).
+decode_vector(Vector0,Vector,P,Length,UNLFS0,UNLFS,AT0,AT,Status) :- P >= Length |
+    Vector0 = Vector,
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Status = normal.
+
+decode_vector(abnormal,_,Vector0,Vector,P,Length,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    Vector0 = Vector,
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Status = abnormal.
+otherwise.
+decode_vector(_,Object,Vector0,Vector,P,Length,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    set_vector_element(Vector0,P,_,Object,Vector1),
+    P1 := P + 1,
+    decode_vector(Vector1,Vector,P1,Length,UNLFS0,UNLFS,AT0,AT,Status).
+
+decode_list(List,P,Length,UNLFS0,UNLFS,AT0,AT,Status) :- P < Length |
+    decode(UNLFS0,UNLFS1,Car,AT0,AT1,St),
+    decode_car(St,Car,List,P,Length,UNLFS1,UNLFS,AT1,AT,Status).
+decode_list(List,P,Length,UNLFS0,UNLFS,AT0,AT,Status) :- P >= Length |
+    decode(UNLFS0,UNLFS,Cdr,AT0,AT,St),
+    check_cdr(St,Cdr,List,Status).
+
+decode_car(abnormal,_,List,_,_,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    List = [],
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Status = abnormal.
+otherwise.
+decode_car(_,Car,List,P,Length,UNLFS0,UNLFS,AT0,AT,Status) :- true |
+    List = [Car|Rest],
+    P1 := P + 1,
+    decode_list(Rest,P1,Length,UNLFS0,UNLFS,AT0,AT,Status).
+
+check_cdr(abnormal,_,List,Status) :- true |
+    List = [],
+    Status = abnormal.
+otherwise.
+check_cdr(_,Cdr,List,Status) :- true |
+    Cdr = List,
+    Status = normal.
+
+decode_atom_table(N,UNLFS0,Table0,Status) :- N > 0 |
+    UNLFS0 = [ID,L1,L2|UNLFS1],
+    Table0 = [{ID,Name}|Table],
+    Length := ( L1 << 16 ) \/ L2,
+    N1 := N - 1,
+    get_name(Length,ID,Name,UNLFS1,N1,Table,Status).
+decode_atom_table(0,UNLFS0,Table0,Status) :- true |
+    UNLFS0 = [],
+    Table0 = [],
+    Status = normal.
+otherwise.
+decode_atom_table(_,UNLFS0,Table0,Status) :- true |
+    UNLFS0 = [],
+    Table0 = [],
+    Status = abnormal.
+
+get_name(Length,ID,Name,UNLFS0,N,Table0,Status) :- Length >= 0 |
+    new_string(String,Length,16),
+    get_name(0,Length,String,Name,UNLFS0,UNLFS1),
+    Table0 = [{ID,Name}|Table],
+    decode_atom_table(N,UNLFS1,Table,Status).
+get_name(16#"FFFFFFFF",16#"FFFF",Name,UNLFS0,0,Table,Status) :- true |
+    Name = "",
+    UNLFS0 = [],
+    Table = [],
+    Status = normal.
+otherwise.
+get_name(Length,ID,Name,UNLFS0,N,Table,Status) :- true |
+    Name = "",
+    UNLFS0 = [],
+    Table = [],
+    Status = abnormal.
+
+get_package_name(Package,UNLFS0,UNLFS,AT0,AT) :- true |
+    UNLFS0 = [TAG|UNLFS1],
+    get_package_name_0(TAG,UNLFS1,UNLFS,AT0,AT,Package).
+
+get_package_name_0(16#"0000",UNLFS0,UNLFS,AT0,AT,Package) :- true |
+    get_atom_name(Package,UNLFS0,UNLFS,AT0,AT).
+get_package_name_0(16#"0100",UNLFS0,UNLFS,AT0,AT,Package) :- true |
+    Package = 0,
+    UNLFS0 = UNLFS,
+    AT0 = AT.
+otherwise.
+get_package_name_0(_,UNLFS0,UNLFS,AT0,AT,Package) :- true |
+    UNLFS0 = UNLFS,
+    AT0 = AT,
+    Package = [].
+
+get_atom_name(Atom,UNLFS0,UNLFS,AT0,AT) :- true |
+    UNLFS0 = [ID|UNLFS1],
+    get_atom_name(ID,Atom,UNLFS1,UNLFS,AT0,AT).
+
+get_atom_name(-1,Atom,UNLFS0,UNLFS,AT0,AT) :- true |
+    Atom = [],
+    UNLFS0 = UNLFS,
+    AT0 = AT.
+otherwise.
+get_atom_name(ID,Atom,UNLFS0,UNLFS,AT0,AT) :- ID < 16#"8000" |
+    UNLFS0 = UNLFS,
+    AT0 = [get(ID,Atom)|AT].
+get_atom_name(ID,Atom,UNLFS0,UNLFS,AT0,AT) :- ID >= 16#"8000" |
+    ID1 := ID /\ 16#"7FFF",
+    UNLFS0 = [L1,L2|UNLFS1],
+    Length := ( L1 << 16 ) \/ L2,
+    new_string(Name0,Length,16),
+    get_name(0,Length,Name0,Name,UNLFS1,UNLFS),
+    AT0 = [put(ID1,Name,Atom)|AT].
+
+get_name(P,Length,String0,Name,UNLFS0,UNLFS) :- P < Length |
+    UNLFS0 = [Char|UNLFS1],
+    get_name_0(Char,String0,P,String1),
+    P1 := P + 1,
+    get_name(P1,Length,String1,Name,UNLFS1,UNLFS).
+get_name(P,Length,String0,Name,UNLFS0,UNLFS) :- P >= Length |
+    String0 = Name,
+    UNLFS0 = UNLFS.
+
+get_name_0(Char,String0,P,String) :- Char >= 0 |
+    set_string_element(String0,P,Char,String).

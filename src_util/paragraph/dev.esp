@@ -1,0 +1,105 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                           %
+%             ESP String Device             %
+%                   #dev                    %
+%          1990/01/10  version 0.1          %
+%                                           %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+class dev has
+
+nature  pimfep##as_pimos_string_io_device;
+
+instance
+
+    attribute (buffer:= Buf:-
+                :create(#standard_io_buffer,Buf),
+                :get_parsing_operator(Buf,Op),
+                :remove_operator(Op,(macro_bank)),
+                :remove_operator(Op,(class)),
+                :remove_operator(Op,(has)),
+                :remove_operator(Op,(instance)),
+                :remove_operator(Op,(local)),
+                :remove_operator(Op,(before)),
+                :remove_operator(Op,(after)),
+                :remove_operator(Op,(nature)),
+                :remove_operator(Op,(component)),
+                :remove_operator(Op,(attribute)),
+                :remove_operator(Op,(when)),
+                :remove_operator(Op,(where)),
+                :remove_operator(Op,(with)),
+                :remove_operator(Op,(by)),
+                :remove_operator(Op,(mode)),
+                :remove_operator(Op,(spy)),
+                :remove_operator(Op,(cspy)),
+                :remove_operator(Op,(nospy)),
+                :remove_operator(Op,(is)),
+                :remove_operator(Op,(div)),
+                :add_operator(Op,(::),xfx,90) );
+
+%% String-IO method for PIMOS
+%% :io(Object,Command,KL1-String,~ESP-String)
+
+    :io(Obj,0,String,ToString):-
+        string_to_term(Obj!buffer,String,Term),
+        (Term=in(Term1),!,
+         :send(Obj,Term1),
+         ToString="";
+         Term=out(Term1),
+         :send(Obj,Term1,Term2),
+         term_to_string(Obj!buffer,Term2,ToString));
+
+%%%%% edit by kubo %%%%%%
+    :io(Obj,3,String,ToString):-
+        :send(Obj,event(String),Term),
+        term_to_string(Obj!buffer,Term,ToString);
+
+%% dummy method
+%% :send/2
+%% :send/3
+
+    :send(_,_):-!;
+    :send(_,_,_):-!;
+
+local
+
+%% parsing : String -> Term
+%% string_to_term(Buffer,String,~Term)
+
+    string_to_term(Buf,String,Term):-
+        S=\="",!,
+        :reset(Buf),
+        string(String,N,_),
+        :putb(Buf,String,N),
+        :putc(Buf,#"."),
+        :gett(Buf,Term);
+    string_to_term(_,String,String);
+
+%% unparsing : Term -> String
+%% term_to_string(Buffer,Term,~String)
+
+    term_to_string(_,Term,String):-
+        unbound(Term),!,
+        String="";
+    term_to_string(Buf,Term,String):-
+        unbound(String),!,
+        :reset(Buf),
+        :putt(Buf,Term),
+        :putl(Buf),
+        :getl(Buf,String);
+%    term_to_string(Buf,Term,String):-
+%        bound(String),!,
+%        :reset(Buf),
+%        string(String,N,_),
+%        :putb(Buf,String,N),
+%        :putc(Buf,#"."),
+%        :gett(Buf,Term),
+%        :reset(Buf),
+%        :putt(Buf,Term),
+%        :putl(Buf),
+%        :getl(Buf,String);
+
+end.
+
+

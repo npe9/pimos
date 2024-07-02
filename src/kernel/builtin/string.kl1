@@ -1,0 +1,187 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module builtin_utility.
+:- with_macro pimos.
+:- public substring/5,
+          copy_string_elements/7,
+          append_string/2,
+          append_string/3.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% substring(S, P, L, ^SubS, ^NewS)
+%%      S       :: Source string
+%%      P       :: Source string position 
+%%      L       :: Length of sub string
+%%      SubS    :: Sub string
+%%      NewS    :: New source string
+
+
+substring(S, P, L, SubS, NewS) :- 
+           string(S, SL, Type)|
+     new_string(S1, L, Type),
+     binary_string_operation(string_operation#s2, S1,0, L, S, P, SubS, NewS).
+
+%substring(S, P, L, SubS, NewS) :- 
+%           P >= 0, L > 0,
+%           string(S, SL, Type),
+%           L1 := L + P, L1 =< SL |
+%     new_string(S1, L, 16),
+%     new_string(S1, L, Type),
+%     copy_string_elements(S1, 0, L, S, P, SubS, NewS).
+
+%substring(S, P, 0, SubS, NewS) :- 
+%           P >= 0,
+%           string(S, SL, Type),
+%           P =< SL |
+%     new_string(S1, 0, Type),
+%     copy_string_elements(S1, 0, 0, S, P, SubS, NewS).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% copy_string_elements(S1, P1, L, S2, P2, ^NewS1, ^NewS2)
+%%      S1      :: Destination string
+%%      P1      :: Destination string position 
+%%      L       :: Length of copied string
+%%      S2      :: Source string
+%%      P2      :: Source string position
+%%      NewS1   :: New destination string
+%%      NewS2   :: New source string
+
+
+copy_string_elements(S1, P1, L, S2, P2, NewS1, NewS2):-
+      true|
+      binary_string_operation(string_operation#s2,S1, P1, L, S2, P2, NewS1, NewS2).
+
+
+%copy_string_elements(S1, P1, L, S2, P2, NewS1, NewS2):-
+%      string(S1, Sl1, Type),
+%      string(S2, SL2, Type),
+%      Type = 16|
+%      builtin:copy_string_elements(S1, P1, L, S2, P2, NewS1, NewS2).
+%
+%copy_string_elements(S1, P1, L, S2, P2, NewS1, NewS2):-
+%      string(S1, SL1, Type), 
+%      string(S2, SL2, Type), 
+%      Type = 8,
+%      SM1 := SL1 mod 2, SM1 = 0,
+%      SM2 := SL2 mod 2, SM2 = 0 ,
+%      PM1 := P1 mod 2, PM1 = 0,
+%      PM2 := P2 mod 2, PM2 = 0,
+%      P16_1 := P1 /2,
+%      P16_2 := P2 /2,
+%      LM := L mod 2, LM = 0,
+%      L16 := L /2|
+%      change_element_size(S1, 16, S16_1),
+%      change_element_size(S2, 16, S16_2),
+%      builtin:copy_string_elements(S16_1, P16_1, L16, S16_2, P16_2, NewS16_1, NewS16_2),
+%      change_element_size(NewS16_1,8, NewS1),
+%      change_element_size(NewS16_2, 8, NewS2).
+%
+%otherwise.
+%
+%copy_string_elements(S1, P1, L, S2, P2, NewS1, NewS2) :- 
+%         P1 >= 0, P2 >= 0, L >= 0,
+%          string(S1, SL1, Type),
+%          string(S2, SL2, Type) |
+%     copy_string_elements1(S1, P1, L, S2, P2, SL1, SL2, NewS1, NewS2).
+%
+%
+%copy_string_elements1(S1, P1, 0, S2, P2, SL1, SL2, NewS1, NewS2) :- true |
+%   NewS1 = S1, NewS2 = S2.
+%otherwise.
+%copy_string_elements1(S1, P1, L, S2, P2, SL1, SL2, NewS1, NewS2) :-
+%          P1 < SL1,
+%          P2 < SL2,
+%          L1 := L + P1, L1 =< SL1 |
+%     copy_string_elements2(L, P1, SL1, P2, SL2, S1, S2, NewS1, NewS2).
+%
+%
+%copy_string_elements2(0, P1, SL1, P2, SL2, S1, S2, NewS1, NewS2) :- true |
+%     NewS1 = S1, NewS2 = S2.
+%otherwise.
+%copy_string_elements2(L, SL1, SL1, P2, SL2, S1, S2, NewS1, NewS2) :- true |
+%     NewS1 = S1, NewS2 = S2.
+%copy_string_elements2(L, P1, SL1, SL2, SL2, S1, S2, NewS1, NewS2) :- true |
+%     NewS2 = S2,
+%     copy_zero(P1, SL1, S1, NewS1).
+%otherwise.
+%copy_string_elements2(L, P1, SL1, P2, SL2, S1, S2, NewS1, NewS2) :- 
+%         string_element(S2, P2, Chara) |
+%     set_string_element(S1, P1, Chara, S11),
+%     copy_string_elements2(~(L-1), ~(P1+1), SL1, ~(P2+1), SL2, 
+%                                             S11, S2, NewS1, NewS2).
+%
+%copy_zero(SL1, SL1, S1, NewS1) :- true |
+%     NewS1 = S1.
+%otherwise.
+%copy_zero(P1, SL1, S1, NewS1) :- true |
+%     set_string_element(S1, P1, 0, S11),
+%     copy_zero(~(P1+1), SL1, S11, NewS1).
+%
+%%%-------------------------------------------------------------------------
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% append_string(List, S)
+%%      List    :: List of string
+%%      S       :: Appended string
+
+append_string([H|List], S) :- string(H, _, Type)|
+      append_string([H|List], 0, S, Type).
+
+%append_string([],S) :- true|
+%     S = #"".
+
+append_string([H|List], P, S, Type) :-  string(H, L, _)|
+      binary_string_operation(string_operation#s2,D,P, L, H, 0, S, _),
+      append_string(List, ~(P+L), D, Type).
+
+append_string([], P, S, Type) :- true|
+      new_string(S, P, Type).
+
+%append_string([H|List], S) :- string(H, _, Type) |
+%     new_string(S1, L, Type),
+%     append_string([H|List], 0, S1, Type, L, S).
+%append_string([], S) :- true |
+%    S = string#"".
+
+%append_string([H|T], P, S, Type, P1, S1) :- string(H, L, Type) |
+%     copy_string_elements(S, P, L, H, 0, S11, _),
+%     builtin:copy_string_elements(S, P, L, H, 0, S11, _),
+%      string_operation(3,{ P,S,L, 0, H}, S11, _),
+%     append_string(T, ~(P+L), S11, Type, P1, S1).
+%append_string([], P, S, Type, P1, S1) :- true |
+%     P1 = P, S1 = S.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% append_string(S1, S2, ^S)
+%%      S1      :: Source string1
+%%      S2      :: Source string2
+%%      S       :: Appended string
+
+
+append_string(S1,S2,S):- string(S1, L1, Type),
+                         string(S2, L2, Type)|
+     new_string(S3, ~(L1 + L2), Type),
+     binary_string_operation(string_operation#s2,S3,0, L1, S1, 0, S4, _),
+     binary_string_operation(string_operation#s2,S4,L1, L2, S2, 0, S, _).
+
+%oappend_string(string#"", S2, S) :- true |
+%    S = S2.
+%append_string(S1, string#"", S) :- true |
+%    S = S1.
+%otherwise.
+%append_string(S1, S2, S) :-
+%           string(S1, SL1, Type),
+%           string(S2, SL2, Type),
+%           L := SL1 + SL2, L1 = SL1, P2 = SL1 |
+%     new_string(SS, L, Type),
+%     copy_string_elements(SS, 0, L1, S1, 0, SS1, _),
+%     copy_string_elements(SS1, P2, SL2, S2, 0, S, _).
+%     builtin:copy_string_elements(SS, 0, L1, S1, 0, SS1, _),
+%     builtin:copy_string_elements(SS1, P2, SL2, S2, 0, S, _).
+
+
+

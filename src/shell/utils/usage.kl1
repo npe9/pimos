@@ -1,0 +1,51 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is 'usage' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module usage.
+:- public go/1, go/2, go/0, usage/1.
+
+usage(Usage) :- true | Usage = [{string#"~s~n~s~n~s", [S1, S2, S3]}],
+    S1 = string#"Usage : usage(ModuleName)",
+    S2 = string#"Usage : usage(PackageName::ModuleName)",
+    S3 = string#"Usage : usage(PackageName, ModuleName)".
+
+go :- true | go(usage).
+
+go(Module) :- atom(Module) |
+    module_table:cache_table([get_code(Module, usage, 1, Code)]), check(Code).
+
+go({'::', Pkg, Mod}) :- atom(Pkg), atom(Mod) |
+    module_table:cache_table([get_code({'::', Pkg, Mod}, usage, 1, Code)]),
+    check(Code).
+
+go(Pkg, Mod) :- atom(Pkg), atom(Mod) |
+    module_table:cache_table([get_code({'::', Pkg, Mod}, usage, 1, Code)]),
+    check(Code).
+
+check(normal(Code)) :- true | apply(Code, {Usage}),
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut), display(Usage, StdOut).
+otherwise.
+check(_) :- true |
+    shoen:raise(pimos_tag#shell, get_std_out, StdOut),
+    StdOut = [putl(string#"Usage not found!!")].
+
+display([], StdOut) :- true | StdOut = [nl].
+display([{Format, Args} | Remain], StdOut) :- string(Format, _, _) |
+    StdOut = [putf(Format, Args) | StdOut1], display(Remain, StdOut1).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%                           %%%%%
+%%%%%  End of 'usage' module.   %%%%%
+%%%%%                           %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,0 +1,41 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is a 'tsall' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module tsall.
+:- public usage/1, go/0.
+
+usage(Usage) :- true | Usage = [{string#"~s", [S1]}],
+    S1 = string#"Usage : tsall".
+
+go :- true |
+    shoen:raise(pimos_tag#task,
+        general_request,[status([0|'*'],task,detail,Info)]),
+    shoen:raise(pimos_tag#shell, get_std_in, In),
+    shoen:raise(pimos_tag#shell, get_std_out, Out),
+    go1(Info, In, Out).
+
+go1(InfoWithStatus, In, Out) :- InfoWithStatus = normal(Info) |
+    print:printts(0, Info, Out, NOut), NOut = [flush(Stat)],
+    waitStat(Stat, In, [prompt(string#"OK? "), getl(_)]).
+otherwise.
+go1(_, In, Out) :- true |
+    Out = [putl(string#"Status information request has ignored."), flush(Stat)],
+    waitStat(Stat, In, [prompt(string#"OK? "), getl(_)]).
+
+waitStat(Stat, In, Out) :- wait(Stat) | In = Out.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of 'tsall' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

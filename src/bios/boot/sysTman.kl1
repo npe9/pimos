@@ -1,0 +1,133 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module system_timer_manager.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public create/3.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% create(Timer,F,F1)
+%%      Timer   :: Result (= normal(Input_stream))
+%%      F,F1    :: Output stream to boot_fep_general_request (vector stream)
+
+:- switch(machine_type).
+:- case(mpsi).
+create(Timer,F,F1) :- system_timer(_,NowL) |
+        set_timer(NowL,W),
+        init(Timer,F,F1,W).
+:- case(vpim).
+create(Timer,F,F1) :- system_timer(NowU,NowL) |
+        set_timer(NowU,NowL,W),
+        init(Timer,F,F1,W).
+:- end_switch.
+
+init(Timer,F,F1,W) :- integer(W) |
+        F=F1,
+        current_node(_,N),
+        new_vector(V0,N),
+        init(V0,V,~(N-1),End,[]),
+        manager0(Timer,V,N,End).
+init(Timer,F,F1,[]) :- true |
+        init_bf(Timer,F,F1).
+
+init(V,V1,I,E,E1) :- I>=0 |
+        set_vector_element(V,I,_,TS,V0),
+        physical_alarm_timer_device:create(TS,E,E0)@node(I),
+        init(V0,V1,~(I-1),E0,E1).
+init(V,V1,I,E,E1) :- I<0 |
+        V=V1,E=E1.
+
+manager0(Timer,V,N,End) :- wait(End) |
+        Timer=normal(In),
+        merge(In,In1),
+        manager(In1,V,N).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% manager(In,V,N)
+%%      In      :: Input stream from OS
+%%      V       :: Output streams to physical_alarm_timer_devices (vector)
+%%      N       :: Number of clusters (= number of alarm_timers)
+
+manager([timer(Res)|In],V,N) :- true |
+        set_vector_element(V,0,{TS0,TS1},TS1,V1),
+        Res=normal(TS),
+        resource_tree_timer_filter(TS,TS0),
+        manager(In,V1,N).
+manager([system_timers(Res)|In],V,N) :- true |
+        new_vector(U0,N),
+        get_alarm_timers(~(N-1),V,V1,U0,Res),
+        manager(In,V1,N).
+manager([],V,N) :- true |
+        close_streams(~(N-1),V).
+otherwise.
+manager([Msg|In],V,N) :-
+    display_console(ascii#"Illegal message to BIOS system_timer_manager:"),
+    display_console(Msg) |
+        manager(In,V,N).
+
+get_alarm_timers(N,V,V1,U,Res) :- N>=0 |
+        set_vector_element(V,N,{TS,TS1},TS1,V0),
+        set_vector_element(U,N,_,TS,U0),
+        get_alarm_timers(~(N-1),V0,V1,U0,Res).
+get_alarm_timers(N,V,V1,U,Res) :- N<0 | V=V1,Res=normal(U).
+
+close_streams(N,V) :- N>=0 |
+        set_vector_element(V,N,[],0,V1),
+        close_streams(~(N-1),V1).
+close_streams(N,_) :- N<0 | true.
+
+resource_tree_timer_filter([on_after(Cnt,Res)|In],Out) :- system_timer(NowU,NowL) |
+        timer_calc:count_check(Cnt,Res0),
+        set_alarm_timer(NowU,NowL,Res0,Res,Out,Out1),
+        resource_tree_timer_filter(In,Out1).
+resource_tree_timer_filter([],Out) :- true | Out=[].
+otherwise.
+resource_tree_timer_filter([Msg|In],Out) :-
+    display_console(ascii#"Illegal message to BIOS system_timer:"),
+    display_console(Msg) |
+        resource_tree_timer_filter(In,Out).
+
+set_alarm_timer(NowU,NowL,normal(Cnt),Res,Out,Out1) :- true |
+        timer_calc:dbl_to_bignum(NowU,NowL,Now),
+        timer_calc:trans(msec(Cnt),{mdlib#system_timer_unit,Cnt1}),
+        set_alarm_timer1(Now,Cnt1,Res,Out,Out1).
+set_alarm_timer(_,_,abnormal(Cnt),Res,Out,Out1) :-
+    display_console(ascii#"Error in BIOS system_timer:"),
+    display_console(ascii#"illegal on_after count from resource_tree,"),
+    display_console(Cnt) |
+        Res=abnormal,
+        Out=Out1.
+
+set_alarm_timer1(Now,Cnt,Res,Out,Out1) :- wait(Now),wait(Cnt) |
+        mdlib#add_bignum(Now,Cnt,At),
+        Out=[on_at(_,At,Res)|Out1].
+
+
+init_bf(Timer,F,F1) :- true |
+        timer:create(BFTimer,F,F1),
+        wait_bf_timer(Timer,BFTimer).
+
+wait_bf_timer(Timer,normal(Out)) :- true |
+        Timer=normal(In),
+        merge(In,In1),
+        manager_bf(In1,Out).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% manager_bf(In,Out)
+%%      In      :: Input stream from OS (merged)
+%%      Out     :: Output stream to boot_fep_timer (stream, merged)
+
+manager_bf([timer(Res)|In],Out) :- true |
+        Out={Out0,Out1},
+        Res=normal(Out0),
+        manager_bf(In,Out1).
+manager_bf([system_timers(Res)|In],Out) :- true |
+        Res=abnormal,
+        manager_bf(In,Out).
+manager_bf([],Out) :- true | Out=[].
+

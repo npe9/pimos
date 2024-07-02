@@ -1,0 +1,40 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module profiling_server.
+:- with_macro pimos.
+:- public go/3.
+
+go(OK,OK1,ABORT) :- wait(OK)|
+        shoen:raise(pimos_tag#task,general_request,GRS),
+        GRS=[register(profiling_device,{0,0,2#"011"},Res)],
+        wait_registered(OK1,ABORT,Res).
+
+wait_registered(OK,ABORT,normal(SCnt,SAb,_SAtt)) :- true |
+        OK=ok,
+        predicate_to_code(module#profiling_filter,filter,3,Cod),
+        profiling_handler:create(Hdl),
+        get_request(ABORT,SCnt,SAb,Cod,Hdl).
+
+get_request(ABORT,SCnt,SAb,Cod,Hdl) :- true |
+        SCnt=[get_request(Cod,"profiling_device",Res)|SCnt1],
+        wait_request(ABORT,SCnt1,SAb,Cod,Hdl,Res).
+
+wait_request(ABORT,SCnt,SAb,_Cod,Hdl,_Res) :- wait(ABORT) |
+    SCnt=[], SAb=abort, Hdl=[].
+wait_request(ABORT,SCnt,SAb,Cod,Hdl,Res) :-
+    Res = general_request(Cnt,Ab,CAb,UInfo,FInfo,User) |
+        vector_element(UInfo,3,Node,_),
+        FInfo=[],
+        Hdl={Hdl1,Hdl2},
+        merge(CntIn,Cnt),
+        profiling_request_device:create(SAb,CntIn,Ab,CAb,Node,User,Hdl1)@node(Node),
+        get_request(ABORT,SCnt,SAb,Cod,Hdl2).
+otherwise.
+wait_request(_ABORT,SCnt,_SAb,_Cod,Hdl,_Res) :- true | 
+    SCnt=[], Hdl=[]. % SAb=abort.
+

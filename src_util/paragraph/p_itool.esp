@@ -1,0 +1,107 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                              %
+%   icon    1990.11.7          %
+%                              %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+class has_icon_window has
+instance
+attribute   ( register:= L:- :create(#list,L));
+
+%% :regist(+,+)
+
+:regist(Win,L):-
+    list(L),!,
+    regist(L,Win);
+
+:regist(Win,Icon):-
+    :draw(Icon,Win),
+    :add_first(Win!register,Icon);
+
+%% :read(+,-)
+
+:read(Win,Code):-!,
+    (:read(Win,_,_,_,X,Y),
+     :get_contents(Win!register,L),
+     search(L,X,Y,Icon),
+     (Icon==nothing,!,
+      Code='$$nil';
+      :get_code(Icon,X,Y,Code)),!;
+     Code='$$nil');
+
+:reset_icon(Win):-!,
+    :clear(Win!register);
+
+:remove(Win,Icon):-!,
+    :remove(Win!register,Icon);
+
+local
+
+search([],X0,Y0,Icon):-!,
+    Icon=nothing;
+search([F|T],X0,Y0,Icon):-
+    X=F!x,
+    Y=F!y,
+    W=F!width,
+    H=F!height,
+    (X0>=X,X0=<X+W,Y0>=Y,Y0=<Y+H,!,
+     Icon=F;
+     search(T,X0,Y0,Icon));
+
+regist([],_):-!;
+
+regist([F|L],Win):-
+    :regist(Win,F),
+    regist(L,Win);
+
+end.
+
+class icon_button has
+
+:create(C,Obj):-
+    :new(C,Obj);
+
+%% :create(+,+,+,-)
+
+:create(Class,X,Y,Icon):-
+    :new(Class,Icon),
+    :set_position(Icon,X,Y);
+
+:create(Class,X,Y,W,H,Icon):-
+    :new(Class,Icon),
+    :set_position(Icon,X,Y),
+    :set_size(Icon,W,H);
+
+instance
+
+attribute   x,
+            y,
+            width,
+            height;
+
+:get_code(Icon,X0,Y0,Code):-
+    X=X0-Icon!x,
+    Y=Y0-Icon!y,
+    :code(Icon,X,Y,Code);
+
+:draw(Icon,Win):-
+    X=Icon!x,
+    Y=Icon!y,
+    W=Icon!width,
+    H=Icon!height,
+    :draw(Icon,X,Y,W,H,Win);
+
+:set_size(Icon,W,H):-
+    Icon!width:=W,
+    Icon!height:=H;
+
+%% :set_position(+,+,-)
+
+:set_position(Icon,X,Y):-
+    Icon!x:=X,
+    Icon!y:=Y;
+
+end.
+

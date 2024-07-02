@@ -1,0 +1,188 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi523::>sys>user>pimos>RELEASE>src>server>scsi>scsiRserver.kl1.5, 18-Dec-92 13:45:49, Edit by yashiro
+:- module scsi_request_server.
+:- with_macro pimos.
+:- include("pimos.h").
+:- public go/3, filter0/3.
+
+:- switch(fep_interface).
+:- case(scsi).
+go(In, Out, Abort) :-
+    wait(In) |
+        shoen:raise(pimos_tag#task, general_request, GRD),
+        GRD = [register(scsi_request, {0, 0, 2#"110"}, Result)],
+        wait_register(Result, Out, Abort).
+
+wait_register(abnormal, Out, _) :-
+    true |
+        Out = ok.
+wait_register(aborted, Out, _) :-
+    true |
+        Out = ok.
+wait_register(normal(Stream, StreamAbort, _), Out, Abort) :-
+    true |
+        Out = ok,
+        predicate_to_code(module#scsi_request_server, filter0, 3, Code),        
+        Stream = [get_request(Code, "scsi_request", Request)|StreamTail],
+        wait_request(Request, StreamTail, StreamAbort, Abort, Code).
+
+wait_request(_, Stream, StreamAbort, Abort, _) :-
+    wait(Abort) |
+        StreamAbort = abort,
+        Stream = [].
+alternatively.
+wait_request(aborted, Stream, _, _, _) :-
+    true |
+        Stream = [].
+wait_request(abnormal, Stream, _, _, _) :-
+    true |
+        Stream = [].
+wait_request(general_request(ControlStream, CSAbort, Attention, {_, _, _, Node}, FilterInfo, FromUser), Stream, StreamAbort, Abort, Code) :-
+    true |
+        FilterInfo = Node,
+        Stream = [get_request(Code, "scsi_request", Request)|StreamTail],
+        wait_request(Request, StreamTail, StreamAbort, Abort, Code),
+        throw_manager(ControlStream,CSAbort,Attention,FromUser,Abort)@node(Node).
+
+throw_manager(ControlStream,CSAbort,Attention,FromUser,Abort) :-
+    true |
+        valve(Attention, FromUser, ToDARequest),
+        shoen:raise(pimos_tag#task, bios, GRD),
+        GRD = [scsi(Result)],
+        wait_get_scsi_request(Result, ToDARequest, ControlStream, CSAbort, Attention, Abort).
+
+wait_get_scsi_request(abnormal, _, ControlStream, CSAbort, _, _) :-
+    true |
+        CSAbort = abort,
+        ControlStream = [].
+wait_get_scsi_request(normal(ToSCSI), ToDARequest, ControlStream, CSAbort, Attention, Abort) :-
+    true |
+        device_request(ToDARequest, ToSCSI, ControlStream, CSAbort, Attention, Abort).
+
+device_request(_, ToSCSI, ControlStream, CSAbort, _, Abort) :-
+    wait(Abort) |
+        ToSCSI = [],
+        CSAbort = abort,
+        ControlStream = [].
+alternatively.
+device_request([abort|_], ToSCSI, ControlStream, CSAbort, _, Abort) :-
+    true |
+        ToSCSI = [],
+        CSAbort = abort,
+        ControlStream = [].
+device_request([], ToSCSI, ControlStream, CSAbort, _, Abort) :-
+    true |
+        ToSCSI = [],
+        ControlStream = [].
+device_request([direct_access(SCSI_Descriptor, Unit, LUN, Result)|FromUserTail], ToSCSI, ControlStream, CSAbort, Att, Abort) :-
+    true |
+        SCSI_Descriptor = {Node, _, _},
+        ToSCSI = [direct_access(SCSI_Descriptor, Unit, LUN, SCSIResult)|ToSCSITail],
+        wait_scsi_result(SCSIResult, Result, ControlStream, ControlStreamTail, Att, Abort)@node(Node),
+        device_request(FromUserTail, ToSCSITail, ControlStreamTail, CSAbort, Att, Abort).
+device_request([processor(SCSI_Descriptor, Unit, LUN, Result)|FromUserTail], ToSCSI, ControlStream, CSAbort, Att, Abort) :-
+    true |
+        SCSI_Descriptor = {Node, _, _},
+        ToSCSI = [processor(SCSI_Descriptor, Unit, LUN, SCSIResult)|ToSCSITail],
+        wait_scsi_result(SCSIResult, Result, ControlStream, ControlStreamTail, Att, Abort)@node(Node),
+        device_request(FromUserTail, ToSCSITail, ControlStreamTail, CSAbort, Att, Abort).
+device_request([sequential_access(SCSI_Descriptor, Unit, LUN, Result)|FromUserTail], ToSCSI, ControlStream, CSAbort, Att, Abort) :-
+    true |
+        SCSI_Descriptor = {Node, _, _},
+        ToSCSI = [sequential_access(SCSI_Descriptor, Unit, LUN, SCSIResult)|ToSCSITail],
+        wait_scsi_result(SCSIResult, Result, ControlStream, ControlStreamTail, Att, Abort)@node(Node),
+        device_request(FromUserTail, ToSCSITail, ControlStreamTail, CSAbort, Att, Abort).
+device_request([get_info(Result)|FromUserTail], ToSCSI, ControlStream, CSAbort, Att, Abort) :-
+    true |
+        ToSCSI = [get_info(Result)|ToSCSITail],
+        device_request(FromUserTail, ToSCSITail, ControlStream, CSAbort, Att, Abort).
+device_request([configuration(Result)|FromUserTail], ToSCSI, ControlStream, CSAbort, Att, Abort) :-
+    true |
+        ToSCSI = [configuration(Result)|ToSCSITail],
+        device_request(FromUserTail, ToSCSITail, ControlStream, CSAbort, Att, Abort).
+
+wait_scsi_result(abnormal(Error), Result, ControlStream, ControlStreamTail, _, _) :-
+    true |
+        Result = abnormal(Error),
+        ControlStream = ControlStreamTail.
+%%%% AMANUMA %%%%
+wait_scsi_result(abnormal(Error,TransferredLength,Buffer), Result, ControlStream, ControlStreamTail, _, _) :-
+    true |
+        Result = abnormal(Error,TransferredLength,Buffer),
+        ControlStream = ControlStreamTail.
+%%%%
+wait_scsi_result(normal(ToSCSIDevice), Result, ControlStream, ControlStreamTail, Att, Abort) :-
+    true |
+        ControlStream = [add_resource(scsi_device, "scsi_device", AddResult)|ControlStreamTail],
+        wait_add_resource(AddResult, ToSCSIDevice, Result, Att, Abort).
+
+wait_add_resource(abnormal, ToSCSIDevice, Result, _, _) :-
+    true |
+        Result = abnormal(add_resource_fail),
+        ToSCSIDevice = [].
+wait_add_resource(aborted, ToSCSIDevice, Result, _, _) :-
+    true |
+        Result = abnormal(add_resource_fail),
+        ToSCSIDevice = [].
+wait_add_resource(normal(ControlStream, CSAbort), ToSCSIDevice, Result, Att, Abort) :-
+    true |
+        valve(Att, FromUser, ToDeviceServer),
+        merge(ToDeviceServer, ToDeviceServerOut),
+        Result = normal(FromUser),
+        scsi_device(ToDeviceServerOut, ToSCSIDevice, ControlStream, CSAbort, Abort).
+
+scsi_device(_, ToSCSIDevice, ControlStream, CSAbort, Abort) :-
+    wait(Abort) |
+        CSAbort = abort,
+        ControlStream = [],
+        ToSCSIDevice = [].
+alternatively.
+scsi_device([abort|_], ToSCSIDevice, ControlStream, CSAbort, _) :-
+    true |
+        CSAbort = abort,
+        ControlStream = [],
+        ToSCSIDevice = [].
+scsi_device([], ToSCSIDevice, ControlStream, CSAbort, _) :-
+    true |
+        ControlStream = [],
+        ToSCSIDevice = [].
+scsi_device([Mes|NextMes], ToSCSIDevice, ControlStream, CSAbort, Abort) :-
+    Mes \= abort |
+        ToSCSIDevice = [Mes|ToSCSIDeviceTail],
+        scsi_device(NextMes, ToSCSIDeviceTail, ControlStream, CSAbort, Abort).
+
+filter0(Node, FromUser, ToDS) :-
+    wait(Node) |
+        filter01(FromUser, ToDS)@node(Node).
+
+filter01(FromUser,ToDS) :-
+    true |
+        trans(Dummy,ToDS),
+        scsi_request_filter:scsi_request_filter(FromUser,Dummy).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+valve(At,_,         OS) :- wait(At) | OS=[abort].
+alternatively.
+valve(_, [],        OS) :- true | OS=[].
+valve(At,[Msg|User],OS) :- wait(Msg) |
+    OS=[Msg|OS1],
+    valve(At,User,OS1).
+
+trans([Msg|Tail],Stream) :-
+    wait(Msg) |
+        Stream = [Msg|Stream1],
+        trans(Tail,Stream1).
+trans([],Stream) :-
+    true |
+        Stream = [].
+
+:- default.
+go(_,_,_) :- true | true.
+filter0(_,_,_) :- true | true.
+:- end_switch.

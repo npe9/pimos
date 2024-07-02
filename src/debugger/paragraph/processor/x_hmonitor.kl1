@@ -1,0 +1,201 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module x_h_monitor.
+:- public p_meter/7.
+:- with_macro pimos.
+:- include("pimos.h").
+
+p_meter(SockD,Timer, PE, Interval, Color,InF,T) :- true |
+    p_meter0(SockD,Timer, PE, Interval, Color,InF,T)@priority(*,4095).
+
+p_meter0(SockD, Timer, {_NF,PENO,X,Y}, Interval, Color,InF,T) :- T \= 4 |
+    new_string(String0, 1, 16),
+    set_string_element(String0, 0, T, String),
+    new_string(String1, 7, 16),
+    set_string_element(String1, 0, 1, String11),
+    set_string_element(String11, 1, PENO, String21),
+    set_string_element(String21, 2, X, String2),
+    set_string_element(String2, 3, Y, String3),
+    set_string_element(String3, 4, Interval, String4),
+    set_string_element(String4, 5, InF, String5),
+    set_string_element(String5, 6, Color, String6),
+    change_element_size(String,8,NewString),
+    change_element_size(String6,8,NewString6),
+    send_socket(SockD,NewString,SockD1,normal,_),
+    send_socket(SockD1,NewString6,RSockD,normal,Stat2),
+    check_p_meter1(Stat2,RSockD,Timer,InF,Interval,T, PENO, 1).
+
+p_meter0(SockD, Timer, {_NF,Node,Proc,X,Y}, Interval, Color,InF,T) :- T \= 4 |
+    new_string(String0, 1, 16),
+    set_string_element(String0, 0, T, String),
+    new_string(String1, 7, 16),
+    set_string_element(String1, 0, 1, String11),
+    set_string_element(String11, 1, Node, String21),
+    set_string_element(String21, 2, X, String2),
+    set_string_element(String2, 3, Y, String3),
+    set_string_element(String3, 4, Interval, String4),
+    set_string_element(String4, 5, InF, String5),
+    set_string_element(String5, 6, Color, String6),
+    change_element_size(String,8,NewString),
+    change_element_size(String6,8,NewString6),
+    send_socket(SockD,NewString,SockD1,normal,_),
+    send_socket(SockD1,NewString6,RSockD,normal,Stat2),
+    check_p_meter1(Stat2,RSockD,Timer, InF,Interval,T,Node,Proc ).
+
+:- if_equal(machine_type,mpsi).
+check_p_meter1(Stat2,RSockD,Timer, InF,Interval,T,Cluster,PE):- true |
+    PENO := Cluster * PE,
+    p_meter1(Stat2,RSockD,Timer, PENO, InF,Interval,T).
+:- else.
+check_p_meter1(Stat2,RSockD,Timer, InF,Interval,T,Cluster,PE):- true |
+    p_meter1(Stat2,RSockD,Timer, {Cluster,PE}, InF,Interval,T).
+:- end_if.
+
+send_socket([Sock],NewString,RSockD,Status1,Stat):- wait(Status1) |
+   Sock = [send(NewString,Status2)|RSock],
+   RSockD = [RSock],
+%   Stat = normal.
+   send_socket_stat(Status2,Stat).
+otherwise.
+send_socket(SockD,NewString,RSockD,Status1,Stat):- true |
+   send_socket_N(SockD,NewString,RSockD,Status1,Stat).
+
+send_socket_stat(Status,Stat):- wait(Status) | Stat = normal.
+
+send_socket_N([],_,RSockD,Status1,Stat):- wait(Status1) |
+   RSockD = [], Stat = normal.
+send_socket_N([Sock|R],NewString,RSockD,Status1,Stat):- wait(Status1) |
+   Sock = [send(NewString,Status2)|RSock],
+   RSockD = [RSock|RS],
+   send_socket_N(R,NewString,RS,Status2,Stat).
+
+p_meter1(Status,SockD,Timer, PE, InF,Interval,T) :- wait(Status), integer(PE) |
+    MaxNode := PE - 1,
+    throw_profile_process(MaxNode,Repo,TStream),
+    msg_timer_control(normal(0),Timer,Interval,MaxNode,TStream),
+    make_data(Repo,PE,InF,Out,T),
+    out(Out,SockD).
+p_meter1(Status,SockD,Timer, {Cluster,PE}, InF,Interval,T) :- wait(Status) |
+    MaxNode := Cluster - 1,
+    throw_profile_process(MaxNode,Repo,TStream),
+    msg_timer_control(normal(0),Timer,Interval,MaxNode,TStream),
+    make_data(Repo,Cluster,InF,Out,T),
+    out(Out,SockD).
+
+msg_timer_control(normal(Result),Timer,infinite,PE,TStream) :- true |
+    msg_timer_control(normal(Result),Timer,infinite,PE,TStream).
+msg_timer_control(normal(Result),Timer,Interval,PE,TStream) :- wait(Result), integer(Interval) |
+    Timer = [on_after(Interval,Status)|Timer2],
+    msg_timer_control2(Status,Timer2,Interval,PE,TStream).
+
+msg_timer_control2(normal(Result),Timer,Interval,PE,TStream):- wait(Result) |
+    TStream = [profile|RStream],
+    msg_timer_control(normal(Result),Timer,Interval,PE,RStream).
+
+throw_profile_process(MaxNode,DataList,TStream):- true |
+    throw_pe_profile(MaxNode,PStream,TStream),
+    reverse(PStream,RPStream),
+    get_time_stream(TStream,RPStream,DataList).
+
+throw_pe_profile(Count,PStream,_):- Count < 0 |
+    PStream = [].
+throw_pe_profile(Count,PStream,TStream):- Count >= 0 | 
+    pe_profile(Stream,TStream)@node(Count),
+    Stream = [start|RStream],
+    NC := Count - 1,
+    PStream = [RStream|RS],
+    throw_pe_profile(NC,RS,TStream).
+
+get_time_stream([profile|TStream],PStream,AnsStream):- true |
+    throw_profile_msg(PStream,RStream,Ans),
+    AnsStream = [Ans|AnsStream1],
+    get_time_stream(TStream,RStream,AnsStream1).
+    
+throw_profile_msg([],RStream,AnsS):- true | RStream = [], AnsS = [].
+otherwise.
+throw_profile_msg([[get_ans(Ans)|RS]|R],RStream,AnsS):- wait(Ans) |
+    AnsS = [Ans|AS1],
+    RStream = [RS|RS1],
+    throw_profile_msg(R,RS1,AS1).
+
+pe_profile([start|PStream],TStream):- true | 
+    pe_profile(PStream,TStream). 
+pe_profile(PStream,[PMessage|RStream]):- wait(PMessage) | 
+    throw_heap(Ans),
+    PStream = [get_ans(Ans)|PStream1],
+    pe_profile(PStream1,RStream).
+
+throw_heap(HAns):- true |
+    get_heap_size(Size,Used),
+    UnUsed := Size - Used,
+    HAns = {Used,UnUsed}.
+   
+reverse(List,RList):- true |
+    reverse(List,[],RList).
+
+reverse([],List1,List2):- true |
+    List1 = List2.
+otherwise.
+reverse([A|R],List1,List2):- true|
+    List3 = [A|List1],
+    reverse(R,List3,List2).
+
+
+make_data([Repo|R],PE,InF,Out,T) :- true |
+    Out = [NewString|O2],
+    L := PE * 5 + 1,
+    new_string(String, L, 16),
+    set_string_element(String,0, 2, String1),
+    counter(Repo,0,String1,NewString,InF),
+    make_data(R,PE,InF,O2,T).
+
+counter([],C,String,NewString,InF) :- true |
+    String = NewString.
+otherwise.
+counter([Vec|Repo],C,String,NewString,InF) :- true |
+    Po := C * 5 + 1,
+    Po2 := Po + 1,
+    Po3 := Po + 2,
+    Po4 := Po + 3,
+    Po5 := Po + 4,
+    cal(InF,Vec,Run,Idle,GC),
+    check_value(Run,Value1,Value2),
+    check_value(Idle,Value3,Value4),
+    set_string_element(String, Po, Value3, String1),
+    set_string_element(String1, Po2, Value4, String2),
+    set_string_element(String2, Po3, Value1, String3),
+    set_string_element(String3, Po4, Value2, String4),
+    set_string_element(String4, Po5, GC, String5),
+    NPE := C + 1,
+    counter(Repo,NPE,String5,NewString,InF).
+ 
+cal(_,{},R,I,GC):- true | R = 0, I = 0, GC = 0.
+cal(InF,{Used,UnUsed},R,I,GC):- true |
+    cal1(Used,R),
+    cal1(UnUsed,I),
+    GC = 0.
+
+cal1(Run,R):- Run =< 0 | R = 0.
+cal1(Run,R):- Run > 0 |
+    R := Run.
+    
+check_value(0,Value1,Value2):- true |
+        Value1 = 0,
+        Value2 = 0.
+check_value(Data,Value1,Value2):- Data > 0 |
+        Value1 := Data/65536,
+        Value2 := Data mod 65536.
+
+out([String|Rest], SockD) :- wait(String) |
+    change_element_size(String,8,NewString),
+    send_socket(SockD,NewString,RSock,normal,Status),
+    out1(Status, Rest, RSock).
+
+out1(_, Out, SockD) :- true |
+    out(Out, SockD) .
+

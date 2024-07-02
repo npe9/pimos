@@ -1,0 +1,248 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module profile_goal.
+:- public count/7.
+
+ %% count %%
+ count(GoalList,At,Hid,Int,Par,Dp,Lis):- wait(GoalList) |
+        predicate_to_code(module#profiler_task,apply_goals,1,Task),
+        shoen:raise(pimos_tag#task,general_request,[GRM,timer(normal(TR,_,_)),GenReq]),
+        GRM=profile(Task,{GoalList},"profiler",0,4000,0,Status),
+        TR=[create(normal(Timer,_,_))],
+        parameter(Par,Time),
+        buffer:character_pool(Buf),Buf=[putwtq(Int),getb(40,String)],
+        GenReq = getenv(paragraph:output_device,Output),
+        check_output(Output,Dp,Dp1),
+        go_prof(Status,At,{Hid,String},Time,Timer,Dp1,Lis).
+ 
+% test/3   % for test
+% test(Module,Goal,Dp):- module(Module,_),atom(Goal)|
+%        predicate_to_code(Module,Goal,0,Code),
+%        variable:wrap(Module:Goal,{_,Wrap},10,20),
+%        count([{Code,{}}],At,1,Wrap,2000,Dp,_).
+
+
+%%%
+%%% output data to listener pool.
+%%%
+ check_output(normal(pool),Dp,Dp1):- true | Dp=Dp1.
+%%%
+%%% output data to std_out.
+%%%
+ check_output(normal(std_out),Dp,[put(Hid,{What,PeNum,0,goal(Int,Max,ExecTime,Ph1)})]):- true |
+        Dp=[],
+        shoen:raise(pimos_tag#task,get_std(out),STD),
+        In=goal(Int,ExecTime,PeNum,0,Max,What,Ph1),
+        x_profile_stdio:go(In,STD).
+%%%
+%%% output data to pg server of unix.
+%%%
+ check_output(normal(pg),Dp,[put(Hid,{What,PeNum,0,goal(Int,Max,ExecTime,Ph1)})]):- true |
+        Dp=[],
+        In=goal(Int,ExecTime,PeNum,0,Max,What,Ph1),
+        x_profile_tcpip:go(In).
+otherwise.
+ check_output(_,Dp,Dp1):- true |
+        Dp1=Dp.
+
+ parameter(Value,Time):- Value>0|
+        Time=Value.
+ parameter(infinite,Time):- true |
+        Time=infinite.
+otherwise.
+ parameter(_,Time):- true |Time=2000.
+
+
+ go_prof(normal(Ctr,Rpt),At,Int,Time,Timer,Dp,Lis):- true |
+        go_prof1(Ctr,Rpt,At,Int,Time,Timer,Dp,Lis).
+ go_prof1(Ctr,Rpt,At,Int,Time,Timer,Dp,Lis):- true |
+        Timer=[get_count(normal(St))|Timer1],
+        on_after(Time,Res,Timer1,Timer2),
+        handler0(Rpt,Ctr,Res,At,Int,1,St,Time,Timer2,Dp,Lis).
+
+ on_after(Time,Res,Timer,Timer1):- Time>0 |
+        Timer=[on_after(Time,normal(Res))|Timer1].
+ on_after(infinite,Res,Timer,Timer1):- true | Timer1=Timer.
+otherwise.
+ on_after(_,Res,Timer,Timer1):- true | Timer=[on_after(2000,normal(Res))|Timer1].
+
+handler0(Rpt,Ctr,Res,At,Int,Cy,St,Time,Timer,Dp,Lis):- wait(St) |
+        handler(Rpt,Ctr,Res,At,Int,Cy,Ph,Ph,St,Time,Timer,Dp,Lis).
+
+ %% Res-->wake_up %%
+ handler(Rpt,Ctr,WakeUp,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- wait(WakeUp) |
+    Ctr=[profile|Ctr1],
+    Timer=[on_after(Time,normal(Res))|Timer1],
+    handler(Rpt,Ctr1,Res,At,Int,Cy,Ph,Pt,St,Time,Timer1,Dp,Lis).
+alternatively.
+ handler(Rpt,Ctr,Res,[Attention|At],Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+        shoen:raise(pimos_tag#task,get_std(out),Std_Out),
+        Std_Out =[print_string_length(1000),
+            putb("Attention accepted"),nl,flush(_)],
+    Ctr=[stop|Ctr1],
+    attention(Rpt,Ctr1,before,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis). % before stopped
+ handler([profiling_started|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    handler(Rpt,Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+ handler([profiling_rejected|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+%% when resource_low is occurred in self task
+    Ctr=[profile|Ctr1],
+    handler(Rpt,Ctr1,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+
+ handler([profiling_information(Node,Type,Depth,Data)|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    Pt=[profiling_information(Cy,Node,Type,Depth,Data)|Pt1],
+    handler(Rpt,Ctr,Res,At,Int,Cy,Ph,Pt1,St,Time,Timer,Dp,Lis).
+ handler([profiling_completed|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+        Cy1 := Cy +1,
+    handler(Rpt,Ctr,Res,At,Int,Cy1,Ph,Pt,St,Time,Timer,Dp,Lis).
+
+ handler([resource_low|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    Ctr = [add_resource(0,100000000)|Ctr1],
+    handler(Rpt,Ctr1,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+ handler([resource_report_allowed|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    handler(Rpt,Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+ handler([resource_added|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    Ctr=[allow_resource_report|Ctr1],
+    handler(Rpt,Ctr1,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+ handler([return_resource(H,L)|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    handler(Rpt,Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+ handler([started|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    handler(Rpt,Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+ handler([terminated|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    %% profile ?? %%
+     Timer=[get_count(normal(End))],
+     wait_time(End,Rpt,Ctr,Int,Cy,Ph,Pt,St,Dp,Lis).
+ handler([aborted|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    handler(Rpt,Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+
+ handler([stopped(Reason,CV)|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    Reason=[],CV=resource_low,
+    handler(Rpt,Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+otherwise.
+ handler([_|Rpt],Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    handler(Rpt,Ctr,Res,At,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+
+
+ wait_time(End,Rpt,Ctr,{Hid,Int},Cy,Ph,Pt,St,Dp,Lis):- wait(End)|
+        Ctr= [statistics|Ctr1],Pt=[],
+        ExecTime:=End-St,
+        profiler_filter:go(Ph,Ph1,Max,What),
+        current_node(LoProc,PeNum),
+        Dp=[put(Hid,{What,PeNum,0,goal(Int,Max,ExecTime,Ph1)})],
+%        Dp = [],
+        status(Rpt,Ctr1,High,Low),
+        Lis={High,Low,ExecTime}.
+ status([statistics(High,Low)|Rpt],Ctr,High1,Low1):- true | 
+        High1=High,Low1=Low,Ctr=[].
+ status([resource_low|Rpt],Ctr,High,Low):- true | 
+        Ctr = [add_resource(0,100000000)|Ctr1],
+        status(Rpt,Ctr1,High,Low).
+ status([resource_added|Rpt],Ctr,High,Low):- true | 
+        Ctr = [allow_resource_report|Ctr1],
+        status(Rpt,Ctr1,High,Low).
+ status([stopped(Reason,CV)|Rpt],Ctr,High1,Low1):- true |
+        Reason=[],CV=attention,
+    status(Rpt,Ctr,High1,Low1).
+ otherwise.
+ status([_|Rpt],Ctr,High,Low):- true | status(Rpt,Ctr,High,Low).
+
+
+%% enter attention %%
+ attention([resource_low|Rpt],Ctr,Type,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):-true|
+    Ctr = [add_resource(0,100000000)|Ctr1],
+    attention(Rpt,Ctr1,Type,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+ attention([resource_added|Rpt],Ctr,Type,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):-true|
+    Ctr = [allow_resource_report|Ctr1],
+    attention(Rpt,Ctr1,Type,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+% before stopped and completed
+ attention([terminated|Rpt],Ctr,before,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+     Timer=[get_count(normal(End))],
+     wait_time2(End,Rpt,Ctr,Int,Cy,Ph,Pt,St,Dp,Lis).
+
+%% after stopped, but before completed
+ attention([terminated|Rpt],Ctr,after(CV),Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+     Timer=[get_count(normal(End))],CV=attention,
+     wait_time(End,Rpt,Ctr,Int,Cy,Ph,Pt,St,Dp,Lis).
+ attention([profiling_information(Node,Type,Depth,Data)|Rpt],Ctr,Mode,
+                    Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    Pt=[profiling_information(Cy,Node,Type,Depth,Data)|Pt1],
+    attention(Rpt,Ctr,Mode,Int,Cy,Ph,Pt1,St,Time,Timer,Dp,Lis).
+
+ attention([profiling_rejected|Rpt],Ctr,before,
+                    Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    Ctr=[profile|Ctr1],
+    attention(Rpt,Ctr1,before,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+ attention([profiling_rejected|Rpt],Ctr,after(CV),
+                    Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+        Ctr=[abort(_)|Ctr1],
+        CV=attention,
+     Timer=[get_count(normal(End))],
+     wait_time(End,Rpt,Ctr1,Int,Cy,Ph,Pt,St,Dp,Lis).
+
+ %% before stopped
+ attention([profiling_completed|Rpt],Ctr,before,
+                    Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+       Cy1 := Cy +1,
+    attention(Rpt,Ctr,before,Int,Cy1,Ph,Pt,St,Time,Timer,Dp,Lis).
+ %% after stopped
+ attention([profiling_completed|Rpt],Ctr,after(CV),
+                    Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+        Ctr=[abort(_)|Ctr1],
+        CV=attention,
+       Cy1 := Cy +1,
+     Timer=[get_count(normal(End))],
+     wait_time(End,Rpt,Ctr1,Int,Cy1,Ph,Pt,St,Dp,Lis).
+
+%% before completed
+ attention([stopped(Reason,CV)|Rpt],Ctr,before,
+                    Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    Ctr=[profile|Ctr1],Reason=[],
+    attention(Rpt,Ctr1,after(CV),Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).
+otherwise.
+ attention([_|Rpt],Ctr,Type,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis):- true |
+    attention(Rpt,Ctr,Type,Int,Cy,Ph,Pt,St,Time,Timer,Dp,Lis).    
+
+ wait_time2(End,Rpt,Ctr,{Hid,Int},Cy,Ph,Pt,St,Dp,Lis):- wait(End)|
+        Ctr= [statistics|Ctr1],Pt=[],
+        ExecTime:=End-St,
+        profiler_filter:go(Ph,Ph1,Max,What),
+        current_node(LoProc,PeNum),
+        Dp=[put(Hid,{What,PeNum,0,goal(Int,Max,ExecTime,Ph1)})],
+        status2(Rpt,Ctr1,before,High,Low),
+        Lis={High,Low,ExecTime}.
+
+ %% before stopped
+ status2([statistics(High,Low)|Rpt],Ctr,before,High1,Low1):- true | 
+        High1=High,Low1=Low,report2(Rpt,Ctr).
+ %% after stopped
+ status2([statistics(High,Low)|Rpt],Ctr,after,High1,Low1):- true | 
+        High1=High,Low1=Low,Ctr=[].
+ status2([resource_low|Rpt],Ctr,Type,High,Low):- true | 
+        Ctr = [add_resource(0,100000000)|Ctr1],
+        status2(Rpt,Ctr1,Type,High,Low).
+ status2([resource_added|Rpt],Ctr,Type,High,Low):- true | 
+        Ctr = [allow_resource_report|Ctr1],
+        status2(Rpt,Ctr1,Type,High,Low).
+ status2([stopped(Reson,CV)|Rpt],Ctr,_,High1,Low1):- true |
+        Reson=[],CV=attention,
+    status2(Rpt,Ctr,after,High1,Low1).
+ otherwise.
+ status2([_|Rpt],Ctr,Type,High,Low):- true | status2(Rpt,Ctr,Type,High,Low).
+
+ report2([],Ctr):- true | Ctr=[].
+ report2([resource_low|Rpt],Ctr):- true | 
+        Ctr = [add_resource(0,100000000)|Ctr1],
+        report2(Rpt,Ctr1).
+ report2([resource_added|Rpt],Ctr):- true | 
+        Ctr = [allow_resource_report|Ctr1],
+        report2(Rpt,Ctr1).
+ report2([stopped(Reason,CV)|Rpt],Ctr):- true |
+        Reason=[],CV=attention,Ctr=[].
+ otherwise.
+ report2([_|Rpt],Ctr):- true | report2(Rpt,Ctr).
+

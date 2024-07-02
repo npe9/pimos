@@ -1,0 +1,160 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+:- module profiling_process.
+:- with_macro pimos.
+:- public create/1.
+
+create(Prof) :- true|
+    current_node(_,Nodes),
+    new_vector(Vec,Nodes),
+    distribute_profiler(0,Nodes,Vec,Prof).
+
+distribute_profiler(Nodes,Nodes,Vec,Prof) :- true| Prof=Vec.
+otherwise.
+distribute_profiler(N,Nodes,Vec,Prof) :- true|
+    merge(Sm,S),
+    set_vector_element(Vec,N,_,Sm,Vec1),
+    profiler(S,N)@node(N),
+    distribute_profiler(~(N+1),Nodes,Vec1,Prof).
+
+profiler(S,N) :- true|
+    get_number_of_processors_in_cluster(NP),
+    pool:keyed_bag(Hds),
+    profiler(S,N,NP,Hds,{[],[],[],[],[],[],[]}).    
+
+profiler([start(ID,Itm)|S],Pe,NP,Hds,ImV) :- true|
+    Hds=[get_all(All), put(ID,{Que,Que})|Hds1],
+    add_item(Itm,ImV,ImV1),
+    make_measurement_record(ImV1,NP,ITEM),
+    prof(ITEM,Data1),
+    set_data(All,Data1,Hds1,Hds2),
+    wait_profile(S,Pe,NP,Hds2,ImV1,Data1).
+
+profiler([profile(ID,Data)|S],Pe,NP,Hds,ImV) :- true|
+    Hds=[get_all(All)|Hds1],
+    make_measurement_record(ImV,NP,ITEM),
+    prof(ITEM,Data1),
+    set_data(All,Data1,Hds1,Hds2),
+    get_data(ID,Data,Hds2,Hds3),
+    wait_profile(S,Pe,NP,Hds3,ImV,Data1).
+
+profiler([stop(ID,Itm,Data)|S],Pe,NP,Hds,ImV) :- true|
+    Hds=[get_all(All)|Hds1],
+    remove_item(Itm,ImV,ImV1),
+    make_measurement_record(ImV1,NP,ITEM),
+    prof(ITEM,Data1),
+    set_data(All,Data1,Hds1,Hds2),
+    get_data(ID,Data,Hds2,Hds3),
+    wait_profile(S,Pe,NP,Hds3,ImV1,Data1).
+
+profiler([],_,_,Hds,_) :- true| Hds=[].
+
+wait_profile(S,Pe,NP,Hds,ImV,Data) :- wait(Data)| profiler(S,Pe,NP,Hds,ImV).
+
+set_data([{ID,{DATA,Que}}|All],Data,Hds,Hds2) :- true|
+    Que=[Data|Que1],
+    Hds=[put(ID,{DATA,Que1})|Hds1],
+    set_data(All,Data,Hds1,Hds2).
+set_data([],_,Hds,Hds1) :- true| Hds1=Hds.
+
+get_data(ID,Data,Hds,Hds1) :- true|
+    Hds=[get_and_put(ID,X,Y)|Hds1],
+    unify_data(X,Y,Data).
+
+unify_data({DATA,Tail},Y,Data) :- true| Data=DATA, Tail=[], Y={Que,Que}.
+
+
+add_item([{Name,Len}|Items],ImV,ImV2) :- true|
+    item_index(Name,Idx),
+    set_vector_element(ImV,Idx,X,Y,ImV1),
+    sorter:sort([Len|X],descending,Y),
+    add_item(Items,ImV1,ImV2).
+add_item([],ImV,ImV1) :- true| ImV1=ImV.
+
+remove_item([{Name,L}|Items],ImV,ImV2) :- true|
+    item_index(Name,Idx),
+    set_vector_element(ImV,Idx,X,Y,ImV1),
+    delete(L,X,Y),
+    remove_item(Items,ImV1,ImV2).
+remove_item([],ImV,ImV1) :- true| ImV1=ImV.
+
+delete(X,[X|Y],Z) :- true| Z=Y.
+delete(_,[],   Z) :- true| Z=[].
+otherwise.
+delete(X,[W|Y],Z) :- true| Z=[W|Z1], delete(X,Y,Z1).
+
+
+make_measurement_record({Idl,Gev,Enc,Dec,Loc,Evn,Mes},NP,ITEM) :- true|
+    new_vector(Vec,7),
+    set_record(idling_time,               NP,Idl,Vec, Vec1),
+    set_record(gevc,                      NP,Gev,Vec1,Vec2),
+    set_record(encoded_message_frequency, NP,Enc,Vec2,Vec3),
+    set_record(decoded_message_frequency, NP,Dec,Vec3,Vec4),
+    set_record(local_gc,                  NP,Loc,Vec4,Vec5),
+    set_record(log_event,                 NP,Evn,Vec5,Vec6),
+    set_record(message_handling_time,     NP,Mes,Vec6,ITEM).
+
+
+:- switch(machine).
+:- case(mpsi,pimm).
+
+get_number_of_processors_in_cluster(NP) :- true| NP=1.
+
+set_record(log_event,_,[Max|_],Vec,Vec1) :- true|
+    new_vector(V,Max),
+    set_vector_element(Vec,5,_,V,Vec1).    
+otherwise.
+set_record(Name,_,[Max|_],Vec,Vec1) :- true|
+    new_string(Str,Max,32),
+    item_index(Name,Idx),
+    set_vector_element(Vec,Idx,_,Str,Vec1).    
+set_record(_,_,[],Vec,Vec1) :- true| Vec1=Vec.
+
+:- default. % PIM/p
+get_number_of_processors_in_cluster(NP) :- true| current_processor(_,NP).
+
+set_record(local_gc,_,[Max|_],Vec,Vec1) :- true|
+    new_string(Str,Max,32),
+    set_vector_element(Vec,4,_,Str,Vec1).    
+set_record(local_gc,_,[],Vec,Vec1) :- true| Vec1=Vec.
+set_record(gevc,_,_,Vec,Vec1) :- true| Vec1=Vec.
+otherwise.
+set_record(Name,NP,[Max|_],Vec,Vec1) :- true|
+    new_vector(V,NP),
+    set_record1(0,NP,Name,Max,V,V1),
+    item_index(Name,Idx),
+    set_vector_element(Vec,Idx,_,V1,Vec1).
+set_record(Name,NP,[],Vec,Vec1) :- true| 
+    new_vector(I,NP),
+    set_vector_element(Vec,Idx,_,I,Vec1),
+    item_index(Name,Idx).
+
+set_record1(NP,NP,_,_,V,V1) :- true| V1=V.
+otherwise.
+set_record1(N,NP,log_event,Sz,V,V2) :- true| 
+    new_vector(Vec,Sz),
+    set_vector_element(V,N,_,Vec,V1),
+    set_record1(~(N+1),NP,log_event,Sz,V1,V2).
+otherwise.
+set_record1(N,NP,Name,Sz,V,V2) :- true| 
+    new_string(Str,Sz,32),
+    set_vector_element(V,N,_,Str,V1),
+    set_record1(~(N+1),NP,Name,Sz,V1,V2).
+
+:- end_switch.
+
+item_index(idling_time,                 Idx) :- true| Idx=0.
+item_index(gevc,                        Idx) :- true| Idx=1.
+item_index(encoded_message_frequency,   Idx) :- true| Idx=2.
+item_index(decoded_message_frequency,   Idx) :- true| Idx=3.
+item_index(local_gc,                    Idx) :- true| Idx=4.
+item_index(log_event,                   Idx) :- true| Idx=5.
+item_index(message_handling_time,       Idx) :- true| Idx=6.
+
+prof(Item,Old) :- wait(Item)| processor_profile(Item,Old).

@@ -1,0 +1,60 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module protRead.
+:- public readDef/2.
+:- with_macro pimos.
+
+readDef(InputFile, Term):- true |
+    merge(TermIn,Term),
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR = [file(normal(FR,AB,ATT))],
+    readDefinition(InputFile, TermIn,FR).
+
+readDefinition([Input|Files], Term, FR):- atom(Input) |
+    atom_table:get_atom_name(Input,normal(FileName)),
+    builtin#append_string(FileName,".prt",PathName),
+    FR = [open(PathName,read(RFile))| FR2],
+    Term = {Term1, Term2},
+    readfile(RFile,Term1),
+    readDefinition(Files, Term2, FR2).
+readDefinition([], Term, FR):- true |
+    Term = [],
+    FR = [].
+    
+
+%%%%%
+% read from file
+%%%%%
+
+readfile(normal(File,_,_), Term):- true |
+    buffer:input_filter(In, File),
+    In = [remove_op(1100,xfy,(';')), add_op(900,xfy,(';')),
+            remove_op(200,fx,('&')), add_op(600,yfx,('&')),
+            remove_op(100,fx,('#')), add_op(100,xf,('#')), 
+            add_op(100,xfx,('##')), add_op(100  ,xf,('##')),gett(Data) | Tail],
+    readfile2(Data,Tail,Term).
+otherwise.
+readfile(_File, _):- true |
+    shoen:raise(pimos_tag#shell, get_std_out, Out),
+    Out = [putl(illegal_file_name),flush(S)],
+    suicide(S).
+
+suicide(S):- wait(S) |
+    shoen:raise(pimos_tag#pimos,general_request,[abort([],_)]),
+    Term = [].
+%    shoen:raise(pimos_tag#pimos,general_request,[suicide(_)]),
+
+readfile2(end_of_file, File, Term):- true |
+    Term = [],
+    File = [].
+otherwise.
+readfile2(Data, File, Term):- true |
+    Term = [Data | Tail],
+    File = [gett(Next) | Ftail],
+    readfile2(Next, Ftail, Tail).
+
+    

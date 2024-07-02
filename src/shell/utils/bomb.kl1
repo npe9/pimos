@@ -1,0 +1,88 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- with_macro pimos.
+:- module bomb.
+:- public usage/1,go/1,go/3,after/1,after/3,at/3,at/6.
+
+usage(Usage) :- true | Usage=[{string#"~s~n~s~n~s~n~s~n~s",[S1,S2,S3,S4,S5]}],
+  S1 = "Usage : bomb:after(Sec)",
+  S2 = "      : bomb:after(Hour,Min,Sec)",
+  S3 = "      : bomb:at(Hour,Min,Sec)",
+  S4 = "      : bomb:at(Year,Month,Day,Hour,Min,Sec)",
+  S5 = "  Year,Month,Day,Hour,Min,Sec;  integer".
+
+go(Time) :- true | after(Time).
+go(H,M,S) :- true | after(H,M,S).
+
+after(Time) :- integer(Time) | start(after(Time)).
+after(H,M,S) :- integer(H),integer(M),integer(S) |
+    timer_utility:get_time_count(H,M,S,0,MTime),
+    time_unit_translator:trans({msec,MTime},{sec,Time}),
+    start(after(Time)).
+
+at(H,M,S) :- integer(H), integer(M), integer(S) |
+    timer_utility:get_time_count(H,M,S,0,MTime),
+    time_unit_translator:trans({msec,MTime},{sec,Time}),
+    start(at(Time)).
+
+at(Y,Mo,D,H,Mi,S) :- integer(Y), integer(Mo), integer(D),
+                     integer(H), integer(Mi), integer(S) |
+    timer_utility:get_date_count(Y,Mo,D,Date),
+    timer_utility:get_time_count(H,Mi,S,0,MTime),
+    time_unit_translator:trans({msec,MTime},{sec,Time}),
+    start(at(Date,Time)).
+
+start(Time) :- true |
+    shoen:raise(pimos_tag#task,general_request,GR),
+    GR=[timer(TmDev)|GR1],
+    check_device(TmDev,Time,GR1).
+
+check_device(normal(Req,_,_),Time,GR) :- true |
+    Req=[create(Timer)],
+    get_device(Timer,Time,GR).
+otherwise.
+check_device(_,_,GR) :- true | GR = [].
+
+get_device(normal(Timer,_,_),Time,GR) :- true |
+    Timer=[set_time_unit(sec,OK)|Timer0],
+    check_unit(OK,Timer0,Time,GR).
+otherwise.
+get_device(_,_,GR) :- true | GR = [].
+
+check_unit(OK,Timer,Mode_Time,GR) :- wait(OK) |
+    ( Mode_Time=at(Date,Time) -> Timer=[get_date_time(Now)|NTimer],
+        check_current(Now,NTimer,Date,Time,GR) ;
+      Mode_Time=at(Time) -> Timer=[get_date_time(Now)|NTimer],
+        check_current(Now,NTimer,Time,GR) ;
+      Mode_Time=after(Time) -> Timer=[on_after(Time,WakeUp)],
+        check_wake_up(WakeUp,GR) ).
+
+check_current(normal(_,NTime),Timer,Time,GR) :- true |
+    ( Time >= NTime -> Timer=[on_after(~(Time-NTime),WakeUp)] ;
+      Time <  NTime -> Timer=[on_after(~(86400+Time-NTime),WakeUp)] ),
+    check_wake_up(WakeUp,GR).
+otherwise.
+check_current(_,Timer,_,GR) :- true | Timer=[], GR=[].
+
+check_current(normal(NDate,NTime),Timer,Date,Time,GR) :- Date > NDate |
+    Timer=[on_after(~((Date-NDate)*86400+Time-NTime),WakeUp)],
+    check_wake_up(WakeUp,GR).
+check_current(normal(NDate,NTime),Timer,Date,Time,GR) :- Date = NDate |
+    ( Time >= NTime -> Timer=[on_after(~(Time-NTime),WakeUp)],
+        check_wake_up(WakeUp,GR) ;
+     otherwise;
+      true -> Timer=[], GR=[] ).
+otherwise.
+check_current(_,Timer,_,_,GR) :- true | Timer=[], GR=[].
+
+check_wake_up(normal(WakeUp),GR) :- true | wake_up(WakeUp,GR).
+otherwise.
+check_wake_up(_,GR) :- true | GR = [].
+
+wake_up(WakeUp,GR) :- wait(WakeUp) |
+%    GR = [suicide(_)].
+    GR = [abort([-4],_)].

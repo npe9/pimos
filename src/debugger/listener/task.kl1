@@ -1,0 +1,284 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_task.
+:- public create/10, calculate_priority/5.
+:- with_macro pimos.
+
+create(GOAL,DEV,ForB,Num,GoalString,RSC,IN,SW,LFT,RGT) :- true|
+    RSC=[get(tracer,TrID), spy(spied_code_vector(SpyCV))|RSC1],
+    buffer_utility:integer_to_string(Num,10,NumString),
+    builtin#append_string(["[",NumString,"] ",GoalString],Name),
+    distribute(GOAL,1,ID,RSC1,RSC2,[],NG,PG,[],GM,GM1,SpyCV,1,_,_,no_profile,Pf,TrID),
+    listener_goal_manager:create(GM,ID),
+    create_task_and_device(DEV,NG,PG,ForB,IN,SW,RSC2,GM1,Num,Name,GoalString,Pf,LFT,RGT).
+
+
+% NORMAL GOALS
+create_task_and_device({DEV,DevSt,MES},GOAL,[],ForB,
+            IN,SW,RSC,GM,Num,Name,GStr,Pf,LFT,RGT) :- true|
+    RSC=[get(tag,Tag),
+         get(priority,{Min,Max}),
+         get(node,Nodes)|RSC1],
+    predicate_to_code(module#listener_trace_driver,apply_goals,1,ApyD),
+    shoen:raise(pimos_tag#task, general_request, 
+        [execute(ApyD,{GOAL},
+          [stdio(DEV,StdSt),
+           name(Name),
+           prio(Min,Max),
+           tag(Tag)|Param],
+            TskStatus)]),
+    partition(Nodes,Param),
+    listener_stdio_manager:std_mes_device(MES,MesSt),
+    listener_stdio_manager:id(MesSt,DevSt,StdSt,StdIoSt),
+    monitor_invoker(TskStatus,StdIoSt,Nodes,ForB,IN,SW,RSC1,GM,Num,GStr,ApyD,Pf,LFT,RGT).
+% WITH PROFILE GOALS
+create_task_and_device({DEV,DevSt,MES},GOAL,PG,ForB,
+            IN,SW,RSC,GM,Num,Name,GStr,profile(Att),LFT,RGT) :- list(PG)|
+    RSC=[get(tag,Tag),
+         get(priority,{Min,Max}),
+         get(node,Nodes)|RSC1],
+    predicate_to_code(module#listener_profiler,go,3,PrfGo),
+    predicate_to_code(module#listener_trace_driver,apply_goals,1,ApyD),
+    shoen:raise(pimos_tag#task, general_request, 
+        [execute(PrfGo,{GOAL,PG,Att},
+          [stdio(DEV,StdSt),
+           name(Name),
+           prio(Min,Max),
+           tag(Tag)|Param],
+            TskStatus)]),
+    partition(Nodes,Param),
+    listener_stdio_manager:std_mes_device(MES,MesSt),
+    listener_stdio_manager:id(MesSt,DevSt,StdSt,StdIoSt),
+    monitor_invoker(TskStatus,StdIoSt,Nodes,ForB,IN,SW,RSC1,GM,Num,GStr,ApyD,profile(Att),LFT,RGT).
+
+% NORMAL STD_IO_DEVICES
+monitor_invoker(normal(Ctr,Rpt),normal(StdID,MES),Nodes,ForB,
+                IN,SW,RSC,GM,Num,GStr,Apply,PROF,LFT,RGT) :- true|
+    control(Ctr1,Ctr,PROF),
+    change_node(Nodes,Rpt,Rpt1),
+    merge(Ctr2,Ctr1),
+    fore_or_back(ForB,StdID,De,SW,SW1,IN,IN1),
+    listener_task_monitor:
+        create(Rpt1,Ctr2,ForB,SW1,De,IN1,RSC,GM,Apply,MES,StdID,Num,GStr,LFT,RGT).
+otherwise.
+% ABNORMAL STD_IO_DEVICES
+monitor_invoker(normal(Ctr,Rpt),abnormal(Fs,Arg),Nodes,_ForB,
+                IN,SW,RSC,GM,Num,GStr,Apply,PROF,LFT,RGT) :- true |
+    IN=[putf(Fs,Arg)|IN1],
+    control([abort(_)|Ctr1],Ctr,PROF),
+    change_node(Nodes,Rpt,Rpt1),
+    merge(Ctr2,Ctr1),
+    listener_task_monitor:
+        create(Rpt1,Ctr2,aborted,SW,_De,IN1,RSC,GM,Apply,listener,0,Num,GStr,LFT,RGT).
+otherwise.
+% TASK STATUS IS ABNORMAL.
+monitor_invoker(_,_,_,_,IN,SW,RSC,GM,Num,_,_,_,LFT,RGT) :- true |
+    IN=[putf(" Sorry, Listener cannot create task !!~n",[])|IN1],
+    RSC=[command(reset_command(_)), variable(abort(Num,Done))],
+    SW=[], GM=[], RGT=LFT,
+    listener_utility:wait_unify(Done,IN1,[]).
+
+
+fore_or_back(fore,StdID,De,SW,SW1,IN,IN1) :- true|
+    SW=[attach(StdID,_,De)|SW1], IN1=IN.
+fore_or_back(back,_,   _De,SW,SW1,IN,IN1) :- true| 
+    SW1=SW, IN=[back(normal)|IN1].
+
+
+control([abort(A)|Ctr],OS,no_profile) :- true|
+    OS=[abort(A)|OS1], control(Ctr,OS1,aborted).
+control([abort(A)|Ctr],OS,aborted) :- true|
+    A=normal, control(Ctr,OS,aborted).
+control([abort(A)|Ctr],OS,profile(Att)) :-
+    Att=[_|NAtt],
+    A=normal, control(Ctr,OS,profile(NAtt)).
+control([abort_profiler(A)|Ctr],OS,no_profile) :- true|
+    OS=[abort(A)|OS1], control(Ctr,OS1,aborted).
+control([abort_profiler(A)|Ctr],OS,aborted) :- true|
+    A=normal, control(Ctr,OS,aborted).
+control([abort_profiler(A)|Ctr],OS,profile(Att)) :- true|
+    Att=[_|_],
+    OS=[abort(A)|OS1], control(Ctr,OS1,aborted).
+control([],OS,_) :- true| OS=[].
+otherwise.
+control([Msg|Ctr],OS,Status) :- 
+    OS=[Msg|OS1], control(Ctr,OS1,Status).
+
+
+distribute([if(C,A,B)|L],ID,ID3,RSC,RSC3,NG,NG1,PG,PG1,GM,GM3,SpyCV,UN,UN3,Att,Pf,Pf3,TrID) :- 
+    predicate_to_code(module#listener_if_command,go,6,Cde),
+    Arg={C,NA,PA,NB,PB,Att},
+    distribute(A,ID, ID1,RSC, RSC1,[],NA,PA,[],GM, GM1,SpyCV,UN, UN1,Att,Pf, Pf1,TrID),
+    distribute(B,ID1,ID2,RSC1,RSC2,[],NB,PB,[],GM1,GM2,SpyCV,UN1,UN2,Att,Pf1,Pf2,TrID),
+    distribute(L,ID2,ID3,RSC2,RSC3,
+        [{external,Cde,Arg}|NG],NG1,PG,PG1,GM2,GM3,SpyCV,UN2,UN3,Att,Pf2,Pf3,TrID).
+
+distribute([unit(A,B)|L],ID,ID3,RSC,RSC3,NG,NG1,PG,PG1,GM,GM3,SpyCV,UN,UN3,Att,Pf,Pf3,TrID) :- 
+    buffer_utility:integer_to_string(UN,10,UNstr),
+    builtin#append_string("Unit_",UNstr,Name),
+    predicate_to_code(module#listener_seq_executor,go,6,Cde),
+    Arg={NA,PA,NB,PB,Att,Name},
+    distribute(A,ID, ID1,RSC, RSC1,[],NA,PA,[],GM, GM1,SpyCV,~(UN+1),UN1,Att,Pf, Pf1,TrID),
+    distribute(B,ID1,ID2,RSC1,RSC2,[],NB,PB,[],GM1,GM2,SpyCV,  UN1,  UN2,Att,Pf1,Pf2,TrID),
+    distribute(L,ID2,ID3,RSC2,RSC3,
+        [{external,Cde,Arg}|NG],NG1,PG,PG1,GM2,GM3,SpyCV,UN2,UN3,Att,Pf2,Pf3,TrID).
+
+distribute([profile(X,Gs)|L],ID,ID1,RSC,RSC2,NG,NG1,PG,PG2,GM,GM1,SpyCV,UN,UN1,Att,_,Pf,TrID) :- 
+    RSC=[profile_data_pool(new_id(N))|RSC1],
+    listener_utility:reverse(Gs,Gs1),
+    PG=[profile(N,X,Gs1)|PG1],
+    distribute(L,ID,ID1,RSC1,RSC2,NG,NG1,PG1,PG2,GM,GM1,SpyCV,UN,UN1,Att,profile(Att),Pf,TrID).
+distribute([profile_msg(X,Gs)|L],ID,ID1,RSC,RSC2,NG,NG1,PG,PG2,GM,GM1,SpyCV,UN,UN1,Att,_,Pf,TrID) :- 
+    RSC=[profile_data_pool(new_id(N))|RSC1],
+    listener_utility:reverse(Gs,Gs1),
+    PG=[profile_msg(N,X,Gs1)|PG1],
+    distribute(L,ID,ID1,RSC1,RSC2,NG,NG1,PG1,PG2,GM,GM1,SpyCV,UN,UN1,Att,profile(Att),Pf,TrID).
+distribute([profile_node(X,Gs)|L],ID,ID1,RSC,RSC2,NG,NG1,PG,PG2,GM,GM1,SpyCV,UN,UN1,Att,_,Pf,TrID) :- 
+    RSC=[profile_data_pool(new_id(N))|RSC1],
+    listener_utility:reverse(Gs,Gs1),
+    PG=[profile_node(N,X,Gs1)|PG1],
+    distribute(L,ID,ID1,RSC1,RSC2,NG,NG1,PG1,PG2,GM,GM1,SpyCV,UN,UN1,Att,profile(Att),Pf,TrID).
+
+distribute([],ID,ID1,RSC,RSC1,NG,NG1,PG,PG1,GM,GM1,_,UN,UN1,_,Pf,Pf1,_TrID) :- 
+        ID1=ID, RSC1=RSC, NG1=NG, PG1=PG, GM1=GM, UN1=UN, Pf1=Pf.
+otherwise.
+distribute([{notrace(Cde),Arg}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID) :- 
+    distribute(L,ID,ID1,RSC,RSC1,
+        [{external,Cde,Arg}|NG],NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID).
+distribute([{trace(Cde),Arg}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,SpyCV,UN,UN1,Att,Pf,Pf1,TrID) :- 
+    GM=[put_goal(ID,{TrID,[],Cde,Arg,Pri,Min,Max},St)|GM1],
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{trace,ID,external,Cde,Arg,Pri,Min,Max}|NG],NG1,PG,PG1,
+        GM1,GM2,SpyCV,UN,UN1,Att,Pf,Pf1,TrID,St).
+distribute([{spyf(Cde),Arg}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID) :- 
+    GM=[put_ancestor(ID,spyf,TrID,[],Cde,Arg,St)|GM1],
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{spy,{ID,Spy},external,Cde,Arg,CV}|NG],NG1,PG,PG1,
+        GM1,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID,St).
+distribute([{spyr(Cde),Arg}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID) :- 
+    GM=[put_ancestor(ID,spyr,TrID,[],Cde,Arg,St)|GM1],
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{spy,{ID,Spy},external,Cde,Arg,CV}|NG],NG1,PG,PG1,
+        GM1,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID,St).
+
+distribute([{notrace(Cde),Arg,Pgm}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID) :- 
+    distribute(L,ID,ID1,RSC,RSC1,
+        [{Pgm,Cde,Arg}|NG],NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID).
+distribute([{trace(Cde),Arg,Pgm}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,SpyCV,UN,UN1,Att,Pf,Pf1,TrID) :- 
+    GM=[put_goal(ID,{TrID,[],Cde,Arg,Pri,Min,Max},St)|GM1],    
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{trace,ID,Pgm,Cde,Arg,Pri,Min,Max}|NG],NG1,PG,PG1,
+        GM1,GM2,SpyCV,UN,UN1,Att,Pf,Pf1,TrID,St).
+distribute([{spyf(Cde),Arg,Pgm}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID) :- 
+    GM=[put_ancestor(ID,spyf,TrID,[],Cde,Arg,St)|GM1],    
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{spy,{ID,Spy},Pgm,Cde,Arg,CV}|NG],NG1,PG,PG1,
+        GM1,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID,St).
+distribute([{spyr(Cde),Arg,Pgm}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID) :- 
+    GM=[put_ancestor(ID,spyr,TrID,[],Cde,Arg,St)|GM1],    
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{spy,{ID,Spy},Pgm,Cde,Arg,CV}|NG],NG1,PG,PG1,
+        GM1,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID,St).
+
+distribute([{notrace(Cde),Arg,Pgm,Pe}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID) :- 
+    distribute(L,ID,ID1,RSC,RSC1,
+        [{Pgm,Cde,Arg,Pe}|NG],NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID).
+distribute([{trace(Cde),Arg,Pgm,Pe}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,SpyCV,UN,UN1,Att,Pf,Pf1,TrID) :- 
+    GM=[put_goal(ID,{TrID,[],Cde,Arg,Pri,Min,Max},St)|GM1],    
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{trace,ID,Pgm,Cde,Arg,Pri,Min,Max,Pe}|NG],NG1,PG,PG1,
+        GM1,GM2,SpyCV,UN,UN1,Att,Pf,Pf1,TrID,St).
+distribute([{spyf(Cde),Arg,Pgm,Pe}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID) :- 
+    GM=[put_ancestor(ID,spyf,TrID,[],Cde,Arg,St)|GM1],    
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{spy,{ID,Spy},Pgm,Cde,Arg,Pe,CV}|NG],NG1,PG,PG1,
+        GM1,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID,St).
+distribute([{spyr(Cde),Arg,Pgm,Pe}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID) :- 
+    GM=[put_ancestor(ID,spyr,TrID,[],Cde,Arg,St)|GM1],    
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{spy,{ID,Spy},Pgm,Cde,Arg,Pe,CV}|NG],NG1,PG,PG1,
+        GM1,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID,St).
+
+distribute([{notrace(Cde),Arg,priority,Sp,P}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID) :- 
+    predicate_to_code(module#listener_task,calculate_priority,5,CP),
+    distribute(L,ID,ID1,RSC,RSC1,
+        [{external,CP,{Sp,P,Pri,Min,Max}},
+         {priority,Cde,Arg,{Pri,Min,Max}}|NG],NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID).
+distribute([{trace(Cde),Arg,priority,Sp,P}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,SpyCV,UN,UN1,Att,Pf,Pf1,TrID) :- 
+    predicate_to_code(module#listener_task,calculate_priority,5,CP),
+    GM=[put_goal(ID,{TrID,[],Cde,Arg,Pri,Min,Max},St)|GM1],
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{external,CP,{Sp,P,Pri,Min,Max}},
+         {trace,ID,priority,Cde,Arg,{Pri,Min,Max}}|NG],NG1,PG,PG1,
+        GM1,GM2,SpyCV,UN,UN1,Att,Pf,Pf1,TrID,St).
+distribute([{spyf(Cde),Arg,priority,Sp,P}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID) :- 
+    predicate_to_code(module#listener_task,calculate_priority,5,CP),
+    GM=[put_ancestor(ID,spyf,TrID,[],Cde,Arg,St)|GM1],    
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{external,CP,{Sp,P,Pri,Min,Max}},
+         {spy,{ID,Spy},priority,Cde,Arg,{Pri,Min,Max},CV}|NG],
+            NG1,PG,PG1,GM1,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID,St).
+distribute([{spyr(Cde),Arg,priority,Sp,P}|L],ID,ID1,RSC,RSC1,
+        NG,NG1,PG,PG1,GM,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID) :- 
+    predicate_to_code(module#listener_task,calculate_priority,5,CP),
+    GM=[put_ancestor(ID,spyr,TrID,[],Cde,Arg,St)|GM1],    
+    distribute(L,~(ID+1),ID1,RSC,RSC1,
+        [{external,CP,{Sp,P,Pri,Min,Max}},
+         {spy,{ID,Spy},priority,Cde,Arg,{Pri,Min,Max},CV}|NG],
+            NG1,PG,PG1,GM1,GM2,{Spy,CV},UN,UN1,Att,Pf,Pf1,TrID,St).
+
+distribute(L,ID,ID1,RSC,RSC1,NG,NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID,St) :- wait(St) |
+    distribute(L,ID,ID1,RSC,RSC1,NG,NG1,PG,PG1,GM,GM1,SpyCV,UN,UN1,Att,Pf,Pf1,TrID).
+
+
+calculate_priority((*),P,Pri,Min,Max) :-
+    current_priority(_,Min,Max),
+    calculate_priority_from_minimum(P,Pri).
+calculate_priority(($),P,Pri,Min,Max) :-
+    current_priority(_,Min,Max),
+    calculate_priority_from_current(P,Pri).
+otherwise.
+calculate_priority(Sp,P,Pri,Min,Max) :-
+    current_priority(Pri,Min,Max),
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(illegal_pragma,"Unknown priority specification"),priority(Sp,P)).
+
+% 92.5.18.
+partition({Start,Nodes},Param) :- true| Param=[node(Start,Nodes)].
+partition([],           Param) :- true| Param=[].
+
+change_node({Start,_},Rpt,Rpt1) :- true|
+    change_node1(Start,Rpt,Rpt1).
+change_node([],Rpt,Rpt1) :- true| Rpt1=Rpt.
+
+change_node1(Start,[exception(K,I,NC,NA)|Rpt],Rpt1) :- true|
+    set_vector_element(I,0,NodeV,NodeV1,I1),
+    set_vector_element(NodeV,0,Node,Node1,NodeV1),
+    Node1 := Node-Start,
+    Rpt1=[exception(K,I1,NC,NA)|Rpt2],
+    change_node1(Start,Rpt,Rpt2).
+change_node1(_,[],Rpt1) :- true| Rpt1=[].
+otherwise.
+change_node1(Start,[M|Rpt],Rpt1) :- true|
+    Rpt1=[M|Rpt2],
+    change_node1(Start,Rpt,Rpt2).

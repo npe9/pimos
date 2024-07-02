@@ -1,0 +1,327 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module timer_request_device.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public driver/7.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver(DRS,V,CAbort,CInfo,Conf,SCont,SAbort)
+%%      DRS     :: Input stream from the client task
+%%      V       :: Output stream to timer_server and informations for timer_devices
+%%                 = {Fep,ASOut,ADT} ; {Fep}
+%%                  Fep   :: = 0 ; fep(FepStream) ; aborted(FepStream)
+%%                           FepStream :: Output stream to fep_request_timer_device (vector stream)
+%%                  ASOut :: Output stream to timer_server (merged)
+%%                  ADT   :: Absolute date and time information
+%%                          = {Date,Sign,TimeEq}
+%%                           Date   :: Date (integer)
+%%                           Sign   :: Sign of time equation
+%%                                    '+' when absolute time >= system timer time
+%%                                    '-' when absolute time < system timer time
+%%                          TimeEq :: Time equation between system_timer and absolute time (32-bit string)
+%%      CAbort  :: Termination variable from the client task
+%%                 = abort ; []
+%%      CInfo   :: Information of the client task
+%%                 = {Uid,Gids,Remote,Node},
+%%                    Remote = {Fep,IONode,RUser,RPass,Dir}
+%%      Conf    :: Output stream to the confirmation device
+%%      SCont   :: Server control stream
+%%      SAbort  :: Server control abortion variable
+
+driver(DRS,V,CAbort,CInfo,Conf,SCont,SAbort) :- true |
+        id_table:id_table(T),
+        If={CInfo,Conf,SCont,SAbort},
+        get_absolute_system_timer_ids(CAbort,DRS,V,T,If,{_,dummy_attention,_},A,A).
+
+get_absolute_system_timer_ids(CAb,_,V,T,If,_,_,_) :- wait(CAb) |
+        terminate_SysTim(V,F),
+        device_driver:abort(If,F,T,fep#normal,_).
+alternatively.
+get_absolute_system_timer_ids(CAb,[current_node(At,NumCL)|DRS],V,T,If,L,A,A1) :- true |
+        device_driver:device_info(node,If,If1,ANode,ANode),
+        get_ids(ANode,At,NumCL,V,V1),
+        driver_0(CAb,DRS,V1,T,If1,L,A,A1).
+get_absolute_system_timer_ids(_,[close(S)|_],V,T,If,{Att,_,AbF},A,A1) :- true |
+        terminate_SysTim(V,F),
+        device_driver:terminate(If,S,F,T,Att,AbF,A,A1).
+get_absolute_system_timer_ids(_,[],V,T,If,{Att,_,AbF},A,A1) :- true |
+        terminate_SysTim(V,F),
+        device_driver:terminate(If,_,F,T,Att,AbF,A,A1).
+
+get_ids(ANode,At,NumCL,{F,ASOut,ADT},V1) :- true |
+        From:=ANode-At,
+        To:=From+NumCL,
+        V1={F,ASOut,From,To,ADT}.
+get_ids(_,_,_,V,V1) :- vector(V,1) | V=V1.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_0(CAb,DRS,V,T,If,Lines,A,A1)
+%%      Lines   :: = {Att,AtF,AbF}
+%%      V       :: Output streams and informations for timer_devices
+%%                 = {Fep,ASOut,From,To,ADT}
+%%                  Fep   :: = 0 ; fep(FepStream) ; aborted(FepStream)
+%%                           FepStream :: Output stream to fep_request_timer_device (vector stream)
+%%                  ASOut :: Output stream to timer_server (merged)
+%%                  From:: Available absolute system timer id (from)
+%%                  To  :: Available absolute system timer id (to)
+%%                  ADT :: Absolute date and time information
+%%                         = {Date,Sign,TimeEq}
+%%                          Date   :: Date (integer)
+%%                          Sign   :: Sign of time equation
+%%                                    '+' when absolute time >= system timer time
+%%                                    '-' when absolute time < system timer time
+%%                          TimeEq :: Time equation between system_timer and absolute time (double)
+
+driver_0(CAb,_,V,T,If,_,_,_) :- wait(CAb) |
+        terminate_SysTim(V,F),
+        device_driver:abort(If,F,T,fep#normal,_).
+alternatively.
+driver_0(CAb,[reset(Args)|DRS],V,T,If,{Att,AtF,AbF},A,A1) :- true |
+        Att=[],A1=[],
+        T=[put_with_new_id(ID,A)|T1],
+        Args=normal(Ab1,Att1,ID),
+        driver_1(CAb,DRS,V,T1,If,{Att1,AtF,AbF},Ab1).
+driver_0(_,[close(S)|_],V,T,If,{Att,_,AbF},A,A1) :- true |
+        terminate_SysTim(V,F),
+        device_driver:terminate(If,S,F,T,Att,AbF,A,A1).
+driver_0(CAb,[Req|DRS],V,T,If,L,A,A1) :-
+    vector_element(Req,0,MsgName),MsgName\=reset,MsgName\=close |
+        A1=[Req|A2],
+        driver_0(CAb,DRS,V,T,If,L,A,A2).
+driver_0(_,[],V,T,If,{Att,_,AbF},A,A1) :- true |
+        terminate_SysTim(V,F),
+        device_driver:terminate(If,_,F,T,Att,AbF,A,A1).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_1(CAb,DRS,V,T,If,Lines,Ab)
+%%      Lines   :: = {Att,AtF,AbF}
+
+driver_1(CAb,_,V,T,If,L,_) :- wait(CAb),
+    L={_,_,AbF} |
+        terminate_SysTim(V,F),
+        device_driver:abort(If,F,T,fep#normal,AbF).
+driver_1(CAb,DRS,V,T,If,L,Ab) :- wait(Ab) |
+        driver_0(CAb,DRS,V,T,If,L,A,A).
+alternatively.
+driver_1(CAb,[Req|DRS],V,T,If,L,Ab) :- true |
+        io_req(CAb,DRS,V,T,If,L,Ab,Req).
+driver_1(_,[],V,T,If,{Att,_,AbF},_) :- true |
+        terminate_SysTim(V,F),
+        device_driver:terminate(If,_,F,T,Att,AbF,A,A).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% io_req(CAb,DRS,V,T,If,Lines,Ab,Req)
+%%      Lines   :: ={Att,AtF,AbF}
+
+io_req(CAb,DRS,V,T,If,L,_,reset(Args)) :-
+    L={Att,AtF,AbF} |
+        Att=[],
+        T=[put_with_new_id(ID,[])|T1],
+        Args=normal(Ab1,Att1,ID),
+        driver_1(CAb,DRS,V,T1,If,{Att1,AtF,AbF},Ab1).
+io_req(CAb,DRS,V,T,If,L,Ab,next_attention(Args)) :-
+    L={Att,AtF,AbF} |
+        Att=[],
+        Args=normal(Att1),
+        driver_1(CAb,DRS,V,T,If,{Att1,AtF,AbF},Ab).
+io_req(CAb,DRS,V,T,If,L,Ab,resend(ID,S)) :- true |
+        device_driver:resend(DRS,DRS1,T,T1,ID,S),
+        driver_1(CAb,DRS1,V,T1,If,L,Ab).
+io_req(CAb,DRS,V,T,If,L,Ab,cancel(ID,S)) :- true |
+        device_driver:cancel(T,T1,ID,S),
+        driver_1(CAb,DRS,V,T1,If,L,Ab).
+
+io_req(_,_,V,T,If,L,_,close(S)) :-
+    L={Att,_,AbF} |
+        terminate_SysTim(V,F),
+        device_driver:terminate(If,S,F,T,Att,AbF,A,A).
+
+io_req(CAb,DRS,V,T,If,L,Ab,create(Args)) :- true |
+        create(CAb,DRS,V,T,If,L,Ab,Args).
+io_req(CAb,DRS,V,T,If,L,Ab,create(ID,Args)) :- ID>=0 |
+        if_create_sys(CAb,If,If1,V,V1,Args,ID),
+        driver_1(CAb,DRS,V1,T,If1,L,Ab).
+io_req(CAb,DRS,V,T,If,L,Ab,create(fep,Args)) :- true |
+        create_fep(CAb,DRS,V,T,If,L,Ab,Args,fep).
+otherwise.
+io_req(CAb,DRS,V,T,If,L,Ab,create(_,Args)) :- true |
+        Args=abnormal,
+        driver_1(CAb,DRS,V,T,If,L,Ab).
+
+
+create(CAb,DRS,V,T,If,L,Ab,Args) :-
+    V={F,ASOut,Frm,To,ADT},ADT={Date,Sign,TimeEq} |
+        device_driver:device_info(node,If,If0,ANode,ANode),
+        internal_handler:get_relative_node(ANode,AbsID),
+        ASOut=[get_alarm_timer(AbsID,ASRes)|ASOut1],
+        NewADT={Date,Sign,TimeEq},
+        create_sys(CAb,If0,If1,ASRes,NewADT,Args,~(AbsID-Frm),AbsID)@node(AbsID),
+        driver_1(CAb,DRS,{F,ASOut1,Frm,To,ADT},T,If1,L,Ab).
+create(CAb,DRS,V,T,If,L,Ab,Args) :- vector(V,1) |
+        create_fep(CAb,DRS,V,T,If,L,Ab,Args,default).
+
+if_create_sys(CAb,If,If1,V,V1,Args,ID) :-
+    V={F,ASOut,Frm,To,ADT},AbsID:=ID+Frm,Frm=<AbsID,AbsID<To,
+    ADT={Date,Sign,TimeEq} |
+        ASOut=[get_alarm_timer(AbsID,ASRes)|ASOut1],
+        NewADT={Date,Sign,TimeEq},
+        V1={F,ASOut1,Frm,To,ADT},
+        create_sys(CAb,If,If1,ASRes,NewADT,Args,ID,AbsID)@node(AbsID).
+otherwise.
+if_create_sys(_,If,If1,V,V1,Args,_) :- true |
+        If=If1,V=V1,Args=abnormal.
+
+create_sys(CAb,If,If1,normal(Out),ADT,Args,ID,AbsID) :- true |
+        add_resource(If,If0,system_timer,{absolute_id(AbsID),relative_id(ID)},Res),
+        create_driver_sys(CAb,If0,If1,ADT,Args,Out,ID,Res).
+
+add_resource(If,If1,Type,Comm,Res) :- true |
+        device_driver:device_info(scont,If,If1,SCont,SCont1),
+%        SCont=[add_resource(Type,"timer",Res)|SCont1].
+        SCont=[add_resource(Type,Comm,Res)|SCont1].
+
+create_driver_sys(CAb,If,If1,ADT,Args,Out,ID,normal(SCont,SAb)) :- true |
+        device_driver:device_info(conf,If,If1,{Conf,Conf1},Conf1),
+        Args=normal(DS),
+        system_timer_device:driver(CAb,DS,Out,ID,{0,Conf,SCont,SAb},ADT).
+otherwise.
+create_driver_sys(_,If,If1,_,Args,Out,_,S) :- true |
+        If=If1,Args=S,Out=[].
+
+create_fep(CAb,DRS,V,T,If,L,Ab,Args,Msg) :- vector_element(V,0,aborted(_)) |
+        set_vector_element(V,0,{_,F},Fep,V1),
+        reset_timeR(normal(F),Fep,L,L1,Res),
+        wait_reset(CAb,DRS,V1,T,If,L1,Ab,Args,Msg,Res).
+create_fep(CAb,DRS,V,T,If,L,Ab,Args,Msg) :- vector_element(V,0,fep(_)) |
+        do_create_fep(CAb,DRS,V,T,If,L,Ab,Args,Msg).
+
+reset_timeR(normal(F),Fep,L,L1,Res) :- true |
+        F={fep#reset,AbF1,AtF1,S,F1},
+        wait_ready(F1,Fep,L,L1,Res,AbF1,AtF1,S).
+otherwise.
+reset_timeR(_,Fep,L,L1,Res) :- true | Fep=0,L=L1,Res=abnormal.
+
+wait_ready(F,Fep,L,L1,Res,AbF1,AtF1,fep#normal) :-
+    L={Att,_,AbF} |
+        Fep=fep(F),
+        AbF=fep#nil,
+        L1={Att,AtF1,AbF1},
+        Res=normal.
+wait_ready(F,Fep,L,L1,Res,AbF1,_,fep#abnormal) :- true |
+        Fep=aborted(F),L=L1,
+        AbF1=fep#nil,
+        Res=abnormal.
+wait_ready(F,Fep,L,L1,Res,AbF1,_,fep#disconnected) :- true |
+        Fep=0,L=L1,
+        F=fep#nil,
+        AbF1=fep#nil,
+        Res=disconnected.
+
+wait_reset(CAb,DRS,V,T,If,L,Ab,Args,Msg,normal) :- true |
+        do_create_fep(CAb,DRS,V,T,If,L,Ab,Args,Msg).
+otherwise.
+wait_reset(CAb,DRS,V,T,If,L,Ab,Args,_,Status) :- true |
+        Args=Status,
+        driver_1(CAb,DRS,V,T,If,L,Ab).
+
+do_create_fep(CAb,DRS,V,T,If,L,Ab,Args,Msg) :- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        send(CAb,DRS,V,T,If1,L,Ab,Args,Msg,RUser,RPass).
+
+send(CAb,DRS,V,T,If,L,Ab,Args,Msg,RUser,RPass) :- wait(RUser),wait(RPass) |
+        set_vector_element(V,0,fep(F),fep(F1),V1),
+        F={fep#create,RUser,RPass,FDS,S,F1},
+        driver_2(CAb,DRS,V1,T,If,L,Ab,Args,Msg,FDS,S).
+
+driver_2(CAb,_,V,T,If,L,_,_,_,FDS,S) :- wait(CAb),
+    L={_,_,AbF} |
+        FDS=fep#nil,
+        terminate_SysTim(V,F),
+        device_driver:abort(If,F,T,S,AbF).
+driver_2(CAb,DRS,V,T,If,L,Ab,Args,Msg,FDS,S) :- wait(Ab),
+    L={Att,AtF,AbF} |
+        AbF=fep#abort,
+        set_vector_element(V,0,{_,F},{aborted,F},V1),
+        wait_20(CAb,DRS,V1,T,If,{Att,AtF,_},Args,Msg,FDS,S).
+alternatively.
+driver_2(CAb,DRS,V,T,If,L,Ab,Args,Msg,FDS,fep#normal) :- true |
+        add_resource(If,If0,fep_timer,fep,Res),
+        create_driver_fep(CAb,If0,If1,Args,FDS,Res,Msg),
+        driver_1(CAb,DRS,V,T,If1,L,Ab).
+driver_2(CAb,DRS,V,T,If,L,Ab,Args,_,FDS,fep#abnormal) :- true |
+        Args=abnormal,
+        FDS=fep#nil,
+        driver_1(CAb,DRS,V,T,If,L,Ab).
+driver_2(CAb,DRS,V,T,If,L,Ab,Args,_,FDS,fep#disconnected) :-
+    L={Att,_,AbF} |
+        Args=disconnected,
+        FDS=fep#nil,
+        AbF=fep#nil,
+        set_vector_element(V,0,{_,F},0,V1),
+        F=fep#nil,
+        driver_1(CAb,DRS,V1,T,If,{Att,_,_},Ab).
+
+wait_20(CAb,DRS,V,T,If,L,Args,Msg,FDS,fep#normal) :- true |
+        add_resource(If,If0,fep_timer,fep,Res),
+        create_driver_fep(CAb,If0,If1,Args,FDS,Res,Msg),
+        driver_0(CAb,DRS,V,T,If1,L,A,A).
+wait_20(CAb,DRS,V,T,If,L,Args,_,FDS,fep#abnormal) :- true |
+        Args=abnormal,
+        FDS=fep#nil,
+        driver_0(CAb,DRS,V,T,If,L,A,A).
+wait_20(CAb,DRS,V,T,If,L,Args,_,FDS,fep#disconnected) :-
+    L={Att,_,AbF} |
+        Args=disconnected,
+        FDS=fep#nil,
+        AbF=fep#nil,
+        set_vector_element(V,0,{_,F},0,V1),
+        F=fep#nil,
+        driver_0(CAb,DRS,V1,T,If,{Att,_,_},A,A).
+wait_20(CAb,DRS,V,T,If,L,Args,Msg,FDS,fep#aborted) :- true |
+        FDS=fep#nil,
+        which_message(Msg,Args,Req),
+        driver_0(CAb,DRS,V,T,If,L,[Req|A],A).
+
+which_message(default,Args,Req) :- true | Req=create(Args).
+which_message(fep,Args,Req) :- true | Req=create(fep,Args).
+
+:- switch(machine).
+:- case(mpsi,pimm).
+create_driver_fep(CAb,If,If1,Args,FDS,normal(SCont,SAb),default) :- true |
+        device_driver:device_info(conf,If,If1,{Conf,Conf1},Conf1),
+        Args=normal(DS),
+        pseudo_system_timer_device:driver(CAb,DS,FDS,{0,Conf,SCont,SAb}).
+create_driver_fep(CAb,If,If1,Args,FDS,normal(SCont,SAb),fep) :- true |
+        device_driver:device_info(conf,If,If1,{Conf,Conf1},Conf1),
+        Args=normal(DS),
+        timer_device:driver(CAb,DS,FDS,{0,Conf,SCont,SAb}).
+:- default.
+create_driver_fep(CAb,If,If1,Args,FDS,normal(SCont,SAb),_) :- true |
+        device_driver:device_info(conf,If,If1,{Conf,Conf1},Conf1),
+        Args=normal(DS),
+        timer_device:driver(CAb,DS,FDS,{0,Conf,SCont,SAb}).
+:- end_switch.
+otherwise.
+create_driver_fep(_,If,If1,Args,FDS,S,_) :- true |
+        If=If1,Args=S,FDS=fep#nil.
+
+
+terminate_SysTim({Fep,ASOut,_,_,_},F) :- true |
+        ASOut=[],
+        get_fep_stream(Fep,F).
+terminate_SysTim({Fep,ASOut,_},F) :- true |
+        ASOut=[],
+        get_fep_stream(Fep,F).
+terminate_SysTim({Fep},F) :- true |
+        get_fep_stream(Fep,F).
+
+get_fep_stream(0,_) :- true | true.
+get_fep_stream({_,F},F1) :- true | F=F1.

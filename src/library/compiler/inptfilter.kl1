@@ -1,0 +1,211 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module kl1cmp_inputfilter.
+:- public filter/4.
+:- with_macro pimos.
+:- include("pimos.h").
+
+filter(Error0, Error, In, Out) :- true |
+    filter(Error0, Error, Out, [], In).
+
+:- local_implicit err:oldnew, out:oldnew.
+filter([Term0-Info|Cdr]) --> true |
+  {{checkClause(normal, Stat, Term0, Term),
+    checkStat(&err, &out, Stat, Term-Info)}},
+    filter(Cdr).
+otherwise.
+filter([Term0|Cdr]) --> true |
+  {{checkClause(normal, Stat, Term0, Term),
+    checkStat(&err, &out, Stat, Term)}},
+    filter(Cdr).
+filter([]) --> true | true.
+
+:- local_implicit stat:oldnew.
+%
+% clause ::= goal ':-' goals '|' goals
+%          | goal '-->' goals '|' goals
+%          | goal ':-' goals
+%          | goal
+%          | ':-' goal
+checkClause(vector({atom((':-')), Dir0}), Clause) --> true |
+    checkGoal(Dir0, Dir),
+    Clause=vector({atom((':-')), Dir}).
+checkClause(vector({atom((':-')), H0, vector({atom(('|')),G0,B0})}), Clause) --> true |
+    checkGoal(H0, H),
+    checkGoals(G0,G),
+    checkGoals(B0,B),
+    Clause=vector({atom((':-')), H, vector({atom(('|')),G,B})}).
+checkClause(vector({atom(('-->')), H0, vector({atom(('|')),G0,B0})}), Clause) --> true |
+    checkGoal(H0, H),
+    checkGoals(G0,G),
+    checkGoals(B0,B),
+    Clause=vector({atom(('-->')), H, vector({atom(('|')),G,B})}).
+otherwise.
+checkClause(vector({atom((':-')), H0, B0}), Clause) --> true |
+    checkGoal(H0, H),
+    checkGoals(B0,B),
+    Clause=vector({atom((':-')), H, B}).
+checkClause(vector({atom(('-->')), H0, B0}), Clause) --> true |
+    checkGoal(H0, H),
+    checkGoals(B0,B),
+    Clause=vector({atom(('-->')), H, B}).
+otherwise.
+checkClause(H0, Clause) --> true |
+    checkGoal(H0, Clause).
+
+%
+% goals ::= goals ',' goals
+%         |  goals ';' goals
+%         |  goals -> goals
+%         | {{goals,.....,goals}}
+%         | goal
+checkGoals(vector({atom(','), G0, G1}), Goals) --> true |
+    checkGoals(G0, NewG0),
+    checkGoals(G1, NewG1),
+    Goals=vector({atom(','), NewG0, NewG1}).
+checkGoals(vector({vector(Goals0)}), WGoals) --> vector(Goals0, N) |
+    checkGoals(0, N, Goals0, Goals),
+    WGoals=vector({vector(Goals)}).
+checkGoals(vector({atom(';'), G0, G1}), Goals) --> true |
+    checkGoals(G0, NewG0),
+    checkGoals(G1, NewG1),
+    Goals=vector({atom(';'), NewG0, NewG1}).
+%% added 92/07/29
+checkGoals(vector({atom(('->')), G0, G1}), Goals) --> true |
+    checkGoals(G0, NewG0),
+    checkGoals(G1, NewG1),
+    Goals=vector({atom(('->')), NewG0, NewG1}).
+otherwise.
+checkGoals(Goal0, Goal) --> true |
+    checkGoal(Goal0, Goal).
+
+checkGoals(A, N, Goals0, Goals) --> A<N |
+  {{set_vector_element(Goals0, A, Elm0, Elm, Goals1)}},
+    checkGoals(Elm0, Elm),
+    A1 := A+1,
+    checkGoals(A1, N, Goals1, Goals).
+checkGoals(N, N, Goals0, Goals) --> true |
+    Goals0=Goals.
+
+% goal ::= npgoal@pragmas
+%      ::= npgoal
+%
+% npgoal ::= atom::atom:baregoal
+%          | atom:baregoal
+%          | baregoal
+%
+% realgoal ::= 
+%         | {atom, term,....term}
+%         | atom
+checkGoal(vector({atom(('@')), NPGoal0, Pragmas0}), Goal) --> true |
+    npGoal(NPGoal0, NPGoal),
+    pragmas(Pragmas0, Pragmas),
+    Goal = vector({atom(('@')), NPGoal, Pragmas}).
+otherwise.
+checkGoal(Goal0, Goal) --> true |
+    npGoal(Goal0, Goal).
+
+pragmas(vector({atom(('@')), Pras0, Pras1}), Pragmas) --> true |
+    pragmas(Pras0, NewPras0),
+    pragmas(Pras1, NewPras1),
+    Pragmas=vector({atom(('@')), NewPras0, NewPras1}).
+otherwise.
+pragmas(Pragma0, Pragma) --> true |
+    bGoal(Pragma0, Pragma).
+
+npGoal(vector({atom((':')), vector({atom(('::')), atom(Pack), atom(Mod)}), BGoal0}), Goal) -->
+        atom(Pack), atom(Mod) |
+    bGoal(BGoal0, BGoal),
+    Goal=vector({atom((':')), vector({atom(('::')), atom(Pack), atom(Mod)}), BGoal}).
+npGoal(vector({atom((':')), atom(Mod), BGoal0}), Goal) --> true |
+    bGoal(BGoal0, BGoal),
+    Goal=vector({atom((':')), atom(Mod), BGoal}).
+otherwise.
+npGoal(Goal0, Goal) --> true |
+    bGoal(Goal0, Goal).
+
+bGoal(vector(Goal0), WGoal) --> vector(Goal0, N) |
+  {{set_vector_element(Goal0, 0, PFunc0, PFunc, Goal1)}},
+    checkAtom(PFunc0, PFunc),
+    checkTerm(1, N, Goal1, Goal),
+    WGoal=vector(Goal).
+bGoal(atom(Atom0), WGoal) --> atom(Atom0) |
+    WGoal=atom(Atom0).
+otherwise.
+bGoal(Goal0, Goal) --> true |
+    checkTerm(Goal0, Goal1),
+    changeStat(syntax, Goal1, Goal).
+
+checkAtom(atom(Atom0), WAtom) --> atom(Atom0) |
+    WAtom=atom(Atom0).
+otherwise.
+checkAtom(Term0, Term) --> true |
+    checkTerm(Term0, Term),
+    changeStat(syntax, Term0, Term).
+
+checkTerm(vector(Vect0), Term) --> vector(Vect0, N) |
+    checkTerm(0, N, Vect0, Vect),
+    Term = vector(Vect).
+checkTerm(list([Car0|Cdr0]), WList) --> true |
+    checkTerm(Car0, Car),
+    checkTerm(Cdr0, Cdr),
+    WList=list([Car|Cdr]).
+checkTerm(atom(Atom), WAtom) --> atom(Atom) |
+    WAtom=atom(Atom).
+checkTerm(integer(Int), WInt) --> integer(Int) |
+    WInt=integer(Int).
+checkTerm(floating_point(Float), WFloat) --> floating_point(Float) |
+    WFloat=floating_point(Float).
+:- if_equal(extended_floating_point, yes).
+checkTerm(extended_floating_point(EFloat), WEFloat) --> %extended_floating_point(EFloat, _) |
+    WEFloat=extended_floating_point(EFloat).
+:- end_if.
+checkTerm(string(String), WString) --> string(String, _, _) |
+    WString=string(String).
+checkTerm(code(Code), WCode) --> code(Code, _, _, _) |
+    WCode=code(Code).
+checkTerm(variable(Var), WVar) --> string(Var, _, 16) |
+    WVar=variable(Var).
+checkTerm(variable(Var), WVar) --> integer(Var) |
+    WVar=variable(Var).
+checkTerm(module(Mod), WMod) --> wait(Mod) |
+    WMod=module(Mod).
+otherwise.
+checkTerm(Data0, Data) --> true |
+    Data0=Data,
+    &stat <= abnormal.
+
+checkTerm(A, N, Vect0, Vect) --> A<N |
+  {{set_vector_element(Vect0, A, Elm0, Elm, Vect1),
+    A1 := A+1}},
+    checkTerm(Elm0, Elm),
+    checkTerm(A1, N, Vect1, Vect).
+checkTerm(N, N, Vect0, Vect) --> true |
+    Vect0=Vect.
+
+changeStat(_, Term0, Term) --> &stat = abnormal |
+   Term0=Term.
+otherwise.
+changeStat(Stat, Term0, Term) --> true |
+   &stat <= Stat,
+   Term0=Term.
+
+:- local_implicit err:oldnew, out:oldnew.
+checkStat(normal, Term) --> true |
+    &out <<= [Term].
+checkStat(syntax, Term-Info) --> true |
+    &err <<= [error("Illegal KL1 clause : ~T", [Term], Info)].
+checkStat(abnormal, Term-Info) --> true |
+%%    &err <<= [error("mis-wrapped Term : ~T", [Term], Info)].
+true.
+otherwise.
+checkStat(syntax, Term) --> true |
+    &err <<= [error("Illegal KL1 clause : ~T", [Term])].
+checkStat(abnormal, Term) --> true |
+%%    &err <<= [error("mis-wrapped Term : ~T", [Term])].
+   true.
+

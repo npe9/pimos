@@ -1,0 +1,173 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_env_manager.
+:- public create/4, filter/2.
+:- with_macro pimos.
+
+create(Mode,TrID,Time,ENV) :- true|
+    shoen:raise(pimos_tag#task,general_request,GR),
+    initialize(Mode,TrID,Time,S,GR,GR1),
+    merge(ENV,ENV1),
+    manager(ENV1,S,GR1).
+
+manager([get(Name,Value)|ENV],S,GR) :- true|
+    S=[get_and_put(Name,Value,Value)|S1],
+    manager(ENV,S1,GR).
+manager([set(Name,Value,Status)|ENV],S,GR) :- true|
+    S=[put(Name,Value,Status)|S1],
+    manager(ENV,S1,GR).
+
+manager([getv(Value)|ENV],S,GR) :- true|
+    S=[carbon_copy(Value)|S1],
+    manager(ENV,S1,GR).
+manager([getv(Name,Value)|ENV],S,GR) :- true|
+    S=[carbon_copy(Name,Val)|S1],
+    status_of_get(Val,Value),
+    manager(ENV,S1,GR).
+manager([setv(Name,Value,Status)|ENV],S,GR) :- true|
+    S=[put(Name,Value,St)|S1],
+    listener_utility:wait_unify(St,Status,normal),
+    manager(ENV,S1,GR).
+manager([resetv(Name,Value)|ENV],S,GR) :- true|
+    S=[get_if_any(Name,Val)|S1],
+    status_of_reset(Val,Name,Value),
+    manager(ENV,S1,GR).
+
+manager([copy(Stream)|ENV],S,GR) :- true|
+    S=[copy(Stream)|S1],
+    manager(ENV,S1,GR).
+manager([connection(Status)|ENV],S,GR) :- true|
+    shoen:raise(pimos_tag#task,general_request,[connection(Status)]),
+    manager(ENV,S,GR).
+manager([do(Msg)|ENV],S,GR) :- true|
+    merge(Msg,Msg1),
+    listener_utility:prepend(Msg1,ENV,ENV1),
+    manager(ENV1,S,GR).
+manager([],S,GR) :- true| S=[], GR=[].
+otherwise.
+manager([Msg|ENV],S,GR) :- true|
+    GR=[Msg|GR1],
+    manager(ENV,S,GR1).
+
+
+status_of_get([],   Value) :- true| Value=[].
+status_of_get([Val],Value) :- true| Value=Val.
+
+status_of_reset({},    Name,Value) :- true| Value=non_existent(Name).
+status_of_reset({Val},_Name,Value) :- true| Value=normal(Val).
+
+
+initialize(main,TrID,Time,S1,GR,GR1) :- true|
+    GR=[getenv(task:directory,Cwd)|GR1],
+    current_node(_,Total),
+    S=[
+        put(tracer,TrID,_),
+        put(starting_time,Time,_),
+        put(directory_stack,[Dir],_),
+        put(tag,listener_tag#task,_),
+        put(scope,tracer,_),
+        put(query,no,_),
+        put(debug,notrace,_),
+        put(statistics,off,_),
+        put(module,0,_),
+        put(resource,{0,100000000},_),
+        put(priority,{0,4000},_),
+        put(nodes,Total,_),
+        put(node,[],_),
+        put(remembrance,off,_),
+        put(display_variables,used,_),
+        put(display_ancestor,abbr,_),
+        put(rewrite_length,30,_),
+        put(rewrite_depth,30,_),
+        put(prompt,{"[\!] ",["[",event_number,"] "]},_)|S1],
+%        put(title,{no," LISTENER  P:\p D:\d",
+%            [" LISTENER  P:",
+%             default_package,
+%             " D:",
+%             current_directory]},_),
+%        put(position,opened,_),
+%        put(size,opened,_),
+    directory(Cwd,Dir),
+    pool:keyed_set(S,64).
+initialize(child(S),TrID,Time,S1,GR,GR1) :- true|
+    GR1=GR,
+    S=[
+        put(tracer,TrID,_),
+        put(starting_time,Time,_)|S1].
+
+directory(normal(Cwd),Dir) :- string(Cwd,_,_)| Dir=Cwd.
+otherwise.
+directory(_,          Dir) :- true| Dir= "???" .
+
+
+filter([getenv(Status)|US],OS) :- true|
+    OS=[getenv(Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+filter([getenv(Name,Status)|US],OS) :- true|
+    listener_utility:ground_unify(Name,Name1),
+    getenv(Name1,Status,OS,OS1),
+    filter(US,OS1).
+filter([setenv(Name,Value,Status)|US],OS) :- true|
+    listener_utility:ground_unify(Name,Name1),
+    listener_utility:ground_unify(Value,Value1),
+    setenv(Name1,Value1,Status,OS,OS1),
+    filter(US,OS1).
+filter([unsetenv(Name,Status)|US],OS) :- true|
+    listener_utility:ground_unify(Name,Name1),
+    unsetenv(Name1,Status,OS,OS1),
+    filter(US,OS1).
+filter([connection(Status)|US],OS) :- true|
+    OS=[connection(Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status),
+    filter(US,OS1).
+
+filter([get(V)|US],OS) :- true|
+    OS=[getv(V1)|OS1],
+    listener_utility:ground_unify(V1,V),
+    filter(US,OS1).
+filter([get(Name,V)|US],OS) :- true|
+    listener_utility:ground_unify(Name,Name1),
+    getv(Name1,V,OS,OS1),
+    filter(US,OS1).
+filter([set(Name,V,S)|US],OS) :- true|
+    listener_utility:ground_unify(Name,Name1),
+    listener_utility:ground_unify(V,V1),
+    setv(Name1,V1,S,OS,OS1),
+    filter(US,OS1).
+filter([reset(Name,V)|US],OS) :- true|
+    listener_utility:ground_unify(Name,Name1),
+    resetv(Name1,V,OS,OS1),
+    filter(US,OS1).
+
+filter([do(Msg)|US],OS) :- true|
+    merge(Msg,Msg1),
+    listener_utility:prepend(Msg1,US,US1),
+    filter(US1,OS).
+filter([],OS) :- true| OS=[].
+
+
+getenv(Name,Status,OS,OS1) :- wait(Name) |
+    OS=[getenv(Name,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status).
+setenv(Name,Value,Status,OS,OS1) :- wait(Name),wait(Value) |
+    OS=[setenv(Name,Value,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status).
+unsetenv(Name,Status,OS,OS1) :- wait(Name) |
+    OS=[unsetenv(Name,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status).
+
+getv(Name,Status,OS,OS1) :- wait(Name) |
+    OS=[getv(Name,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status).
+setv(Name,Value,Status,OS,OS1) :- wait(Name), wait(Value) | 
+    OS=[setv(Name,Value,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status).
+resetv(Name,Status,OS,OS1) :- wait(Name) |
+    OS=[resetv(Name,Status1)|OS1],
+    listener_utility:ground_unify(Status1,Status).

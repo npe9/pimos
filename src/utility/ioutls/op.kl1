@@ -1,0 +1,327 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi366::>sys>user>wada>PIMOS>ioutls>op.kl1.2, 09-Mar-92 17:29:27, Edit by wada
+%% icpsi167::>sys>user>koshimura>kl1>iolib>op.kl1.6, 05-Apr-90 16:19:10, Edit by koshimura
+:- module(operator).
+:- with_macro pimos.
+:- public pool/1,pool/2,empty_pool/1,empty_pool/2,usage/1.
+
+% -- Not public predicates --
+:- public opType/4.
+
+%%%%%%%%%%%%%%%%%%%%
+%
+%     Operator Pool
+%
+%     Messages :     add_op(Prec, Type, OpName)
+%               remove_op(Prec, Type, OpName)
+%               operator(OpName, ^Def)
+%
+%%%%%%%%%%%%%%%%%%%%
+
+usage(L) :- true | ioutls_usage:operator(L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% pool(In)
+%% pool(Init,In)
+%% empty_pool(In)
+%% empty_pool(Init,In)
+
+pool(In) :- true | init_pool(In,64,default).
+
+pool(Init,In) :- true |
+        get_init_table_size(Init,64,Size),
+        init_pool(In,Size,default).
+
+empty_pool(In) :- true | init_pool(In,1,empty).
+
+empty_pool(Init,In) :- true |
+        get_init_table_size(Init,1,Size),
+        init_pool(In,Size,empty).
+
+get_init_table_size(N0,_,N1) :- N0>0 | N0=N1.
+get_init_table_size([size(N0)|Init],_,N1) :- N0>0 |
+        get_init_table_size(Init,N0,N1).
+get_init_table_size([],N,N1) :- true | N=N1.
+otherwise.
+get_init_table_size(Init,N,N1) :- true |
+        N=N1,
+        Info="illegal_initiation_parameter",
+        (Init=[Msg|_] -> raise_error(Info,Msg) ;
+        otherwise ;
+        true -> raise_error(Info,Init)).
+
+init_pool(In,Size,Empty) :- true |
+        merge(In,In1),
+        op_pool(In1,[],S1),
+        init(S,S1,Empty),
+        pool:keyed_set(S,Size).
+
+init(H,T,empty) :- true | H=T.
+init(H,T,default) :- true |
+        H=[ put((:-),       [{1200,xfx},{1200,fx}],_),
+            put(('-->'),    [{1200,xfx}],_),
+            put(('module'),     [{80,fx}],_),
+            put(('public'),     [{1150,fx}],_),
+            put(('implicit'),   [{1150,fx}],_),
+            put(('local_implicit'),[{1150,fx}],_),
+            put(('with_macro'), [{1150,fx}],_),
+            put(('user_macro'), [{1150,fx}],_),
+            put(('|'),      [{1100,xfy}],_),
+            put((';'),      [{1100,xfy}],_),
+            put(('=>'),     [{1090,xfx}],_),
+            put(('->'),     [{1050,xfy}],_),
+            put((','),      [{1000,xfy}],_),
+            put(':',        [{800,xfx}],_),
+            put('=',        [{700,xfx}],_),
+%            put('==',       [{700,xfx}],_),     % deleted 09-Mar-92  (Not used in KL1 syntax)
+            put('\=',       [{700,xfx}],_),
+            put('=:=',      [{700,xfx}],_),
+            put('=\=',      [{700,xfx}],_),
+            put('<',        [{700,xfx}],_),
+            put('>',        [{700,xfx}],_),
+            put('=<',       [{700,xfx}],_),
+            put('>=',       [{700,xfx}],_),
+            put(':=',       [{700,xfx}],_),
+            put('<=',       [{700,xfx}],_),
+            put('$=:=',     [{700,xfx}],_),
+            put('$=\=',     [{700,xfx}],_),
+            put('$<',       [{700,xfx}],_),
+            put('$>',       [{700,xfx}],_),
+            put('$=<',      [{700,xfx}],_),
+            put('$>=',      [{700,xfx}],_),
+            put('$:=',      [{700,xfx}],_),
+            put('$<=',      [{700,xfx}],_),
+            put('$$=:=',    [{700,xfx}],_),
+            put('$$=\=',    [{700,xfx}],_),
+            put('$$<',      [{700,xfx}],_),
+            put('$$>',      [{700,xfx}],_),
+            put('$$=<',     [{700,xfx}],_),
+            put('$$>=',     [{700,xfx}],_),
+            put('$$:=',     [{700,xfx}],_),
+            put('$$<=',     [{700,xfx}],_),
+            put('<<=',      [{700,xfx}],_),
+            put('&<',       [{700,xfx}],_),
+            put('&>',       [{700,xfx}],_),
+            put('&=<',      [{700,xfx}],_),
+            put('&>=',      [{700,xfx}],_),
+            put('^:=',      [{700,xfx}],_),
+            put('@',        [{700,xfy}],_),
+            put('+',        [{500,yfx},{500,fx}],_),
+            put('-',        [{500,yfx},{500,fx}],_),
+            put('/\',       [{500,yfx}],_),
+            put('\/',       [{500,yfx}],_),
+            put('xor',      [{500,yfx}],_),
+            put('*',        [{400,yfx}],_),
+            put('/',        [{400,yfx}],_),
+            put('<<',       [{400,yfx}],_),
+            put('>>',       [{400,yfx}],_),
+            put('**',       [{300,xfy}],_),
+            put('mod',      [{300,xfx}],_),
+            put('&',        [{200,fx}],_),
+            put('++',       [{150,xf}],_),
+            put('--',       [{150,xf}],_),
+            put('#',        [{100,xfx},{100,fx}],_),
+            put('::',       [{90,xfx}],_)|T].
+
+/*
+pool(In) :- true |      % for initiation by add_op messages
+        merge(In,In1),
+        init(H,In1),
+        op_pool(H,[],S),
+        pool:keyed_set(S,64).
+
+init(H,T) :- true |
+     H = [add_op(1200, xfx, (:-)), add_op(1200, fx, (:-)),
+          add_op(1200, xfx, ('-->')),
+          add_op(80, fx, ('module')),   %   add_op(1150, fx, ('module')),
+          add_op(1150, fx, ('public')),
+          add_op(1150, fx, ('implicit')),
+          add_op(1150, fx, ('local_implicit')),
+          add_op(1150, fx, ('with_macro')),
+          add_op(1150, fx, ('user_macro')), % for Macro
+          add_op(1100, xfy, ('|')),
+          add_op(1100, xfy, (';')),
+          add_op(1090, xfx, ('=>')),
+          add_op(1050, xfy, ('->')),
+          add_op(1000, xfy, (',')),
+          add_op(800, xfx, ':'),
+          add_op(700, xfx, '='),
+%          add_op(700, xfx, '=='),      % deleted 09-Mar-92  (Not used in KL1 syntax)
+          add_op(700, xfx, '\='),
+          add_op(700, xfx, '=:='),
+          add_op(700, xfx, '=\='),
+          add_op(700, xfx, '<'),
+          add_op(700, xfx, '>'),
+          add_op(700, xfx, '=<'),
+          add_op(700, xfx, '>='),
+          add_op(700, xfx, ':='),
+          add_op(700, xfx, '<='),
+          add_op(700, xfx, '$=:='),
+          add_op(700, xfx, '$=\='),
+          add_op(700, xfx, '$<'),
+          add_op(700, xfx, '$>'),
+          add_op(700, xfx, '$=<'),
+          add_op(700, xfx, '$>='),
+          add_op(700, xfx, '$:='),
+          add_op(700, xfx, '$<='),
+          add_op(700, xfx, '$$=:='),
+          add_op(700, xfx, '$$=\='),
+          add_op(700, xfx, '$$<'),
+          add_op(700, xfx, '$$>'),
+          add_op(700, xfx, '$$=<'),
+          add_op(700, xfx, '$$>='),
+          add_op(700, xfx, '$$:='),
+          add_op(700, xfx, '$$<='),
+          add_op(700, xfx, '<<='),
+          add_op(700, xfx, '&<'),
+          add_op(700, xfx, '&>'),
+          add_op(700, xfx, '&=<'),
+          add_op(700, xfx, '&>='),
+          add_op(700, xfx, '^:='),
+          add_op(700, xfy, '@'),
+          add_op(500, yfx, '+'), add_op(500, fx, '+'),
+          add_op(500, yfx, '-'), add_op(500, fx, '-'),
+          add_op(500, yfx, '/\'),
+          add_op(500, yfx, '\/'),
+          add_op(500, yfx, 'xor'),
+          add_op(400, yfx, '*'),
+          add_op(400, yfx, '/'),
+          add_op(400, yfx, '<<'),
+          add_op(400, yfx, '>>'),
+          add_op(300, xfy, '**'),
+          add_op(300, xfx, 'mod'),
+          add_op(200, fx, '&'),
+          add_op(150, xf, '++'),
+          add_op(150, xf, '--'),
+          add_op(100, xfx, '#'), add_op(100, fx, '#'),
+          add_op(90, xfx, '::') |T].
+*/
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% op_pool(+Request,DoBuf,-KeyedSet)
+
+op_pool([add_op(Prec,Type,OpName)|In],Do,S) :- true |
+        S=[put(OpName,PrecTypes,OldPrecTypes)|S1],
+        add_op(OldPrecTypes,PrecTypes,Prec,Type,OpName),
+        op_pool(In,Do,S1).
+op_pool([remove_op(Prec,Type,OpName)|In],Do,S) :- true |
+        S = [get_if_any(OpName, PrecTypes)|S1],
+        remove_op(PrecTypes,{Prec,Type}, OpName, S1,S2),
+        op_pool(In,Do,S2).
+op_pool([operator(OpName, Def)|In],Do,S) :- true |
+        S=[get_and_put_if_any(OpName,X,Y,_)|S1],
+        operator(X,Y,Def),
+        op_pool(In,Do,S1).
+op_pool([operator(All)|In],Do,S) :- true |
+        S=[carbon_copy(All)|S1],
+        op_pool(In,Do,S1).
+op_pool([do(Stream)|In],Do,S) :- true |
+        merge(Stream,Stream1),
+        op_pool(Stream1,[In|Do],S).
+op_pool([],[],S) :- true | S = [].
+op_pool([],[In|Do],S) :- true |
+        op_pool(In,Do,S).
+otherwise.
+op_pool([Msg|In],Do,S) :- true |
+        raise_error("illegal_message_protocol",Msg),
+        op_pool(In,Do,S).
+
+add_op({},PTs,Prec,Type,OpName) :- 0=<Prec,Prec=<1200,atom(OpName),
+    (Type=fx;Type=fy;Type=xfx;Type=yfx;Type=xfy;Type=xf;Type=yf) |
+        PTs=[{Prec,Type}].
+add_op({PTs},PTs1,Prec,Type,OpName) :- 0=<Prec,Prec=<1200,atom(OpName),
+    (Type=fx;Type=fy;Type=xfx;Type=yfx;Type=xfy;Type=xf;Type=yf) |
+        scons(PTs,PTs1,Prec,Type).
+otherwise.
+add_op(PTs,PTs1,Prec,Type,OpName) :- true |
+        (PTs={} -> PTs1=[{Prec,Type}] ;
+        PTs={PTs0} -> PTs1=[{Prec,Type}|PTs0]),
+        raise_error("illegal_operator_specification",add_op(Prec,Type,OpName)).
+
+scons([{_,U}|PTs],PTs1,P,T) :-        % replace old operator with new operator if similar type
+    (T=U;
+    T=fx,U=fy; T=fy,U=fx;
+    T=xf,U=yf; T=yf,U=xf;
+    T=xfx,(U=yfx;U=xfy);
+    T=xfy,(U=yfx;U=xfx);
+    T=yfx,(U=xfx;U=xfy)) | PTs1=[{P,T}|PTs].
+scons([],PTs,P,T) :- true | PTs=[{P,T}].
+otherwise.
+scons([PT0|PTs],PTs1,P,T) :- true |
+        PTs1=[PT0|PTs2],
+        scons(PTs,PTs2,P,T).
+
+remove_op({},_,_,S,S1) :- true | S=S1.
+remove_op({PTs},PT,OpName,S,S1) :- true |
+        mklib:delete(PT,PTs,PTs1),
+        (PTs1=[] -> S=S1 ;
+        list(PTs1) -> S=[put(OpName,PTs1,_)|S1]).
+
+operator({},_,Def) :- true | Def=[].
+operator({X},Y,Def) :- true | Y=X,Def=X.
+
+raise_error(Info,Data) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(operator,Info),Data).
+
+/*
+scons(PrecType, [],NPrecTypes) :- true | NPrecTypes = [PrecType].
+scons(PrecType, [PrecType1|PrecTypes],NPrecTypes) :-
+    PrecType = {_,Type}, PrecType1 = {_,Type1} |
+    similarType(Type,Type1, YN),
+    (YN = yes   -> NPrecTypes = [PrecType|PrecTypes];
+     YN = no    -> NPrecTypes = [PrecType1|NPrecTypes1],
+        scons(PrecType, PrecTypes,NPrecTypes1)).
+
+similarType(Type,Type, YN) :- true | YN = yes.
+similarType(fx,fy, YN) :- true | YN = yes.
+similarType(fy,fx, YN) :- true | YN = yes.
+similarType(xf,yf, YN) :- true | YN = yes.
+similarType(yf,xf, YN) :- true | YN = yes.
+similarType(xfx,yfx, YN) :- true | YN = yes.
+similarType(xfx,xfy, YN) :- true | YN = yes.
+similarType(xfy,yfx, YN) :- true | YN = yes.
+similarType(xfy,xfx, YN) :- true | YN = yes.
+similarType(yfx,xfx, YN) :- true | YN = yes.
+similarType(yfx,xfy, YN) :- true | YN = yes.
+otherwise.
+similarType(_,_, YN) :- true | YN = no.
+
+poolOperator({},Def, _, A,Z) :- true | Def = [], A = Z.
+poolOperator({PrecTypes},Def, OpName, A,Z) :- true |
+    Def = PrecTypes, A = [put(OpName, PrecTypes,_)|Z].
+*/
+
+
+%
+% opType(+TokenList,-TokenList, +RequestOpPoolHead,-RequestOpPoolTail)
+%
+opType([],OTL, H,T) :- true | OTL = [], H = T.
+opType([{Kind,X}|TL],OTL, H,T) :- (Kind=pint ; Kind=pfloat ; Kind=pfloatX) |
+         H=[operator('+',OPs)|H1],
+         OTL=[{Kind,X,OPs}|OTL0],
+         opType(TL,OTL0, H1,T).
+opType([{Kind,X}|TL],OTL, H,T) :- (Kind=mint ; Kind=mfloat ; Kind=mfloatX) |
+         H=[operator('-',OPs)|H1],
+         OTL=[{Kind,X,OPs}|OTL0],
+         opType(TL,OTL0, H1,T).
+opType([atom(X)|TL],OTL, H,T) :- true |
+     H = [operator(X,OPs)|H1],
+     OTL = [atom(X,OPs)|OTL0],
+     opType(TL,OTL0, H1,T).
+opType([open(F)|TL],OTL, H,T) :- true |
+     H = [operator(F,OPs)|H1],
+     OTL = [open(F,OPs)|OTL0],
+     opType(TL,OTL0, H1,T).
+opType([('|')|TL],OTL, H,T) :- true |
+     H = [operator(('|'),OPs)|H1],
+     OTL = [atom(('|'),OPs)|OTL0],
+     opType(TL,OTL0, H1,T).
+otherwise.
+opType([Token|TL],OTL, H,T) :- true | OTL = [Token|OTL0], opType(TL,OTL0, H,T).

@@ -1,0 +1,474 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi183::>sys>user>hori>Pimos>v29>Loader>varchk.kl1.4, 12-Sep-91 14:59:54, Edit by hori
+
+:- module kl1_variable_checker.
+:- with_macro pimos.
+:- public varchk/6.
+
+varchk(Term,Position,Op,VorT,Window,WindowL):- true |
+    make_tbl(Term,VarTbl),
+    varchk3a(VarTbl,VoidOrg,BlackOrg,Op,VorT),
+    compactVar(VoidOrg,Void,0,N1),
+    compactVar(BlackOrg,Black,N1,N2),    
+    varchk2(N2,Term,Void,Black,Position,Window,WindowL).
+
+varchk3a([],Void,Black,_,_):- true |
+    Void=[],
+    Black=[].
+varchk3a([Tbl|Cdr],Void,Black,Op,VorT):- true |
+    Tbl=[get_all(VarList)],
+    varchk3b(VarList,Void,Void1,Black,Black1,Op,VorT),
+    varchk3a(Cdr,Void1,Black1,Op,VorT).
+
+varchk3b([{Name,{G,B}}|VT],Void,Void2,Black,Black2,Op,VorT):- true |
+    check_(G,B,Op,S),
+    wait_check(Void,Void1,Black,Black1,S,Name,VorT),
+    varchk3b(VT,Void1,Void2,Black1,Black2,Op,VorT).
+varchk3b([],Void,Void1,Black,Black1,_,_):- true |
+    Void=Void1,
+    Black=Black1.
+
+compactVar([],OUT,N,NN):- true |
+    OUT=[],
+    NN=N.
+compactVar([Name|Cdr],OUT,N,NN):- true |
+    varFilter(Name,Cdr,Cdr1),
+    N1:=N+1,
+    OUT=[Name|NameCdr],
+    compactVar(Cdr1,NameCdr,N1,NN).
+varFilter(_,[],OUT):- true |
+    OUT=[].
+varFilter(Name,[Name|Cdr],OUT):-true |
+    varFilter(Name,Cdr,OUT).
+otherwise.
+varFilter(Name,[Var|Cdr],OUT):- true |
+    OUT=[Var|OUT1],
+    varFilter(Name,Cdr,OUT1).
+
+check_(G,B,Op,S):-
+     true|
+    check_tbl(G,B,S0),
+    check0(Op,S0,S).
+
+check_tbl(0,0,S):- true       | S = 0.
+check_tbl(0,1,S):- true       | S = 1.
+check_tbl(0,2,S):- true       | S = 0.
+check_tbl(0,B,S):- B > 2      | S = 2.
+check_tbl(1,0,S):- true       | S = 1.
+check_tbl(1,1,S):- true       | S = 0.
+check_tbl(1,2,S):- true       | S = 2.
+check_tbl(1,B,S):- B > 2      | S = 2.
+check_tbl(G,0,S):- G > 1      | S = 0.
+check_tbl(G,1,S):- G > 1      | S = 0.
+check_tbl(G,2,S):- G > 1      | S = 2.
+check_tbl(G,B,S):- G > 1,B > 2| S = 2.
+    
+check0(o  ,1 ,S):- true    | S = 1.
+check0(one,1 ,S):- true    | S = 1.
+check0(m  ,2 ,S):- true    | S = 2.
+check0(mrb,2 ,S):- true    | S = 2.
+check0(a  ,S0,S):- S0 \= 0 | S = S0.
+check0(all,S0,S):- S0 \= 0 | S = S0.
+otherwise.
+check0(_,  _, S):- true    | S = off.
+
+wait_check(Void,Void1,Black,Black1,1,Name,terse):- string_element(Name,0,#"_") |
+    Void1=Void,
+    Black1=Black.
+wait_check(Void,Void1,Black,Black1,1,Name,t):- string_element(Name,0,#"_") |
+    Void1=Void,
+    Black1=Black.
+otherwise.
+wait_check(Void,Void1,Black,Black1,1,Name,_):- true|
+    Void=[Name|Void1],
+    Black1=Black.
+wait_check(Void,Void1,Black,Black1,2,Name,_):- true|
+    Black=[Name|Black1],
+    Void1=Void.
+otherwise.
+wait_check(Void,Void1,Black,Black1,_,_,_):- true|
+    Void1=Void,
+    Black1=Black.
+
+varchk2(0,_,_,_,_,Window,WindowL):- true |
+    Window=WindowL.
+varchk2(N,Term,[],BlackVars,Pos,Window,WindowL):- N>0, list(BlackVars) |
+    Window=[stdout([putb("Black : ")|OUT],Pos)|WindowL],
+    list_to_comma(BlackVars,OUT,[]).
+varchk2(N,Term,VoidVars,[],Pos,Window,WindowL):- N>0, list(VoidVars) |
+    Window=[stdout([putb("Void : ")|OUT],Pos)|WindowL],
+    list_to_comma(VoidVars,OUT,[]).
+otherwise.
+varchk2(N,Term,VoidVars,BlackVars,Pos,Window,WindowL):- N>0 |
+    Window=[stdout([putb("Void : ")|OUT0],Pos)|WindowL],
+    list_to_comma(VoidVars,OUT0,OUT1),
+    OUT1 = [putb("  Black : ")|OUT2],
+    list_to_comma(BlackVars,OUT2,[]).
+
+list_to_comma([Var],OUT0,OUT) :- true | OUT0 = [putb(Var)|OUT].
+list_to_comma([Var|Rest],OUT0,OUT) :- list(Rest) |
+    OUT0 = [putb(Var),putb(", ")|OUT1],
+    list_to_comma(Rest,OUT1,OUT).
+
+make_tbl(Term,VarTbl):- true |
+    pool:keyed_set(Tbl,50),
+    pool:keyed_set(TblVec,50),
+    TblList = [{Tbl,TblVec}|[]],
+    count_var(TblList,VarTbl,Term).
+
+count_var(TblList,NewTbl,vector({atom((':-')),B})):- true |
+    % --> B
+    count(TblList,NewTblList,B,b),
+    set_general(NewTblList,NewTbl).
+count_var(TblList,NewTbl,vector({atom((':-')),H,vector({atom(('|')),G,B})})):-
+    true |     % --> H|G|B
+    count(TblList,TblList1,H,g),
+    count(TblList1,TblList2,G,g),
+    count(TblList2,TblList3,B,b),
+    set_general(TblList3,NewTbl).
+otherwise.
+count_var(TblList,NewTbl,vector({atom((':-')),H,B})):- true | % --> H|B
+    count(TblList,TblList1,H,g),
+    count(TblList1,TblList2,B,b),
+    set_general(TblList2,NewTbl).
+count_var(TblList,NewTbl,vector({atom(('-->')),B})):- true |
+    % --> B
+    count(TblList,NewTblList,B,b),
+    set_general(NewTblList,NewTbl).
+count_var(TblList,NewTbl,vector({atom(('-->')),H,vector({atom(('|')),G,B})})):-
+    true |     % --> H|G|B
+    count(TblList,TblList1,H,g),
+    count(TblList1,TblList2,G,g),
+    count(TblList2,TblList3,B,b),
+    set_general(TblList3,NewTbl).
+otherwise.
+count_var(TblList,NewTbl,vector({atom(('-->')),H,B})):- true | % --> H|B
+    count(TblList,TblList1,H,g),
+    count(TblList1,TblList2,B,b),
+    set_general(TblList2,NewTbl).
+otherwise.
+count_var(TblList,NewTbl,H):- true |
+    count(TblList,TblList1,H,g),
+    set_general(TblList1,NewTbl).
+
+count(InTbl,OutTbl,vector({atom(->),G,B}),b):- true |
+    generate_or_Table(InTbl, InTbl1),
+    count(InTbl1,OutTbl1,G,g),
+    integrate_or_Table(OutTbl1, InTbl, OutTbl2),
+    count(OutTbl2,OutTbl,B,b).
+count(InTbl,OutTbl,vector({atom(','),Goal1,Goal2}),GB):- true |
+    count(InTbl,OutTbl1,Goal1,GB),
+    count(OutTbl1,OutTbl,Goal2,GB).
+count(InTbl,OutTbl,vector({atom(';'),atom(otherwise),Goal}),GB):- true |
+    count(InTbl,OutTbl,Goal,GB).        
+count(InTbl,OutTbl,vector({atom(vector_element),A1,A2,variable(Name)}),g) :- true |
+    count(InTbl,OutTbl1,A1,g),
+    count(OutTbl1,OutTbl2,A2,g),
+    special_count_g(OutTbl2,OutTbl,Name,A1).
+count(InTbl,OutTbl,vector({atom(vector_element),A1,A2,variable(Name),A4}),b) :- true |
+    count(InTbl,OutTbl1,A1,b),
+    count(OutTbl1,OutTbl2,A2,b),
+    special_count(OutTbl2,OutTbl,Name,A4).
+otherwise.
+count(InTbl,OutTbl,vector({atom(';'),Goal1,Goal2}),GB):- true |
+    add_Tbl(InTbl,AddTbl,InTbl1),
+    count(InTbl1,OutTbl1,Goal1,GB),
+    count(AddTbl,OutTbl2,Goal2,GB),
+    mergeTbl(OutTbl1,OutTbl2,OutTbl).
+count(InTbl,OutTbl,variable(string#"_"),_):- true |
+    OutTbl = InTbl.
+count(InTbl,OutTbl,list([H|L]),GB):- true |
+    count(InTbl,OutTbl1,H,GB),
+    count(OutTbl1,OutTbl,L,GB).
+count(InTbl,OutTbl,[H|L],GB):- true |
+    count(InTbl,OutTbl1,H,GB),
+    count(OutTbl1,OutTbl,L,GB).
+otherwise.
+count(InTbl,OutTbl,vector(X),GB):- vector(X,L) |
+    count_vector(InTbl,OutTbl,X,GB,0,L).
+otherwise.
+count([{Tbl,TblVec}|Cdr],OutTbl,variable(Str),GB):- true |
+    OutTbl = [{Tbl1,TblVec}|OutCdr],
+    Tbl=[put(Str,New,Old)|Tbl1],
+    count_up(GB,1,New,Old),
+    count_all_tbl(Cdr,OutCdr,Str,GB,1).
+otherwise.
+count(InTbl,OutTbl,_,_):- true | 
+    OutTbl = InTbl.
+
+generate_or_Table([], OUT):- true |    OUT=[].
+generate_or_Table([{_, TblVec}|Cdr], OUT) :- true |
+    pool:keyed_set(OrTbl),
+    OUT=[{OrTbl, TblVec}|OUT1],
+generate_or_Table(Cdr, OUT1).    
+integrate_or_Table([], ORG, OUT):- true |    OUT=ORG.
+integrate_or_Table([{Tbl, TblVec}|Cdr], [{OrgTbl, _}|OrgCdr], OUT):- true |
+    OUT=[{NewTbl, TblVec}|OutCdr],
+    Tbl=[get_all(NewVar)],
+    integrate_or_Table_1(NewVar, OrgTbl, NewTbl),
+    integrate_or_Table(Cdr, OrgCdr, OutCdr).
+%integrate_or_Table_1([{Key, OrNum}|Cdr], OrgTbl, NewTbl):- true |
+%    OrgTbl=[get_if_any_and_put(Key, OldNum, NewNum)|OrgTbl1],
+%    merge_or_Table(OldNum, OrNum, NewNum),
+%    integrate_or_Table_1(Cdr, OrgTbl1, NewTbl).
+%merge_or_Table({}, OrNum, NewNum):- true |    NewNum=OrNum.
+%merge_or_Table({OLD}, {OrG, OrB}, {NewG, NewB}):- OLD={OldG, OldB}, OldB > 0 |
+%    NewB := OldB - 1 + OrB,
+%    NewG := OldG + OrG.
+%otherwise.
+%merge_or_Table({OLD}, {OrG, OrB}, {NewG, NewB}):- OLD={OldG, OldB} |
+%    NewB := OldB + OrB,
+%    NewG := OldG + OrG.
+integrate_or_Table_1([], OrgTbl, NewTbl):- true    |    NewTbl=OrgTbl.
+integrate_or_Table_1([{Key, OrNum}|Cdr], OrgTbl, NewTbl):- true |
+    OrgTbl=[empty(Key, YorN)|OrgTblCdr],
+    merge_or_Table(YorN, Key, OrNum, OrgTblCdr, OrgTblCdr1),
+    integrate_or_Table_1(Cdr, OrgTblCdr1, NewTbl).
+merge_or_Table(yes, Key, OrNum, Tbl, Tbl1):- true |
+    Tbl = [put(Key, OrNum, _)|Tbl1].
+merge_or_Table(no, Key, OrNum, Tbl, Tbl1):- true |
+    Tbl = [get_and_put(Key, OrgNum, NewNum)|Tbl1],
+    merge_or_Table_1(OrgNum, OrNum, NewNum).
+merge_or_Table_1({OrgG, OrgB}, {OrG, OrB}, NewNum):- OrgB > 0 |
+    NewB := OrgB - 1 + OrB,
+    NewG := OrgG + OrG,
+    NewNum = {NewG, NewB}.
+otherwise.
+merge_or_Table_1({OrgG, OrgB}, {OrG, OrB}, NewNum):- true |
+    NewB := OrgB + OrB,
+    NewG := OrgG + OrG,
+    NewNum = {NewG, NewB}.
+
+add_Tbl([],AddOUT,OrgOUT):- true |
+    AddOUT = [],
+    OrgOUT = [].
+add_Tbl([{Tbl,TblVec}|Cdr],AddOUT,OrgOUT):- true |
+    Tbl = [get_all(VarTbl)|Tbl1],
+    TblVec = [get_all(VecTbl)|TblVec1],
+    pool:keyed_set(NewTbl),
+    pool:keyed_set(NewTblVec),
+    AddOUT = [{NewTbl1,NewTblVec1}|AddCdr],
+    OrgOUT = [{Tbl2,TblVec2}|OrgCdr],
+    copy_and_restore_Tbl(NewTbl,NewTbl1,Tbl1,Tbl2,VarTbl),
+    copy_and_restore_Tbl(NewTblVec,NewTblVec1,TblVec1,TblVec2,VecTbl),
+    add_Tbl(Cdr,AddCdr,OrgCdr).
+
+copy_and_restore_Tbl(NewTbl,NewTbl1,Tbl,Tbl1,[]) :- true |
+    NewTbl1=NewTbl,
+    Tbl1=Tbl.
+copy_and_restore_Tbl(NewTbl,NewTbl2,Tbl,Tbl2,[{Key,Value}|Cdr]) :- true |
+    Tbl=[put(Key,Value,_)|Tbl1],
+    NewTbl=[put(Key,Value,_)|NewTbl1],
+    copy_and_restore_Tbl(NewTbl1,NewTbl2,Tbl1,Tbl2,Cdr).
+
+mergeTbl([],[],OUT):- true | OUT = [].
+otherwise.
+mergeTbl([],OUT2,OUT):- true | OUT = OUT2.
+mergeTbl([Str1|Cdr1],OUT2,OUT):- true |
+    OUT = [Str1|Cdr],
+    mergeTbl(Cdr1,OUT2,Cdr).
+
+
+count_all_tbl([],OutTbl,_,_,_):- true |
+    OutTbl = [].
+count_all_tbl([{Tbl,TblVec}|Cdr],OutTbl,Str,GB,N):- true |
+    OutTbl = [{Tbl1,TblVec}|OutCdr],
+    Tbl = [put(Str,New,Old)|Tbl1],
+    count_up(GB,N,New,Old),
+    count_all_tbl(Cdr,OutCdr,Str,GB,N).
+count_all_tbl_sp([],OutTbl,_,_,_):- true |
+    OutTbl = [].
+count_all_tbl_sp([{Tbl,TblVec}|Cdr],OutTbl,Name,Name1,GB):- true |
+    OutTbl = [{Tbl1,TblVec}|OutCdr],
+    Tbl = [put(Name,New,Old),put(Name1,New1,Old1)|Tbl1],
+    count_up(GB,3,New,Old),
+    count_up(GB,1,New1,Old1),
+    count_all_tbl_sp(Cdr,OutCdr,Name,Name1,GB).
+count_all_tbl_spg([],OutTbl,_,_,_):- true |
+    OutTbl = [].
+count_all_tbl_spg([{Tbl,TblVec}|Cdr],OutTbl,Name,Name1,GB):- true |
+    OutTbl = [{Tbl1,TblVec1}|OutCdr],
+    Tbl = [put(Name,New,Old),put(Name1,New1,Old1)|Tbl1],
+    count_up(GB,2,New,Old),
+    count_up(GB,1,New1,Old1),
+    TblVec = [put(Name,New2,Old2)|TblVec1],
+    set_Parent(Name1,New2,Old2),
+    count_all_tbl_spg(Cdr,OutCdr,Name,Name1,GB).
+
+count_vector(InTbl,OutTbl,X,GB,P,L):- P<L |
+    set_vector_element(X,P,E,0,NX), % vector_element(X,P,E,NX)
+    count(InTbl,OutTbl1,E,GB),
+    PP := P+1,
+    count_vector(OutTbl1,OutTbl,NX,GB,PP,L).
+count_vector(InTbl,OutTbl,_,_,P,L):- P>=L |
+    OutTbl = InTbl.
+
+count_up(g,C,New,{{G,B}}) :- true | GG := G+C, New={GG,B}.
+count_up(b,C,New,{{G,B}}) :- true | BB := B+C, New={G,BB}.
+otherwise.
+count_up(g,C,New,{}) :- true | New={C,0}.
+count_up(b,C,New,{}) :- true | New={0,C}.
+
+special_count_g(InTbl,OutTbl,string#"_",A1):- true |
+    count(InTbl,OutTbl,A1,g).
+otherwise.
+special_count_g(InTbl,OutTbl,Name,variable(string#"_")):- true |
+    count(InTbl,OutTbl,Name,g).
+otherwise.
+special_count_g([{Tbl,TblVec}|Cdr],OutTbl,Name,variable(Name1)):- true |
+    OutTbl = [{Tbl1,TblVec1}|OutCdr],
+    Tbl = [put(Name,New,Old),put(Name1,New1,Old1)|Tbl1],
+    count_up(g,2,New,Old),
+    count_up(g,1,New1,Old1),
+    TblVec = [put(Name,New2,Old2)|TblVec1],
+    set_Parent(Name1,New2,Old2),
+    count_all_tbl_spg(Cdr,OutCdr,Name,Name1,g).
+otherwise.
+special_count_g([{Tbl,TblVec}|Cdr],OutTbl,Name,A1):- true |
+    Tbl = [put(Name,New,Old)|Tbl1],
+    count_up(g,2,New,Old),
+    count_all_tbl(Cdr,CdrOut,Name,g,2),
+    OutTbl1 = [{Tbl1,TblVec}|CdrOut],
+    count(OutTbl1,OutTbl,A1,g).
+special_count(InTbl,OutTbl,string#"_",A4):- true |
+    count(InTbl,OutTbl,A4,b).
+otherwise.
+special_count([{Tbl,TblVec}|Cdr],OutTbl,Name,variable(string#"_")):- true |
+    OutTbl = [{Tbl1,TblVec}|CdrOut],
+    Tbl=[put(Name,New,Old)|Tbl1],
+    count_up(b,2,New,Old),
+    count_all_tbl(Cdr,CdrOut,Name,b,2).
+otherwise.
+special_count([{Tbl,TblVec}|Cdr],OutTbl,Name,variable(Name4)):- true |
+    OutTbl = [{Tbl1,TblVec}|OutCdr],
+    Tbl=[put(Name,New,Old), put(Name4,New4,Old4)|Tbl1],
+    count_up(b,3,New,Old),
+    count_up(b,1,New4,Old4),
+    count_all_tbl_sp(Cdr,OutCdr,Name,Name4,b).
+otherwise.
+special_count([{Tbl,TblVec}|Cdr],OutTbl,Name,A4):- true |
+    OutTbl1 = [{Tbl1,TblVec}|OutCdr],
+    Tbl=[put(Name,New,Old)|Tbl1],
+    count_up(b,2,New,Old),
+    count_all_tbl(Cdr,OutCdr,Name,b,2),
+    count(OutTbl1,OutTbl,A4,b).
+
+set_Parent(Name,New,{}) :- true |  New=[Name].
+otherwise.
+set_Parent(Name,New,{Old}):- true | 
+    New=NewC,
+    compact([Name|Old],NewC).
+
+set_general([],NewTblList):- true |
+    NewTblList=[].
+set_general([{Tbl,TblVec}|Cdr],NewTblList):- true |
+    pool:keyed_set(NewTbl),
+    pool:keyed_set(TblPTA),
+    Tbl = [get_all(VarTbl)],
+    NewTblList = [NewTbl2|CdrNewTbl],
+    TblPTA1 = [get_all(VecPTA)],
+    set_general_0(VarTbl,NewTbl,NewTbl1,TblVec,[],TblPTA,TblPTA1),
+    vector_Expchk(NewTbl1,NewTbl2,VecPTA),
+    set_general(Cdr,CdrNewTbl).
+set_general_0([],Tbl,Tbl1,TblVec,TblVec1,TblPTA,TblPTA1):- true |
+    Tbl1=Tbl,
+    TblVec1=TblVec,
+    TblPTA1 = TblPTA.
+otherwise.
+set_general_0([{Child,GB}|Ps],Tbl,Tbl2,TblVec,TblVec3,TblPTA,TblPTA2):- true |
+    Tbl=[put(Child,GB,_)|Tbl1],
+    TblVec=[empty(Child,YorN)|TblVec1],
+    set_general_1(YorN,Child,TblVec1,TblVec2,TblPTA,TblPTA1),
+    set_general_0(Ps,Tbl1,Tbl2,TblVec2,TblVec3,TblPTA1,TblPTA2).
+
+set_general_1(yes,_,TblVec,TblVec1,TblPTA,TblPTA1):- true |
+    TblVec1=TblVec,
+    TblPTA1=TblPTA.
+otherwise.
+set_general_1(no,Child,TblVec,TblVec2,TblPTA,TblPTA1):- true |
+    TblVec=[get_and_put(Child,PTA,PTA)|TblVec1],
+    set_general_2(Child,PTA,TblVec1,TblVec2,TblPTA,TblPTA1).
+
+set_general_2(_,[],TblVec,TblVec1,TblPTA,TblPTA1):- true |
+    TblVec1=TblVec,
+    TblPTA1=TblPTA.
+otherwise.    
+set_general_2(Child,PTA,TblVec,TblVec1,TblPTA,TblPTA1):- true |
+    TblPTA=[put(Child,GnPTA1,_)|TblPTA1],
+    compact(GnPTA,GnPTA1),
+    quest_more_PTA(PTA,GnPTA,TblVec,TblVec1).
+
+quest_more_PTA([PTA|Ps],OUT,TblVec,TblVec3):- true |
+    OUT=[PTA|Names],
+    TblVec=[empty(PTA,YorN)|TblVec1],
+    merge({Names1,Names2},Names),
+    quest_more_PTA(Ps,Names1,TblVec1,TblVec2),
+    quest_root(PTA,YorN,Names2,TblVec2,TblVec3).
+otherwise.
+quest_more_PTA([],OUT,TblVec,TblVec1):- true | 
+    OUT=[],    
+    TblVec1=TblVec.
+
+quest_root(_,yes,OUT,TblVec,TblVec1):- true |
+    OUT=[],
+    TblVec=TblVec1.
+quest_root(PTA,no,OUT,TblVec,TblVec2):- true |
+    OUT=[PTA|Names],
+    TblVec=[get_and_put(PTA,OldPTA,OldPTA)|TblVec1],
+    quest_more_PTA(OldPTA,Names,TblVec1,TblVec2).
+
+vector_Expchk(Tbl,Tbl4,[{Name,PS}|VT]):- true |
+    Tbl = [get(Name,Old)|Tbl1],
+    check_Child(Old,New,PS,Tbl1,Tbl2),
+    Tbl2 = [put(Name,New,_)|Tbl3],
+    vector_Expchk(Tbl3,Tbl4,VT).
+otherwise.
+vector_Expchk(Tbl,Tbl1,[]):- true |
+    Tbl1 = Tbl.
+
+check_Child({G,B},New,Ps,Tbl,Tbl1):- B =:= 1 |
+    compact(Ps,Ps1),
+    check_Parent(Ps1,Tbl,Tbl1,B,BB),
+    New = {G,BB}.
+otherwise.
+    check_Child(Old,New,_,Tbl,Tbl1):- true |
+    Tbl1 = Tbl,
+    New = Old.
+
+compact([],OUT):- true |
+    OUT=[].
+otherwise.
+compact([IN|Cdr],OUT):- true |
+    OUT=[IN|OUT2],
+    compact_filter(IN,Cdr,OUT1),
+    compact(OUT1,OUT2).
+
+compact_filter(_,[],OUT):- true |
+    OUT=[].
+otherwise.
+compact_filter(Mask,[IN|Cdr],OUT):- IN=Mask | compact_filter(Mask,Cdr,OUT).
+otherwise.
+compact_filter(Mask,[IN|Cdr],OUT):- true |
+    OUT=[IN|OUT1],
+    compact_filter(Mask,Cdr,OUT1).
+
+check_Parent([Name|Ps],Tbl,Tbl3,B,BB):- true |
+    Tbl = [get(Name,PTbl)|Tbl1],
+    check_Parent1(PTbl,Tbl1,Tbl2,B,BB,Ps),
+    Tbl2 = [put(Name,PTbl,_)|Tbl3].
+otherwise.
+check_Parent([],Tbl,Tbl1,B,BB):- true |
+    Tbl1 = Tbl,
+    BB = B.
+
+check_Parent1({_,B},Tbl,Tbl1,BC,BBC,_):- B > 0 |
+    BBC := BC + 1,
+    Tbl1 = Tbl.
+otherwise.
+check_Parent1(_,Tbl,Tbl1,BC,BBC,Ps):- true |
+    check_Parent(Ps,Tbl,Tbl1,BC,BBC).

@@ -1,0 +1,50 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  This is the 'Tee' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- with_macro pimos.
+:- module tee.
+:- public usage/1, go/0.
+
+usage(Usage) :- true | Usage = [{string#"~s", [S1]}],
+    S1 = string#"Usage : tee".
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  Create the 'Tee'  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+go :- true |
+    shoen:raise(pimos_tag#shell, get_std_io, StdIo),
+    buffer:interaction_filter(NStdIo, StdIo),
+    shoen:raise(pimos_tag#shell, get_std_mes, StdMes),
+    NStdIo = [prompt(string#"TEE>"), getl(Line) | NewStdIo],
+    loop(Line, NewStdIo, StdMes).
+
+loop(Line, StdIo, StdMes) :- string(Line, 0, _) |    %%% pseudo_eof %%%
+    StdIo = [flush(Stat1)], StdMes = [flush(Stat2)],
+    waitStat(Stat1), waitStat(Stat2).
+loop(Line, StdIo, StdMes) :- string(Line, L, _), L>0 |    %%% normal %%%
+    StdIo = [putl(Line), prompt(string#"TEE>"), getl(NLine) | NewStdIo],
+    StdMes = [putl(Line), flush(_) | NewStdMes],
+    loop(NLine, NewStdIo, NewStdMes).
+loop(Line, StdIo, StdMes) :- integer(Line), Line = -1 |    %%% end_of_file %%%
+    StdIo = [flush(Stat1)], StdMes = [flush(Stat2)],
+    waitStat(Stat1), waitStat(Stat2).
+otherwise.
+loop(_, StdIo, StdMes) :- true | StdIo = [], StdMes = [].  %%% abnormal %%%
+
+waitStat(Stat) :- wait(Stat) | true.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%  End of the 'Tee' module.  %%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

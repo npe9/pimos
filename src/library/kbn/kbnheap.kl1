@@ -1,0 +1,237 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>KBN>kbnheap.kl1.30, 10-Sep-92 21:00:00, Edit by hori
+
+:- module kbn_heap.
+:- with_macro pimos.
+:- public heap_table/9, heap_atomic/4.
+:- public padding/5.
+:- public tag/2.
+:- include("pimos.h").
+
+heap_table([module(Module,Ref)|HT],Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- true |
+    LT0 = [ref(Module,Ref)|LT1],
+    heap_table(HT,Addr0,Addr,LT1,LT,AT0,AT,KBN0,KBN).
+heap_table([vector(Vec0,Ref)|HT],Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- true |
+    heap(Vec0,Ref,Addr0,Addr1,LT0,LT1,AT0,AT1,KBN0,KBN1),
+    heap_table(HT,Addr1,Addr,LT1,LT,AT1,AT,KBN1,KBN).
+heap_table([list(List,Ref)|HT],Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- List = [Car0|Cdr0] |
+    heap(List,Ref,Addr0,Addr1,LT0,LT1,AT0,AT1,KBN0,KBN1),
+    heap_table(HT,Addr1,Addr,LT1,LT,AT1,AT,KBN1,KBN).
+heap_table([string(String0,Ref)|HT],Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :-
+    heap(String0,Ref,Addr0,Addr1,LT0,LT1,AT0,AT1,KBN0,KBN1),
+    heap_table(HT,Addr1,Addr,LT1,LT,AT1,AT,KBN1,KBN).
+heap_table([],Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- true |
+    Addr0 = Addr,
+    LT0 = LT,
+    AT0 = AT,
+    KBN0 = KBN.
+:- if_equal(extended_floating_point, yes).
+heap(ExFloat0,ExFloat,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- extended_floating_point(ExFloat) |
+    LT0 = LT,
+    AT0 = AT,
+    tag(ex_float,ExFloatTag),
+    extended_floating_point_to_binary(ExFloat0,Bin0,Bin1,Bin2),
+    ExFloat = {ExFloatTag,Addr0},
+    KBN0 = [Bin0,Bin1,Bin2|KBN],
+    Addr := Addr0 + 3.
+:- end_if.
+heap(String0,String,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- string(String0,Len,Size) |
+    LT0 = LT,
+    AT0 = AT,
+    tag(string,StringTag),
+    tag(cdesc,CDESCTag),
+    String = {StringTag,Addr0},
+    string_cdesc(Size,Len,CDESC),
+    KBN0 = [{CDESCTag,CDESC}|KBN1],
+    change_element_size(String0,32,String1),
+    Addr1 := Addr0 + 1,
+    heap_string(String1,Addr1,Addr2,KBN1,KBN2),
+    padding(Addr0,Addr2,Addr,KBN2,KBN).
+heap(List0,List,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- List0 = [Car0|Cdr0] |
+    tag(list,ListTag),
+    List = {ListTag,Addr0},
+    KBN0 = [Car,Cdr|KBN1],
+    Addr1 := Addr0 + 2,
+    heap(Car0,Car,Addr1,Addr2,LT0,LT1,AT0,AT1,KBN1,KBN2),
+    heap(Cdr0,Cdr,Addr2,Addr,LT1,LT,AT1,AT,KBN2,KBN).
+heap(Vect0,Vect,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- Vect0 = {Elm0} |
+    tag(vect1,VectTag),
+    Vect = {VectTag,Addr0},
+    KBN0 = [Elm00|KBN1],
+    Addr1 := Addr0 + 1,
+    heap(Elm0,Elm00,Addr1,Addr,LT0,LT,AT0,AT,KBN1,KBN).
+heap(Vect0,Vect,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- Vect0 = {Elm0,Elm1} |
+    tag(vect2,VectTag),
+    Vect = {VectTag,Addr0},
+    KBN0 = [Elm00,Elm11|KBN1],
+    Addr1 := Addr0 + 2,
+    heap(Elm0,Elm00,Addr1,Addr2,LT0,LT1,AT0,AT1,KBN1,KBN2),
+    heap(Elm1,Elm11,Addr2,Addr,LT1,LT,AT1,AT,KBN2,KBN).
+heap(Vect0,Vect,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- Vect0 = {Elm0,Elm1,Elm2} |
+    tag(vect3,VectTag),
+    Vect = {VectTag,Addr0},
+    KBN0 = [Elm00,Elm11,Elm22|KBN1],
+    Addr1 := Addr0 + 3,
+    heap(Elm0,Elm00,Addr1,Addr2,LT0,LT1,AT0,AT1,KBN1,KBN2),
+    heap(Elm1,Elm11,Addr2,Addr3,LT1,LT2,AT1,AT2,KBN2,KBN3),
+    heap(Elm2,Elm22,Addr3,Addr,LT2,LT,AT2,AT,KBN3,KBN).
+heap(Vect0,Vect,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- Vect0 = {Elm0,Elm1,Elm2,Elm3} |
+    tag(vect4,VectTag),
+    Vect = {VectTag,Addr0},
+    KBN0 = [Elm00,Elm11,Elm22,Elm33|KBN1],
+    Addr1 := Addr0 + 4,
+    heap(Elm0,Elm00,Addr1,Addr2,LT0,LT1,AT0,AT1,KBN1,KBN2),
+    heap(Elm1,Elm11,Addr2,Addr3,LT1,LT2,AT1,AT2,KBN2,KBN3),
+    heap(Elm2,Elm22,Addr3,Addr4,LT2,LT3,AT2,AT3,KBN3,KBN4),
+    heap(Elm3,Elm33,Addr4,Addr,LT3,LT,AT3,AT,KBN4,KBN).
+heap(Vect0,Vect,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :-
+    Vect0 = {Elm0,Elm1,Elm2,Elm3,Elm4} |
+    tag(vect5,VectTag),
+    Vect = {VectTag,Addr0},
+    KBN0 = [Elm00,Elm11,Elm22,Elm33,Elm44|KBN1],
+    Addr1 := Addr0 + 5,
+    heap(Elm0,Elm00,Addr1,Addr2,LT0,LT1,AT0,AT1,KBN1,KBN2),
+    heap(Elm1,Elm11,Addr2,Addr3,LT1,LT2,AT1,AT2,KBN2,KBN3),
+    heap(Elm2,Elm22,Addr3,Addr4,LT2,LT3,AT2,AT3,KBN3,KBN4),
+    heap(Elm3,Elm33,Addr4,Addr5,LT3,LT4,AT3,AT4,KBN4,KBN5),
+    heap(Elm4,Elm44,Addr5,Addr,LT4,LT,AT4,AT,KBN5,KBN).
+heap(Vect0,Vect,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :-
+    Vect0 = {Elm0,Elm1,Elm2,Elm3,Elm4,Elm5} |
+    tag(vect6,VectTag),
+    Vect = {VectTag,Addr0},
+    KBN0 = [Elm00,Elm11,Elm22,Elm33,Elm44,Elm55|KBN1],
+    Addr1 := Addr0 + 6,
+    heap(Elm0,Elm00,Addr1,Addr2,LT0,LT1,AT0,AT1,KBN1,KBN2),
+    heap(Elm1,Elm11,Addr2,Addr3,LT1,LT2,AT1,AT2,KBN2,KBN3),
+    heap(Elm2,Elm22,Addr3,Addr4,LT2,LT3,AT2,AT3,KBN3,KBN4),
+    heap(Elm3,Elm33,Addr4,Addr5,LT3,LT4,AT3,AT4,KBN4,KBN5),
+    heap(Elm4,Elm44,Addr5,Addr6,LT4,LT5,AT4,AT5,KBN5,KBN6),
+    heap(Elm5,Elm55,Addr6,Addr,LT5,LT,AT5,AT,KBN6,KBN).
+heap(Vect0,Vect,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :-
+    vector(Vect0,Len), Len >= 7 |
+    tag(vect,VectTag),
+    tag(vdesc,VDESCTag),
+    tag(integer,IntTag),
+    Vect = {VectTag,Addr0},
+    Addr1 := Addr0 + 3,
+    KBN0 = [{VDESCTag,Addr1},{IntTag,Len},{IntTag,Len}|KBN1],
+    heap_vect(0,Len,Vect0,Addr1,Addr,LT0,LT,AT0,AT,KBN1,KBN).
+otherwise.
+heap(Atomic0,Atomic,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- true |
+    heap_atomic(Atomic0,Atomic,AT0,AT),
+    KBN0 = KBN,
+    Addr0 = Addr,
+    LT0 = LT.
+
+heap_atomic(Vect0,Vect,AT0,AT) :- Vect0 = {} |
+    tag(vect0,VectTag),
+    Vect = {VectTag,16#"0"},
+    AT0 = AT.
+heap_atomic(Atom0,Atom,AT0,AT) :- atom(Atom0) |
+    tag(atom,AtomTag),
+    AT0 = [atom(Atom0,AtomID)|AT],
+    Atom = {AtomTag,AtomID}.
+heap_atomic(Int0,Int,AT0,AT) :- integer(Int0) |
+    tag(integer,IntTag),
+    Int = {IntTag,Int0},
+    AT0 = AT.
+heap_atomic(Real0,Real,AT0,AT) :- floating_point(Real0), tag_and_value(Real0,_,Value) |
+    tag(float,FloatTag),
+    Real = {FloatTag,Value},
+    AT0 = AT.
+otherwise.
+heap_atomic(Code0,Code,AT0,AT) :-
+    wait(Code0), tag_and_value(Code0,Tag,Value) |
+    Code = {Tag,Value},
+    AT0 = AT.
+
+heap_vect(P,Len,Vect0,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :-
+    vector_element(Vect0,P,Elm) |
+    KBN0 = [Elm0|KBN1],
+    heap(Elm,Elm0,Addr2,Addr,LT1,LT,AT0,AT1,KBN2,KBN),
+    Addr1 := Addr0 + 1,
+    P1 := P + 1,
+    heap_vect(P1,Len,Vect0,Addr1,Addr2,LT0,LT1,AT1,AT,KBN1,KBN2).
+heap_vect(P,Len,Vect0,Addr0,Addr,LT0,LT,AT0,AT,KBN0,KBN) :- P >= Len |
+    number_of_fill(Len,M),
+    fill(M,KBN0,KBN),
+    Addr := Addr0 + M,
+    LT0 = LT,
+    AT0 = AT.
+
+string_cdesc(1,Len,CDESC) :- true |
+    CDESC := ( (  32 - (Len mod 32) ) << 27 ) \/ ( (Len + 31) / 32 ).
+string_cdesc(8,Len,CDESC) :- true |
+    CDESC := ((((( 4 - (Len mod 4) ) /\ 16#"3" ) << 3 ) \/ 2#"011" ) << 24 ) \/ ( (Len + 3) / 4).
+string_cdesc(16,Len,CDESC) :- true |
+    CDESC := ((((( 2 - (Len mod 2) ) /\ 16#"1" ) << 3 ) \/ 2#"100" ) << 24 ) \/ ( (Len + 1) / 2).
+string_cdesc(32,Len,CDESC) :- true |
+    CDESC := ( ( 2#"101" ) << 24 ) \/ Len.
+
+heap_string(String0,Addr0,Addr,KBN0,KBN) :- string(String0,Len,Size) |
+    heap_string(0,Len,String0,Addr0,Addr,KBN0,KBN).
+
+heap_string(P,Len,String0,Addr0,Addr,KBN0,KBN) :-
+    string_element(String0,P,Elm) |
+    tag(integer,IntTag),
+    KBN0 = [{IntTag,Elm}|KBN1],
+    Addr1 := Addr0 + 1,
+    P1 := P + 1,
+    heap_string(P1,Len,String0,Addr1,Addr,KBN1,KBN).
+heap_string(P,Len,String0,Addr0,Addr,KBN0,KBN) :- P >= Len |
+    KBN0 = KBN,
+    Addr0 = Addr.
+
+%%%% PADDING
+
+padding(Addr0,Addr1,Addr,KBN0,KBN) :- true |
+    N := Addr1 - Addr0,
+    number_of_fill(N,M),
+    Addr := Addr1 + M,
+    fill(M,KBN0,KBN).
+
+number_of_fill(N,M) :- N =< 8 | M = 0.
+number_of_fill(N,M) :- 8 < N, N =< 16 |
+    M := 16 - N.
+number_of_fill(N,M) :- 16 < N, N =< 32 |
+    M := 32 - N.
+number_of_fill(N,M) :- 32 < N, N =< 64 |
+    M := 64 - N.
+number_of_fill(N,M) :- 64 < N, N =< 128 |
+    M := 128 - N.
+number_of_fill(N,M) :- 128 < N, N =< 256 |
+    M := 256 - N.
+number_of_fill(N,M) :- 256 < N | M = 0.
+
+fill(M,KBN0,KBN) :- M > 0 |
+    tag(integer,IntTag),
+    KBN0 = [{IntTag,0}|KBN1],
+    N := M - 1,
+    fill(N,KBN1,KBN).
+fill(0,KBN0,KBN) :- true | KBN0 = KBN.
+
+%%%% TAG TABLE
+
+tag( integer,  TAG ) :- true | TAG = 16#"00".
+tag( atom,     TAG ) :- true | TAG = 16#"02".
+tag( list,     TAG ) :- true | TAG = 16#"05".
+tag( vdesc,    TAG ) :- true | TAG = 16#"0D".
+tag( string,   TAG ) :- true | TAG = 16#"0F".
+tag( vect0,    TAG ) :- true | TAG = 16#"10".
+tag( vect1,    TAG ) :- true | TAG = 16#"13".
+tag( vect2,    TAG ) :- true | TAG = 16#"15".
+tag( vect3,    TAG ) :- true | TAG = 16#"17".
+tag( vect4,    TAG ) :- true | TAG = 16#"19".
+tag( vect5,    TAG ) :- true | TAG = 16#"1B".
+tag( vect6,    TAG ) :- true | TAG = 16#"1D".
+tag( vect,     TAG ) :- true | TAG = 16#"1F".
+tag( cdesc,    TAG ) :- true | TAG = 16#"25".
+tag( module,   TAG ) :- true | TAG = 16#"27".
+tag( float,    TAG ) :- true | TAG = 16#"30".
+tag( ex_float, TAG ) :- true | TAG = 16#"3F".

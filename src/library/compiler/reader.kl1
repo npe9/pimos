@@ -1,0 +1,757 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%
+% KL1 KL1 compiler
+%
+% rewritten using MACRO 
+% 880531 D.Sekita
+%%%%%%%%%%%%%%%%%%%%%%%%
+
+% 910801 support new error sprcification
+% 871013 rewrite IO instructions D.Sekita
+
+:- module kl1cmp_reader.
+:- public count_variables/4, create_reader/5, functor/3, wfunctor/4, wgen_functor/3,
+          gen_functor/3, herrey/3,
+          convert_integer_to_string/2,
+        name_generator/7.
+:- with_macro pimos.          
+
+'C'( O0, O1, I0, I1) :- true | O0=I0, O1=I1.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Name generator  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% The number generator returns successive (hopefully) new names, in response to
+% 'new_name' messages.
+
+:- local_implicit out:oldnew, atom_str:oldnew, atom_no:shared.
+name_generator(HeadStr, []) --> true | true.
+name_generator(HeadStr, [new_name(F/A, Functor)|P]) --> true |
+   make_new_name(HeadStr, F/A, Functor),
+   &atom_no <= &atom_no + 1,
+   name_generator(HeadStr, P).
+
+make_new_name(HeadStr, F/A, Functor) --> true |
+ {{
+% Temp
+  &atom_str <<= [get_atom_name(F, normal(Fn))],
+   convert_integer_to_string(A, An),
+   convert_integer_to_string(&atom_no, X3), 
+   builtin#append_string([HeadStr, Fn, string#"/", An, string#"_", X3],
+        Func)}},
+   &atom_str <<= [intern(Func, normal(Functor))].
+
+convert_integer_to_string(A, Astr) :- true |
+    convert_integer_to_list(Alist, [], 1, N, A),
+    new_string(Str0, N, 16),
+    convert_list_to_string(Alist, 0, Str0, Astr).
+
+:- local_implicit char_list:oldnew, len:oldnew.
+convert_integer_to_list( Int ) --> Int < 10 | 
+  {{Int_char := Int+16#"2330"}},
+    &char_list <<= [Int_char].
+convert_integer_to_list( Int ) --> Int >= 10 |
+  {{Int1 := Int/10, Mod := Int mod 10, Mod_char := Mod+16#"2330"}},
+    convert_integer_to_list( Int1 ),
+   &len <= &len+1,
+   &char_list <<= [Mod_char].
+
+len_of_list( [], N ) :- true | N = 0.
+len_of_list( [_|Rest], Num ) :- true |
+   len_of_list( Rest, Num1 ),
+   Num := Num1+1.
+
+%:- mode convert_list_to_string(+, +, -).
+convert_list_to_string( [C|Rest], Pos, Str0, Str ) :- true |
+   set_string_element(Str0, Pos, C, Str1),
+   Pos1 := Pos+1,
+   convert_list_to_string(Rest, Pos1, Str1, Str).
+convert_list_to_string([], _, Str0, Str) :- true | Str0=Str.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Reading predicates  %%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+:- local_implicit in:oldnew, out:oldnew.
+%:- mode create_reader(? , -, ?).
+create_reader(Instream) --> true |
+  {{ 
+% Temprorary
+     atom_table:cache_table(AtomStr),
+     name_generator(&out, AtomStr, [], 0, string#"$", N)
+        @priority('$', 1024),
+     merge({N0, N1}, N)}},
+     expanded_read(N0, 0, Garg, 0, Larg, directive, Pos, Expanded_term0, Keep),
+  {{ merge(Expanded_term0, Expanded_term)}},
+     reader(N1, Garg, _, Larg, _, Pos, _, Instream, Keep, Expanded_term).
+
+% Handle message 'read_predicate'.
+
+:- local_implicit in:oldnew, out:oldnew, name_stream:stream,
+    gex_args:oldnew, lex_args:oldnew, pos:oldnew.
+
+reader([read_predicate(Clauses, Pred)|S], K, [C-P|T]) --> true |
+ {{ Clauses=C, Pred=P }},
+    reader(S, K, T).
+alternatively.
+reader([read_predicate(Clauses, Pred)|S], X-end_of_file, []) --> true |
+ {{ Clauses=[], Pred=end_of_file }},
+   reader(S, X-end_of_file, []).
+otherwise.
+reader([read_predicate(Clauses, Pred)|S], K0, []) --> true |
+   expanded_read(Expanded_terms1, K1),
+   read_predicate(Expanded_terms2, K0, K1, Clauses, Pred, K),
+ {{merge({Expanded_terms1, Expanded_terms2}, Expanded_terms)}},
+   reader(S, K, Expanded_terms).
+reader([], _, _) --> true | true.
+
+:- local_implicit in:oldnew, out:oldnew,
+                  name_stream:stream,
+          gex_args:oldnew, lex_args:oldnew, pos:oldnew,
+                  expanded_terms:stream.
+
+read_predicate(Term0-directive,K1,Cls,Pr,K) --> true |
+  {{ K = Term-P}},
+    read_predicate_one_block(Term0-directive, K1, Cls, Pr, Term1-P1),
+  {{otherwise_error_check(&out, Term0, Term1, Ans)}},
+    case_dispatch_on_error(Ans, Term0-directive, K1, Cls, Pr,
+       Term1-P1, Term-P).
+read_predicate(Term0-macro, K1, Cls, Pr, K) --> true |
+  {{ K = Term-P}},
+    read_predicate_one_block(Term0-macro, K1, Cls, Pr, Term1-P1),
+  {{otherwise_error_check(&out, Term0, Term1, Ans)}},
+    case_dispatch_on_error(Ans, Term0-macro, K1, Cls, Pr,
+       Term1-P1, Term-P).
+read_predicate(Term0-message, K1, Cls, Pr, K) --> true |
+  {{ K = Term-P}},
+    read_predicate_one_block(Term0-message, K1, Cls, Pr, Term1-P1),
+  {{otherwise_error_check(&out, Term0, Term1, Ans)}},
+    case_dispatch_on_error(Ans, Term0-message, K1, Cls, Pr,
+       Term1-P1, Term-P).
+otherwise.
+read_predicate(Term0-P0, K1, Clauses, Pr, K) --> 
+                true |
+  {{kl1cmp_error_filter:addPred(&out, P0, Err),
+    read_predicate_one_block(&in, Err, [], &name_stream, &gex_args,
+            &lex_args, &pos, &expanded_terms, Term0-P0, K1, One_block, 
+                        Pr, Term1-P1)}},
+    case_dispatch_on_clauses(Term1-P1, One_block, Clauses, Pr, K).
+
+case_dispatch_on_clauses(_-Info-otherwise, One_block, Clauses, Pr, K) --> true |
+   {{ Clauses = [One_block|Clauses1]}},
+      expanded_read(K2),
+      read_predicate(atom(otherwise)-Info-Pr, K2, Clauses1, _, K).
+case_dispatch_on_clauses(_-Info-alternatively, One_block, Clauses, Pr, K) --> true |
+   {{ Clauses = [One_block|Clauses1]}},
+      expanded_read(K2),
+      read_predicate(atom(alternatively)-Info-Pr, K2, Clauses1, _, K).
+otherwise.
+case_dispatch_on_clauses(Term1-P1, One_block, Clauses, _, K) --> true |
+   {{ Clauses = [One_block], K = Term1-P1 }}.
+
+:- local_implicit out:oldnew.
+otherwise_error_check(otherwise, Cls, Ans) --> true |
+    &out <<= [error(string#"invalid OTHERWISE found : ~T", [Cls])],
+  {{Ans = error}}.
+otherwise_error_check(alternatively, Cls, Ans) --> true |
+    &out <<= [error(string#"invalid ALTERNATIVELY found : ~T", [Cls])],
+  {{Ans = error}}.
+otherwise.
+otherwise_error_check(_, _, Ans) --> true | {{Ans = non_error}}.
+
+:- local_implicit in:oldnew, out:oldnew,
+                  name_stream:stream,
+          gex_args:oldnew, lex_args:oldnew,
+                  pos:oldnew,
+                  expanded_terms:stream.
+
+case_dispatch_on_error(error, Term0-directive, K1, Cls, Pr,
+        _-_, Term-P) --> true |
+      read_predicate_one_block(Term0-directive, K1, Cls, Pr, Term-P).
+case_dispatch_on_error(error, Term0-macro, K1, Cls, Pr,
+        _-_, Term-P) --> true |
+      read_predicate_one_block(Term0-macro, K1, Cls, Pr, Term-P).
+case_dispatch_on_error(error, Term0-message, K1, Cls, Pr,
+        _-_, Term-P) --> true |
+      read_predicate_one_block(Term0-message, K1, Cls, Pr, Term-P).
+case_dispatch_on_error(non_error, _, _, _, _, Term1-P1, Term-P) --> true |
+    {{Term=Term1, P=P1}}.
+
+% Read rest of clauses with same functor.
+% This predicate was originally read_predicate. D.Sekita
+read_predicate_one_block(Term0-end_of_file, _, Clauses, Pr, K) --> true |
+ {{ Clauses=[Term0], Pr=end_of_file, K=Term0-end_of_file}}.
+otherwise.
+read_predicate_one_block(Term0-P0, Term1-P1, Clauses, Pr, K) --> P0=P1 |
+ {{ Clauses=[Term0|Rest]}},
+   expanded_read(K2),
+   read_predicate_one_block(Term1-P1, K2, Rest, Pr, K).
+otherwise.
+read_predicate_one_block(Term0-P0, Term1-P1, Clauses, Pr, K) --> true | 
+  {{ Pr=P0,K=Term1-P1, Clauses=[Term0] }}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Reading clauses  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Sends 'unique_name' and I/O messages.
+% Implemented 'otherwise' and 'alternatively' 870912 D.Sekita
+
+:- local_implicit in:oldnew, out:oldnew,
+                  name_stream:stream,
+          gex_args:oldnew, lex_args:oldnew,
+                   pos:oldnew,
+                  expanded_terms:stream.
+
+% 'expanded_read' binds the 'Clause-Info' vector to variable 'Clause'.
+expanded_read(Clause) --> true |
+ {{readLegalClause(&in, &out, &pos, &gex_args, Term0),
+%%   kl1cmp_variable_name:string_to_integer(Term0, Term1, Vtbl0),
+   string_to_integer(Term0, Term1, Vtbl0),
+   kl1cmp_error_filter:error_filter(&out, Error, Vtbl0, Vtbl1),
+%   dispatch_on_terms(&in, Error, [], &name_stream, &gex_args, &lex_args, &expanded_terms,
+%        Term1, Clause0-Pr),
+   dispatch_on_terms_and_add_error(&in, Error, [], &name_stream,
+        &gex_args, &lex_args, &expanded_terms, Term1, Clause0-Pr),
+   kl1cmp_variable_name:integer_to_string(Clause0, Vtbl1, Clause1),
+   Clause=Clause1-Pr}}.
+
+:- local_implicit in:oldnew, out:oldnew, pos:oldnew, gex_args:oldnew.
+readLegalClause(Term) --> true |
+    &in <<= [getft(Term0)],
+    checkClause(Term0, Term).
+
+% Clause-Info is the new sprc.
+checkClause(Clause0-Info, Term) --> true |
+    checkClause_(Clause0, Clause),
+    Term=Clause-Info.
+checkClause(end_of_file, Term) --> true |
+    Term=end_of_file.
+
+checkClause_(vector({atom((:-)), vector({atom((implicit)), Args})}), Term) --> &gex_args(old) > 0 |
+    &out <<= [error("implicit declaration found more than once : ~T",
+            [vector({atom((:-)), vector({atom((implicit)), Args})})])],
+    &in <<= [getft(Term0)],
+    checkClause(Term0, Term).
+otherwise.
+checkClause_(vector({atom((:-)), Dec}), Term) --> true |
+    Term=vector({atom((:-)), Dec}).
+otherwise.
+checkClause_(Term0, Term) --> true | &pos <= predicate, Term0=Term.
+
+:- local_implicit in:oldnew, out:oldnew,
+                  name_stream:stream,
+          gex_args:oldnew, lex_args:oldnew,
+                  expanded_terms:stream.
+% for new spec 
+dispatch_on_terms_and_add_error(Clause0-Info0, ClauseInfo) --> true |
+ {{kl1cmp_error_filter:addErrorInfo(&out, Err0, Info0, Info1),
+   addInfoExpandedTerms(&expanded_terms, Info1, Info, ExpandedTerms),
+   merge(ExpandedTerms0, ExpandedTerms),
+   dispatch_on_terms(&in, Err0, [], &name_stream,
+        &gex_args, &lex_args, ExpandedTerms0, Clause0, Clause-Pr),
+   ClauseInfo=Clause-Info-Pr}}.
+
+dispatch_on_terms(vector({atom((:-)), X}), Clause) --> true |
+   check_directives(vector({atom((:-)), X}), Clause).
+dispatch_on_terms(end_of_file, Clause) --> true |
+  {{ Clause=upmail_wins-end_of_file }}.
+dispatch_on_terms(atom(otherwise), Clause) --> true |
+  {{ Clause=icot_wins-otherwise }}.
+dispatch_on_terms(atom(alternatively), Clause) --> true |
+  {{ Clause=mri_wins-alternatively }}.
+dispatch_on_terms(vector({atom((:-)), H, vector({atom(('|')),G,B})}),
+        Clause) --> true |
+     {{wfunctor(H, F, A, H1),
+       Clause = NewClause-F/A,
+       case_expansion(&out, &name_stream, (':-'), &expanded_terms,
+        &gex_args, &lex_args, B, B1, vector({H1,G}), F/A, no, T),
+       copy_one_clause(T, vector({atom((:-)), H1, vector({atom(('|')),G,B1})}), NewClause) }}.
+dispatch_on_terms(vector({atom((-->)), H, vector({atom(('|')), G, B})}), Clause) --> true |
+     {{wfunctor(H, F, A, H1),
+       RA := A + &gex_args(old) + &lex_args(old),
+       Clause = NewClause-F/RA,
+       case_expansion(&out, &name_stream, ('-->'), &expanded_terms,
+        &gex_args, &lex_args, B, B1, vector({H1,G}), F/RA, no, T),
+       copy_one_clause(T, vector({atom((-->)), H1, vector({atom(('|')),G,B1})}), NewClause) }}.
+otherwise.
+dispatch_on_terms(Clause0, Clause) --> true |
+       normalize_clause(Clause0, Clause1),
+       dispatch_on_terms(Clause1, Clause).
+
+normalize_clause(vector({atom((:-)), H, vector({atom(('|')), G, B})}), Clause) -->
+        true |
+    {{Clause=vector({atom((:-)), H, vector({atom(('|')), G, B})})}}.
+normalize_clause(vector({atom((-->)), H, vector({atom(('|')), G, B})}), Clause) -->
+        true |
+    {{Clause=vector({atom((-->)), H, vector({atom(('|')), G, B})})}}.
+otherwise.
+normalize_clause(vector({atom((:-)), H, B}), Clause) --> true |
+     {{Clause = vector({atom((:-)), H, vector({atom(('|')), atom(true), B})})}}.
+normalize_clause(vector({atom((-->)), H, B}), Clause) --> true |
+     {{Clause = vector({atom((-->)), H, vector({atom(('|')), atom(true), B})})}}.
+otherwise.
+normalize_clause(atom(H), Clause) --> true |
+     {{Clause = vector({atom((:-)), atom(H), vector({atom(('|')), atom(true), atom(true)})})}}.
+normalize_clause(vector(H), Clause) --> true |
+     {{Clause = vector({atom((:-)), vector(H), vector({atom(('|')), atom(true), atom(true)})})}}.
+normalize_clause(_-end_of_file, Clause) --> true |
+    {{Clause = end_of_file}}.
+otherwise.
+normalize_clause(Some, Clause) --> true |
+    &out <<= [error(string#"Syntax Error : ~T", [Some])],
+    &in <<= [getft(Term0)],
+  {{numbervars(Term0, Term1, Vtbl0),
+    kl1cmp_error_filter:error_filter(&out, Err, Vtbl0, Vtbl1),
+    dispatch_on_terms(&in, Err, [], &name_stream, &gex_args, &lex_args, &expanded_terms,
+         Term1, Clause0-Pr),
+    kl1cmp_variable_name:integer_to_string(Clause0, Vtbl1, Clause1),
+    Clause=Clause1-Pr}}.
+
+check_directives(vector({atom((:-)), vector({atom((implicit)), Args0})}), Clause) --> true |
+  {{count_implicit_args(&out, 0, Exnum, Args0, Args)}},
+    &gex_args <= Exnum,
+  {{Clause=vector({atom((:-)), vector({atom((implicit)), Args})})-macro}}.
+check_directives(vector({atom((:-)), vector({atom((local_implicit)), Args0})}), Clause) --> true |
+  {{count_implicit_args(&out, 0, Exnum, Args0, Args)}},
+    &lex_args <= Exnum, 
+  {{Clause=vector({atom((:-)), vector({atom((local_implicit)), Args})})-macro}}.
+check_directives(vector({atom((:-)), atom((local_implicit))}), Clause) --> true |
+    &lex_args <= 0, 
+  {{Clause=vector({atom((:-)), atom((local_implicit))})-macro}}.
+check_directives(vector({atom((:-)), vector({atom((message)), M})}), Clause) --> true|
+  {{Clause=vector({atom((:-)), vector({atom((message)), M})})-message}}.
+otherwise.
+check_directives(Term, Clause)--> true |
+   {{Clause=Term-directive}}.
+
+:- local_implicit out:oldnew, ex_args:oldnew.
+count_implicit_args(vector({atom((',')), Arg0, Rest}), New0) --> true |
+    increment_implicit_arg_number(Arg0, Arg),
+  {{New0=vector({atom((',')), Arg, Next})}},
+    count_implicit_args(Rest, Next).
+otherwise.
+count_implicit_args(Arg0, Arg) --> true |
+    increment_implicit_arg_number(Arg0, Arg).
+
+increment_implicit_arg_number(vector({atom((:)), atom(Arg), atom(oldnew)}), New) --> true |
+    &ex_args <= &ex_args + 2,
+  {{New=vector({atom((:)), atom(Arg), atom(oldnew)})}}.
+increment_implicit_arg_number(vector({atom((:)), atom(Arg), atom(shared)}), New) --> true |
+    &ex_args <= &ex_args + 1,
+  {{New=vector({atom((:)), atom(Arg), atom(shared)})}}.
+increment_implicit_arg_number(vector({atom((:)), atom(Arg), atom(stream)}), New) --> true |
+    &ex_args <= &ex_args + 1,
+  {{New=vector({atom((:)), atom(Arg), atom(stream)})}}.
+increment_implicit_arg_number(vector({atom((:)), atom(Arg), atom(string)}), New) --> true |
+    &ex_args <= &ex_args + 2,
+  {{New=vector({atom((:)), atom(Arg), atom(string)})}}.
+otherwise.
+increment_implicit_arg_number(Arg, New) --> true |
+    &out <<= [error(string#"invalid implicit declaration", [Arg])],
+  {{Arg=New}}.
+
+copy_one_clause(yes, Clause0, Clause1) :- true |
+    copy_term(Clause0, Clause1).
+copy_one_clause(no,  Clause0, Clause1) :- true |
+    Clause0=Clause1.
+
+:- local_implicit cls:stream.
+addInfoExpandedTerms(Info0, Info, [Cls0-P|Cdr]) --> true |
+ {{addInfoExpandedTerms_(Info0, Info1, Cls0, Cls)}},
+   &cls <<= [Cls-P],
+   addInfoExpandedTerms(Info1, Info, Cdr).
+addInfoExpandedTerms(Info0, Info, []) --> true | Info0=Info.
+
+addInfoExpandedTerms_(Info0, Info, [Cls0|Rest0], Clses) :- true |
+   addInfoExpandedTerms_(Info0, Info, Cls0, Cls),
+   addInfoExpandedTerms_(Info0, Info, Rest0, Rest),
+   Clses=[Cls|Rest].
+addInfoExpandedTerms_(Info0, Info, [], Clses) :- true |
+   Clses=[], Info0=Info.
+otherwise.
+addInfoExpandedTerms_(Info0, Info, Cls0, Cls) :- true |
+   Cls=Cls0-Info0, Info0=Info.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Case expansion  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Sends 'new_name' and I/O messages.
+:- local_implicit out:oldnew, name_stream:stream,
+    sw:shared, expanded_terms:stream, gex_args:oldnew, lex_args:oldnew.
+
+case_expansion(vector({atom((',')), X,Y}), Z, O, P, T0, T) --> true |
+ {{Z=vector({atom((',')), X1, Y1})}},
+   case_expansion(X, X1, vector({O,Y}), P, T0, T1),
+   case_expansion(Y, Y1, vector({O,X}), P, T1, T).
+case_expansion(vector({vector(X)}), Z, O, P, T0, T) -->
+    vector(X, N) |
+  {{Z=vector({vector(X1)})}},
+    case_expansion_vector(0, N, X, X1, O, P, T0, T).
+case_expansion(vector({atom((;)), X, Y}), Z, O, P, _, T) --> true | {{ T = yes }},
+   case_expand(vector({atom((;)), X, Y}), Z, O, P).
+case_expansion(vector({atom((->)), X, Y}), Z, O, P, _, T) --> true | {{ T = yes }},
+   case_expand(vector({atom((->)), X, Y}), Z, O, P).
+otherwise.
+case_expansion(X, Z, _, _, T0, T) --> true |
+   {{ X = Z, T0 = T}}.
+
+case_expansion_vector(A, N, X0, X, O, P, T0, T) --> A<N |
+ {{A1 := A+1,
+   set_vector_element(X0, A, Goal, NewGoal, X1)}},
+   case_expansion(Goal, NewGoal, vector({X1,O}), P, T0, T1),
+   case_expansion_vector(A1, N, X1, X, vector({Goal,O}), P, T1, T).
+case_expansion_vector(N, N, X0, X, _, _, T0, T) --> true |
+ {{X0=X, T0=T}}.
+
+% L1-L is a list which has case-expanded clauses.
+case_expand(Cases, Call, Outside, Pred) --> true |
+   &name_stream <<= [new_name(Pred, F)],
+ {{ list_variables(Vars1, [], Cases, []),
+    list_variables(Vars2, [], Outside, []),
+    intersection(Vars1, Vars2, Vars),
+    generate_case_head( [atom(F)|Vars], Call0),
+    wfunctor(Call0, F_case, A_case, Call),
+    calcurate_real_arity(&sw, &gex_args(old), &lex_args(old),
+        A_case, RA_case)}},
+   &expanded_terms <<= [Cls-F_case/RA_case],
+  {{reconstruct_predicate(Cls0, Cls)}},
+    case_expand_clauses(Cls0, [], Cases, Call, F_case/RA_case).
+
+reconstruct_predicate([atom(otherwise)|Rest], Cls0) :- true |
+    get_one_block(Rest, OneBlock, RestOfRest),
+    Cls0=[[atom(otherwise)|OneBlock]|Cls],
+    reconstruct_predicate(RestOfRest, Cls).
+reconstruct_predicate([atom(alternatively)|Rest], Cls0) :- true |
+    get_one_block(Rest, OneBlock, RestOfRest),
+    Cls0=[[atom(alternatively)|OneBlock]|Cls],
+    reconstruct_predicate(RestOfRest, Cls).
+otherwise.
+reconstruct_predicate([One|Rest], Cls0) :- true |
+    get_one_block(Rest, OneBlock, RestOfRest),
+    Cls0=[[One|OneBlock]|Cls],
+    reconstruct_predicate(RestOfRest, Cls).
+reconstruct_predicate([], Cls) :- true | Cls=[].
+
+get_one_block([atom(otherwise)|Rest], Block0, RestOfRest) :- true |
+    Block0=[], RestOfRest=[atom(otherwise)|Rest].
+get_one_block([atom(alternatively)|Rest], Block0, RestOfRest) :- true |
+    Block0=[], RestOfRest=[atom(alternatively)|Rest].
+otherwise.
+get_one_block([One|Rest], Block0, RestOfRest) :- true |
+    Block0=[One|Block],
+    get_one_block(Rest, Block, RestOfRest).
+get_one_block([], Block, RestOfRest) :- true |
+    Block=[], RestOfRest=[].
+
+calcurate_real_arity(('-->'), Gargs, Largs, A, RA) :- true |
+   RA := A+Gargs+Largs.
+calcurate_real_arity((':-'), _, _, A, RA) :- true |
+   RA = A.
+
+generate_case_head([F], WCall) :- true |
+   WCall=F.
+otherwise.
+generate_case_head(List, WCall) :- true |
+   len_of_list(List, Len),
+   new_vector(Call0, Len),
+   copy_list_to_vector(0, List, Call0, Call),
+   WCall=vector(Call).
+
+copy_list_to_vector(N, [H|T], Vector0, Vector) :- true |
+   set_vector_element(Vector0, N, _, H, Vector1),
+   N1 := N+1,
+   copy_list_to_vector(N1, T, Vector1, Vector).
+copy_list_to_vector(_, [], Vector0, Vector) :- true |
+   Vector0=Vector.
+
+copy_list_to_args( A, [X|Rest], Call1, Call ) :- true |
+    set_vector_element( Call1, A, _, X, Call2 ),
+    A1 := A+1,
+    copy_list_to_args( A1, Rest, Call2, Call ).
+copy_list_to_args( _, [], Call1, Call ) :- true | Call1 = Call.
+
+:- local_implicit out:oldnew,
+    name_stream:stream,
+    sw:shared,
+    expanded_terms:stream,
+    gex_args:oldnew, lex_args:oldnew,
+    expanded_clauses:oldnew.
+
+
+case_expand_clauses(vector({vector(X)}), Call, Pred) -->
+        vector(X, N) |
+ {{convert_case_vector(0, N, X, NewX)}},
+   case_expand_clauses(NewX, Call, Pred).
+case_expand_clauses(atom(otherwise), _, Pred/Ari) --> true |
+   &out <<= [error(string#"otherwise found irregulary", [vector({atom((/)),atom(Pred),integer(Ari)})] )].
+case_expand_clauses(atom(alternatively), _, Pred/Ari) --> true |
+   &out <<= [error(string#"alternatively found irregulary", [vector({atom((/)),atom(Pred),integer(Ari)})] )].
+case_expand_clauses(vector({atom((;)), atom(otherwise), Z}), Call, Pred) --> true |
+   &expanded_clauses <<= [atom(otherwise)],
+   case_expand_clauses(Z, Call, Pred).
+case_expand_clauses(vector({atom((;)), atom(alternatively), Z}), Call, Pred) --> true |
+   &expanded_clauses <<=[atom(alternatively)],
+   case_expand_clauses(Z, Call, Pred).
+otherwise.
+case_expand_clauses(vector({atom((->)), X, vector({Y})}), Call, Pred) --> vector(Y, N) |
+  {{ case_expansion_vector(&out, &name_stream, &sw, &expanded_terms,
+        &gex_args, &lex_args, 0, N, Y, B, vector({Call,X}), Pred, no, _),
+     make_term(&expanded_clauses, &sw, Call, X, vector({B}))}}.
+otherwise.
+case_expand_clauses(vector({atom((;)), vector({atom((->)), X, Y}), Z}), Call, Pred) --> true |
+  {{ case_expansion(&out, &name_stream, &sw, &expanded_terms,
+    &gex_args, &lex_args, Y, B, vector({Call,X}), Pred, no, _),
+     make_term(&expanded_clauses, &sw, Call, X, B)}},
+    case_expand_clauses(Z, Call, Pred).
+otherwise.
+case_expand_clauses(vector({atom((->)), X, Y}), Call, Pred) --> true |
+  {{ case_expansion(&out, &name_stream, &sw, &expanded_terms,
+    &gex_args, &lex_args, Y, B, vector({Call, X}), Pred, no, _),
+     make_term(&expanded_clauses, &sw, Call, X, B)}}.
+otherwise.
+case_expand_clauses(vector({atom((->)), X, Z}), Call, Pred) --> true |
+   &out <<= [error(string#"illegal case.",[X])],
+   case_expand_clauses(Z, Call, Pred).
+otherwise.
+case_expand_clauses(X, _, _) --> true |
+   &out <<= [error(string#"illegal case.",[X])].
+
+convert_case_vector(0, N, X0, Term) :- true |
+   convert_case_vector(0, N, X0, Term, true).
+
+convert_case_vector(A, N, X0, Terms0, Terms) :- A<N |
+   set_vector_element(X0, A, Term, [], X1),
+   convert_case_one_term(Term, NewTerm),
+   Terms0=vector({atom((',')), NewTerm, Terms1}),
+   A1 := A+1,
+   convert_case_vector(A1, N, X1, Terms1, Terms).
+convert_case_vector(N, N, _, Terms0, Terms) :- true | Terms0=Terms.
+
+convert_case_one_term(vector({atom((;)), vector({atom(('->')), X, Y}), Z}), New0) :- true |
+   convert_term_to_vector(Y, NewY),   New0=vector({atom((;)), vector({atom((->)), X, vector({NewY})}), New}),
+   convert_case_one_term(Z, New).
+convert_case_one_term(vector({atom((->)), X, Y}), New0) :- true |
+   convert_term_to_vector(Y, NewY),
+   New0=vector({atom((->)), X, vector({NewY})}).
+
+convert_term_to_vector(Y, NewY) :- true |
+   length(Y, 0, N, YY),
+   new_vector(NewY0, N),
+   set_elem(0, N, YY, NewY0, NewY).
+
+length(vector({atom((',')), X, Y}), A, N, YY) :- true |
+   YY=vector({atom((',' )),X,YYT}),
+   A1 := A+1,
+   length(Y, A1, N, YYT).
+otherwise.
+length(Y, A, N, YY) :- true |
+   Y=YY,
+   N := A+1.
+
+set_elem(A, N, vector({atom((',')), X, Y}), VY0, VY) :- A<N |
+   set_vector_element(VY0, A, _, X, VY1),
+   A1 := A+1,
+   set_elem(A1, N, Y, VY1, VY).
+set_elem(N, N, X, VY0, VY) :- true |
+   set_vector_element(VY0, N, _, X, VY).
+
+:- local_implicit expanded:oldnew.
+make_term(NeckOperator, Call, X, B) --> true |
+ {{copy_term(vector({atom(NeckOperator), Call, vector({atom(('|')), X, B})}), Clause)}},
+   &expanded <<= [Clause].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%  Handle case variables  %%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Make a list of all occurrences of '$VAR'(_, _) in a term.
+
+:- local_implicit vars:oldnew.
+
+list_variables(variable(N), Y) --> true |
+   find_or_insert(variable(N), Y).
+list_variables(list([X|Y]), Z) --> true |
+   {{list_variables(Vars, [], X, Z)}},
+     list_variables(Y, Vars).
+list_variables(vector(X), Z) --> true |
+  {{get_args_to_list(Y, [], X)}},
+    list_variables(Y, Z).
+list_variables([X|Y], Z) --> true |
+   {{list_variables(Vars, [], X, Z)}},
+     list_variables(Y, Vars).
+otherwise.
+list_variables(_, Y) --> true | output_list(Y).
+
+get_args_to_list(X) --> vector(X, Size)|
+   copy_args_to_list(0, Size, X).
+
+copy_args_to_list(A, Size, X) --> A < Size |
+  {{ set_vector_element(X, A, E, [], X1) }},
+   &vars <<= [E], {{A1 := A+1}},
+   copy_args_to_list(A1, Size, X1).
+copy_args_to_list(Size, Size, _) --> true | true.
+
+find_or_insert(X, []) --> true | &vars <<= [X].
+find_or_insert(X, [X|Cdr]) --> true |
+   &vars <<= [X],
+   output_list(Cdr).
+otherwise.
+find_or_insert(X, [Y|Cdr]) --> true |
+   &vars <<= [Y],
+   find_or_insert(X, Cdr).
+
+output_list([]) --> true | true.
+output_list([A|Cdr]) --> true |
+   &vars <<= [A],
+   output_list(Cdr).
+
+intersection([A|X], Y, Z) :- true |
+   intersection(X, Y, W), find_and_insert(Z, W, Y, A).
+intersection([], _, Z) :- true | Z=[].
+
+find_and_insert([], _) --> true | true.
+find_and_insert([A|_], A) --> true | &vars <<= [A].
+otherwise.
+find_and_insert([_|X], B) --> true | find_and_insert(X, B).
+
+
+copy_term(X,Y) :- true |
+   list_variables(Vars, [], X, []),
+   count_variables(Vars, Vars1, 0, Nv),
+   herrey(Nv, [], Trans0),
+   table_for_copy(Vars1, 0, _, Trans0, Trans),
+   copy_term(X,Y,Trans).
+
+table_for_copy([], V0, V, Trans0, Trans) :- true | V0=V, Trans0=Trans.
+table_for_copy([variable(N)|L], V0, V, Trans0, Trans) :- true |
+   set_vector_element(Trans0, N, T, T, Trans1),
+   case_on_vector_element(T, N, V0-V1, Trans1-Trans2),
+   table_for_copy(L, V1, V, Trans2, Trans).   
+
+case_on_vector_element([], N, V0-V1, Trans0-Trans1) :- true |
+   V1:=V0+1, set_vector_element(Trans0, N, _, V0, Trans1).
+case_on_vector_element(T, _, V0-V1, Trans0-Trans1) :- integer(T) |
+   V0=V1, Trans0=Trans1.
+
+% Copy a term, numbering variables according to a translation table.
+
+copy_term(variable(N), Out, Trans) :-
+        vector_element(Trans,N,M)|
+   Out=variable(M).
+copy_term(list([A|X]), Out, Trans) :- true |
+   copy_term(A, A1, Trans), copy_term(X, X1, Trans),
+   Out=list([A1|X1]).
+copy_term(vector(In), WOut0, Trans) :- vector(In, N) |
+   copy_term_args(N, In, Out0, Trans),            %%880427-KH
+   WOut0=vector(Out0).
+otherwise.
+copy_term(In, Out, _) :- true | In=Out.
+
+copy_term_args(0, X, Y, _) :- true | X=Y.            %%880427-KH
+copy_term_args(K, X, Y, Trans) :- K>0 |
+   set_vector_element(X, K1, In, Out, X1),
+   copy_term(In, Out, Trans),
+   K1 := K-1,
+   copy_term_args(K1, X1, Y, Trans).            %%880427-KH
+
+% Write something to the 'user' file.
+
+count_variables(variable(N1), X, N0, N) :- N0=<N1 | N := N1+1, X=variable(N1).
+count_variables(variable(N1), X, N0, N) :- N0>N1 | N0=N, X=variable(N1).
+count_variables(list([H0|T0]), List, N0, N) :- true |
+   count_variables(H0, H, N0, N1),
+   count_variables(T0, T, N1, N),
+   List=list([H|T]).
+count_variables([H0|T0], List, N0, N) :- true |
+   count_variables(H0, H, N0, N1),
+   count_variables(T0, T, N1, N),
+   List=[H|T].
+otherwise.
+count_variables(vector(Vect0), WVect, N0, N) :- vector(Vect0,A) |
+   count_variables_args(0, A, Vect0, Vect, N0, N),
+   WVect=vector(Vect).
+otherwise.
+count_variables(X0, X, N0, N) :- true | N0=N, X0=X.
+
+count_variables_args(K, A, Vect0, Vect, N0, N) :- K<A |
+   set_vector_element(Vect0, K, E0, E, Vect1),  % debug 871014
+   count_variables(E0, E, N0, N1),
+   K1 := K+1,
+   count_variables_args(K1, A, Vect1, Vect, N1, N).
+count_variables_args(K, K, Vect0, Vect, N0, N) :- true | N0=N, Vect0=Vect.
+
+% Creating a new 'variable'.
+
+:- local_implicit vars:oldnew.
+bell --> true | &vars <<= [ttyput(7)].
+
+% To get an initialised, impure array.
+
+herrey(Size, 0, Array) :- true |
+   new_vector(Array, Size).
+otherwise.
+herrey(Size, Initial, Array) :- true |
+   new_vector(Array0, Size),
+   initialize_vector(Size, Array0, Initial, Array).
+
+initialize_vector(0, Array0, _, Array ) :- true | 
+   Array0 = Array.
+otherwise.
+initialize_vector(N, Array0, Initial, Array ) :- true |
+   N1 := N-1,
+   set_vector_element(Array0, N1, _, Initial, Array1 ),
+   initialize_vector(N1, Array1, Initial, Array ).
+   
+functor(X, F, A) :- atom(X) | F = X, A = 0.
+functor(X,F,A):-vector(X,Size),vector_element(X,0,FF),atom(FF) |   %%880427-KH
+   F = FF, A := Size-1.
+% this clause is fo rthe compatibility with DEC10 prolog.
+functor([_|_], F, A ) :- true |
+   F = '.', A = 2.
+
+gen_functor(X, '.', 2) :- true |
+    X = [_|_].
+otherwise.
+gen_functor(X, F, A) :- true |
+    A1 := A+1,
+    new_vector(X1, A1),
+    set_vector_element(X1, 0, _, F, X2),
+    replace_element_with_undef(A1, X2, X).
+
+replace_element_with_undef(1, X1, X) :- true | X1=X.
+replace_element_with_undef(N, X1, X) :- N > 1|
+    N1 := N-1,
+    set_vector_element(X1, N1, _, _, X2),
+    replace_element_with_undef(N1, X2, X).
+
+wfunctor(vector(Vect0), Func, Ari, WVect) :- vector(Vect0, N) |
+    set_vector_element(Vect0, 0, WFunc0, WFunc, Vect1),
+    get_functor(WFunc0, Func, WFunc),
+    Ari := N-1,
+    WVect=vector(Vect1).
+wfunctor(atom(Atom0), Func, Ari, WAtom) :- true |
+    Ari=0, Func=Atom0, WAtom=atom(Atom0).
+wfunctor(list(List0), Func, Ari, WList) :- true |
+    Ari=2, Func=('.'), WList =list(List0).
+
+get_functor(atom(Func0), Func, WFunc) :- true |
+    Func0=Func, WFunc=atom(Func0).
+
+wgen_functor(WFunc, '.', 2) :- true |
+    WFunc=list([_|_]).
+otherwise.
+wgen_functor(WFunc, Func, Ari0) :- true |
+    Ari := Ari0+1,
+    new_vector(Func0, Ari),
+    set_vector_element(Func0, 0, _, atom(Func), Func1),
+    replace_element_with_undef(Ari, Func1, Func2),
+    WFunc=vector(Func2).
+
+
+numbervars(end_of_file, Term, Vtbl) :- true | Term=end_of_file, Vtbl={}.
+otherwise.
+numbervars(Term0, Term, Vtbl) :- true |
+   kl1cmp_variable_name:string_to_integer(Term0, Term, Vtbl).
+
+string_to_integer(Term0-Info, TermInfo, VTbl) :- true |
+   kl1cmp_variable_name:string_to_integer(Term0, Term, VTbl),
+   TermInfo=Term-Info.

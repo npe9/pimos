@@ -1,0 +1,59 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module inspector_interrupter.
+:- with_macro pimos.
+:- public query/3,query1/3.
+
+query(WS,WS1,Com) :- true |
+        WS=[nl,putb(string#" ?? Interruption (h for help): "),flush(_),getc(C)|WS0],
+        do_query(C,WS0,WS1,Com).
+
+do_query(10,WS,WS1,Com) :- true | Com=fork,WS=WS1.
+do_query(#"f",WS,WS1,Com) :- true | Com=fork,WS=[skip(10)|WS1].
+do_query(#"e",WS,WS1,Com) :- true | Com=exit,WS=[skip(10)|WS1].
+do_query(#"c",WS,WS1,Com) :- true | Com=continue,WS=[skip(10)|WS1].
+do_query(#"h",WS,WS1,Com) :- true |
+        WS=[skip(10),nl,
+                putf(string#"~s~n", [string#"   <cr>: fork and return to listener/tracer"]),
+                putf(string#"~s~n", [string#"      f: fork and return to listener/tracer"]),
+                putf(string#"~s~n", [string#"      e: exit"]),
+                putf(string#"~s~n", [string#"      c: continue"]),
+                putf(string#"~s~2n",[string#"      h: help"]),
+                putf(string#"~s",   [string#" ?? --------- (h for help): "]),
+                flush(_),getc(Char)|WS0],
+        do_query(Char,WS0,WS1,Com).
+otherwise.
+do_query(_,WS,WS1,Com) :- true |
+        WS=[skip(10),
+            putf(string#"~s",[string#" ?? --------- (h for help): "]),
+            flush(_),getc(Char)|WS0],
+        do_query(Char,WS0,WS1,Com).
+
+
+query1(WS,WS1,Com) :- true |
+        WS=[putf(string#"~n~s",[string#" ?? Interruption (h for help): "]),
+            flush(_),getc(C)|WS0],
+        do_query1(C,WS0,WS1,Com).
+
+do_query1(10,WS,WS1,Com) :- true | Com=continue,WS=WS1.
+do_query1(#"t",WS,WS1,Com) :- true | Com=top,WS=[skip(10)|WS1].
+do_query1(#"c",WS,WS1,Com) :- true | Com=continue,WS=[skip(10)|WS1].
+do_query1(#"h",WS,WS1,Com) :- true |
+        WS=[skip(10),nl,
+                putf(string#"~s~n",[string#"   <cr>: continue"]),
+                putf(string#"~s~n",[string#"      t: return to inspector top level"]),
+                putf(string#"~s~n",[string#"      c: continue"]),
+                putf(string#"~s~2n",[string#"      h: help"]),
+                putf(string#"~s",[string#" ?? --------- (h for help): "]),
+                flush(_),getc(Char)|WS0],
+        do_query1(Char,WS0,WS1,Com).
+otherwise.
+do_query1(_,WS,WS1,Com) :- true |
+        WS=[skip(10),
+            putf(string#"~s",[string#" ?? --------- (h for help): "]),
+            flush(_),getc(Char)|WS0],
+        do_query1(Char,WS0,WS1,Com).

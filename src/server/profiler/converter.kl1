@@ -1,0 +1,650 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+:- module profiling_data_converter.
+:- public go/5.
+:- with_macro pimos.
+
+% go(Items,From,Unit,PData,UData)
+%   Items: User profiling items.
+%   From : Absolute start node number of partition.
+%   Unit : Unit of time ( msec; msec16; usec )
+%   PData: Profiling Data.
+%       [{Node,Data}, ...,{NodeN,DataN}]
+%       Data: Set of SubData
+%           [SData, ..., SDataN]
+%           SData: {Idle,Gevc,EnCd,DeCd,LoGC,EvLg,MeHT}
+%               Idle:  StringDataOfPe                           % MPSI,PIM/m
+%               Idle: {StringDataOfPe0, ..., StringDataOfPeN}   % VPIM
+%               LoGC:  StringDataOfNode
+%               EvLg:  VectorDataOfPe                           % MPSI,PIM/m
+%               EvLg: {VectorDataOfPe0, ..., VectorDataOfPeN}   % VPIM
+%
+%   UData: Data for User.
+%       [{Node,Data}, ...,{NodeN,DataN}]
+%       Data: {Idle,Gevc,EnCd,DeCd,LoGC,EvLg,MeHT}
+%           Idle: {StringDataOfPe0, ..., StringDataOfPeN}
+%           LoGC:  StringDataOfPe
+%           EvLg: {VectorDataOfPe0, ..., VectorDataOfPeN}
+%
+
+
+:- switch(machine).
+:- case(mpsi,pimm).
+
+go(Items,From,Unit,[{Node,[Sub|Data]}|PData],UData) :- true|
+    UData=[{~(Node-From),User}|UData1],
+    merge_data(Sub,Data,New),
+    get_time(New,New1,Start0,Stop0),
+    change_time_unit(Unit,Start0,Start),
+    change_time_unit(Unit,Stop0, Stop),
+    wrap_data(New1,New2),
+    make_udata(Items,Unit,New2,{0,0,0,0,0,0,0},User,Start,Stop,0),
+    go(Items,From,Unit,PData,UData1).
+go(_,_,_,[],UData) :- true| UData=[].
+
+merge_data(Sub,[],New) :- true| New=Sub.
+merge_data({Idle,Gevc,EnCd,DeCd,LoGC,EvLg,MeHT},
+    [{Idle1,Gevc1,EnCd1,DeCd1,LoGC1,EvLg1,MeHT1}|SData],New) :- true|
+    merge_data2(idle,        Idle,Idle1,NewIdle),
+    merge_data2(gevc,        Gevc,Gevc1,NewGevc),
+    merge_data2(gc,          LoGC,LoGC1,NewLoGC),
+    merge_data2(log_event,   EvLg,EvLg1,NewEvLg),
+    merge_data2(comu,        MeHT,MeHT1,NewMeHT),
+    merge_freq_data1(31,EnCd,EnCd1,NewEnCd),
+    merge_freq_data1(31,DeCd,DeCd1,NewDeCd),
+    merge_data({NewIdle,NewGevc,NewEnCd,NewDeCd,NewLoGC,NewEvLg,NewMeHT},SData,New).
+
+wrap_data({Id,Ge,En,De,Gc,Ev,Mh},New) :- true| New={{Id},Ge,{En},{De},Gc,{Ev},{Mh}}.
+
+change_time_unit(msec,  T,Time) :- true| Time := T >> 4 .
+change_time_unit(msec16,T,Time) :- true| Time = T.
+change_time_unit(usec,  T,Time) :- T>=0| 
+    T1 ^:= (T*125) >> 1,    % T1 ^= (T*1000) >> 4.
+    bignum:numer(T1,_,Numer),
+    get_time_from_numer(Numer,Time).
+change_time_unit(usec,  T,Time) :- T<0 | 
+    new_string(S,1,32), 
+    set_string_element(S,0,T,S1),
+    bignum:construct(+,S1,Bignum),
+    T1 ^:= (Bignum*125) >> 1,
+    bignum:numer(T1,_,Numer),
+    get_time_from_numer(Numer,Time).
+
+:- default.
+
+go(Items,From,Unit,[{Node,[Sub|Data]}|PData],UData) :- true|
+    current_processor(_,NP),
+    P := NP-1,
+    UData=[{~(Node-From),User}|UData1],
+    merge_data(Sub,Data,New,P),
+    get_time(New,New1,Start0,Stop0),
+    change_time_unit(Unit,Start0,Start),
+    change_time_unit(Unit,Stop0, Stop),
+    make_udata(Items,Unit,New1,{0,0,0,0,0,0,0},User,Start,Stop,P),
+    go(Items,From,Unit,PData,UData1).
+go(_,_,_,[],UData) :- true| UData=[].
+
+% 93.7.11   K.Nakao
+merge_data(Sub,[],New,_) :- true| New=Sub.
+merge_data({Idle,_Gevc,EnCd,DeCd,LoGC,EvLg,MeHT},
+    [{Idle1,_Gevc1,EnCd1,DeCd1,LoGC1,EvLg1,MeHT1}|SData],New,NP) :- true|
+    merge_data1(idle,        NP,Idle,Idle1,NewIdle),
+%    merge_data1(gevc,        NP,Gevc,Gevc1,NewGevc),
+    merge_data2(gc,             LoGC,LoGC1,NewLoGC),
+    merge_data1(log_event,   NP,EvLg,EvLg1,NewEvLg),
+    merge_data1(comu,        NP,MeHT,MeHT1,NewMeHT),
+    merge_freq_data(NP,EnCd,EnCd1,NewEnCd),
+    merge_freq_data(NP,DeCd,DeCd1,NewDeCd),
+    merge_data({NewIdle,0,NewEnCd,NewDeCd,NewLoGC,NewEvLg,NewMeHT},SData,New,NP).
+    % 0 corresponds to gevc.
+
+merge_data1(Name,N,Data,DataN,New) :- N>=0|
+    set_vector_element(Data, N,E, E1,Data1),
+    set_vector_element(DataN,N,EN,0, DataN1),
+    merge_data2(Name,E,EN,E1),
+    merge_data1(Name,~(N-1),Data1,DataN1,New).
+merge_data1(_,N,Data,_,New) :- N<0| New=Data.
+
+change_time_unit(msec,  T,Time) :- true| Time := (T >> 3)/125 .
+change_time_unit(msec16,T,Time) :- T>=0| Time := (T/125) << 1.
+change_time_unit(msec16,T,Time) :- T<0 | 
+    new_string(S,1,32), 
+    set_string_element(S,0,T,S1),
+    bignum:construct(+,S1,Bignum),
+    T1 ^:= (Bignum/125) << 1,
+    bignum:numer(T1,_,Numer),
+    get_time_from_numer(Numer,Time).
+change_time_unit(usec,  T,Time) :- true| Time=T.
+
+:- end_switch.
+
+get_time_from_numer(Numer,Time) :- integer(Numer)| Time=Numer.
+get_time_from_numer(Numer,Time) :- string(Numer,Sz,_)| 
+    string_element(Numer,~(Sz-1),Time,_).
+
+
+
+merge_data2(_,0,_,New) :- true| New=0.
+merge_data2(_,_,0,New) :- true| New=0.
+otherwise.
+merge_data2(idle,S,SN,New) :- 
+  string(S,Sz,_), string(SN,SzN,_)|    
+    string_element(S,  0,Idx, S1),
+    string_element(S1, 1,Run, S2),
+    string_element(S2, 2,Idl, S3),
+    string_element(SN, 0,IdxN,SN1),
+    string_element(SN1,1,RunN,SN2),
+    string_element(SN2,2,IdlN,SN3),
+    set_string_element(S3,1,~(Run+RunN),S4),    % Total Running Time
+    set_string_element(S4,2,~(Idl+IdlN),S5),    % Total Idling Time
+    merge_data3(S5,Idx,~(Sz-1),4,SN3,IdxN,~(SzN-1),New).
+
+merge_data2(gevc,S,SN,New) :- 
+  string(S,Sz,_), string(SN,SzN,_)|
+    string_element(S,  0,Idx, S1),
+    string_element(S1, 1,Low, S2),
+    string_element(S2, 2,Hig, S3),
+    string_element(SN, 0,IdxN,SN1),
+    string_element(SN1,1,LowN,SN2),
+    string_element(SN2,2,HigN,SN3),
+    set_string_element(S3,1,~(Low+LowN),S4),
+    set_string_element(S4,2,~(Hig+HigN),S5),
+    merge_data3(S5,Idx,~(Sz-1),3,SN3,IdxN,~(SzN-1),New).
+
+merge_data2(gc,S,SN,New) :-
+  string(S,Sz,_), string(SN,SzN,_)|
+    string_element(S,  0,Idx, S1),
+    string_element(S1, 1,Cnt, S2),
+    string_element(S2, 2,Tim, S3),
+    string_element(S3, 3,Max, S4),
+    string_element(SN, 0,IdxN,SN1),
+    string_element(SN1,1,CntN,SN2),
+    string_element(SN2,2,TimN,SN3),
+    string_element(SN3,3,MaxN,SN4),
+    set_string_element(S4,1,~(Cnt+CntN),S5),
+    set_string_element(S5,2,~(Tim+TimN),S6),
+    set_string_element(S6,3,NewMax,S7),
+    compare(Max,MaxN,_,NewMax),
+    merge_data4(S7,Idx,~(Sz-1),6,SN4,IdxN,~(SzN-1),New).
+
+merge_data2(log_event,V,VN,New) :- 
+  vector(V,Sz), vector(VN,SzN)|
+    set_vector_element(V, 0,Idx, _, V1),
+    set_vector_element(VN,0,IdxN,_,VN1),
+    merge_data5(V1,Idx,~(Sz-1),1,VN1,IdxN,~(SzN-1),New).
+
+merge_data2(comu,S,SN,New) :-
+    string_element(S,0,ET,S1), 
+    string_element(S1,1,DT,S2),
+    string_element(SN,0,ETN,SN1),
+    string_element(SN1,1,DTN,_),
+    set_string_element(S2,0,~(ET+ETN),S3),
+    set_string_element(S3,1,~(DT+DTN),New).
+
+compare(X,Y,S,L) :- X=<Y | S=X, L=Y.
+otherwise.
+compare(X,Y,S,L) :- true| S=Y, L=X.
+
+merge_data3(Str,Idx,Mx,_P,StrN,IdxN,MxN,New) :- 
+  Idx >= Mx,                                    % Index overflow or index indicates max position.
+  IdxN =< MxN |                                 % Index indicates time of stop.
+    string_element(StrN,IdxN,E,_),              % Get time of stop.
+    set_string_element(Str,0,~(Mx+1),Str1),     % Set index that is Str's size
+    set_string_element(Str1,Mx,E,New).          % Set time of stop.
+merge_data3(Str,Idx,Mx,_P,StrN,IdxN,MxN,New) :- 
+  Idx >= Mx,                                    % Index overflow or index indicates max position.
+  IdxN > MxN |                                  % Index overflow
+    string_element(StrN,MxN,E,_),               % Get time of stop.
+    set_string_element(Str,0,~(Mx+1),Str1),     % Set index that is Str's size.
+    set_string_element(Str1,Mx,E,New).          % Set time of stop.
+
+merge_data3(Str,Idx,Mx,P,StrN,IdxN,MxN,New) :- 
+  Idx < Mx,                                     
+  IdxN =< MxN,
+  P < IdxN |                                    % Record new data.
+    Next := Idx+1,
+    string_element(StrN,P,E,StrN1),             % Get new data.
+    set_string_element(Str,Next,E,Str1),        % Set new data.
+    merge_data3(Str1,Next,Mx,~(P+1),StrN1,IdxN,MxN,New).
+merge_data3(Str,Idx,Mx,P,StrN,IdxN,MxN,New) :- 
+  Idx < Mx,
+  IdxN =< MxN,
+  P = IdxN |                                    % Record time of stop.
+    Next := Idx+1,                              
+    string_element(StrN,P,E,_),                 % Get time of stop.
+    set_string_element(Str,0,Next,Str1),        % Set index. 
+    set_string_element(Str1,Next,E,New).        % Set time of stop.
+    
+merge_data3(Str,Idx,Mx,P,StrN,IdxN,MxN,New) :- 
+  Idx < Mx,
+  IdxN > MxN,
+  P < MxN |                                     % Record new data.
+    Next := Idx+1,
+    string_element(StrN,P,E,StrN1),             % Get new data.
+    set_string_element(Str,Next,E,Str1),        % Set new data.
+    merge_data3(Str1,Next,Mx,~(P+1),StrN1,IdxN,MxN,New).
+merge_data3(Str,Idx,Mx,P,StrN,IdxN,MxN,New) :- 
+  Idx < Mx,
+  IdxN > MxN,
+  P = MxN |                                     % Record time of stop.
+    Next := Idx+1,              
+    string_element(StrN,P,E,_),                 % Get time of stop.
+    set_string_element(Str,0,Next,Str1),        % Set index.
+    set_string_element(Str1,Next,E,New).        % Set time of stop.
+
+% For Local GC Record
+merge_data4(Str,Idx,Mx,_P,StrN,IdxN,MxN,New) :- 
+  Idx >= Mx,                                    % Index overflow or index indicates max position.
+  IdxN =< MxN |                                 % Index indicates time of stop.
+    string_element(StrN,~(IdxN-1),E,StrN1),     % Get time of stop.
+    string_element(StrN1,IdxN,E1,_),            % Get stop heap top.
+    set_string_element(Str,0,~(Mx+1),Str1),     % Set index that is Str's size
+    set_string_element(Str1,~(Mx-1),E,Str2),    % Set time of stop.
+    set_string_element(Str2,Mx,E1,New).         % Set stop heap top.
+merge_data4(Str,Idx,Mx,_P,StrN,IdxN,MxN,New) :- 
+  Idx >= Mx,                                    % Index overflow or index indicates max position.
+  IdxN > MxN |                                  % Index overflow
+    string_element(StrN,~(MxN-1),E,StrN1),      % Get time of stop.
+    string_element(StrN1,MxN,E1,_),             % Get stop heap top.
+    set_string_element(Str,0,~(Mx+1),Str1),     % Set index that is Str's size.
+    set_string_element(Str1,~(Mx-1),E,Str2),    % Set time of stop.
+    set_string_element(Str2,Mx,E1,New).         % Set stop heap top.
+
+merge_data4(Str,Idx,Mx,P,StrN,IdxN,MxN,New) :- 
+  Idx < Mx,                                     
+  IdxN =< MxN,
+  P < IdxN |                                    % Record new data.
+    Next := Idx+1,
+    string_element(StrN,P,E,StrN1),             % Get new data.
+    set_string_element(Str,Next,E,Str1),        % Set new data.
+    merge_data4(Str1,Next,Mx,~(P+1),StrN1,IdxN,MxN,New).
+merge_data4(Str,Idx,Mx,P,StrN,IdxN,MxN,New) :- 
+  Idx < Mx,
+  IdxN =< MxN,
+  P = IdxN |                                    % Record time of stop.
+    Next := Idx+1,                              
+    string_element(StrN,P,E,_),                 % Get stop heap top.
+    set_string_element(Str,0,Next,Str1),        % Set index. 
+    set_string_element(Str1,Next,E,New).        % Set stop heap top.
+    
+merge_data4(Str,Idx,Mx,P,StrN,IdxN,MxN,New) :- 
+  Idx < Mx,
+  IdxN > MxN,
+  P < MxN |                                     % Record new data.
+    Next := Idx+1,
+    string_element(StrN,P,E,StrN1),             % Get new data.
+    set_string_element(Str,Next,E,Str1),        % Set new data.
+    merge_data4(Str1,Next,Mx,~(P+1),StrN1,IdxN,MxN,New).
+merge_data4(Str,Idx,Mx,P,StrN,IdxN,MxN,New) :- 
+  Idx < Mx,
+  IdxN > MxN,
+  P = MxN |                                     % Record time of stop.
+    Next := Idx+1,              
+    string_element(StrN,P,E,_),                 % Get stop heap top.
+    set_string_element(Str,0,Next,Str1),        % Set index.
+    set_string_element(Str1,Next,E,New).        % Set stop heap top.
+
+
+merge_data5(V,_Idx,_Mx,_P,_VN,0,_MxN,New) :- true| New=V.
+
+otherwise.
+merge_data5(V,Idx,Mx,_P,VN,IdxN,MxN,New) :- 
+  Idx >= Mx,                                    % Index overflow or index indicates max position.
+  IdxN =< MxN |                                 % Index indicates last data.
+    set_vector_element(VN,IdxN,E,_,_),          % Get last data.
+    set_vector_element(V,0,_,~(Mx+1),V1),       % Set index that is V's size
+    set_vector_element(V1,Mx,_,E,New).          % Set last data.
+merge_data5(V,Idx,Mx,_P,VN,IdxN,MxN,New) :- 
+  Idx >= Mx,                                    % Index overflow or index indicates max position.
+  IdxN > MxN |                                  % Index overflow.
+    set_vector_element(VN,MxN,E,_,_),           % Get last data.
+    set_vector_element(V,0,_,~(Mx+1),V1),       % Set index that is V's size.
+    set_vector_element(V1,Mx,_,E,New).          % Set last data.
+
+merge_data5(V,Idx,Mx,P,VN,IdxN,MxN,New) :- 
+  Idx < Mx,                                     
+  IdxN =< MxN,
+  P < IdxN |                                    % Record new data.
+    Next := Idx+1,
+    set_vector_element(VN,P,E,_,VN1),           % Get new data.
+    set_vector_element(V,Next,_,E,V1),          % Set new data.
+    merge_data5(V1,Next,Mx,~(P+1),VN1,IdxN,MxN,New).
+merge_data5(V,Idx,Mx,P,VN,IdxN,MxN,New) :- 
+  Idx < Mx,
+  IdxN =< MxN,
+  P = IdxN |                                    % Record time of stop.
+    Next := Idx+1,                              
+    set_vector_element(VN,P,E,_,_),             % Get last data.
+    set_vector_element(V,0,_,Next,V1),          % Set index. 
+    set_vector_element(V1,Next,_,E,New).        % Set last data.
+    
+merge_data5(V,Idx,Mx,P,VN,IdxN,MxN,New) :- 
+  Idx < Mx,
+  IdxN > MxN,
+  P < MxN |                                     % Record new data.
+    Next := Idx+1,
+    set_vector_element(VN,P,E,_,VN1),           % Get new data.
+    set_vector_element(V,Next,_,E,V1),          % Set new data.
+    merge_data5(V1,Next,Mx,~(P+1),VN1,IdxN,MxN,New).
+merge_data5(V,Idx,Mx,P,VN,IdxN,MxN,New) :- 
+  Idx < Mx,
+  IdxN > MxN,
+  P = MxN |                                     % Record last.
+    Next := Idx+1,              
+    set_vector_element(VN,P,E,_,_),             % Get last data.
+    set_vector_element(V,0,_,Next,V1),          % Set index.
+    set_vector_element(V1,Next,_,E,New).        % Set last data.
+
+
+merge_freq_data(N,Data,DataN,New) :- N>=0|
+    set_vector_element(Data, N,E, E1,Data1),
+    set_vector_element(DataN,N,EN,0, DataN1),
+    merge_freq_data1(31,E,EN,E1),
+    merge_freq_data(~(N-1),Data1,DataN1,New).
+merge_freq_data(N,Data,_,New) :- N<0| New=Data.
+
+merge_freq_data1(_,0,_,New) :- true| New=0.
+merge_freq_data1(_,_,0,New) :- true| New=0.
+otherwise.
+merge_freq_data1(N,S, _, New) :- N<0 | New=S.
+merge_freq_data1(N,S1,S2,New) :- N>=0|
+    string_element(S1,N,E1,NS1),
+    string_element(S2,N,E2,NS2),
+    set_string_element(NS1,N,~(E1+E2),NS),
+    merge_freq_data1(~(N-1),NS,NS2,New).
+
+
+get_time(New,New1,Start,Stop) :- true|
+    set_vector_element(New,4,Gc,Gc1,New1),
+    get_time1(Gc,Gc1,Start,Stop).
+
+get_time1(0, NGc,Start,Stop) :- true| NGc=0, Start=0, Stop=0.
+get_time1(Gc,NGc,Start,Stop) :- 
+  string(Gc,Sz,_), string_element(Gc,0,Idx), Sz>Idx |
+    string_element(Gc, 4,Start,Gc1),
+    string_element(Gc1,~(Idx-1),Stop,NGc).
+get_time1(Gc,NGc,Start,Stop) :- 
+  string(Gc,Sz,_), string_element(Gc,0,Idx), Sz=<Idx |
+    string_element(Gc, 4,Start,Gc1),
+    string_element(Gc1,~(Sz-2),Stop,NGc).
+
+
+make_udata([{idling_time,L}|Items],Unit,Data,New,User,Start,Stop,P) :- true|
+    set_vector_element(Data,0,V,0,Data1),
+    set_vector_element(New, 0,_,V1,New1),
+    loop_idle(V,L,Unit,V1,P),
+    make_udata(Items,Unit,Data1,New1,User,Start,Stop,P).
+
+:- switch(machine).
+:- case(mpsi,pimm).
+make_udata([{gevc,L}|Items],Unit,Data,New,User,Start,Stop,P) :- true|
+    set_vector_element(Data,1,S,0,Data1),
+    set_vector_element(New, 1,_,V,New1),
+    gevc(S,L,V,Start,Stop),
+    make_udata(Items,Unit,Data1,New1,User,Start,Stop,P).
+:- default.
+make_udata([{gevc,_}|Items],Unit,Data,New,User,Start,Stop,P) :- true|
+    make_udata(Items,Unit,Data,New,User,Start,Stop,P).
+:- end_switch.
+
+make_udata([encoded_message_frequency|Items],Unit,Data,New,User,Start,Stop,P) :- true|
+    set_vector_element(Data,2,V,0,Data1),
+    set_vector_element(New, 2,_,V1,New1),
+    msg_freq(P,V,V1,Start,Stop),
+    make_udata(Items,Unit,Data1,New1,User,Start,Stop,P).
+make_udata([decoded_message_frequency|Items],Unit,Data,New,User,Start,Stop,P) :- true|
+    set_vector_element(Data,3,V,0,Data1),
+    set_vector_element(New, 3,_,V1,New1),
+    msg_freq(P,V,V1,Start,Stop),
+    make_udata(Items,Unit,Data1,New1,User,Start,Stop,P).
+make_udata([{local_gc,L}|Items],Unit,Data,New,User,Start,Stop,P) :- true|
+    set_vector_element(Data,4,S,0,Data1),
+    set_vector_element(New, 4,_,S1,New1),
+    gc(S,L,Unit,S1),
+    make_udata(Items,Unit,Data1,New1,User,Start,Stop,P).
+make_udata([{log_event,L}|Items],Unit,Data,New,User,Start,Stop,P) :- true|
+    set_vector_element(Data,5,V,0,Data1),
+    set_vector_element(New, 5,_,V1,New1),
+    loop_log_event(V,L,Unit,V1,Start,Stop,P),
+    make_udata(Items,Unit,Data1,New1,User,Start,Stop,P).
+make_udata([message_handling_time|Items],Unit,Data,New,User,Start,Stop,P) :- true|
+    set_vector_element(Data,6,V,0,Data1),
+    set_vector_element(New, 6,_,V1,New1),
+    msg_ht(P,V,V1,Unit,Start,Stop),
+    make_udata(Items,Unit,Data1,New1,User,Start,Stop,P).
+make_udata([],_,_,New,User,_,_,_) :- true| User=New.
+
+
+loop_idle(V,N,Unit,User,P) :- P>=0|
+    set_vector_element(V,P,S,S1,V1),
+    idle(S,N,Unit,S1),
+    loop_idle(V1,N,Unit,User,~(P-1)).
+loop_idle(V,_,_,User,P) :- P<0| User=V.
+
+idle(S,N,Unit,User) :- string_element(S,0,Idx), Idx < (N*2+5) |
+    new_string(New,~(Idx+1),32),
+    copy_str_elms(Unit,New,1,3,S,1,New1,S1),
+    copy_str_elms(Unit,New1,4,1,S1,Idx,New2,S2),    % Set stop.
+    copy_str_elms(Unit,New2,5,~(Idx-4),S2,4,User,_).
+idle(S,N,Unit,User) :- 
+  string_element(S,0,Idx), L := N*2+5, Idx >= L, string(S,Sz,_) |
+    new_string(New,L,32),
+    set_string_element(New,0,1,New1),   % 1 means that overflow was occurred.
+    copy_str_elms(Unit,New1,1,3,S,1,New2,S1),
+    stop_pos(Sz,Idx,Pos),
+    copy_str_elms(Unit,New2,4,1,S1,Pos,New3,S2),    % Set stop.
+    copy_str_elms(Unit,New3,5,~(L-5),S2,4,User,_).
+
+% MPSI, PIM/m
+gevc(S,N,User,Start,Stop) :- string_element(S,0,Idx), Idx < (N+3) |
+    new_string(New,~(Idx+1+2),32),
+    builtin#copy_string_elements(New,1,2,S,1,New1,S1), % Set low and high.
+    set_string_element(New1,3,Start,New2),
+    set_string_element(New2,4,Stop, New3),
+    builtin#copy_string_elements(New3,5,~(Idx-2),S1,3,New4,_),
+    User={New4}.
+gevc(S,N,User,Start,Stop) :- string_element(S,0,Idx), L := N+3, Idx >= L |
+    new_string(New,~(L+2),32),          % Add start and stop.
+    set_string_element(New,0,1,New1),   % 1 means that overflow was occurred.
+    builtin#copy_string_elements(New1,1,2,S,1,New2,S1),    % Set low and high.
+    set_string_element(New2,3,Start,New3),
+    set_string_element(New3,4,Stop, New4),
+    builtin#copy_string_elements(New4,5,~(L-3),S1,3,New5,_),
+    User={New5}.
+otherwise.
+% VPIM
+gevc(_,_,User,_,_) :- true| User=0.
+
+
+msg_freq(P,V,V2,Start,Stop) :- P>=0|
+    set_vector_element(V,P,S,S1,V1),
+    new_string(Str,34,32),
+    builtin#set_substring(Str,0,S,Str1),
+    set_string_element(Str1,32,Start,Str2),
+    set_string_element(Str2,33,Stop,S1),
+    msg_freq(~(P-1),V1,V2,Start,Stop).
+msg_freq(P,V,V1,_,_) :- P<0| V1=V.
+
+
+gc(S,N,Unit,User) :- string_element(S,0,Idx), Idx < (N*4+8) |
+    new_string(New,~(Idx+1),32),
+    copy_str_elms_eo(Unit,New, 1,5,S, 1,       New1,S1,no_change),
+    copy_str_elms_eo(Unit,New1,6,2,S1,~(Idx-1),New2,S2,change),
+    copy_str_elms_eo(Unit,New2,8,~(Idx-7),S2,6,User,_,change).
+gc(S,N,Unit,User) :- 
+  string_element(S,0,Idx), L := N*4+8, Idx >= L, string(S,Sz,_) |
+    new_string(New,L,32),
+    set_string_element(New,0,1,New1),   % 1 means that overflow was occurred.
+    copy_str_elms_eo(Unit,New1,1,5,S,1,New2,S1,no_change),
+    stop_pos(Sz,Idx,Pos),
+    copy_str_elms_eo(Unit,New2,6,2,S1,~(Pos-1),New3,S2,change),
+    copy_str_elms_eo(Unit,New3,8,~(L-8),S2,6,User,_,change).
+
+
+loop_log_event(V,N,Unit,User,Start,Stop,P) :- P>=0|
+    set_vector_element(V,P,S,S1,V1),
+    log_event(S,N,Unit,S1,Start,Stop),
+    loop_log_event(V1,N,Unit,User,Start,Stop,~(P-1)).
+loop_log_event(V,_,_,User,_,_,P) :- P<0| User=V.
+
+log_event(V,N,Unit,User,Start,Stop) :- vector_element(V,0,Idx), Idx < (N*2+1) |
+    new_vector(New,~(Idx+1+2)),
+    set_vector_element(New,1,_,Start,New1),
+    set_vector_element(New1,2,_,Stop,New2),
+    copy_vec_elms_eo(Unit,New2,3,Idx,V,1,User,_,change).
+log_event(V,N,Unit,User,Start,Stop) :- vector_element(V,0,Idx), L := N*2+1, Idx >= L |
+    new_vector(New,~(L+2)),
+    set_vector_element(New, 0,_,1,New1),      % Add start and stop.
+    set_vector_element(New1,1,_,Start,New2),  % 1 means that overflow was occurred.
+    set_vector_element(New2,2,_,Stop, New3),
+    copy_vec_elms_eo(Unit,New3,3,~(L-1),V,1,User,_,change).
+
+
+:- switch(machine).
+:- case(mpsi,pimm).
+msg_ht(P,V,V2,Unit,Start,Stop) :- P>=0|
+    set_vector_element(V,P,S,S1,V1),
+    new_string(Str,4,32),
+    copy_str_elms(Unit,Str,0,2,S,0,Str1,_),
+    set_string_element(Str1,2,Start,Str2),
+    set_string_element(Str2,3,Stop,S1),
+    msg_ht(~(P-1),V1,V2,Unit,Start,Stop).
+msg_ht(P,V,V1,_,_,_) :- P<0| V1=V.
+:- default.
+msg_ht(P,V,V2,Unit,_,_) :- P>=0|
+    set_vector_element(V,P,S,S1,V1),
+    new_string(Str,4,32),
+    copy_str_elms(Unit,Str,0,4,S,0,S1,_),
+    msg_ht(~(P-1),V1,V2,Unit,_,_).
+msg_ht(P,V,V1,_,_,_) :- P<0| V1=V.
+:- end_switch.
+
+stop_pos(Sz,Idx,Pos) :- Sz>Idx | Pos=Idx.
+stop_pos(Sz,Idx,Pos) :- Sz=<Idx| Pos := Sz-1.
+
+
+:- switch(machine).
+:- case(mpsi,pimm).
+copy_str_elms(_,S1,_,0,S2,_,NS1,NS2) :- true| NS1=S1, NS2=S2.
+otherwise.
+copy_str_elms(msec16,S1,P1,L,S2,P2,NS1,NS2) :- true|
+    builtin#copy_string_elements(S1,P1,L,S2,P2,NS1,NS2).
+copy_str_elms(msec,S1,P1,L,S2,P2,NS1,NS2) :- true|
+    string_element(S2,P2,E,S2_1),
+    set_string_element(S1,P1,~(E >> 4),S1_1),
+    copy_str_elms(msec,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2).
+copy_str_elms(usec,S1,P1,L,S2,P2,NS1,NS2) :- true|
+    string_element(S2,P2,E,S2_1),
+    change_time_unit(usec,E,NE),
+    set_string_element(S1,P1,NE,S1_1),
+    copy_str_elms(usec,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2).
+
+
+copy_str_elms_eo(_,S1,_,0,S2,_,NS1,NS2,_) :- true| NS1=S1, NS2=S2.
+otherwise.
+copy_str_elms_eo(msec16,S1,P1,L,S2,P2,NS1,NS2,_) :- true|
+    builtin#copy_string_elements(S1,P1,L,S2,P2,NS1,NS2).
+otherwise.
+copy_str_elms_eo(msec,S1,P1,L,S2,P2,NS1,NS2,change) :- true|
+    string_element(S2,P2,E,S2_1),
+    set_string_element(S1,P1,~(E >> 4),S1_1),
+    copy_str_elms_eo(msec,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2,no_change).
+copy_str_elms_eo(usec,S1,P1,L,S2,P2,NS1,NS2,change) :- true|
+    string_element(S2,P2,E,S2_1),
+    change_time_unit(usec,E,NE),
+    set_string_element(S1,P1,NE,S1_1),
+    copy_str_elms_eo(usec,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2,no_change).
+copy_str_elms_eo(Unit,S1,P1,L,S2,P2,NS1,NS2,no_change) :- true|
+    string_element(S2,P2,E,S2_1),
+    set_string_element(S1,P1,E,S1_1),
+    copy_str_elms_eo(Unit,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2,change).
+
+
+copy_vec_elms_eo(_,V1,_,0,V2,_,NV1,NV2,_) :- true| NV1=V1, NV2=V2.
+otherwise.
+copy_vec_elms_eo(msec16,V1,P1,L,V2,P2,NV1,NV2,_) :- true|
+    copy_vector_elements(V1,P1,L,V2,P2,NV1,NV2).
+otherwise.
+copy_vec_elms_eo(msec,V1,P1,L,V2,P2,NV1,NV2,change) :- true|
+    set_vector_element(V2,P2,E,E,V2_1),
+    set_vector_element(V1,P1,_,~(E >> 4),V1_1),
+    copy_vec_elms_eo(msec,V1_1,~(P1+1),~(L-1),V2_1,~(P2+1),NV1,NV2,no_change).
+copy_vec_elms_eo(usec,V1,P1,L,V2,P2,NV1,NV2,change) :- true|
+    set_vector_element(V2,P2,E,E,V2_1),
+    change_time_unit(usec,E,NE),
+    set_vector_element(V1,P1,_,NE,V1_1),
+    copy_vec_elms_eo(usec,V1_1,~(P1+1),~(L-1),V2_1,~(P2+1),NV1,NV2,no_change).
+copy_vec_elms_eo(Unit,V1,P1,L,V2,P2,NV1,NV2,no_change) :- true|
+    set_vector_element(V2,P2,E,E,V2_1),
+    set_vector_element(V1,P1,_,E,V1_1),
+    copy_vec_elms_eo(Unit,V1_1,~(P1+1),~(L-1),V2_1,~(P2+1),NV1,NV2,change).
+
+:- default.
+
+copy_str_elms(_,S1,_,0,S2,_,NS1,NS2) :- true| NS1=S1, NS2=S2.
+otherwise.
+copy_str_elms(usec,S1,P1,L,S2,P2,NS1,NS2) :- true|
+    builtin#copy_string_elements(S1,P1,L,S2,P2,NS1,NS2).
+copy_str_elms(msec,S1,P1,L,S2,P2,NS1,NS2) :- true|
+    string_element(S2,P2,E,S2_1),
+    set_string_element(S1,P1,~((E >> 3)/125),S1_1),
+    copy_str_elms(msec,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2).
+copy_str_elms(msec16,S1,P1,L,S2,P2,NS1,NS2) :- true|
+    string_element(S2,P2,E,S2_1),
+    change_time_unit(msec16,E,NE),
+    set_string_element(S1,P1,NE,S1_1),
+    copy_str_elms(msec16,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2).
+
+
+copy_str_elms_eo(_,S1,_,0,S2,_,NS1,NS2,_) :- true| NS1=S1, NS2=S2.
+otherwise.
+copy_str_elms_eo(usec,S1,P1,L,S2,P2,NS1,NS2,_) :- true|
+    builtin#copy_string_elements(S1,P1,L,S2,P2,NS1,NS2).
+otherwise.
+copy_str_elms_eo(msec,S1,P1,L,S2,P2,NS1,NS2,change) :- true|
+    string_element(S2,P2,E,S2_1),
+    set_string_element(S1,P1,~((E >> 3)/125),S1_1),
+    copy_str_elms_eo(msec,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2,no_change).
+copy_str_elms_eo(msec16,S1,P1,L,S2,P2,NS1,NS2,change) :- true|
+    string_element(S2,P2,E,S2_1),
+    change_time_unit(msec16,E,NE),
+    set_string_element(S1,P1,NE,S1_1),
+    copy_str_elms_eo(msec16,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2,no_change).
+copy_str_elms_eo(Unit,S1,P1,L,S2,P2,NS1,NS2,no_change) :- true|
+    string_element(S2,P2,E,S2_1),
+    set_string_element(S1,P1,E,S1_1),
+    copy_str_elms_eo(Unit,S1_1,~(P1+1),~(L-1),S2_1,~(P2+1),NS1,NS2,change).
+
+
+copy_vec_elms_eo(_,V1,_,0,V2,_,NV1,NV2,_) :- true| NV1=V1, NV2=V2.
+otherwise.
+copy_vec_elms_eo(usec,V1,P1,L,V2,P2,NV1,NV2,_) :- true|
+    copy_vector_elements(V1,P1,L,V2,P2,NV1,NV2).
+otherwise.
+copy_vec_elms_eo(msec,V1,P1,L,V2,P2,NV1,NV2,change) :- true|
+    set_vector_element(V2,P2,E,E,V2_1),
+    set_vector_element(V1,P1,_,~((E >> 3)/125),V1_1),
+    copy_vec_elms_eo(msec,V1_1,~(P1+1),~(L-1),V2_1,~(P2+1),NV1,NV2,no_change).
+copy_vec_elms_eo(msec16,V1,P1,L,V2,P2,NV1,NV2,change) :- true|
+    set_vector_element(V2,P2,E,E,V2_1),
+    change_time_unit(msec16,E,NE),
+    set_vector_element(V1,P1,_,NE,V1_1),
+    copy_vec_elms_eo(msec16,V1_1,~(P1+1),~(L-1),V2_1,~(P2+1),NV1,NV2,no_change).
+copy_vec_elms_eo(Unit,V1,P1,L,V2,P2,NV1,NV2,no_change) :- true|
+    set_vector_element(V2,P2,E,E,V2_1),
+    set_vector_element(V1,P1,_,E,V1_1),
+    copy_vec_elms_eo(Unit,V1_1,~(P1+1),~(L-1),V2_1,~(P2+1),NV1,NV2,change).
+:- end_switch.
+
+copy_vector_elements(V1,P1,L,V2,P2,NV1,NV2) :- L>0|
+    set_vector_element(V2,P2,E,E,V2_1),
+    set_vector_element(V1,P1,_,E,V1_1),
+    copy_vector_elements(V1_1,~(P1+1),~(L-1),V2_1,~(P2+1),NV1,NV2).
+copy_vector_elements(V1,_,0,V2,_,NV1,NV2) :- true| NV1=V1, NV2=V2.
+

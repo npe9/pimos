@@ -1,0 +1,619 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Loader>stdproc.kl1.5, 17-Sep-92 21:55:08, Edit by hori
+
+:- module kl1_standard_preprocessor.
+:- with_macro pimos.
+:- public parse_with_op_pool/6.
+:- public parse/5, translate/5, unparse/5, verify/4.
+:- public sort/5, message/4.
+:- public describe/3, pretty_print/3.
+
+%%%%%%%%%%%%%%%%
+%%  DESCRIBE  %%
+%%%%%%%%%%%%%%%%
+
+describe(VP0,MESG0,MESG) :- true |
+    VP0 = [get(kl1:include_max,IM),
+           get(kl1:print_mode,PM),
+           get(kl1:pretty_printer,PP),
+           get_module_table(ModTbl)],
+    wait_include_max(IM,IncludeMax),
+    wait_print_mode(PM,PrintMode),
+    wait_pretty_printer(PP,ModTbl,PrettyPrinter,_),
+    MESG0 = [info(string#"  kl1:include_max := ~t",[IncludeMax]),
+             info(string#"  kl1:print_mode := ~t",[PrintMode]),
+             info(string#"  kl1:pretty_printer := ~t",[PrettyPrinter])|MESG].
+
+wait_include_max(normal(IM),IncludeMax) :- IM > 0 |
+    IncludeMax = IM.
+otherwise.
+wait_include_max(_,IncludeMax) :- true |
+    IncludeMax = 10.
+
+wait_print_mode(normal(guard),PrintMode) :- true |
+    PrintMode = guard.
+otherwise.
+wait_print_mode(_,PrintMode) :- true |
+    PrintMode = all.
+
+wait_pretty_printer(normal(PP),ModTbl,PrettyPrinter,PPCode) :- atom(PP) |
+    ModTbl = [get_module(PP,Status)],
+    wait_pp(Status,PrettyPrinter,PPCode).
+otherwise.
+wait_pretty_printer(_,ModTbl,PrettyPrinter,PPCode) :- true |
+    ModTbl = [],
+    PrettyPrinter = '(default)',
+    PPCode = [].
+
+wait_pp(normal(PPModule),PP,Code) :- true |
+    predicate_to_code(PPModule,pretty_print,3,Code0),
+    wait_pp_code(Code0,PP,Code).
+otherwise.
+wait_pp(_,PP,Code) :- true |
+    PP = '(default)',
+    Code = [].
+
+wait_pp_code(Code0,PP,Code) :- code(Code0,_,Module,_) |
+    module:get_module_name(Module,PP),
+    Code = Code0.
+otherwise.
+wait_pp_code(Code0,PP,Code) :- true |
+    PP = '(default)',
+    Code = [].
+
+%%%%%%%%%%%%%
+%%  PARSE  %%
+%%%%%%%%%%%%%
+
+parse_with_op_pool(FS0,PredList,OpPool,IP0,MESG0,Status) :- true |
+    IP0 = [get(kl1:include_max,IM)|IP1],
+    include_max(IM,IncludeMax),
+    FS0 = [pathname(normal(FileName))|FS1],
+    buffer:input_filter([size(2000),operator_pool(OpPool)],In0,FS1),
+    In0 = [getwt(T0)|In1],
+    Pos = {[FileName,0],T1},
+    IncludeMax = 10,
+    read_file(T0,T1,Pos,In1,PredList,IP1,[],0,IncludeMax,MESG0,[],Status).
+
+parse(FS0,PredList,IP0,MESG0,Status) :- true |
+    IP0 = [get(kl1:include_max,IM)|IP1],
+    include_max(IM,IncludeMax),
+    FS0 = [pathname(normal(FileName))|FS1],
+    buffer:input_filter([size(2000)],In0,FS1),
+    In0 = [getwt(T0)|In1],
+    Pos = {[FileName,0],T1},
+    IncludeMax = 10,
+    read_file(T0,T1,Pos,In1,PredList,IP1,[],0,IncludeMax,MESG0,[],Status).
+
+include_max(integer(IM),IncludeMax) :- IM >0 | IncludeMax = IM.
+otherwise.
+include_max(IM,IncludeMax) :- true | IncludeMax = 10.
+
+read_file(normal(T0),T00,Pos,In0,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status) :-
+    T0 = wrap#(:- op(Pre,Type,Op)) |
+    T00 = T0,
+    check_op(Pre,Type,Op,Pos,In0,In1,MESG0,MESG1),
+    In1 = [getwt(T1)|In2],
+    increment(Pos,T11,Pos1),
+    read_file(T1,T11,Pos1,In2,PredList0,IP0,OpPool,N,M,MESG1,MESG,Status).
+read_file(normal(T0),T00,Pos,In0,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status) :-
+    T0 = wrap#(:- include(FileName)), FileName = string(FileNameStr) |
+    T00 = T0,
+%%    kl1_library_file_utility:open_files([FileNameStr],[string#"h"],IP0,IP1,FSs,MESG0,MESG1,St),
+    kl1_library_file_utility:open_files([FileNameStr],[],IP0,IP1,FSs,MESG0,MESG1,St),
+    N1 := N + 1,
+    include(FSs,Pos,In0,PredList0,IP1,OpPool,N1,M,MESG1,MESG,Status).
+read_file(normal(end_of_file),T00,Pos,In0,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status) :-
+    true |
+    T00 = [],
+    operator:empty_pool(Empty),
+    In0 = [replace_op_pool(OpPool,Empty)],
+    PredList0 = [],
+    IP0 =[],
+    MESG0 = MESG,
+    Status = normal.
+read_file(normal(empty),T00,Pos,In0,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status) :- true |
+    T00 = [],
+    In0 = [getwt(T1)|In1],
+    increment(Pos,T11,Pos1),
+    read_file(T1,T11,Pos1,In1,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status).
+read_file(abnormal(ErrInfo),T00,Pos,In0,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status) :- true |
+    T00 = [],
+    MESG0 = [syntax_error(ErrInfo,Pos)|MESG1],
+    In0 = [getwt(T1)|In1],
+    PredList0 = [],
+    Status = abnormal,
+    increment(Pos,T11,Pos1),
+    skip_file(T1,T11,Pos1,In1,IP0,OpPool,N,M,MESG1,MESG).
+otherwise.
+read_file(normal(Clause0),T00,Pos,In0,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status) :- true |
+    copy(Clause0,Clause1,T00),
+    PredList0 = [Clause1-Pos|PredList1],
+    In0 = [getwt(T1)|In1],
+    increment(Pos,T11,Pos1),
+    read_file(T1,T11,Pos1,In1,PredList1,IP0,OpPool,N,M,MESG0,MESG,Status).
+
+include([FS0|Rest],Pos,In0,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status) :-
+    N < M |                             % Check if the iclude nesting is smaller than the limit
+    In0 = [replace_op_pool(OldOpPool,NewOpPool)|In1],
+    FS0 = [pathname(normal(PathName)),
+           attributes(normal(Owner,User,CDate,CTime,MDate,MTime,LC,FS,FR))|FS1],
+    kl1_library_file_utility:normalize_date_time(MDate,MTime,Date,Time),
+    IP0 = [add_dependency(PathName,{Date,Time})|{IP1,IP2}],
+%%    MESG0 = [message(string#"Include file : ~s",[PathName])|MESG1],
+    buffer:input_filter([size(2000),operator_pool(OldOpPool)],IIn0,FS1),
+    IIn0=[getwt(T0)|IIn1],
+    include(Pos,PathName,T00,NewPos),
+    read_file(T0,T00,NewPos,IIn1,PredList1,IP1,NewOpPool,N,M,MESG0,MESG1,St0),
+    concat(St0,St1,Status,PredList0,PredList1,PredList2),
+    include(Rest,Pos,In1,PredList2,IP2,OpPool,N,M,MESG1,MESG,St1).
+include([],Pos,In0,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status) :- true |
+    In0=[getwt(T0)|In1],
+    increment(Pos,T00,Pos1),
+    read_file(T0,T00,Pos1,In1,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status).
+otherwise.
+include(FSs,Pos,In0,PredList0,IP0,OpPool,N,M,MESG0,MESG,Status) :- 
+    N >= M |                            % Check if the include nesting is smaller than the limit
+    close_files(FSs),
+    In0 = [],
+    PredList0 = [],
+    IP0 = [],
+    MESG0 = [error(string#"Too many nested include files",[],Pos)|MESG],
+    Status = abnormal.
+
+concat(normal,normal,Status,List0,List1,List2) :- true | 
+    concat(List0,List1,List2), 
+    Status = normal.
+otherwise.
+concat(_,normal,Status,List0,List1,List2) :- true | List2 = List0, Status = abnormal.
+otherwise.
+concat(_,_,Status,List0,List1,List2) :- true | List0 = [], Status = abnormal.
+
+concat(List0,[Term|Rest],List) :- true |
+    List0 = [Term|List1],
+    concat(List1,Rest,List).
+concat(List0,[],List) :- true | List0 = List.
+
+close_files([FS|Rest]) :- true | FS = [], close_files(Rest).
+close_files([]) :- true | true.
+
+check_op(integer(Pre),atom(Type),atom(Op),Pos,In0,In,MESG0,MESG) :-
+    1200 >= Pre, Pre > 0 |
+    check_type(Type,Status),
+    add_op(Status,Pre,Type,Op,Pos,In0,In,MESG0,MESG).
+otherwise.
+check_op(_,_,_,Pos,In0,In,MESG0,MESG) :- true |
+    In0 = In,
+    MESG0 = [error(string#"illegal operator definition",[],Pos)|MESG].
+
+check_type( fx,Status) :- true | Status = normal.
+check_type( fy,Status) :- true | Status = normal.
+check_type(xfx,Status) :- true | Status = normal.
+check_type(yfx,Status) :- true | Status = normal.
+check_type(xfy,Status) :- true | Status = normal.
+check_type(xf ,Status) :- true | Status = normal.
+check_type(yf ,Status) :- true | Status = normal.
+otherwise.
+check_type(_  ,Status) :- true | Status = abnormal.
+
+add_op(normal,Pre,Type,Op,Pos,In0,In,MESG0,MESG) :- true |
+    In0 = [add_op(Pre,Type,Op)|In],
+    MESG0 = MESG.
+add_op(abnormal,Pre,Type,Op,Pos,In0,In,MESG0,MESG) :- true |
+    In0 = In,
+    MESG0 = [error(string#"illegal operator definition : ~T",[{(:-),{(op),Pre,Type,Op}}],Pos)|
+            MESG].
+
+increment({Pos,Info},Term,NewPosInfo) :- true |
+    increment_0(Pos,NewPos),
+    NewPosInfo = {NewPos,Term}.
+
+increment_0([PathName,P],New) :- string(PathName,_,_), integer(P) |
+    P1 := P + 1, New = [PathName,P1].
+increment_0([P],New) :- integer(P) | P1 := P + 1, New = [P1].
+otherwise.
+increment_0([Pos|Rest],New) :- true | New = [Pos|New0], increment_0(Rest,New0).
+
+include({Pos,Info},PathName,Term,NewPosInfo) :- true |
+    include_0(Pos,PathName,NewPos),
+    NewPosInfo = {NewPos,Term}.
+
+include_0([],PathName,New) :- true | New = [PathName,0].
+include_0([Pos|Rest],PathName,New) :- true | New = [Pos|New0], include_0(Rest,PathName,New0).
+
+%%%%%%%%%%%%%%%
+%% Skip File %%
+%%%%%%%%%%%%%%%
+
+skip_file(normal(Term),T0,Pos,In0,IP0,OpPool,N,M,MESG0,MESG) :-
+    Term = wrap#(:-op(Pre,Type,Op)) |
+    T0 = Term,
+    check_op(Pre,Type,Op,Pos,In0,In1,MESG0,MESG1),
+    In1 = [getwt(T)|In],
+    increment(Pos,T1,Pos1),
+    skip_file(T,T1,Pos1,In,IP0,OpPool,N,M,MESG1,MESG).
+skip_file(normal(Term),T0,Pos,In0,IP0,OpPool,N,M,MESG0,MESG) :- N < M,
+    Term = wrap#(:- include(FileName)) |
+    T0 = Term,
+%%    kl1_library_file_utility:open_files([FileName],[string#"h"],IP0,IP1,FSs,MESG0,MESG1,_),
+    kl1_library_file_utility:open_files([FileName],[],IP0,IP1,FSs,MESG0,MESG1,_),
+    N1 := N + 1,
+    i_skip(FSs,Pos,In0,IP1,OpPool,N1,M,MESG1,MESG).
+skip_file(normal(end_of_file),T0,Pos,In0,IP0,OpPool,N,M,MESG0,MESG) :- true |
+    T0 = [],
+    operator:empty_pool(Empty),
+    In0 = [replace_op_pool(OpPool,Empty)],
+    IP0 = [],
+    MESG0 = MESG.
+skip_file(normal(empty),T0,Pos,In0,IP0,OpPool,N,M,MESG0,MESG) :- true |
+    T0 = [],
+    In0 = [getwt(T)|In],
+    increment(Pos,T1,Pos1),
+    skip_file(T,T1,Pos1,In,IP0,OpPool,N,M,MESG0,MESG).
+skip_file(abnormal(ErrInfo),T0,Pos,In0,IP0,OpPool,N,M,MESG0,MESG) :- true |
+    T0 = [],
+    MESG0 = [syntax_error(ErrInfo,Pos)|MESG1],
+    In0 = [getwt(T)|In],
+    increment(Pos,T1,Pos1),
+    skip_file(T,T1,Pos1,In,IP0,OpPool,N,M,MESG1,MESG).
+otherwise.
+skip_file(normal(T0),T1,Pos,In0,IP0,OpPool,N,M,MESG0,MESG) :- true |
+    T1 = T0,
+    In0 = [getwt(T)|In],
+    increment(Pos,T2,Pos1),
+    skip_file(T,T2,Pos1,In,IP0,OpPool,N,M,MESG0,MESG).
+
+i_skip([FS0|Rest],Pos,In0,IP0,OpPool,N,M,MESG0,MESG) :-
+    N < M |                             % Check if the iclude nesting is smaller than the limit
+    In0 = [replace_op_pool(OldOpPool,NewOpPool)|In1],
+    IP0 = {IP1,IP2},
+    buffer:input_filter([size(2000),operator_pool(OldOpPool)],IIn0,FS0),
+    IIn0=[getwt(T)|IIn1],
+    include(Pos,PathName,T0,NewPos),
+    skip_file(T,T0,NewPos,IIn1,IP1,NewOpPool,N,M,MESG0,MESG1),
+    i_skip(Rest,Pos,In1,IP2,OpPool,N,M,MESG1,MESG).
+i_skip([],Pos,In0,IP0,OpPool,N,M,MESG0,MESG) :- true |
+    In0=[getwt(T)|In1],
+    increment(Pos,T0,Pos1),
+    skip_file(T,T0,Pos1,In1,IP0,OpPool,N,M,MESG0,MESG).
+otherwise.
+i_skip(FSs,Pos,In0,IP0,OpPool,N,M,MESG0,MESG) :- 
+    N >= M |                            % Check if the include nesting is smaller than the limit
+    close_files(FSs),
+    In0 = [],
+    IP0 = [],
+    MESG0 = [error(string#"Too many nested include files",[],Pos)|MESG].
+
+%%%%%%%%%%%%%%%%%%%%%%%
+%%  VERBOSE_MESSAGE  %%
+%%%%%%%%%%%%%%%%%%%%%%%
+
+message(silent,EMSG,IP,MESG) :- true |
+    IP =[],
+    EMSG = MESG.
+otherwise.
+message(_,EMSG,IP,MESG) :- true |
+    IP =[get(kl1:print_mode,PM0),
+         get(kl1:pretty_printer,PP0),
+         get_module_table(ModTbl)],
+    wait_print_mode(PM0,PM),
+    wait_pretty_printer(PP0,ModTbl,_,PP),
+    verbose(EMSG,PM,PP,MESG).
+
+verbose([Message|EMSG],Mode,PPCode,MESG0) :- EMSG = [Message|_] |
+    verbose(EMSG,Mode,PPCode,MESG0).
+otherwise.
+verbose([Message|EMSG],Mode,PPCode,MESG0) :-
+    code(PPCode,_,_,_),
+    Message = {ErrWarn,Form,Args,{Pos,Info}},
+    Info \= [] |
+    MESG0 = [Message,stdmsg([putb(string#"=> ")|PP])|MESG1],
+    apply(PPCode,{Info,Mode,PP}),
+    verbose(EMSG,Mode,PPCode,MESG1).
+verbose([Message|EMSG],Mode,PPCode,MESG0) :-
+    code(PPCode,_,_,_),
+    Message = {DO,Messages,{Pos,Info}},
+    Info \= [] |
+    MESG0 = [Message,stdmsg([putb(string#"=> ")|PP])|MESG1],
+    apply(PPCode,{Info,Mode,PP}),
+    verbose(EMSG,Mode,PPCode,MESG1).
+verbose([Message|EMSG],Mode,[],MESG0) :-
+    Message = {ErrWarn,Form,Args,{Pos,Info}},
+    Info \= [] |
+    MESG0 = [Message,stdmsg([putb(string#"=> ")|PP])|MESG1],
+    pretty_print(Info,Mode,PP),
+    verbose(EMSG,Mode,[],MESG1).
+verbose([Message|EMSG],Mode,[],MESG0) :-
+    Message = {DO,Messages,{Pos,Info}},
+    Info \= [] |
+    MESG0 = [Message,stdmsg([putb(string#"=> ")|PP])|MESG1],
+    pretty_print(Info,Mode,PP),
+    verbose(EMSG,Mode,[],MESG1).
+verbose([],Mode,PPCode,MESG) :- true | MESG = [].
+otherwise.
+verbose([Message|EMSG],Mode,PPCode,MESG0) :- true |
+    MESG0 = [Message|MESG1],
+    verbose(EMSG,Mode,PPCode,MESG1).
+
+pretty_print(WrappedTerm,guard,Out0) :- true |
+    pretty_print_1(WrappedTerm,guard,Out0,[]).
+otherwise.
+pretty_print(WrappedTerm,_,Out0) :- true |
+    pretty_print_1(WrappedTerm,all,Out0,[]).
+
+%%%%%%%%%%%%%%%
+%%  PROCESS  %%
+%%%%%%%%%%%%%%%
+
+translate(In,Out,IP0,MESG0,Status) :- true |
+    In = Out,
+    IP0 = [],
+    MESG0 = [],
+    Status = normal.
+
+%%%%%%%%%%%%%%%
+%%  UNPARSE  %%
+%%%%%%%%%%%%%%%
+
+unparse(In0,FS0,IP0,MESG0,Status) :- true |
+    IP0 = [],
+    buffer:output_filter(Out0,FS0),
+    Out0 = [print_length(1000000),print_depth(1000000),
+            print_atom_length(1000),print_string_length(500000)|Out1],
+    pretty_print_0(In0,Out1,Done),
+    wait_done(Done,Status),
+    MESG0 = [].
+
+wait_done(Done,Status) :- wait(Done) |
+    Status = normal.
+
+pretty_print_0([WrappedTerm0-{Position,_}|Rest],Out0,Done) :- true |
+    Out0 = [putf(string#"~n%% ~t~n",[Position])|Out1],
+    pretty_print_1(WrappedTerm0,all,Out1,Out2),
+    pretty_print_0(Rest,Out2,Done).
+pretty_print_0([WrappedTerm0-[]|Rest],Out0,Done) :- true |
+    Out0 = [nl|Out1],
+    pretty_print_1(WrappedTerm0,all,Out1,Out2),
+    pretty_print_0(Rest,Out2,Done).
+pretty_print_0([],Out0,Done) :- true | Out0 = [flush(Done)].
+
+pretty_print_1(wrap#(Head :- true | Body),Mode,Out0,Out) :- true |
+    pp_head(Head,Out0,Out1), Out1 = [putb(" :- true |")|Out2],
+    pp_body(Body,Mode,Out2,Out3), Out3 = [putb(" .")|Out].
+pretty_print_1(wrap#(Head --> true | Body),Mode,Out0,Out) :- true |
+    pp_head(Head,Out0,Out1), Out1 = [putb(" --> true |")|Out2],
+    pp_body(Body,Mode,Out2,Out3), Out3 = [putb(" .")|Out].
+otherwise.
+pretty_print_1(wrap#(Head :- Guard | Body),Mode,Out0,Out) :- true |
+    pp_head(Head,Out0,Out1), Out1 = [putb(" :-")|Out2],
+    pp_guard(Guard,Out2,Out3), Out3 = [putb(" |")|Out4],
+    pp_body(Body,Mode,Out4,Out5), Out5 = [putb(" .")|Out].
+pretty_print_1(wrap#(Head --> Guard | Body),Mode,Out0,Out) :- true |
+    pp_head(Head,Out0,Out1), Out1 = [putb(" -->")|Out2],
+    pp_guard(Guard,Out2,Out3), Out3 = [putb(" |")|Out4],
+    pp_body(Body,Mode,Out4,Out5), Out5 = [putb(" .")|Out].
+otherwise.
+pretty_print_1(wrap#(Head :- Body),Mode,Out0,Out) :- true |
+    pp_head(Head,Out0,Out1), Out1 = [putb(" :-")|Out2],
+    pp_body(Body,Mode,Out2,Out3), Out3 = [putb(" .")|Out].
+pretty_print_1(wrap#(Head --> Body),Mode,Out0,Out) :- true |
+    pp_head(Head,Out0,Out1), Out1 = [putb(" -->")|Out2],
+    pp_body(Body,Mode,Out2,Out3), Out3 = [putb(" .")|Out].
+otherwise.
+pretty_print_1(WrappedTerm,Mode,Out0,Out) :- true |
+    Out0 = [putwtq(WrappedTerm),putb(" .")|Out].
+
+pp_head(Head,Out0,Out) :- true | Out0 = [putwtq(Head)|Out].
+
+pp_guard(wrap#({(','),Left,Right}),Out0,Out) :- true |
+    pp_guard(Left,Out0,Out1), Out1 = [putb(" ,")|Out2],
+    pp_guard(Right,Out2,Out).
+otherwise.
+pp_guard(Guard,Out0,Out) :- true |
+    pp_goal(Guard,(','),4,Out0,Out).
+
+pp_body(true,guard,Out0,Out) :- true |
+    Out0 = [putb(" true.")|Out].
+pp_body(Body,guard,Out0,Out) :- Body \= true |
+    Out0 = [putb(" . . .")|Out].
+otherwise.
+pp_body(wrap#({(','),Left,Right}),Mode,Out0,Out) :- true |
+    pp_body(Left,Mode,Out0,Out1), Out1 = [putb(" ,")|Out2],
+    pp_body(Right,Mode,Out2,Out).
+otherwise.
+pp_body(Body,Mode,Out0,Out) :- true |
+    pp_goal(Body,(','),6,Out0,Out).
+
+pp_goal(WGoal,Op,Indent,Out0,Out) :-
+    WGoal = vector(Goal),
+    vector_element(Goal,0,Functor),
+    Functor = atom(Fnctr) |
+    Out0 = [replace_op_pool(OpOld,OpNew)|Out1],
+    OpOld = [operator(Op,DefOp),operator(Fnctr,DefFnctr)|OpNew],
+    pp_goal_1(WGoal,DefOp,DefFnctr,Fnctr,Indent,Out1,Out).
+otherwise.
+pp_goal(vector({vector(GoalVec)}),Op,Indent,Out0,Out) :-
+    vector(GoalVec,N), N > 1 |
+    indent(Indent,Out0,Out1),
+    Out1 = [putb("{{")|Out2],
+    I1 := Indent + 2,
+    pp_goal_vec(GoalVec,0,N,I1,Out2,Out3),
+    indent(Indent,Out3,Out4),
+    Out4 = [putb("}}")|Out].
+otherwise.
+pp_goal(WGoal,Op,Indent,Out0,Out) :- true |
+    indent(Indent,Out0,Out1),
+    Out1 = [putwtq(WGoal)|Out].
+
+pp_goal_vec(GoalVec,I0,N,Indent,Out0,Out) :-
+    I0 < N - 1,
+    vector_element(GoalVec,I0,Goal) |
+    pp_goal(Goal,(','),Indent,Out0,Out1),
+    Out1 = [putb(" ,")|Out2],
+    I1 :=I0 + 1,
+    pp_goal_vec(GoalVec,I1,N,Indent,Out2,Out).
+pp_goal_vec(GoalVec,I0,N,Indent,Out0,Out) :-
+    I0 =:= N - 1,
+    vector_element(GoalVec,I0,Goal) |
+    pp_goal(Goal,(','),Indent,Out0,Out).
+
+pp_goal_1(Goal,[],Def,Fnctr,Indent,Out0,Out) :- list(Def) |
+    indent(Indent,Out0,Out1),
+    Out1 = [putb("( "),putwtq(Goal),putb(" )")|Out].
+pp_goal_1(Goal,Def,[],Fnctr,Indent,Out0,Out) :- list(Def) |
+    indent(Indent,Out0,Out1),
+    Out1 = [putwtq(Goal)|Out].
+pp_goal_1(Goal,Def0,Def1,Fnctr,Indent,Out0,Out) :- list(Def0), list(Def1) |
+    min_pre(Def0,1200,Min),
+    max_pre(Def1,0,Max),
+    pp_goal_2(Goal,Min,Max,Fnctr,Indent,Out0,Out).
+pp_goal_1(Goal,[],[],Fnctr,Indent,Out0,Out) :- true |
+    indent(Indent,Out0,Out1),
+    Out1 = [putwtq(Goal)|Out].
+
+pp_goal_2(Goal,Min,Max,Fnctr,Indent,Out0,Out) :- Min > Max |
+    indent(Indent,Out0,Out1),
+    Out1 = [putwtq(Goal)|Out].
+otherwise.
+pp_goal_2(vector({atom(Fnctr),Left,Right}),Min,Max,Fnctr,Indent,Out0,Out) :- true |
+    indent(Indent,Out0,Out1),
+    Out1 = [putb("( ")|Out2],
+    I1 := Indent + 2,
+    pp_goal(Left,Fnctr,I1,Out2,Out3),
+    Out3 = [putb(" "),puttq(Fnctr)|Out4],
+    pp_goal(Right,Fnctr,I1,Out4,Out5),
+    indent(Indent,Out5,Out6),
+    Out6 = [putb(" )")|Out].
+otherwise.
+pp_goal_2(Goal,Min,Max,Fnctr,Indent,Out0,Out) :- true |
+    indent(Indent,Out0,Out1),
+    Out1 = [putb("( "),putwtq(Goal),putb(" )")|Out].
+
+min_pre([{Pre0,_}],Min,Pre) :- Pre0 >= Min |
+    Pre = Min.
+min_pre([{Pre0,_}|Rest],Min,Pre) :- list(Rest), Pre0 >= Min |
+    min_pre(Rest,Min,Pre).
+min_pre([{Pre0,_}],Min,Pre) :- Pre0 < Min |
+    Pre = Pre0.
+min_pre([{Pre0,_}|Rest],Min,Pre) :- list(Rest), Pre0 < Min |
+    min_pre(Rest,Pre0,Pre).
+
+max_pre([{Pre0,_}],Max,Pre) :- Pre0 >= Max |
+    Pre = Pre0.
+max_pre([{Pre0,_}|Rest],Max,Pre) :- list(Rest), Pre0 >= Max |
+    max_pre(Rest,Pre0,Pre).
+max_pre([{Pre0,_}],Max,Pre) :- Pre0 < Max |
+    Pre = Max.
+max_pre([{Pre0,_}|Rest],Max,Pre) :- list(Rest), Pre0 < Max |
+    max_pre(Rest,Max,Pre).
+
+indent(Indent,Out0,Out) :- true |
+    Out0 = [nl|Out1],
+    indent_0(Indent,Out1,Out).
+
+indent_0(Indent,Out0,Out) :- Indent >= 8 |
+    Out0 = [putb("        ")|Out1],
+    I1 := Indent - 8,
+    indent_0(I1,Out1,Out).
+otherwise.
+indent_0(Indent,Out0,Out) :- Indent >= 4 |
+    Out0 = [putb("    ")|Out1],
+    I1 := Indent - 4,
+    indent_0(I1,Out1,Out).
+otherwise.
+indent_0(Indent,Out0,Out) :- Indent >= 2 |
+    Out0 = [putb("  ")|Out1],
+    I1 := Indent - 2,
+    indent_0(I1,Out1,Out).
+indent_0(1,Out0,Out) :- true |
+    Out0 = [putb(" ")|Out].
+indent_0(0,Out0,Out) :- true | Out0 = Out.
+
+%%%%%%%%%%%%
+%%  SORT  %%
+%%%%%%%%%%%%
+
+sort(MESG0,MESG1,Small,Large,Swapped) :- true |
+    kl1_library_message:position(MESG0,Pos0),
+    kl1_library_message:position(MESG1,Pos1),
+    sort(Pos0,MESG0,Pos1,MESG1,Small,Large,Swapped).
+
+sort(Pos0,MESG0,Pos1,MESG1,Small,Large,Swapped) :- true |
+    comparator:sort(Pos0,Pos1,_,_,Swapped),
+    default_sorter(Swapped,MESG0,MESG1,Small,Large).
+
+default_sorter(no,MESG0,MESG1,Small,Large) :- true |
+    Small = MESG0, Large = MESG1.
+default_sorter(yes,MESG0,MESG1,Small,Large) :- true |
+    Small = MESG1, Large = MESG0.
+
+%%%%%%%%%%%%%%
+%% VERIFIER %%
+%%%%%%%%%%%%%%
+
+verify(PredList,IFC,IP0,MESG0) :- true |
+    IFC = [],
+    IP0 = [input_language(InLang),
+           get(kl1:print_mode,PM0)],
+    wait_print_mode(PM0,PM),
+    check_0(InLang,PredList,PM,MESG0).
+
+%%check_0(string#"kl1",PredList,PM,MESG0) :- true |
+%%    check(PredList,silent,PM,MESG0).
+%%check_0(string#"pkl1",PredList,PM,MESG0) :- true |
+%%    check(PredList,silent,PM,MESG0).
+%%otherwise.
+check_0(_,PredList,PM,MESG0) :- true |
+    check(PredList,verbose,PM,MESG0).
+
+%%check([WrappedTerm-Position|Rest],verbose,PM,MESG0) :- true |
+%%    kl1_variable_checker:varchk(WrappedTerm,Position,all,verbose,MESG0,MESG1),
+%%    MESG1 = [stdout(OUT)|MESG2],
+%%    pretty_print(WrappedTerm,PM,OUT),
+%%    check(Rest,verbose,PM,MESG2).
+%%check([WrappedTerm-Position|Rest],silent,PM,MESG0) :- true |
+%%    kl1_variable_checker:varchk(WrappedTerm,Position,all,verbose,MESG0,MESG1),
+%%    check(Rest,silent,PM,MESG1).
+check([WrappedTerm-Position|Rest],Mode,PM,MESG0) :-
+    Position = {Pos,Info}, Info \= [] |
+    kl1_variable_checker:varchk(WrappedTerm,Position,all,verbose,MESG0,MESG1),
+    check(Rest,Mode,PM,MESG1).
+check([],_,_,MESG0) :- true | MESG0 = [].
+otherwise.
+check([WrappedTerm-Position|Rest],Mode,PM,MESG0) :- true |
+    check(Rest,Mode,PM,MESG0).
+
+%% COPY
+
+copy(Vec0,Vec1,Vec2) :- vector(Vec0,Len) |
+    new_vector(Vec11,Len),
+    new_vector(Vec22,Len),
+    copy_vec(0,Len,Vec0,Vec11,Vec1,Vec22,Vec2).
+copy([H|L],L1,L2) :- true |
+    copy(H,H1,H2),
+    L1 = [H1|L11],
+    L2 = [H2|L22],
+    copy(L,L11,L22).
+otherwise.
+copy(G0,G1,G2) :- true |
+    G1 = G0,
+    G2 = G0.
+
+copy_vec(P,Len,Vec0,Vec11,Vec1,Vec22,Vec2) :- P < Len |
+    vector_element(Vec0,P,Elm,Vec00),
+    copy(Elm,Elm1,Elm2),
+    set_vector_element(Vec11,P,_,Elm1,Vec111),
+    set_vector_element(Vec22,P,_,Elm2,Vec222),
+    P1 := P + 1,
+    copy_vec(P1,Len,Vec00,Vec111,Vec1,Vec222,Vec2).
+otherwise.
+copy_vec(P,Len,Vec0,Vec11,Vec1,Vec22,Vec2) :- true |
+    Vec1 = Vec11,
+    Vec2 = Vec22.
+    

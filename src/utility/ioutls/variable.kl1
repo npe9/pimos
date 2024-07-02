@@ -1,0 +1,840 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module(variable).
+:- include("pimos.h").
+:- with_macro pimos.
+:- public pool2/1,
+        wrap/4, wrap/5, wrap/6, wrap_address/4,
+        unwrap/2, unwrap/3, unwrap/4,
+        usage/1.
+
+%%%% not public predicates
+:- public black_wrap/4, black_wrap/5, black_wrap/6,
+        unwrapFreeze/3.
+:- public numbervars/2, numbervars/3, numbervars/4,
+        namenumbers/2, namenumbers/3, namenumbers/4, pool3/1.
+
+%%%% for melt/freeze support
+:- public melt/2, melt/3, melt/4, freeze/2, freeze/4, freeze/7.
+:- public meltUnwrap/4.
+
+melt(FT,T) :- true | variable_old:melt(FT,T).
+melt(FT,T,NVP) :- true | variable_old:melt(FT,T,NVP).
+melt(FT,T,VP,NVP) :- true | variable_old:melt(FT,T,VP,NVP).
+
+freeze(T,FT) :- true | variable_old:freeze(T,FT).
+freeze(T,FT,M,N) :- true | variable_old:freeze(T,FT,M,N).
+freeze(T,T1,FT,D,L,VP,NVP) :- true | variable_old:freeze(T,T1,FT,D,L,VP,NVP).
+
+unify_all([V]) :- true | true.
+unify_all([V0,V1]) :- true | V0 = V1.
+unify_all([V0,V1,V2|Vars]) :- true | V0 = V1, unify_all([V1,V2|Vars]).
+
+unify_all([V],NVars) :- true | NVars = [V].
+unify_all([V0,V1],NVars) :- true | V0 = V1, NVars = [V1].
+unify_all([V0,V1,V2|Vars],NVars) :- true | 
+        V0 = V1, unify_all([V1,V2|Vars],NVars).
+
+
+usage(L) :- true | ioutls_usage:variable(L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   unwrap(+WrappedTerm, -{WrappedTerm,Term})
+%   unwrap(+WrappedTerm, -{WrappedTerm,Term}, NewVariablePool)
+%   unwrap(+WrappedTerm, -{WrappedTerm,Term}, VariablePool,NewVariablePool)
+
+unwrap(WT,Res) :- true |
+        unwrap(WT,Res,VP,[]),
+        pool2(VP).
+
+unwrap(WT,Res,NVP) :- true |
+        unwrap(WT,Res,VP,NVP),
+        pool2(VP).
+
+unwrap(WT,Res,VP,NVP) :- true |
+        VP = [do(VP0),unify|NVP],
+        melt_unwrap(WT,WT1,T,melt,VP0,E,[]),
+        wait_and_unify_result(Res,{WT1,T},E).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% meltUnwrap(+WrappedTerm, -{WrappedTerm,Term}, +MeltORFreeze, -VariablePool)
+
+meltUnwrap(WT,Res,MF,VP) :- true |
+        melt_unwrap(WT,WT1,T,MF,VP,E,[]),
+        wait_and_unify_result(Res,{WT1,T},E).
+
+wait_and_unify_result(Res,Res1,[]) :- true | Res=Res1.
+
+melt_unwrap(atom(Atom),WT,T,_,VP,E,E1) :- atom(Atom) |
+        WT=atom(Atom),
+        T=Atom,
+        VP=[],E=E1.
+melt_unwrap(integer(Int),WT,T,_,VP,E,E1) :- integer(Int) |
+        WT=integer(Int),
+        T=Int,
+        VP=[],E=E1.
+:- switch(floating_point).
+:- case(yes).
+melt_unwrap(floating_point(Float),WT,T,_,VP,E,E1) :- floating_point(Float) |
+        WT=floating_point(Float),
+        T=Float,
+        VP=[],E=E1.
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+melt_unwrap(extended_floating_point(Float),WT,T,_,VP,E,E1) :- extended_floating_point(Float,_) |
+        WT=extended_floating_point(Float),
+        T=Float,
+        VP=[],E=E1.
+:- end_switch.
+melt_unwrap(string(Str),WT,T,_,VP,E,E1) :- string(Str,_,_) |
+        WT=string(Str),
+        T=Str,
+        VP=[],E=E1.
+melt_unwrap(module(Mod),WT,T,_,VP,E,E1) :- module(Mod,_) |
+        WT=module(Mod),
+        T=Mod,
+        VP=[],E=E1.
+melt_unwrap(code(Cod),WT,T,_,VP,E,E1) :- code(Cod,_,_,_) |
+        WT=code(Cod),
+        T=Cod,
+        VP=[],E=E1.
+melt_unwrap(variable(Name),WT,T,melt,VP,E,E1) :- string(Name,_,_) |
+        VP=[put_var(Name,T)],
+        WT=variable(Name),
+        E=E1.
+melt_unwrap(variable(Name),WT,T,freeze,VP,E,E1) :- string(Name,_,_) |   % VP : pool3
+        VP=[numbervar(Name,N)],
+        WT=variable(Name),
+        T='$VAR'(N,Name),
+        E=E1.
+melt_unwrap(variable({PE,ADR}),WT,T,undef,VP,E,E1) :- integer(PE),integer(ADR) |
+        WT=variable({PE,ADR}),
+        T='$UNDEF'(PE,ADR),
+        VP=[],E=E1.
+melt_unwrap(vector(Vect),WT,T,MF,VP,E,E1) :- vector(Vect,N) |
+        WT=vector(WT1),
+        new_vector(T0,N),
+        melt_unwrap_vect(Vect,WT1,T,MF,VP,E,E1,T0,0,N).
+melt_unwrap(list([WCar|WCdr]),WT,T,MF,VP,E,E1) :- WCar \= '$exceedDepth'|
+        VP={VP0,VP1},
+        WT=list([WCar1|WCdr1]),
+        T=[Car|Cdr],
+        melt_unwrap(WCar,WCar1,Car,MF,VP0,E,E0),
+        melt_unwrap(WCdr,WCdr1,Cdr,MF,VP1,E0,E1).
+melt_unwrap(list([WCar|WCdr]),WT,T,_,VP,E,E1) :- WCar='$exceedDepth'|
+        WT=list([WCar|WCdr]),
+        T=[],
+        VP=[],E=E1.
+melt_unwrap(WT,WT1,T,_,VP,E,E1) :- WT = '$exceedLength' |
+        WT=WT1,T=WT,VP=[],E=E1.
+melt_unwrap(WT,WT1,T,_,VP,E,E1) :- WT = '$exceedDepth' |
+        WT=WT1,T=WT,VP=[],E=E1.
+melt_unwrap(unknown(Unknown),WT,T,_,VP,E,E1) :- true |
+        WT=unknown(Unknown),
+        T=Unknown,
+        VP=[],E=E1.
+otherwise.
+melt_unwrap(WT,_,_,_,VP,_,_) :- true |
+        VP=[],
+        shoen:raise(pimos_tag#error,
+            '$PIMOS$'(variable:unwrap,"illegal_wrapped_term"),WT).
+
+melt_unwrap_vect(WT,WT1,T1,MF,VP,E,E1,T,I,N) :- I<N,
+    vector_element(WT,I,X),X \= '$exceedLength' |
+        VP={VP0,VP1},
+        set_vector_element(WT,I,WTi,WTi1,WT0),
+        set_vector_element(T,I,_,Ti,T0),
+        melt_unwrap(WTi,WTi1,Ti,MF,VP0,E,E0),
+        melt_unwrap_vect(WT0,WT1,T1,MF,VP1,E0,E1,T0,~(I+1),N).
+melt_unwrap_vect(WT,WT1,T1,_,VP,E,E1,T,I,N) :- I<N,
+    vector_element(WT,I,X),X = '$exceedLength' |
+        WT=WT1,T=T1,VP=[],E=E1.
+melt_unwrap_vect(WT,WT1,T1,_,VP,E,E1,T,N,N) :- true |
+        WT=WT1,T=T1,VP=[],E=E1.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   wrap(+Term, -{Term,WrappedTerm}, +FrozenDepth,+FrozenLength)
+%   wrap(+Term, -{Term,WrappedTerm}, +FrozenDepth,+FrozenLength,NewVariablePool)
+%   wrap(+Term, -{Term,WrappedTerm}, +FrozenDepth,+FrozenLength,
+%                                                   VariablePool,NewVariablePool)
+
+wrap(T, NTWT, D,L) :- true |
+        wrapFreeze(T, NTWT, D,L, name, VP),
+        pool2(VP).
+
+wrap(T, NTWT, D,L, NVP) :- true |
+        wrapFreeze(T, NTWT, D,L, name, VP),
+        pool2([do(VP)|NVP]).
+
+wrap(T, NTWT, D,L, VP,NVP) :- true |
+        VP = [do(VP0)|NVP],
+        wrapFreeze(T, NTWT, D,L, name, VP0).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   wrap_address(+Term, -{Term,WrappedTerm}, +FrozenDepth,+FrozenLength)
+
+wrap_address(T, NTWT, D,L) :- true |
+        wrapFreeze(T, NTWT, D,L, address, _).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% wrapFreeze(+Term, -{Term,WrappedTerm}, +FrozenDepth,+FrozenLength, 
+%                                                   +Type, -VariablePool)
+
+wrapFreeze(T,Res,D,L,Type,VP) :- true |
+        unbound(T,T0),
+        wrap_freeze(T0,T1,WT,D,L,Type,VP,E,[]),
+        wait_and_unify_result(Res,{T1,WT},E).
+
+wrap_freeze({PE,Adr,T},T1,WT,_,_,Type,VP,E,E1) :- integer(PE),integer(Adr) |
+        wrap_freeze_var(T,T1,WT,PE,Adr,Type,VP,E,E1).
+wrap_freeze({T},T1,WT,_,_,_,VP,E,E1) :- atom(T) |           T=T1,WT=atom(T),VP=[],E=E1.
+wrap_freeze({T},T1,WT,_,_,_,VP,E,E1) :- integer(T) |        T=T1,WT=integer(T),VP=[],E=E1.
+:- switch(floating_point).
+:- case(yes).
+wrap_freeze({T},T1,WT,_,_,_,VP,E,E1) :- floating_point(T) | T=T1,WT=floating_point(T),VP=[],E=E1.
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+wrap_freeze({T},T1,WT,_,_,_,VP,E,E1) :- extended_floating_point(T,_) |
+        T=T1,WT=extended_floating_point(T),VP=[],E=E1.
+:- end_switch.
+wrap_freeze({T},T1,WT,_,_,_,VP,E,E1) :- string(T,_,_) |     T=T1,WT=string(T),VP=[],E=E1.
+wrap_freeze({T},T1,WT,_,_,_,VP,E,E1) :- module(T,_) |       T=T1,WT=module(T),VP=[],E=E1.
+wrap_freeze({T},T1,WT,_,_,_,VP,E,E1) :- code(T,_,_,_) |     T=T1,WT=code(T),VP=[],E=E1.
+
+wrap_freeze({T},T1,WT,D,_,_,VP,E,E1) :- list(T),D=0 |
+        T=T1,WT=list(['$exceedDepth'|atom([])]),
+        VP=[],E=E1.
+wrap_freeze({T},T1,WT,D,L,Type,VP,E,E1) :- list(T),D=\=0,integer(L) |     % D>0
+        wrap_freeze_list_if_unbound({T},T1,WT,~(D-1),~(L+1),Type,VP,E,E1,L).
+
+wrap_freeze({T},T1,WT,D,_,_,VP,E,E1) :- vector(T,_),D=0 |
+        T=T1,WT=vector({'$exceedDepth'}),
+        VP=[],E=E1.
+wrap_freeze({T},T1,WT,D,L,Type,VP,E,E1) :- vector(T,N),D=\=0,N>3,integer(L) |   % D>0
+        WT=vector(WT1),
+        new_vector(WT0,N),
+        wrap_freeze_vect(T,T1,WT0,WT1,~(D-1),~(L+1),L,0,N,Type,VP,E,E1).
+wrap_freeze({T},T1,WT,D,L,Type,VP,E,E1) :- vector(T,N),D=\=0,N=<3 |   % D>0
+        WT=vector(WT1),
+        new_vector(WT0,N),
+        wrap_freeze_vect(T,T1,WT0,WT1,~(D-1),N,L,0,N,Type,VP,E,E1).
+
+otherwise.
+wrap_freeze({T},T1,WT,D,L,_,VP,E,E1) :- (list(T);vector(T,_)) |
+    (integer(D) ->
+        shoen:raise(pimos_tag#error,
+            '$PIMOS$'(variable:wrap,"illegal_print_length"),L) ;
+    otherwise ;
+    true ->
+        shoen:raise(pimos_tag#error,
+            '$PIMOS$'(variable:wrap,"illegal_print_depth"),D)).
+
+otherwise.
+wrap_freeze({T},T1,WT,_,_,_,VP,E,E1) :- true | T=T1,WT=unknown(T),VP=[],E=E1.
+
+wrap_freeze_var(T,T1,WT,PE,Adr,name,VP,E,E1) :- true |
+        T=T1,WT=variable(Name),
+        VP=[get_name({PE,Adr},Name)],
+        E=E1.
+wrap_freeze_var(T,T1,WT,PE,Adr,black,VP,E,E1) :- true |
+        T=T1,WT=variable(Name),
+        VP=[get_name({PE,Adr},Name),put_var(Name,T),get_value(Name,_)],
+        E=E1.
+wrap_freeze_var(T,T1,WT,PE,Adr,address,VP,E,E1) :- true |
+        T=T1,WT=variable({PE,Adr}),VP=[],E=E1.
+
+wrap_freeze_list(T,T1,WT,_,0,_,VP,E,E1,_) :- true |
+        T=T1,WT='$exceedLength',VP=[],E=E1.
+wrap_freeze_list(T,T1,WT,D,L1,Type,VP,E,E1,L) :- L1=\=0 |
+        unbound(T,T0),
+        wrap_freeze_list_if_unbound(T0,T1,WT,D,L1,Type,VP,E,E1,L).
+
+wrap_freeze_list_if_unbound({PE,Adr,T},T1,WT,_,_,Type,VP,E,E1,_) :- true |
+        wrap_freeze_var(T,T1,WT,PE,Adr,Type,VP,E,E1).
+wrap_freeze_list_if_unbound({[Car|Cdr]},T1,WT,D,L1,Type,VP,E,E1,L) :- true |
+        VP={VP0,VP1},
+        T1=[Car1|Cdr1],WT=list([CarWT|CdrWT]),
+        unbound(Car,Car0),
+        wrap_freeze(Car0,Car1,CarWT,D,L,Type,VP0,E,E0),
+        wrap_freeze_list(Cdr,Cdr1,CdrWT,D,~(L1-1),Type,VP1,E0,E1,L).
+wrap_freeze_list_if_unbound({[]},T1,WT,_,_,_,VP,E,E1,_) :- true |
+        T1=[],WT=atom([]),VP=[],E=E1.
+otherwise.
+wrap_freeze_list_if_unbound(T0,T1,WT,D,_,Type,VP,E,E1,L) :- true |
+        wrap_freeze(T0,T1,WT,D,L,Type,VP,E,E1).
+
+wrap_freeze_vect(T,T1,WT,WT1,D,L1,L,I,N,Type,VP,E,E1) :- I<N,L1=\=0 |  % L1>0
+        VP={VP0,VP1},
+        set_vector_element(T,I,Elem,Elem1,T0),
+        set_vector_element(WT,I,_,EWT,WT0),
+        unbound(Elem,Elem0),
+        wrap_freeze(Elem0,Elem1,EWT,D,L,Type,VP0,E,E0),
+        wrap_freeze_vect(T0,T1,WT0,WT1,D,~(L1-1),L,~(I+1),N,Type,VP1,E0,E1).
+wrap_freeze_vect(T,T1,WT,WT1,_,L1,_,I,N,_,VP,E,E1) :- I<N,L1=0 |
+        T=T1,
+        set_vector_element(WT,I,_,'$exceedLength',WT1),
+        VP=[],E=E1.
+wrap_freeze_vect(T,T1,WT,WT1,_,_,_,N,N,_,VP,E,E1) :- true |
+        T=T1,WT=WT1,VP=[],E=E1.
+
+/*
+wrapFreeze(T, NTWT, D,L, Type, VP) :- true |
+        unbound(T, TUnBound),
+        wrapFreezeDecide(TUnBound, NTWT, D,L, Type, VP).
+
+wrapFreezeDecide(UnBound, NTWT, _,_, Type, Pool) :- 
+    UnBound = {PE,ADR,T}, integer(PE), integer(ADR) |
+        wrapFreezeVariable(UnBound, NTWT, Type, Pool).
+:- switch(extended_floating_point).
+:- case(yes).
+wrapFreezeDecide({T}, NTWT, D,L, Type, Pool) :- true |
+        ( atom(T)   -> NTWT = {T,atom(T)}, Pool = [];
+          integer(T)    -> NTWT = {T,integer(T)}, Pool = [];
+          floating_point(T)    -> NTWT = {T,floating_point(T)}, Pool = [];
+          extended_floating_point(T,_) -> NTWT = {T,extended_floating_point(T)}, Pool = [];
+          string(T, _,_)    -> NTWT = {T,string(T)}, Pool = [];
+          module(T, _)    -> NTWT = {T,module(T)}, Pool = [];
+          code(T, _,_,_)    -> NTWT = {T,code(T)}, Pool = [];
+          T = [Car|Cdr] -> wrapFreezeList(T, NTWT, D,L, Type, Pool);
+          vector(T, _) -> wrapFreezeVector(T, NTWT, D,L, Type, Pool);
+        otherwise;
+          true -> NTWT = {T, unknown(T)}, Pool = []).
+:- case(no).
+wrapFreezeDecide({T}, NTWT, D,L, Type, Pool) :- true |
+        ( atom(T)   -> NTWT = {T,atom(T)}, Pool = [];
+          integer(T)    -> NTWT = {T,integer(T)}, Pool = [];
+          floating_point(T)    -> NTWT = {T,floating_point(T)}, Pool = [];
+          string(T, _,_)    -> NTWT = {T,string(T)}, Pool = [];
+          module(T, _)    -> NTWT = {T,module(T)}, Pool = [];
+          code(T, _,_,_)    -> NTWT = {T,code(T)}, Pool = [];
+          T = [Car|Cdr] -> wrapFreezeList(T, NTWT, D,L, Type, Pool);
+          vector(T, _) -> wrapFreezeVector(T, NTWT, D,L, Type, Pool);
+        otherwise;
+          true -> NTWT = {T, unknown(T)}, Pool = []).
+:- end_switch.
+
+wrapFreezeVariable({PE,ADR,T}, NTWT, name, Pool) :- true |
+        Pool = [get_name({PE,ADR}, Name)],
+        NTWT = {T, variable(Name)}.
+wrapFreezeVariable({PE,ADR,T}, NTWT, black, Pool) :- true |
+        Pool = [get_name({PE,ADR}, Name),put_var(Name,T),get_value(Name,_)],
+        NTWT = {T, variable(Name)}.
+wrapFreezeVariable({PE,ADR,T}, NTWT, address, Pool) :- true |
+        NTWT = {T, variable({PE,ADR})},
+        Pool = [].
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% wrapFreezeList(+List, -{List,WrappedList}, 
+%                       +FrozenDepth,+FrozenLength, +Type, Pool)
+
+wrapFreezeList(List, NListWList, 0,_, _, Pool) :- true |
+        NListWList = {List,list(['$exceedDepth'|atom([])])},
+        Pool = [].
+wrapFreezeList(List, NListWList, D,L, Type, Pool) :- D =\= 0 |   % D > 0 |
+        L1 := L + 1,
+        D1 := D - 1,
+        wrapFreezeList1(List, NListWList, D1,L1, L, Type, Pool).
+
+wrapFreezeList1(X, NListWList, D,0, OL, Type, Pool) :- true |
+        NListWList = {X, '$exceedLength'},
+        Pool = [].
+wrapFreezeList1(X, NListWList, D,L, OL, Type, Pool) :- L =\= 0 |
+        unbound(X, UnBoundX),
+        (UnBoundX = {_,_, _}    ->
+            wrapFreezeVariable(UnBoundX, NListWList, Type, Pool);
+         UnBoundX = {XX}    ->
+            wrapFreezeList2(XX, NListWList, D,L, OL, Type, Pool)).
+
+wrapFreezeList2([A|X], NListWList, D,L, OL, Type, Pool) :- true |
+        Pool = {Pool1,Pool2},
+        wrapFreeze(A, NListAWListA, D,OL, Type, Pool1),
+        L1 := L - 1,
+        wrapFreezeList1(X, NListXWListX, D,L1, OL, Type, Pool2),
+        (NListAWListA = {NListA,WListA}, NListXWListX = {NListX,WListX} ->
+            NListWList = {[NListA|NListX],list([WListA|WListX])}).
+otherwise.
+wrapFreezeList2(X, NListWList, D,L, OL, Type, Pool) :- true |
+        wrapFreeze(X, NListWList, D,OL, Type, Pool).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% wrapFreezeVector(+Vector, -{Vector,WrappedVector}, 
+%                       +FrozenDepth,+FrozenLength, +Type, Pool)
+
+wrapFreezeVector(T, NTWT, 0,_, Type, Pool) :- true |
+        NTWT = {T,vector({'$exceedDepth'})}, Pool = [].
+wrapFreezeVector(T, NTWT, D,L, Type, Pool) :- D =\= 0, vector(T, Size) | 
+                                % D > 0, vector(T, Size) |
+        (Size > 3   -> L1 := L + 1;
+        otherwise;
+         true   -> L1 := Size),
+        new_vector(WT0, Size),
+        D1 := D - 1,
+        wrapFreezeVectorArgs(0,Size, {T,WT0}, NTWT, D1,L1, L, Type, Pool).
+
+wrapFreezeVectorArgs(M0,M0, {T,WT}, NTWT, _,_, _, _, Pool) :- true |
+        NTWT = {T,vector(WT)}, Pool = [].
+otherwise.
+wrapFreezeVectorArgs(M0,N0, {T,WT0}, NTWT, _,0, _, _, Pool) :- M0 < N0 |
+        set_vector_element(WT0, M0, _,'$exceedLength', WT1),
+        NTWT = {T,vector(WT1)}, Pool = [].
+wrapFreezeVectorArgs(M0,N0, {T,WT0}, NTWT, D,L, OL, Type, Pool) :- M0 < N0, L =\= 0 |
+                                        % M0 < N0, L > 0 |
+        Pool = {Pool1,Pool2},
+        set_vector_element(T, M0, Tm,0, T00),
+        wrapFreeze(Tm, NTmWTm, D,OL, Type, Pool1),
+        ( NTmWTm = {NTm,WTm}   ->    
+            set_vector_element(WT0, M0, _,WTm, WT1),
+            set_vector_element(T00, M0, _,NTm, T0),
+            M01 := M0 + 1, L1 := L - 1,
+            wrapFreezeVectorArgs(M01,N0, {T0,WT1}, NTWT, D,L1, OL, Type, Pool2)).
+*/
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% genVarName(+Number, -VariableName)
+
+genVarName(N,Name) :- Q:=N/26,Q=:=0 |
+        JIS:=N+ #"A",             % #"A" =< JIS =< #"Z"
+        new_string(Name0,1,16),
+        set_string_element(Name0,0,JIS,Name).
+genVarName(N,Name) :- Q:=N/26,Q>0 |
+        JIS:=N-Q*26+ #"A",
+        gen_varname1(Q,Name,JIS,Q,0).
+
+gen_varname1(Q,Name,JIS,I,K) :- I>0 |
+        gen_varname1(Q,Name,JIS,~(I/10),~(K+1)).
+gen_varname1(Q,Name,JIS,0,K) :- true |
+        K1:=K+1,
+        new_string(Name0,K1,16),
+        set_string_element(Name0,0,JIS,Name1),
+        gen_varname2(Q,Name,Name1,K).
+
+gen_varname2(Q,Name1,Name,K) :- K>0 |
+        Q1:=Q/10,
+        JIS:=Q-Q1*10+ #"0",
+        set_string_element(Name,K,JIS,Name0),
+        gen_varname2(Q1,Name1,Name0,~(K-1)).
+gen_varname2(_,Name1,Name,0) :- true | Name=Name1.
+
+/* with binary_string_operation
+genVarName(N,Name) :- Q:=N/26,Q=:=0 |
+        JIS:=N+ #"A",             % #"A" =< JIS =< #"Z"
+        new_string(Name0,1,16),
+        set_string_element(Name0,0,JIS,Name).
+genVarName(N,Name) :- Q:=N/26,Q>0 |
+        JIS:=N-Q*26+ #"A",
+        new_string(S,8,16),
+        gen_varname1(Q,Name,S,JIS,7).
+
+gen_varname1(Q,Name,S,JIS,I) :- Q>0 |
+        Q1:=Q/10,J:=Q-Q1*10+ #"0",
+        set_string_element(S,I,J,S1),
+        gen_varname1(Q1,Name,S1,JIS,~(I-1)).
+gen_varname1(0,Name,S,JIS,I) :- true |
+        K:=8-I,
+        new_string(Name0,K,16),
+        binary_string_operation(string_operation#s2,Name0,1,~(K-1),S,~(I+1),Name1,_),
+        set_string_element(Name1,0,JIS,Name).
+%        unary_string_operation(string_operation#clear,S0,I,K,S1).
+*/
+
+/* by koshi
+genVarName(N, Name) :- true |
+        Q := N / 26, R := N mod 26,
+        genVarName(Q,R, Name).
+
+genVarName(Q,R, Name) :- true |
+        (Q =:= 0    ->  NumString = "";
+         Q > 0  ->
+            mklib:integer_to_string(Q,10,normal(NumString))),
+        genVarNameAlpha(R, Alpha),
+        builtin#append_string(Alpha,NumString, Name).
+
+genVarNameAlpha(0, Alpha) :- true | Alpha = "A".
+genVarNameAlpha(1, Alpha) :- true | Alpha = "B".
+..
+genVarNameAlpha(24, Alpha) :- true | Alpha = "Y".
+genVarNameAlpha(25, Alpha) :- true | Alpha = "Z".
+*/
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   pool2(+In)
+
+pool2(In) :- true |
+        merge(In,In1),
+        pool(In1, [[reset]],NA,AN),
+        pool:keyed_sorted_set(NA),  % NA : <VariableName, {Pe,Adr}>
+        pool:keyed_set(AN).         % AN : <{Pe,Adr}, {VariableNameList,[Var1,Var2,...]}>
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   pool(+In, +DoBuffer, -KeyedSortedSet,-KeyedSet)
+
+pool([],[],NA,AN) :- true | NA=[],AN=[].
+pool([],[S|SS],NA,AN) :- true |
+        pool(S, SS,NA,AN).
+pool([do(S)|In], SS, NA,AN) :- true |
+        merge(S,S1),
+        pool(S1,[In|SS],NA,AN).
+pool([count(N)|In], SS, NA,AN) :- true |
+        NA=[count(N)|NA1],
+        pool(In,SS,NA1,AN).
+pool([getPool1(NA0)|In],SS,NA,AN) :- true |
+        NA=[do(NA0)|NA1],
+        pool(In,SS,NA1,AN).
+pool([getPool2(AN0)|In],SS,NA,AN) :- true |
+        AN=[do(AN0)|AN1],
+        pool(In,SS,NA,AN1).
+pool([reset|In],SS,NA,AN) :- true |
+        poolReset(In0,In),
+        pool(In0,SS,NA,AN).
+pool([unify|In],SS,NA,AN) :- true |
+        poolUnify(In0,In),
+        pool(In0, SS,NA,AN).
+pool([shape|In], SS, NA,AN) :- true |
+        pool([unify|In], SS, NA,AN).
+pool([put_var(Name, V)|In], SS, NA,AN) :- true |
+        NA=[do(NA0)|NA1],
+        AN=[do(AN0)|AN1],
+        put_var(Name,V,NA0,AN0),
+        pool(In,SS,NA1,AN1).
+pool([get_value(Name, Val)|In], SS, NA,AN) :- true |
+        poolGetValue(In0,In, Name,Val),
+        pool(In0, SS, NA,AN).
+pool([get_name(PeAdr, Name)|In], SS, NA,AN) :- true |
+        poolGetName(In0,In, PeAdr,Name),
+        pool(In0, SS, NA,AN).
+otherwise.
+pool([Msg|_],_,NA,AN) :- true |
+        NA=[],AN=[],
+        shoen:raise(pimos_tag#error,
+            '$PIMOS$'(variable:pool2,"illegal_message_protocol"),Msg).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   poolReset(PoolHead, PoolTail)
+
+poolReset(A,Z) :- true |
+        A = [getPool1(Pool1),getPool2(Pool2)|Z],
+        Pool1 = [get_all(_)],
+        Pool2 = [get_all(Data)],
+        poolReset(Data).
+
+poolReset([]) :- true | true.
+poolReset([{{PE,ADR}, {Names,Vars}}|In]) :- true |
+        unify_all(Vars),
+        poolReset(In).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   poolUnify(PoolHead,PoolTail)
+
+poolUnify(A,Z) :- true |
+        A = [getPool1(Pool1),getPool2(Pool2)|B],
+        Pool1 = [get_all(_)],
+        Pool2 = [get_all(Data2)],
+        poolUnify(Data2, B,Z).
+
+poolUnify([], A,Z) :- true | A = Z.
+poolUnify([{{PE,ADR}, {Names,Vars}}|In], A,Z) :- true |
+        unify_all(Vars,NVars),
+        poolUnify1(Names, NVars, A,B),
+        poolUnify(In, B,Z).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   poolUnify1(+NameList, +[Var], PoolHead,PoolTail)
+
+poolUnify1([Name|Names], [V], A,Z) :- true |
+        A = [put_var(Name, V)|B],
+        poolUnify1(Names, [V], B,Z).
+poolUnify1([], _, A,Z) :- true | A = Z.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   put_var(+Name,+Variable,NA,AN)
+
+put_var(Name,V,NA,AN) :- Name="_" | NA=[],AN=[].
+otherwise.
+put_var(Name,V,NA,AN) :- true |
+        NA=[put(Name,NPeAdr,OPeAdr)|NA1],
+        put_var(Name,V,NA1,AN,NPeAdr,OPeAdr).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  put_var(+Name,+Variable,NA,AN,-{Pe,Adr},+{{Pe,Adr}})
+
+put_var(Name,V,NA,AN,NPeAdr,{}) :- true |
+        unbound(V,V1),
+        put_var_if_unbound(Name,V1,NA,AN,NPeAdr).
+put_var(Name,V,NA,AN,NPeAdr,{PeAdr}) :- true |
+        NPeAdr=PeAdr,
+        NA=[],
+        AN=[put(PeAdr,New,Old)],
+        (Old={{Names,Vars}} -> New={Names,[V|Vars]}).
+
+put_var_if_unbound(Name,{Pe,Adr,V},NA,AN,PeAdr) :- true |
+        PeAdr={Pe,Adr},
+        NA=[],
+        AN=[put({Pe,Adr},New,Old)],
+        put_var_empty(Name,V,New,Old).
+put_var_if_unbound(Name,{V},NA,AN,PeAdr) :- true |
+        NA=[count(N)],
+        PeAdr={N,N},
+        AN=[put({N,N},New,Old)],
+        put_var_empty(Name,V,New,Old).
+
+put_var_empty(Name,V,New,{}) :- true |
+        New={[Name],[V]}.
+put_var_empty(Name,V,New,{{Names,Vars}}) :- true |      % GC or Unification Invoked
+        New={[Name|Names],[V|Vars]}.                    % !!! CAUTION !!! No support for GC !!!
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   poolGetValue(PoolHead,PoolTail, +VarName,-VarValue)
+
+poolGetValue(A,Z, Name,Val) :- true |
+        A = [getPool1(Pool1),getPool2(Pool2)|Z],
+        Pool1 = [empty(Name, YN)|Pool11],
+        poolGetValue(YN, Name,Val, Pool11,Pool2).
+
+poolGetValue(yes, _,Val, Pool1,Pool2) :- true |
+        Val = {}, Pool1 = [], Pool2 = [].
+poolGetValue(no, Name,Val, Pool1,Pool2) :- true |
+        Pool1 = [put(Name, NEW,OLD)],
+        poolGetValue1(OLD,NEW, Val, Pool2).
+
+poolGetValue1({PeAdr},NPeAdr, Val, Pool2) :- true |
+        NPeAdr = PeAdr,
+        Pool2 = [put(PeAdr, NEW,OLD)],
+        poolGetValue2(OLD,NEW, Val).
+
+poolGetValue2({{Names, Vs}},NamesVars, Val) :- true |
+        unify_all(Vs,NVs),
+        NamesVars = {Names,NVs},
+        (NVs = [V|_] -> Val = {V}).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   poolGetName(PoolHead,PoolTail, +{Pe,Adr},-Name)
+
+poolGetName(A,Z, PeAdr,Name) :- true |
+        A = [getPool2(Pool2)|B],
+        Pool2 = [put(PeAdr, NEW,OLD)],
+        poolGetName(OLD,NEW, PeAdr,Name, B,Z).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   poolGetName(+{{Names,Vars}},-{Name,Vars}, +{PE,ADR},-Name, PoolHead,PoolTail)
+
+poolGetName({},NEW, PeAdr,Name, A,Z) :- true |
+        A = [count(N), getPool1(Pool1)|Z],
+        poolGetName1(N, NEW, PeAdr,Name, Pool1).
+poolGetName({{Names,Vars}},NEW, PeAdr,Name, A,Z) :- true |
+        A = Z,
+        sorter:sort(Names, SortedNames),
+        (SortedNames = [Name0|Names0]   -> Name = Name0, NEW = {[Name0|Names0], Vars}).
+
+poolGetName1(N, NEW, PeAdr,Name, Pool1) :- true |
+        genVarName(N, Name0),
+        Pool1 = [put(Name0, NPeAdr,OPeAdr)|Pool11],
+        (OPeAdr = {}    ->
+            NPeAdr = PeAdr, Name = Name0, Pool11 = [],
+            NEW = {[Name0],[X]};
+         OPeAdr = {{PE,ADR}}  ->
+            N1 := N + 1, NPeAdr = {PE,ADR},
+            poolGetName1(N1, NEW, PeAdr,Name, Pool11)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   black_wrap(+Term, -{Term,WrappedTerm}, +FrozenDepth,+FrozenLength)
+
+black_wrap(T, NTWT, D,L) :- true |
+        wrapFreeze(T, NTWT, D,L, black, VP),
+        pool2(VP).
+
+black_wrap(T, NTWT, D,L, NVP) :- true |
+        wrapFreeze(T, NTWT, D,L, black, VP),
+        pool2([do(VP)|NVP]).
+
+black_wrap(T, NTWT, D,L, VP,NVP) :- true |
+        VP = [do(VP0)|NVP],
+        wrapFreeze(T, NTWT, D,L, black, VP0).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   unwrapFreeze(+ResultOfGetwt, -Term,-NumberOfVariables)
+
+unwrapFreeze(normal(end_of_file), T,N) :- true |
+        T = end_of_file, N := 0.
+unwrapFreeze(normal(empty), T,N) :- true |
+        T = end_of_file, N := 0.
+otherwise.
+unwrapFreeze(normal(WT), T,N) :- true |
+        meltUnwrap(WT, NWTT, freeze, VP),
+        pool3([do(VP),count(N)]),
+        (NWTT = {_,NT}  ->  T = NT).
+unwrapFreeze(abnormal(error(ErrorReason)), T,N) :- true |
+        T = '$error'(ErrorReason), N := 0.
+unwrapFreeze(abnormal(empty), T,N) :- true |
+        T = end_of_file, N := 0.
+unwrapFreeze(abnormal(ambiguous(ErrorReason)), T,N) :- true |
+        T = '$ambiguos'(ErrorReason), N := 0.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   numbervars(+WrappedTerm,-NumberedTerm)
+
+numbervars(WT,NT) :- true | numbervars(WT,NT, []).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   numbervars(+WrappedTerm,-NumberedTerm, NewVariablePool)
+
+numbervars(WT,NT, NVP) :- true |
+        numbervars(WT,NT, VP,NVP),
+        pool3([do(VP)|NVP]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   numbervars(+WrappedTerm,-NumberedTerm, VariablePool,NewVariablePool)
+
+numbervars(WT,NT, VP,NVP) :- true |
+        VP = [do(VP1)|NVP],
+        numbervars1(WT,NT, number, VP1).
+
+numbervars1(atom(Atom),NT, _, VP) :- atom(Atom) |
+        NT = atom(Atom), VP = [].
+numbervars1(integer(Integer),NT, _, VP) :- integer(Integer) |
+        NT = integer(Integer), VP = [].
+:- switch(floating_point).
+:- case(yes).
+numbervars1(floating_point(FloatingPoint),NT, _, VP) :- floating_point(FloatingPoint) |
+        NT = floating_point(FloatingPoint), VP = [].
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+numbervars1(extended_floating_point(FloatingPoint),NT, _, VP) :-
+    extended_floating_point(FloatingPoint,_) |
+        NT = extended_floating_point(FloatingPoint), VP = [].
+:- end_switch.
+numbervars1(string(String),NT, _, VP) :- string(String, _,_) |
+        NT = string(String), VP = [].
+numbervars1(code(Code),NT, _, VP) :- code(Code, _,_,_) |
+        NT = code(Code), VP = [].
+numbervars1(module(Module),NT, _, VP) :- module(Module, _) |
+        NT = module(Module), VP = [].
+numbervars1(variable(Name),NT, number, VP) :- string(Name, _,_) |
+        VP = [numbervar(Name,N)], NT = variable(N).
+numbervars1(variable(N),NT, number, VP) :- integer(N) |
+        VP = [suspend(renumber(N,M))], NT = variable(M).
+numbervars1(variable(N),NT, name, VP) :- integer(N) |
+        VP = [namenumber(N,Name)], NT = variable(Name).
+numbervars1(list([Car|Cdr]),NT, Type, VP) :- true |
+        VP = {VP1,VP2},
+        numbervars1(Car,NCar, Type, VP1),
+        numbervars1(Cdr,NCdr, Type, VP2),
+        NT = list([NCar|NCdr]).
+numbervars1(vector(Vector),NT, Type, VP) :- vector(Vector,Size) |
+        numbervars1VectorArgs(0,Size, Vector,NVector, Type, VP),
+        NT = vector(NVector).
+
+numbervars1VectorArgs(M,M, V,NV, _, VP) :- true | NV = V, VP = [].
+numbervars1VectorArgs(M,N, V,NV, Type, VP) :- M < N |
+        VP = {VP1,VP2},
+        set_vector_element(V, M, Vm,NVm, V1),
+        numbervars1(Vm,NVm, Type, VP1),
+        M1 := M + 1,
+        numbervars1VectorArgs(M1,N, V1,NV, Type, VP2).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   namenumbers(+NumberedTerm,-WrappedTerm)
+
+namenumbers(NT,WT) :- true | namenumbers(NT,WT, []).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   namenumbers(+NumberedTerm,-WrappedTerm, NewVariablePool)
+
+namenumbers(NT,WT, NVP) :- true |
+        numbervars1(NT,WT, name, VP),
+        pool3([do(VP)|NVP]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   namenumbers(+NumberedTerm,-WrappedTerm, VariablePool,NewVariablePool)
+
+namenumbers(NT,WT, VP,NVP) :- true |
+        VP = [do(VP1)|NVP],
+        numbervars1(NT,WT, name, VP1).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   pool3(In)
+
+pool3(In) :- true |
+        merge(In,In1), 
+        pool(In1, [],[], Pool1,Pool2,Pool3),
+        pool:keyed_sorted_set(Pool1),   % Pool1 : <Name, Number>
+        pool:keyed_sorted_set(Pool2),   % Pool2 : <Number, Name>
+        pool:keyed_sorted_set(Pool3).   % Pool3 : <Number, ReNumber>
+
+pool([], [],[], Pool1,Pool2,Pool3) :- true |
+        Pool1 = [], Pool2 = [], Pool3 = [].
+pool([], [],[S|SS], Pool1,Pool2,Pool3) :- true |
+        pool(S, [],SS, Pool1,Pool2,Pool3).
+pool([], Susp,SS, Pool1,Pool2,Pool3) :- Susp \= [] |
+        pool(Susp, [],SS, Pool1,Pool2,Pool3).
+pool([count(N)|In], Susp,SS, Pool1,Pool2,Pool3) :- true |
+        Pool2 = [count(N)|Pool21],
+        pool(In, Susp,SS, Pool1,Pool21,Pool3).
+pool([do(S)|In], Susp,SS, Pool1,Pool2,Pool3) :- true |
+        merge(S, S1),
+        pool(S1, Susp,[In|SS], Pool1,Pool2,Pool3).
+pool([suspend(M)|In], Susp,SS, Pool1,Pool2,Pool3) :- true |
+        pool(In, [M|Susp],SS, Pool1,Pool2,Pool3).
+pool([numbervar(Name,N)|In], Susp,SS, Pool1,Pool2,Pool3) :- true |
+        (Name = "_"  ->
+            Pool2 = [count(NN),do(Pool21)|Pool22],
+            Pool1 = [put(NN, NNN,ONN)|Pool11];
+        otherwise;
+         true   ->
+            Pool1 = [put(Name, NNN,ONN)|Pool11],
+            Pool2 = [do(Pool21)|Pool22]),
+        poolNumberVar(ONN,NNN, Name,N, Pool21),
+        pool(In, Susp,SS, Pool11,Pool22,Pool3).
+pool([renumber(N,M)|In], Susp,SS, Pool1,Pool2,Pool3) :- true |
+        Pool3 = [put(N, NN,ON)|Pool31],
+        Pool1 = [do(Pool11)|Pool12],
+        Pool2 = [do(Pool21)|Pool22],
+        poolReNumber(ON,NN, M, Pool11,Pool21),
+        pool(In, Susp,SS, Pool12,Pool22,Pool31).
+pool([namenumber(N,Name)|In], Susp,SS, Pool1,Pool2,Pool3) :- true |
+        Pool1 = [do(Pool11)|Pool12],
+        Pool2 = [put(N, NName,OName)|Pool21],
+        poolNameNumber(OName,NName, N,Name, Pool11),
+        pool(In, Susp,SS, Pool12,Pool21,Pool3).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   poolNumberVar(+OLD,-NEW, +Name,-Number, Pool2)
+
+poolNumberVar({},NN, Name,N, Pool2) :- true |
+        NN = N, Pool2 = [count(N),put(N, Name,_)].
+poolNumberVar({ON},NN, Name,N, Pool2) :- true |
+        NN = ON, N = ON, Pool2 = [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   poolReNumber(+OLD,-NEW, -ReNumber, Pool1,Pool2)
+
+poolReNumber({},NN, M, Pool1,Pool2) :- true |
+        Pool2 = [count(N),put(N, Name,_)],
+        NN = N, M = N, 
+        poolReNumber1(N,N, Name, Pool1).
+poolReNumber({N},NN, M, Pool1,Pool2) :- true |
+        NN = N, M = N, Pool1 = [], Pool2 = [].
+
+poolReNumber1(N,ON, Name, Pool1) :- true |
+        genVarName(N, Name0),
+        Pool1 = [put(Name0, NewN,OldN)|Pool11],
+        (OldN = {}    -> Name = Name0, NewN = ON, Pool11 = [];
+         OldN = {M}   -> N1 := N + 1, NewN = M,
+            poolReNumber1(N1,ON, Name, Pool11)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%   poolNameNumber(+OLD,-NEW, +Number,-Name, Pool1)
+
+poolNameNumber({OName},NName, _,Name, Pool1) :- true |
+        Name = OName, NName = OName, Pool1 = [].
+poolNameNumber({},NName, N,Name, Pool1) :- true | 
+        NName = Name,
+        poolReNumber1(N,N, Name, Pool1).

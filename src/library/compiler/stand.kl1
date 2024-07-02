@@ -1,0 +1,186 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module macro_expander.
+:- public macro_process/3, macro_process/4, macro_process/5, macro_process/6.
+:- with_macro pimos.
+
+macro_process(Err0, Err, Macro) :- true |
+    atom_table:cache_table(Atom),
+    module_table:cache_table(ModTbl),
+    macro_process(Err0, Err, Atom, [], ModTbl, [], Macro, [pimos]).
+
+%%macro_process(Err0, Err, Atom0, Macro) :- true |
+%%    macro_process(Err0, Err, Atom0, [], Macro, [pimos]).
+
+macro_process(Err0, Err, Macro, ModTbl) :- true |
+    atom_table:cache_table(Atom),
+    macro_process(Err0, Err, Atom, [], ModTbl, [], Macro, [pimos]).
+
+macro_process(Err0, Err, Atom0, 0, Macro) :- true |
+    macro_process(Err0, Err, Atom0, [], Macro, 0).
+macro_process(Err0, Err, Atom0, Module, Macro) :- atom(Module) |
+    macro_process(Err0, Err, Atom0, [], Macro, [Module]).
+macro_process(Err0, Err, Atom0, Module, Macro) :- list(Module) |
+    macro_process(Err0, Err, Atom0, [], Macro, Module).
+
+macro_process(Err0, Err, Atom0, 0, Macro, ModTbl) :- true |
+    macro_process(Err0, Err, Atom0, [], ModTbl, [], Macro, 0).
+macro_process(Err0, Err, Atom0, Module, Macro, ModTbl) :- atom(Module) |
+    macro_process(Err0, Err, Atom0, [], ModTbl, [], Macro, [Module]).
+macro_process(Err0, Err, Atom0, Module, Macro, ModTbl) :- list(Module) |
+    macro_process(Err0, Err, Atom0, [], ModTbl, [], Macro, Module).
+
+:- local_implicit err:oldnew, atom:oldnew, modtbl:oldnew.
+macro_process(Str, Macros) --> true |
+  {{pool:keyed_bag(Bag),
+    kl1cmp_macro_driver:distributeMessage(&err, Bag, [], &atom, _, _, Stream),
+    macro_process_(&err, &modtbl, Stream, [], Str, Macros)}}.
+
+:- local_implicit err:oldnew, modl:oldnew, stream:oldnew.
+macro_process_([get_macro(Term0, Stat)|Cdr], Macros) --> true |
+  {{kl1cmp_reader:count_variables(Term0, Term1, 0, Nv),
+    kl1cmp_vargen:variable_generator(Nv, _, Var),
+    kl1cmp_macro_driver:extractNewVariable(Var, [], &stream, MacroStream),
+    getCodeAndExpand(&err, &modl, MacroStream, [], Term1, Stat0, Macros)}},
+    switchMode(Stat0, Stat, Cdr, Macros, 0).
+macro_process_([get_macro(Term0, Nv, Stat)|Cdr], Macros) --> true |
+  {{kl1cmp_vargen:variable_generator(Nv, _, Var),
+    kl1cmp_macro_driver:extractNewVariable(Var, [], &stream, MacroStream),
+    getCodeAndExpand(&err, &modl, MacroStream, [], Term0, Stat0, Macros)}},
+    switchMode(Stat0, Stat, Cdr, Macros, 0).
+macro_process_([get_macro(Term0, Nv0, Stat, Nv)|Cdr], Macros) --> true |
+  {{kl1cmp_vargen:variable_generator(Nv0, Nv, Var),
+    kl1cmp_macro_driver:extractNewVariable(Var, [], &stream, MacroStream),
+    getCodeAndExpand(&err, &modl, MacroStream, [], Term0, Stat0, Macros)}},
+    switchMode(Stat0, Stat, Cdr, Macros, 0).
+macro_process_([change_macro(0, Stat)|Cdr], _) --> true |
+    Stat=normal,
+    macro_process_(Cdr, 0).
+otherwise.
+macro_process_([change_macro(NewMacro, Stat)|Cdr], Macros) --> atom(NewMacro) |
+    checkModules([NewMacro], Stat0),
+    switchMode(Stat0, Stat, Cdr, [NewMacro], Macros).
+macro_process_([change_macro(NewMacros, Stat)|Cdr], Macros) --> list(NewMacros) |
+    checkModules(NewMacros, Stat0),
+    switchMode(Stat0, Stat, Cdr, NewMacros, Macros).
+macro_process_([current_macro(Stat)|Cdr], Macros) --> true |
+   (list(Macros) -> Stat=normal(Macros);
+    otherwise;
+    true -> Stat=abnormal),
+    macro_process_(Cdr, Macros).
+otherwise.
+macro_process_([change_macro(Mod, Stat)|Cdr], Macros) --> true |
+    &err <<= [error("Invalid Modules : ~t", [Mod])],
+    Stat=abnormal,
+    macro_process_(Cdr, Macros).
+macro_process_([], _) --> true | true.
+
+switchMode(normal, Stat, Str, NewMacro, _) --> true |
+    macro_process_(Str, NewMacro), Stat=normal.
+switchMode(normal(Term), Stat, Str, NewMacro, _) --> true |
+    macro_process_(Str, NewMacro), Stat=normal(Term).
+otherwise.
+switchMode(Stat0, Stat, Str, _, Macro) --> true |
+    Stat0=Stat,
+    macro_process_(Str, Macro).
+
+%%% 
+%%% check module and codes
+%%% 
+:- local_implicit err:oldnew, modl:oldnew, stream:oldnew.
+checkModules(0, Stat) --> true | Stat = normal.
+otherwise.
+checkModules(NewMacros, Stat) --> true |
+    checkModules(NewMacros, Stat, _).
+
+checkModules(0, Stat, NewMacroCodes) --> true |
+    NewMacroCodes=0, Stat=normal.
+otherwise.
+checkModules(NewMacros, Stat, NewMacroCodes) --> true |
+    checkModules(Missing, [], NewMacroCodes, [], NewMacros),
+    checkError(Missing, Stat).
+
+:- local_implicit err:oldnew, modl:oldnew, stream:oldnew, mis:oldnew, codes:oldnew.
+checkModules([Macro|Rest]) --> true |
+    &modl <<= [get_module(Macro, Stat)],
+    checkModule(Macro, Stat),
+    checkModules(Rest).
+checkModules([]) --> true | true.
+
+checkModule(Macro, normal(Module)) --> true |
+  {{predicate_to_code(Module, expand_macro, 6, Code0)}},
+    checkCode(Macro, Code0).
+otherwise.
+checkModule(Macro, Stat) --> true |
+    &err <<= [error("~t module : ~t", [Stat, Macro])],
+    &mis <<= [{Stat,Macro}].
+
+checkCode(_, Code) --> code(Code, _, _, _) |
+    &codes <<= [Code].
+otherwise.
+checkCode(Macro, _) --> true |
+    &err <<= [error("Not a macro module : ~t", [Macro])],
+    &mis <<= [{illegal_macro, Macro}].
+
+:- local_implicit err:oldnew, modl:oldnew, stream:oldnew.
+checkError([], Stat) --> true | % no error
+    Stat=normal.
+otherwise.
+checkError(Mis, Stat) --> true |
+    Stat=abnormal(Mis).
+
+%%
+%% macro expansion
+%%
+
+:- local_implicit err:oldnew, modl:oldnew, stream:oldnew.
+getCodeAndExpand(Term0, Stat, 0) --> true |
+    Stat=normal(Term0).
+otherwise.
+getCodeAndExpand(Term0, Stat, Macros) --> true |
+    checkModules(Macros, Stat0, Codes),
+    expandTerm(Stat0, Term0, Codes, Stat).
+
+expandTerm(normal, Term0, Codes, Stat) --> true |
+    expandTerm(Codes, Term0, Stat).
+expandTerm(abnormal(Info), Term0, _, Stat) --> true |
+    Stat=abnormal(Term0, Info).
+
+expandTerm(Code, Term0, Stat) --> true |
+%  {{kl1cmp_macro_driver:expandGoals(&err, Code, &stream, _, _, body, Term0, Term1), 
+  {{kl1cmp_macro_driver:expandGoals(&err, Code, Stream, [], _, _, body, Term0, Term1), 
+%%    kl1cmp_macro_driver:makeUpGoals(Term1, Term2),
+    kl1cmp_macro_driver:makeUpGoals(non_macro, Term1, Term2),
+    extractVect(Term2, Term3),
+    extractError(&stream, Stream, Term3, Stat)}}.
+%    Stat=normal(Term3).
+
+:- local_implicit err:oldnew.
+extractError([error(_, [Type])|Cdr], Term, Stat) --> true |
+    Stat=abnormal(Term, [illegal_macro_expansion, Type]).
+otherwise.
+extractError([Msg|Cdr], Term, Stat) --> true |
+    &err <<= [Msg],
+    extractError(Cdr, Term, Stat).
+extractError([], Term, Stat) --> true | Stat=normal(Term).
+
+extractVect(wrap#(G0,G1), NewGoals) :- true |
+    extractVect(G0, NewG0),
+    extractVect(G1, NewG1),
+    NewGoals=wrap#(NewG0,NewG1).
+extractVect(vector({vector(Goals)}), NewGoals) :- vector(Goals, N) |
+    extractVect(0, N, Goals, NewGoals).
+otherwise.
+extractVect(Goal, NewGoal) :- true | Goal=NewGoal.
+
+extractVect(A, N, Goals0, NewGoals0) :- A<N |
+    set_vector_element(Goals0, A, G0, 0, Goals),
+    extractVect(G0, NewG0),
+    NewGoals0=wrap#(NewG0, NewGoals),
+    A1 := A+1,
+    extractVect(A1, N, Goals, NewGoals).
+extractVect(N, N, _, NewGoals) :- true | NewGoals=wrap#(true).

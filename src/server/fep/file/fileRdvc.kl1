@@ -1,0 +1,674 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module file_request_device.
+:- with_macro pimos.
+:- public driver/8.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver(DRS,F,CAbort,CInfo,Conf,SCont,SAbort,FA)
+%%      DRS     :: Input stream from the client task
+%%      F       :: Output stream to scsi_fep_module (vector stream)
+%%      CAbort  :: Termination variable from the client task
+%%                 = abort ; []
+%%      CInfo   :: Information of client task
+%%                 = {Uid,Gids,Remote,Node},
+%%                    Remote = {Fep,IONode,RUser,RPass,Dir}
+%%      Conf    :: Output stream to the confirmation device
+%%      SCont   :: Server control stream
+%%      SAbort  :: Server control abortion variable
+%%      FA      :: FEP Attributes
+
+driver(DRS,F,CAbort,CInfo,Conf,SCont,SAbort,FA)
+:- true |
+        If={CInfo,Conf,SCont,SAbort},
+        id_table:id_table(T),
+        driver_0(CAbort,DRS,F,T,If,A,A,dummy_attention,_,FA).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_0(CAb,DRS,F,T,If,A,A1,AtF,Att,FA)
+
+driver_0(CAb,_,F,T,If,_,_,_,_,FA) :- wait(CAb) |
+        device_driver:abort(If,F,T,fep#normal,_).
+alternatively.
+driver_0(CAb,[reset(Args)|DRS],F,T,If,A,A1,AtF,Att,FA) :- true |
+        F={fep#reset,AbF1,AtF1,S,F1},
+        wait_01(CAb,DRS,F1,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S,FA).
+driver_0(_,[close(S)|_],F,T,If,A,A1,_,Att,FA) :- true |
+        terminate(If,S,F,T,Att,_,A,A1).
+driver_0(CAb,[Req|DRS],F,T,If,A,A1,AtF,Att,FA) :- 
+    vector_element(Req,0,MsgName),MsgName\=reset,MsgName\=close |
+        A1=[Req|A2],
+        driver_0(CAb,DRS,F,T,If,A,A2,AtF,Att,FA).
+driver_0(_,[],F,T,If,A,A1,_,Att,FA) :- true |
+        terminate(If,_,F,T,Att,_,A,A1).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_01(CAb,DRS,F,T,If,A,A1,AtF,Att,Args,AbF1,S,FA)
+
+wait_01(CAb,DRS,F,T,If,A,A1,_,Att,Args,AtF1,AbF1,fep#normal,FA) :- true |
+        Att=[],
+        A1=[],
+        T=[put_with_new_id(ID,A)|T1],
+        Args=normal(Ab1,Att1,ID),
+        driver_1(CAb,DRS,F,T1,If,Ab1,B,B,AtF1,Att1,AbF1,FA).
+wait_01(CAb,DRS,F,T,If,A,A1,AtF,Att,Args,_,AbF1,fep#abnormal,FA) :- true |
+        Args=abnormal,
+        AbF1=fep#nil,
+        driver_0(CAb,DRS,F,T,If,A,A1,AtF,Att,FA).
+wait_01(CAb,DRS,F,T,If,A,A1,_,Att,Args,_,AbF1,fep#disconnected,FA) :- true |
+        Args=disconnected,
+        AbF1=fep#nil,
+        disconnected(CAb,DRS,F,T,If,A,A1,Att,_).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,FA)
+
+driver_1(CAb,_,F,T,If,_,_,_,_,_,AbF,FA) :- wait(CAb) |
+        device_driver:abort(If,F,T,fep#normal,AbF).
+driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,FA) :- wait(Ab) |
+        AbF=fep#abort,
+        driver_0(CAb,DRS,F,T,If,A,A1,AtF,Att,FA).
+alternatively.
+driver_1(CAb,[Req|DRS],F,T,If,Ab,A,A1,AtF,Att,AbF,FA) :- true |
+        io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,FA).
+driver_1(_,[],F,T,If,_,A,A1,_,Att,AbF,FA) :- true |
+        terminate(If,_,F,T,Att,AbF,A,A1).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,FA)
+
+io_req(CAb,DRS,F,T,If,_,A,A1,AtF,Att,AbF,{reset,Args},FA) :- true |
+        AbF=fep#abort,
+%        F={fep#reset,AbF1,AtF1,S,F1},                         % patch for fep
+%        wait_01(CAb,DRS,F1,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S).
+        fep_patch(CAb,DRS,F,T,If,_,A,A1,AtF,Att,_,Args,FA).
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{next_attention,Args},FA) :- true |
+        Att=[],
+        Args=normal(Att1),
+        driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att1,AbF,FA).
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{resend,ID,S},FA) :- true |
+        device_driver:resend(DRS,DRS1,T,T1,ID,S),
+        driver_1(CAb,DRS1,F,T1,If,Ab,A,A1,AtF,Att,AbF,FA).
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{cancel,ID,S},FA) :- true |
+        cancel(T,T1,ID,S),
+        driver_1(CAb,DRS,F,T1,If,Ab,A,A1,AtF,Att,AbF,FA).
+
+/*
+% never receives from NEW resource tree
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{change_processor,PE,S}) :- true |
+        change_processor(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,S)@processor(PE).
+*/
+
+io_req(_,_,F,T,If,_,A,A1,_,Att,AbF,{close,S},FA) :- true |
+        terminate(If,S,F,T,Att,AbF,A,A1).
+
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{current_directory,S},FA) :- true |
+        device_driver:device_info(dir,If,If1,Dir,Dir),
+        S = normal(Dir),
+        driver_1(CAb,DRS,F,T,If1,Ab,A,A1,AtF,Att,AbF,FA).
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,{set_current_directory,Dir,S},FA) :- true |
+        device_driver:device_info(dir,If,If1,_,Dir),
+        S = normal,
+        driver_1(CAb,DRS,F,T,If1,Ab,A,A1,AtF,Att,AbF,FA).
+
+otherwise.
+io_req(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,FA)
+:- true |
+        vector_element(FA,0,Code,FA0),
+        vector_element(FA0,4,Deli,FA1),
+        send_message(Req,Req1,If,If1,F,Val,S,F1,{Code,Deli}),
+        driver_2(CAb,DRS,F1,T,If1,Ab,A,A1,AtF,Att,AbF,Req1,Val,S,FA1).
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% change_processor(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,S)
+
+change_processor(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,S) :- true |
+        S=normal,
+        driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF).
+*/
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% driver_2(CAb,WRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,S,FA)
+
+driver_2(CAb,_,F,T,If,_,_,_,_,_,AbF,_,Val,S,FA) :- wait(CAb) |
+        device_driver:if_close_fepvar(Val),
+        device_driver:abort(If,F,T,S,AbF).
+driver_2(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,S,FA) :- wait(Ab) |
+        AbF=fep#abort,
+        wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,S,FA).
+alternatively.
+driver_2(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,fep#normal,FA) :- true |
+        vector_element(FA,0,Code,FA0),
+        vector_element(FA0,1,OS,FA1),
+        return_values(CAb,Req,Val,If,If1,{Code,OS}),
+        driver_1(CAb,DRS,F,T,If1,Ab,A,A1,AtF,Att,AbF,FA1).
+driver_2(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,fep#abnormal,FA) :- true |
+        return_ab_status(Req,Val,abnormal),
+        driver_1(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,FA).
+driver_2(CAb,DRS,F,T,If,_,A,A1,_,Att,AbF,Req,Val,fep#disconnected,FA) :- true |
+        return_ab_status(Req,Val,disconnected),
+        disconnected(CAb,DRS,F,T,If,A,A1,Att,AbF).
+driver_2(CAb,DRS,F,T,If,Ab,A,A1,AtF,Att,AbF,Req,Val,fep#aborted,FA) :- true |
+        device_driver:if_close_fepvar(Val),
+        A1=[Req|A2],
+        driver_1(CAb,DRS,F,T,If,Ab,A,A2,AtF,Att,AbF,FA).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,S,FA)
+
+wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,fep#normal,FA) :- true |
+        vector_element(FA,0,Code,FA0),
+        vector_element(FA0,1,OS,FA1),
+        return_values(CAb,Req,Val,If,If1,{Code,OS}),
+        driver_0(CAb,DRS,F,T,If1,A,A1,AtF,Att,FA1).
+wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,fep#abnormal,FA) :- true |
+        return_ab_status(Req,Val,abnormal),
+        driver_0(CAb,DRS,F,T,If,A,A1,AtF,Att,FA).
+wait_20(CAb,DRS,F,T,If,A,A1,_,Att,Req,Val,fep#disconnected,FA) :- true |
+        return_ab_status(Req,Val,disconnected),
+        disconnected(CAb,DRS,F,T,If,A,A1,Att,_).
+wait_20(CAb,DRS,F,T,If,A,A1,AtF,Att,Req,Val,fep#aborted,FA) :- true |
+        device_driver:if_close_fepvar(Val),
+        A1=[Req|A2],
+        driver_0(CAb,DRS,F,T,If,A,A2,AtF,Att,FA).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% send_message(Req,Req1,If,If1,F,Val,S,F1,FA)
+
+%%%  revised by Fujise
+%%%  revised by Hirata
+%send_message({open,Pathname,read(Args)},Req,If,If2,F,Val,S,F1,FA)
+%:- true |
+%        device_driver:device_info(ruser,If,If0,RUser,RUser),
+%        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+%        new_pathname(Pathname,NewPathname,If1,If2),
+%        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA,Status),
+%        F0={fep#read_open,User2,Pass2,Name2,FDS,S,F1},
+%%        F0={fep#read_open,RUser,RPass,NewPathname,FDS,S,F1},
+%        wait_and_send(F,F0),
+%        Req={open,Pathname,read(Args)},
+%        Val={out(FDS)}.
+send_message({open,Pathname,read(Args)},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={open,Pathname,read(Args)},
+        send_message2(fep#read_open,F,Val,S,F1,User2,Pass2,Name2,Status).
+send_message({open,Pathname,read_text(Args)},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={open,Pathname,read_text(Args)},
+        send_message2(fep#read_open,F,Val,S,F1,User2,Pass2,Name2,Status).
+send_message({open,Pathname,read_binary(Args)},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={open,Pathname,read_binary(Args)},
+        send_message2(fep#read_open,F,Val,S,F1,User2,Pass2,Name2,Status).
+send_message({open,Pathname,write(Args)},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={open,Pathname,write(Args)},
+        send_message2(fep#write_open,F,Val,S,F1,User2,Pass2,Name2,Status).
+send_message({open,Pathname,write_text(Args)},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={open,Pathname,write_text(Args)},
+        send_message2(fep#write_open,F,Val,S,F1,User2,Pass2,Name2,Status).
+send_message({open,Pathname,write_binary(Args)},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={open,Pathname,write_binary(Args)},
+        send_message2(fep#write_open,F,Val,S,F1,User2,Pass2,Name2,Status).
+send_message({open,Pathname,append(Args)},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={open,Pathname,append(Args)},
+        send_message2(fep#append_open,F,Val,S,F1,User2,Pass2,Name2,Status).
+send_message({open,Pathname,append_text(Args)},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={open,Pathname,append_text(Args)},
+        send_message2(fep#append_open,F,Val,S,F1,User2,Pass2,Name2,Status).
+send_message({open,Pathname,append_binary(Args)},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={open,Pathname,append_binary(Args)},
+        send_message2(fep#append_open,F,Val,S,F1,User2,Pass2,Name2,Status).
+
+send_message({directory,Pathname,Args},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={directory,Pathname,Args},
+        send_message2(fep#directory,F,Val,S,F1,User2,Pass2,Name2,Status).
+send_message({make_directory,Pathname,Args},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        device_driver:device_info(ruser,If,If0,RUser,RUser),
+        device_driver:device_info(rpass,If0,If1,RPass,RPass),
+        new_pathname(Pathname,NewPathname,If1,If2,Deli),
+        vector_element(FA,1,Deli,FA1),
+        convert_upn(RUser,RPass,NewPathname,User2,Pass2,Name2,FA1,Status),
+        Req={make_directory,Pathname,Args},
+%        send_message2(fep#make_directory,F,Val,S,F1,User2,Pass2,Name2,Status).
+        send_message2(205,F,Val,S,F1,User2,Pass2,Name2,Status).
+
+send_message({fep_attributes,Args},Req,If,If2,F,Val,S,F1,FA)
+:- true |
+        If=If2,
+        Req={fep_attributes,Args},
+%        F={fep#fep_attributes,Code,OS,Host,FEPVer,Dir,FileVer,Comme,S,F1},
+        F={240,Code,OS,Host,FEPVer,Dir,FileVer,Comme,S,F1},
+        Val={Code,OS,Host,FEPVer,Dir,FileVer,Comme}.
+
+send_message2(Com,F,Val,S,F1,User,Pass,Name,normal)
+:- true |
+        F0={Com,User,Pass,Name,FDS,S,F1},
+        wait_and_send(F,F0),
+        Val={out(FDS)}.
+send_message2(_,F,Val,S,F1,User,Pass,Name,abnormal)
+:- true |
+        F=F1,
+        S=fep#abnormal,
+        Val={}.
+
+wait_and_send(F,F0) :- vector_element(F0,1,E),vector_element(F0,2,E2),vector_element(F0,3,E3),
+    wait(E),wait(E2),wait(E3) | F=F0.
+
+
+new_pathname(Pathname,NewPathname,If,If1,Deli) :- true |
+        device_driver:device_info(dir,If,If0,Dir,Dir),
+        device_driver:device_info(uid,If0,If1,Uid,Uid),
+        new_pathname1(Dir,Pathname,NewPathname,Uid,Deli).
+
+new_pathname1(Dir,Pathname,NewPathname,0,Deli):-
+    true|
+        pathname_with_world(Pathname,Result,Deli),
+        wait_pathname_with_world(Result,Dir,NewPathname,Deli).
+otherwise.
+new_pathname1(Dir,Pathname,NewPathname,Uid,Deli):-
+    string(Dir,0,_)|
+%        new_pathname1(">",Pathname,NewPathname,Uid,Deli).
+        new_pathname1(Deli,Pathname,NewPathname,Uid,Deli).
+otherwise.
+new_pathname1(_,Pathname,NewPathname,_,Deli):-
+%    string_element(Pathname,0,#">")|
+    string_element(Deli,0,Z),string_element(Pathname,0,Z)|
+        Pathname = NewPathname.
+new_pathname1(Dir,Pathname,NewPathname,_,Deli):-
+    string_element(Pathname,0,E),
+%    E \= #">",
+    string_element(Deli,0,Z),
+    E \= Z,
+    string(Pathname,N,_)|
+        new_pathname2(0,N,Pathname,NewPathname,Dir,Deli).
+otherwise.
+new_pathname1(Dir,_,NewPathname,_,Deli):-
+    true|
+        Dir = NewPathname.
+
+new_pathname2(N,N,Pathname,NewPathname,Dir,Deli):-
+    true|
+%        builtin#append_string([Dir,">",Pathname],NewPathname).
+        builtin#append_string([Dir,Deli,Pathname],NewPathname).
+otherwise.
+new_pathname2(M,N,Pathname,NewPathname,Dir,Deli):-
+    string_element(Pathname,M,#":"),
+    M1 := M + 1|
+        new_pathname3(M1,N,Pathname,NewPathname,Dir,Deli).
+new_pathname2(M,N,Pathname,NewPathname,Dir,Deli):-
+%    string_element(Pathname,M,#">"),
+    string_element(Deli,0,Z),
+    string_element(Pathname,M,Z),
+    M1 := M + 1|
+%        builtin#append_string([Dir,">",Pathname],NewPathname).
+        builtin#append_string([Dir,Deli,Pathname],NewPathname).
+otherwise.
+new_pathname2(M,N,Pathname,NewPathname,Dir,Deli):-
+    M1 := M + 1|
+        new_pathname2(M1,N,Pathname,NewPathname,Dir,Deli).
+
+new_pathname3(N,N,Pathname,NewPathname,Dir,Deli):-
+    true|
+%        builtin#append_string([Dir,">",Pathname],NewPathname).
+        builtin#append_string([Dir,Deli,Pathname],NewPathname).
+otherwise.
+new_pathname3(M,N,Pathname,NewPathname,Dir,Deli):-
+    string_element(Pathname,M,#":"),
+    M1 := M + 1|
+        new_pathname4(M1,N,Pathname,NewPathname,Dir,Deli).
+otherwise.
+new_pathname3(M,N,Pathname,NewPathname,Dir,Deli):-
+    true|
+%%        builtin#append_string([Dir,">",Pathname],NewPathname).
+        Pathname=NewPathname.  % logical name for SIMPOS file system.
+
+new_pathname4(N,N,Pathname,NewPathname,Dir,Deli):-
+    true|
+%        builtin#append_string([Dir,">",Pathname],NewPathname).
+        builtin#append_string([Dir,Deli,Pathname],NewPathname).
+otherwise.
+new_pathname4(M,N,Pathname,NewPathname,Dir,Deli):-
+%    string_element(Pathname,M,#">")|
+    string_element(Deli,0,Z),string_element(Pathname,M,Z)|
+        Pathname = NewPathname.
+otherwise.
+new_pathname4(M,N,Pathname,NewPathname,Dir,Deli):-
+    true|
+%        builtin#append_string([Dir,">",Pathname],NewPathname).
+        builtin#append_string([Dir,Deli,Pathname],NewPathname).
+
+pathname_with_world(Pathname,Result,Deli):-
+    string(Pathname,N,_)|
+        pathname_with_world(N,N,Pathname,Result,Deli).
+
+pathname_with_world(0,N,Pathname,Result,Deli):-
+    true|
+        Result = cont(Pathname).
+otherwise.
+pathname_with_world(M,N,Pathname,Result,Deli):-
+    M1 := M - 1|
+        string_element(Pathname,M1,E,Pathname1),
+        check_pathname_with_world(E,M1,N,Pathname1,Result,Deli).
+
+check_pathname_with_world(#":",M,N,Pathname,Result,Deli):-
+    true|
+        check_pathname_with_world2(M,N,Pathname,Result,Deli).
+otherwise.
+check_pathname_with_world(_,M,N,Pathname,Result,Deli):-
+    true|
+        pathname_with_world(M,N,Pathname,Result,Deli).
+
+check_pathname_with_world2(0,N,Pathname,Result,Deli):-
+    true|
+        Result = end(Pathname).
+otherwise.
+check_pathname_with_world2(M,N,Pathname,Result,Deli):-
+    M1 := M - 1,
+    string_element(Pathname,M1,#":")|
+    Result = cont(Pathname).
+check_pathname_with_world2(M,N,Pathname,Result,Deli):-
+    M1 := M - 1,
+%    string_element(Pathname,M1,#">")|
+    string_element(Deli,0,Z),string_element(Pathname,M1,Z)|
+    Result = cont(Pathname).
+otherwise.
+check_pathname_with_world2(M,N,Pathname,Result,Deli):-
+    M1 := M - 1|
+    check_pathname_with_world2(M1,N,Pathname,Result,Deli).
+
+wait_pathname_with_world(cont(Pathname),Dir,NewPathname,Deli):-
+    true|
+        new_pathname1(Dir,Pathname,NewPathname,-1,Deli).
+wait_pathname_with_world(end(Pathname),Dir,NewPathname,Deli):-
+    true|
+        NewPathname = Pathname.
+    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% cancel(T,T1,ID,S)
+%%      ID      :: ID number for aborted messages
+
+cancel(T,T1,ID,S) :- true |
+        T=[get_if_any(ID,X)|T1],
+        if_cancel(X,S).
+
+if_cancel({Req},S) :- true |
+        S=normal,
+        abort_msg(Req,_,_).
+if_cancel({},S) :- true | S=abnormal.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_values(CAb,Req,Val,If,If1,FA)
+%%      CAb     :: Termination variable from the client task
+%%      Req     :: io_request message
+%%      Val     :: Values from fep (vector)
+%%      If,If1  :: ={CInfo,Conf,SCont,SAbort}
+%%      FA      :: FEP Attributes
+
+return_values(CAb,{open,Name,{read,Args}},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(read_file_text,Name,Res)|SCont1],
+        create_file(CAb,Args,F,Conf,Res,FA).
+return_values(CAb,{open,Name,{read_text,Args}},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(read_file_text,Name,Res)|SCont1],
+        create_file(CAb,Args,F,Conf,Res,FA).
+return_values(CAb,{open,Name,{read_binary,Args}},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(read_file_binary,Name,Res)|SCont1],
+        create_file_binary(CAb,Args,F,Conf,Res,FA).
+
+return_values(CAb,{open,Name,{write,Args}},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(write_file_text,Name,Res)|SCont1],
+        create_file(CAb,Args,F,Conf,Res,FA).
+return_values(CAb,{open,Name,{write_text,Args}},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(write_file_text,Name,Res)|SCont1],
+        create_file(CAb,Args,F,Conf,Res,FA).
+return_values(CAb,{open,Name,{write_binary,Args}},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(write_file_binary,Name,Res)|SCont1],
+        create_file_binary(CAb,Args,F,Conf,Res,FA).
+
+return_values(CAb,{open,Name,{append,Args}},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(append_file_text,Name,Res)|SCont1],
+        create_file(CAb,Args,F,Conf,Res,FA).
+return_values(CAb,{open,Name,{append_text,Args}},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(append_file_text,Name,Res)|SCont1],
+        create_file(CAb,Args,F,Conf,Res,FA).
+return_values(CAb,{open,Name,{append_binary,Args}},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(append_file_binary,Name,Res)|SCont1],
+        create_file_binary(CAb,Args,F,Conf,Res,FA).
+
+return_values(CAb,{directory,Name,Args},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(directory,Name,Res)|SCont1],
+        create_dir(CAb,Args,F,Conf,Res,FA).
+return_values(CAb,{make_directory,Name,Args},{out(F)},If,If1,FA) :- true |
+        device_driver:device_info(scont,If,If0,SCont,SCont1),
+        device_driver:device_info(conf,If0,If1,{Conf,Conf1},Conf1),
+        SCont=[add_resource(directory,Name,Res)|SCont1],
+        create_dir(CAb,Args,F,Conf,Res,FA).
+
+return_values(CAb,{fep_attributes,Args},
+                {Code,OS,Host,FEPVer,Dir,FileVer,Comme},If,If1,_)
+:- true |
+        If=If1,
+        return_values_attributes(Args,{Code,OS,Host,FEPVer,Dir,FileVer,Comme}).
+
+return_values_attributes(Args,{0,OS,Host,FEPVer,Dir,FileVer,Comme})% 16bit JIS
+:- true |
+        change_element_size(OS,16,OS2),
+        change_element_size(Host,16,Host2),
+        change_element_size(FEPVer,16,FEPVer2),
+        change_element_size(Dir,16,Dir2),
+        change_element_size(FileVer,16,FileVer2),
+        change_element_size(Comme,16,Comme2),
+        Args=normal(0,OS2,Host2,FEPVer2,Dir2,FileVer2,Comme2).
+return_values_attributes(Args,{1,OS,Host,FEPVer,Dir,FileVer,Comme})% EUC
+:- true |
+        code_convert:euc_to_jis(OS,OS2),
+        code_convert:euc_to_jis(Host,Host2),
+        code_convert:euc_to_jis(FEPVer,FEPVer2),
+        code_convert:euc_to_jis(Dir,Dir2),
+        code_convert:euc_to_jis(FileVer,FileVer2),
+        code_convert:euc_to_jis(Comme,Comme2),
+        Args=normal(1,OS2,Host2,FEPVer2,Dir2,FileVer2,Comme2).
+otherwise.
+return_values_attributes(Args,{_,OS,Host,FEPVer,Dir,FileVer,Comme})
+:- true |
+        Args=abnormal.
+
+create_file(CAb,Args,F,Conf,normal(SCont,SAb),FA) :- true |
+        Args=normal(DS),
+        file_device:driver(CAb,DS,F,{0,Conf,SCont,SAb},FA).
+otherwise.
+create_file(_,Args,F,Conf,S,FA) :- true |
+        Args=S,F=fep#nil,Conf=[].
+
+create_file_binary(CAb,Args,F,Conf,normal(SCont,SAb),FA) :- true |
+        Args=normal(DS),
+        file_device_binary:driver(CAb,DS,F,{0,Conf,SCont,SAb},FA).
+otherwise.
+create_file_binary(_,Args,F,Conf,S,FA) :- true |
+        Args=S,F=fep#nil,Conf=[].
+
+create_dir(CAb,Args,F,Conf,normal(SCont,SAb),FA) :- true |
+        Args=normal(DS),
+        dir_device:driver(CAb,DS,F,{0,Conf,SCont,SAb},FA).
+otherwise.
+create_dir(_,Args,F,Conf,S,FA) :- true |
+        Args=S,F=fep#nil,Conf=[].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_ab_status(Req,Val,Status)
+
+return_ab_status(Req,Val,Status) :- true |
+        return_ab_status(Req,Status,_,_),
+        device_driver:if_close_fepvar(Val).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% return_ab_status(Req,Status,S,S1)
+
+return_ab_status({open,_,{_,Args}},Status,S,S1) :- true |
+        Args=Status,S=S1.
+otherwise.
+return_ab_status(Req,Status,S,S1) :- true |
+        device_driver:return_ab_status(Req,Status,S,S1).
+
+
+%% same as device_driver:terminate/9,
+%% except return_ab_status/2.
+terminate({_,Conf,SCont,_},Status,F,T,Att,AbF,A,A1) :- true |
+        Conf=[],
+        F={fep#reset,AbF1,AtF1,S0,F1},
+        T=[get_all(A2)],
+        Att=[],
+        AbF=fep#nil,
+        A1=[],
+        abort_all_msg(A2,S,S1),
+        abort_msg(A,S1,normal),
+        device_driver:terminate_fep(SCont,Status,S,AbF1,AtF1,S0,F1).
+
+%% same as device_driver:disconnected/9,
+%% except return_ab_status/2.
+disconnected(CAb,DS,F,T,{_,Conf,SCont,_},A,A1,Att,AbF) :- true |
+        Conf=[],
+        F=fep#nil,
+        AbF=fep#nil,
+        T=[get_all(A2)],
+        A1=[],
+        abort_all_msg(A2,S,S1),
+        abort_msg(A,S1,normal),
+        return_disconnected(CAb,DS,SCont,Att,S).
+
+return_disconnected(CAb,_,SCont,_,_) :- wait(CAb) | SCont=[].
+alternatively.
+return_disconnected(CAb,[Req|DS],SCont,Att,S) :- true |
+        return_ab_status(Req,disconnected,S,S1),
+        return_disconnected(CAb,DS,SCont,Att,S1).
+return_disconnected(_,[],SCont,Att,normal) :- true | SCont=[],Att=[].
+
+abort_all_msg([{_,A}|A1],S,S1) :- true |
+        abort_msg(A,S,S0),
+        abort_all_msg(A1,S0,S1).
+abort_all_msg([],S,S1) :- true | S=S1.
+
+abort_msg([Req|R],S,S1) :- true |
+        return_ab_status(Req,aborted,S,S0),
+        abort_msg(R,S0,S1).
+abort_msg([],S,S1) :- true | S=S1.
+
+
+fep_patch(CAb,DRS,F,T,If,_,A,A1,AtF,Att,_,Args,FA) :- true |
+        F={fep#next_attention,AtF1,S,F1},
+        now_reset(CAb,DRS,F1,T,If,_,A,A1,AtF,Att,_,Args,S,FA).
+
+now_reset(CAb,DRS,F,T,If,_,A,A1,AtF,Att,_,Args,S,FA) :- wait(S) |
+        F={fep#reset,AbF1,AtF1,S1,F1},
+        wait_01(CAb,DRS,F1,T,If,A,A1,AtF,Att,Args,AtF1,AbF1,S1,FA).
+
+
+convert_upn(User,Pass,Name,User2,Pass2,Name2,FF,Status) % 16bit JIS Kanji
+:- vector_element(FF,0,0) |
+    Status=normal,
+%    change_element_size(User,8,User2),
+%    change_element_size(Pass,8,Pass2),
+    User=User2,
+    Pass=Pass2,
+    change_element_size(Name,8,Name2).
+convert_upn(User,Pass,Name,User2,Pass2,Name2,FF,Status) % EUC
+:- vector_element(FF,0,1) |
+    Status=normal,
+%    code_convert:jis_to_euc(User,User2),
+%    code_convert:jis_to_euc(Pass,Pass2),
+    User=User2,
+    Pass=Pass2,
+    code_convert:jis_to_euc(Name,Name2).
+otherwise.
+convert_upn(User,Pass,Name,User2,Pass2,Name2,FF,Status)
+:- vector_element(FF,0,_) |
+    Status=abnormal,
+    User2=[],Pass2=[],Name2=[].

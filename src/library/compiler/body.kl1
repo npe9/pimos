@@ -1,0 +1,769 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% compile body
+%%
+
+:- module kl1cmp_body.
+:- public compile_body/10.
+:- with_macro pimos.
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared.
+
+compile_body(Label0, Code0, Code,
+             [(H0:-'|'(_,B0))-Nv0-Info-Var2Pos0|Cdr], Collect0) -->
+        true |
+    {{
+%%      close_stream(&io, Cdr),
+      close_stream(Cdr),
+      normalize_and_make_tables(Io, [], ISBLT, [], &class, 
+                                Label0, [], Trans, [],
+                                Normed, [], B0, Var2Pos0, Var2Pos1,
+                                Nv0, Nv,
+                                Tabs0, Attr0, TransTbl0,
+                                Passtbl1, Bodytbl0, Pos2Var0, Pos2Reg0, Var),
+      kl1cmp_compile:compile_guard(IO0, IO1, Comp0, MrbCode, Tabs0, Tabs1,
+                                   1, PC0, 1, _, Trans, _), 
+      kl1cmp_compile:compile_body(IO1, IO2, Comp1, [], Tabs1, Tabs2,
+                                  PC0, PC1,
+                                  Bodytbl0, Bodytbl1, [commit|Normed]),
+      copy_body_reference_to_guard(Trans, Bodytbl1, Bodytbl2),
+      PC := PC1+1,
+      reference_transfer(Trans, Passtbl1, Passtbl2, Bodytbl3, Bodytbl4),
+      mentenance_mrb(Var, [],
+                     Pos2Var0, [], Pos2Reg0, [], Var2Pos1, [], CollectInstrs, [], 
+                     H0, H1, B0, Tabs2, From1, To1, Reg1, Collect0,
+                     Bodytbl2, Bodytbl3),
+%%      outToStream(Code0, Code2, CollectInstrs),
+      kl1cmp_mrb:mrb_optimization(MrbCode, [], PC0, _,
+                                  From1, From2, To1, To2, 3, Comp1, Nv,
+                                  Passtbl2-Bodytbl4, Attr0),
+      %% initiate register table
+      kl1cmp_error_filter:addErrorInfo(&io, IO0, Info, _),
+      pass_message(IO2, IO3, Io),
+      pass_message(&isblt, ISBLT),
+      allocate_register_and_output(IO3, [], &isblt, &class, Nv, PC, Code0, Code,
+                                   From2, To2, Reg1, H1, Comp0, CollectInstrs)}}.
+
+%%close_stream(IO0, IO, [_-_-Info-Str|Cdr]) :- true |
+%%    Str=[],
+%%    IO0=[warning("No exclusiveness in the guards. Deleted Clause.", [], Info)|IO1],
+%%    close_stream(IO1, IO, Cdr).
+%%close_stream(IO0, IO, []) :- true | IO0=IO.
+close_stream([_-_-_-Str|Cdr]) :- true |
+    Str=[],
+    close_stream(Cdr).
+close_stream([]) :- true | true.
+
+outToStream(Out0, Out, [Instr|Cdr]) :- true |
+    Out0=[Instr|Out1],
+    outToStream(Out1, Out, Cdr).
+outToStream(Out0, Out, []) :- true | Out0=Out.
+
+pass_message(H0, T, [MSG|Str]) :- true |
+    H0=[MSG|H],
+    pass_message(H, T, Str).
+pass_message(H, T, []) :- true |
+    H=T.
+
+:- local_implicit
+                 var:oldnew,
+                 pos2var:oldnew, 
+                 pos2reg:oldnew,
+                 var2pos:oldnew.
+
+mentenance_mrb(Code0, Code, H1, H, B0, Tabs0, From1, To1, Reg1, Collect0,
+               BodyTbl0, BodyTbl) --> true |
+    {{generate_add_ref(Code0, Code1, &var,
+                       &pos2var, &pos2reg, &var2pos,
+                       B0,
+                       Tabs0, From1-To1-Reg1, BodyTbl0, BodyTbl1),
+      make_collect_for_head_args(H1, H, Collect0, Collect1,
+                                 BodyTbl1, BodyTbl2),
+      generate_collect(&pos2reg, &pos2var,
+                       Collect2, [], Collect1, BodyTbl2,
+                       BodyTbl),
+      unique_instr(Collect3, [], Collect2),
+      pool:keyed_bag(Pool0),
+      remove_unneccesary_collect(Pool0, Pool1, Pool1, [], Code1, Code, Collect3)}}.
+
+:- local_implicit add:oldnew, ref:oldnew, code:oldnew.
+remove_unneccesary_collect([collect_value(R)|Cdr]) --> true |
+    {{&ref <<= [empty(R, YorN)],
+      remove_or_not(&code, YorN, R)}},
+    remove_unneccesary_collect(Cdr).
+remove_unneccesary_collect([collect_list(R)|Cdr]) --> true |
+    {{&add <<= [put(R, use)],
+      &code <<= [collect_list(R)]}},
+    remove_unneccesary_collect(Cdr).
+remove_unneccesary_collect([collect_vector(R, Size)|Cdr]) --> true |
+    {{&add <<= [put(R, use)],
+      &code <<= [collect_vector(R, Size)]}},
+    remove_unneccesary_collect(Cdr).
+remove_unneccesary_collect([]) --> true | true.
+
+:- local_implicit code:oldnew.
+remove_or_not(yes, R) --> true | &code <<= [collect_value(R)].
+remove_or_not(no, R) --> true | true.
+
+:- local_implicit code:oldnew.
+unique_instr([Instr0|Cdr]) --> true |
+%%    &code <<= [Instr],
+    &code <<= [Instr0],    
+    {{unique_instr(Code0, [], Instr0, Instr, Cdr)}},
+    unique_instr(Code0).
+unique_instr([]) --> true | true.
+
+:- local_implicit code:oldnew.
+unique_instr(Instr0, Instr, [Instr0|Cdr]) --> true |
+    unique_instr(Instr0, Instr, Cdr).
+otherwise.
+unique_instr(Instr0, Instr, [Another|Cdr]) --> true |
+    &code <<= [Another],
+    unique_instr(Instr0, Instr, Cdr).
+unique_instr(Instr0, Instr, []) --> true | Instr0=Instr.
+
+:- local_implicit io:oldnew, isblt:oldnew, class:shared.
+allocate_register_and_output(Nv, PC, Code0, Code,
+                             From0, To0, Reg0, H0, KLB, MRBCode) --> true |
+    {{%%kl1cmp_reader:herrey(PC, 0, Used0),
+      kl1cmp_register:makeUsedTable(PC, Used0),
+      kl1cmp_register:register_predefined(From0, From1, To0, To1,
+                                          Reg0, Reg1, Used0, Used1, Nv),
+      kl1cmp_register:register_preference(RegCode0, [], &io, sucess, Ans1,
+                                          From1, From2, To1, To2,
+                                          Reg1, Reg2, Used1, Used2,
+                                          KLB),
+      kl1cmp_register:make_used(RegCode, [], From2, From3, To2, To3, Reg2, Reg3,
+                                Used2, Used3, MRBCode, RegCode0),
+      kl1cmp_register:determine_registers(&io, Ans1, _, From3, From4,
+                                          To3, To4, Reg3, Reg4, Used3, _,
+                                          Nv, 0),
+      kl1cmp_reader:functor(H0, F, Arity),
+      kl1cmp_register:output_code_or_retry(Code0, Code, &io, &isblt,
+                                           3, &class, 0, success,
+%                                           1, Nv, From3, To3, Reg3,
+                                           1, Nv, From4, To4, Reg4,
+                                           F/Arity, 0, RegCode, Code)}}.
+
+:- local_implicit
+                 pool:oldnew.
+make_var_pool(Var) --> true |
+    &pool <<= [get_all(All)],
+    {{pool:keyed_bag(Var0)}},
+    make_var(Var0, Var, All).
+
+:- local_implicit
+                 pool:oldnew,
+                 var:oldnew.
+make_var([{N,{Pos,Type}}|Cdr]) --> true |
+    &pool <<= [put(N, {Pos, Type})],
+    &var <<= [put(Pos, {N,Type})],
+    make_var(Cdr).
+make_var([]) --> true | true.
+
+:- local_implicit
+                 io:oldnew,
+                 isblt:oldnew,
+                 class:shared,
+                 var:oldnew,
+                 trans:oldnew,
+                 code:oldnew.
+
+normalize_and_make_tables(B0, Var2Pos0, Var2Pos, Nv0, Nv, Tabs, Attr,
+                           Ttbl0, Passtbl, Bodytbl, Pos2Var, Pos2Reg, Var3) -->
+        true |
+    &var <<= [get_register_table(Pos2RegTable)],
+    Tabs=From-To-Reg,
+    {{kl1cmp_reader:herrey(Nv, [], Attr0),
+      kl1cmp_reader:herrey(Nv, [], From0),
+      kl1cmp_reader:herrey(Nv, [], To0),
+      kl1cmp_reader:herrey(Nv, [], Reg0),
+      make_var_pool(Var2Pos0, Var2Pos1, Pos2Var0), % Position -> variable#
+      initialize_From_To(Var2Pos1, Var2Pos2, 0, Nv, From0, From1, To0, To1),
+      kl1cmp_my_pool:keyed_bag(Pos2Reg0),                % Position -> register
+      make_register_pool(Pos2Reg0, Pos2Reg, Pos2Var0, Pos2Var1,
+                         Pos2RegTable, From1-From, To1-To, Reg0-Reg),
+%%      intern_head_args(Pool1, Pool2, Prop1, Prop2, From2-From, To2-To,
+%%                       Reg2-Reg),
+%%      make_attribute_table(Pool2, Pool3, Prop2, Prop3,
+%%                           Attr0, Attr1),
+      make_attribute_and_trans_table(Var2, Pos2Var1, Pos2Var,
+                                     AttrList0, [], Ttbl0, [], B0, B1),
+      kl1cmp_vargen:variable_generator(Nv0, Nv, Var0),
+      convert_list_to_table(AttrList0, Attr0, Attr1),
+      merge({Var1, Var2, Var3}, Var0),
+      wrap_one_level(B1, WB1),
+      kl1cmp_norm_convert:convert_body_args(Blist0, [], Trans0, [], Ttbl0, _,
+                                            Attr1, Attr, WB1),
+      unique(&trans, Trans0),
+      unwrap_goal_list(Blist1, [], Blist0),
+      remove_position(Blist, [], Blist1),
+      kl1cmp_normalize:normalize_body(&io, &isblt, Var1, &code, &class,
+                                      0, [], Blist),
+      kl1cmp_reader:herrey(Nv, 0, Passtbl0),
+      kl1cmp_reader:herrey(Nv, 0, Bodytbl),
+      initialize_reference_table(Var2Pos2, Var2Pos, 0, Nv,
+                                 Passtbl0, Passtbl)}}.
+
+convert_list_to_table([{N, Pos}|Cdr], Attr0, Attr) :- true |
+    set_vector_element(Attr0, N, OldElm, [Pos|OldElm], Attr1),
+    convert_list_to_table(Cdr, Attr1, Attr).
+convert_list_to_table([], Attr0, Attr) :- true | Attr0=Attr.
+
+:- local_implicit var2pos:oldnew.
+initialize_From_To(A, N, From0, From, To0, To) --> A<N |
+    &var2pos <<= [empty(A, YorN)],
+    {{set_From_To_if_refed_in_guard(YorN, A, From0, From1, To0, To1),
+      A1 := A+1}},
+    initialize_From_To(A1, N, From1, From, To1, To).
+initialize_From_To(N, N, From0, From, To0, To) --> true |
+    From0=From, To0=To.
+
+set_From_To_if_refed_in_guard(yes, _, From0, From, To0, To) :- true |
+    From0=From, To0=To.
+otherwise.
+set_From_To_if_refed_in_guard(no, A, From0, From, To0, To) :- true |
+    set_vector_element(From0, A, _, 0, From),
+    set_vector_element(To0, A, _, 0, To).
+
+%%intern_head_args(Prop0, Prop, FROM, TO, REG) --> vector(Prop0, N) |
+%%    intern_head_args(0, N, Prop0, Prop, FROM, TO, REG).
+%%
+%%intern_head_args(A, N, Prop0, Prop, From0-From, To0-To, Reg0-Reg) --> A<N |
+%%    {{set_vector_element(Prop0, A, OneProp0, OneProp, Prop1)}},
+%%    intern_head_args_(A, OneProp0, OneProp, From0-From1, To0-To1, Reg0-Reg1),
+%%    A1 := A+1,
+%%    intern_head_args(A1, N, Prop1, Prop, From1-From, To1-To, Reg1-Reg).
+%%intern_head_args(N, N, Prop0, Prop, From0-From, To0-To, Reg0-Reg) --> true |
+%%    Prop0=Prop, From0=From, To0=To, Reg0=Reg.
+%%
+%%intern_head_args_(_, 0, Prop, From0-From, To0-To, Reg0-Reg) --> true |
+%%    Prop=0, From0=From, To0=To, Reg0=Reg.
+%%intern_head_args_(A, {Arg0, Type}, Prop, FROM, TO, REG) --> true |
+%%    &pool <<= [empty(Arg0, YorN)],
+%%    Prop={Arg0, Type},
+%%    intern_or_not(YorN, A, Arg0, FROM, TO, REG).
+%%
+%%intern_or_not(yes, _, _, From0-From, To0-To, Reg0-Reg) --> true |
+%%    From0=From, To0=To, Reg0=Reg.
+%%intern_or_not(no, A, Arg, From0-From, To0-To, Reg0-Reg) --> true |
+%%    {{set_vector_element(From0, A, _, 0, From),
+%%      set_vector_element(To0, A, _, 0, To)}},
+%%    &pool <<= [get_and_put(Arg, R, R)],
+%%    {{set_vector_element(Reg0, A, _, R, Reg)}}.
+
+
+:- local_implicit
+                 goals:oldnew.
+convert_term_to_list((G0,G1)) --> true |
+    convert_term_to_list(G0),
+    convert_term_to_list(G1).
+otherwise.
+convert_term_to_list(G0) --> true |
+    &goals <<= [G0].
+
+:- local_implicit pos2reg:oldnew, pos2var:oldnew.
+make_register_pool([{Pos,RN}|Cdr],
+                   From0-From, To0-To, Reg0-Reg) --> true |
+    &pos2var <<= [empty(Pos, YorN)],
+    intern_to_tables(YorN, Pos, RN,
+                     From0-From1, To0-To1, Reg0-Reg1),
+    make_register_pool(Cdr, From1-From, To1-To, Reg1-Reg).
+make_register_pool([], From0-From, To0-To, Reg0-Reg) --> true |
+    From0=From, To0=To, Reg0=Reg.
+
+intern_to_tables(yes, _, _, 
+                 From0-From, To0-To, Reg0-Reg) --> true |
+    From0=From, To0=To, Reg0=Reg.
+intern_to_tables(no, Pos, RN,
+                 From0-From, To0-To, Reg0-Reg) --> true |
+    &pos2reg <<= [put(Pos, RN)],
+    &pos2var <<= [get_and_put(Pos, {N,Type}, {N,Type})],
+    {{set_vector_element(From0, N, _, 0, From), % neccesary ?
+      set_vector_element(To0, N, _, 0, To), % nessesary
+      set_vector_element(Reg0, N, _, RN, Reg)}}.
+
+:- local_implicit
+        var:stream,
+        pos2var:oldnew,
+        attr:oldnew,
+        trans:oldnew.
+%% 90/06/07 for register transfer in guard
+%%make_attribute_and_trans_table(variable(Var)@arg(N), Arg) --> true |
+%%    &pos2var <<= [get_and_put(arg(N), {Src, Type}, {Src, Type})],
+%%    &trans <<= [{variable(Src), variable(Var)}],
+%%    Arg=(variable(Src)@arg(N)).
+%% 90/06/07 for register transfer in guard
+%%otherwise.
+make_attribute_and_trans_table(variable(N)@Pos, Arg) --> true |
+    &var <<= [new_variable(NewArg)],
+%%    &var <<= [new_register(NewArg)],
+    &trans <<= [{variable(N), NewArg}],
+    Arg=(variable(N)@Pos),
+    check_position(N, Pos).
+otherwise.
+make_attribute_and_trans_table(variable(N), NewArg) --> true |
+    NewArg=variable(N).
+make_attribute_and_trans_table([Car|Cdr], NewArg) --> true |
+    make_attribute_and_trans_table(Car, NewCar),
+    make_attribute_and_trans_table(Cdr, NewCdr),
+    NewArg=[NewCar|NewCdr].
+otherwise.
+make_attribute_and_trans_table(Vect0, Vect) --> vector(Vect0, N) |
+    make_attribute_and_trans_table(0, N, Vect0, Vect).
+otherwise.
+make_attribute_and_trans_table(Arg, NewArg) --> true |
+    Arg=NewArg.
+
+make_attribute_and_trans_table(A, N, Vect0, Vect) --> A< N | 
+    {{set_vector_element(Vect0, A, El0, El, Vect1),
+    A1 := A+1}},
+    make_attribute_and_trans_table(El0, El),
+    make_attribute_and_trans_table(A1, N, Vect1, Vect).
+make_attribute_and_trans_table(N, N, Vect0, Vect) --> true |
+    Vect0=Vect.
+
+check_position(_, nil) --> true | true.
+otherwise.
+check_position(N, Pos0) --> true |
+    modify_and_set_position(Pos0, N).
+
+modify_and_set_position(car(List0), N0) --> true |
+    &pos2var <<= [get_and_put(List0, {N,Type}, {N,Type})],
+    &var <<= [new_variable(PosVar)],
+    &attr <<= [{N0,element(variable(N), 0, PosVar)}]. 
+modify_and_set_position(cdr(List0), N0) --> true |
+    &pos2var <<= [get_and_put(List0, {N,Type}, {N,Type})],
+    &var <<= [new_variable(PosVar)],
+    &attr <<= [{N0,element(variable(N), 0, PosVar)}].
+modify_and_set_position(element(Vect, variable(P)), N0) --> true |
+    &pos2var <<= [get_and_put(Vect, {N,Type}, {N,Type})],
+    &attr <<= [{N0,element(variable(N), variable(P), [])}].
+modify_and_set_position(element(Vect, P), N0) --> integer(P) |
+    &pos2var <<= [get_and_put(Vect, {N,Type}, {N,Type})],
+    &var <<= [new_variable(PosVar)],
+    &attr <<= [{N0,element(variable(N), P, PosVar)}].
+otherwise.
+modify_and_set_position(_, _) --> true | true.
+
+%%
+%%  generate add_ref_element instruction.
+%%
+:- local_implicit code:oldnew, 
+                  varno:oldnew,
+                  pos2var:oldnew,
+                  pos2reg:oldnew,
+                  var2pos:oldnew.
+generate_add_ref(Goals, Tabs0, Tabs, BTbl0, BTbl) --> true |
+    {{kl1cmp_my_pool:keyed_bag(BVars0)}},
+      generate_add_ref(BVars0, BVars1, BVars1, [], Goals, Tabs0, Tabs, BTbl0, BTbl).
+      
+:- local_implicit code:oldnew, 
+                  varno:oldnew,
+                  pos2var:oldnew,
+                  pos2reg:oldnew,
+                  var2pos:oldnew,
+                  set:oldnew,
+                  ref:oldnew.
+generate_add_ref((G0,G), Tabs0, Tabs, BTbl0, BTbl) --> true |
+    generate_add_ref(G0, Tabs0, Tabs1, BTbl0, BTbl1),
+    generate_add_ref(G, Tabs1, Tabs, BTbl1, BTbl).
+generate_add_ref(variable(N)@Pos, Tabs0, Tabs, BTbl0, BTbl) --> true |
+    &set <<= [put(Pos, [])],
+    {{is_any_parent_refed_in_body(&pos2var, &ref, Pos, Ans, BTbl0, BTbl1),
+      generate_add_ref_(&code, &varno, &pos2var, &pos2reg, &ref,
+                        Ans, variable(N), Tabs0, Tabs, BTbl1, BTbl)}}.
+generate_add_ref(variable(_), Tabs0, Tabs, BTbl0, BTbl) --> true |
+    Tabs0=Tabs, BTbl0=BTbl.
+generate_add_ref([Car|Cdr], Tabs0, Tabs, BTbl0, BTbl) --> true |
+    generate_add_ref(Car, Tabs0, Tabs1, BTbl0, BTbl1),
+    generate_add_ref(Cdr, Tabs1, Tabs, BTbl1, BTbl).
+otherwise.
+generate_add_ref(Vect, Tabs0, Tabs, BTbl0, BTbl) --> vector(Vect, N) |
+    generate_add_ref(0, N, Vect, Tabs0, Tabs, BTbl0, BTbl).
+otherwise.
+generate_add_ref(_, Tabs0, Tabs, BTbl0, BTbl) --> true | Tabs0=Tabs, BTbl0=BTbl.
+
+generate_add_ref(A, N, Vect0, Tabs0, Tabs, BTbl0, BTbl) --> A<N |
+    {{set_vector_element(Vect0, A, Elm0, [], Vect1)}},
+    generate_add_ref(Elm0, Tabs0, Tabs1, BTbl0, BTbl1),
+    {{A1 := A+1}},
+    generate_add_ref(A1, N, Vect1, Tabs1, Tabs, BTbl1, BTbl).
+generate_add_ref(N, N, _, Tabs0, Tabs, BTbl0, BTbl) --> true | Tabs0=Tabs, BTbl0=BTbl.
+
+:- local_implicit pos2var:oldnew, ref:oldnew.
+is_any_parent_refed_in_body(variable(_), Ans, BTbl0, BTbl) --> true | Ans=no, BTbl0=BTbl.
+is_any_parent_refed_in_body(arg(_), Ans, BTbl0, BTbl) --> true | Ans=no, BTbl0=BTbl.
+is_any_parent_refed_in_body(nil, Ans, BTbl0, BTbl) --> true | Ans=no, BTbl0=BTbl.
+otherwise.
+is_any_parent_refed_in_body({CARorCDR,Pos}, Ans, BTbl0, BTbl) --> true |
+    &ref <<= [empty(Pos, YorN)],
+    try_further(YorN, {CARorCDR,Pos}, Ans, BTbl0, BTbl1),
+    am_i_exist(YorN, Ans, Pos, BTbl1, BTbl).
+is_any_parent_refed_in_body(element(Pos,I), Ans, BTbl0, BTbl) --> true |
+    &ref <<= [empty(Pos, YorN)],
+    try_further(YorN, element(Pos,I), Ans, BTbl0, BTbl1),
+    am_i_exist(YorN, Ans, Pos, BTbl1, BTbl).
+
+try_further(yes, {_,Pos}, Ans, BTbl0, BTbl) --> true |
+    is_any_parent_refed_in_body(Pos, Ans, BTbl0, BTbl).
+try_further(yes, {_,Pos,_}, Ans, BTbl0, BTbl) --> true |
+    is_any_parent_refed_in_body(Pos, Ans, BTbl0, BTbl).
+try_further(no, Pos, Ans, BTbl0, BTbl) --> true | Ans=Pos, BTbl0=BTbl.
+
+
+am_i_exist(no, _, _, BTbl0, BTbl) --> true | BTbl0=BTbl.
+am_i_exist(yes, no, _, BTbl0, BTbl) --> true | BTbl0=BTbl.
+otherwise.
+am_i_exist(_, _, Pos, BTbl0, BTbl) --> true |
+    &pos2var <<= [get_and_put(Pos, {N,Type}, {N,Type})],
+    {{set_vector_element(BTbl0, N, Ref0, Ref, BTbl),
+      Ref := Ref0 + 1}}.
+
+
+:- local_implicit code:oldnew, 
+                  varno:oldnew,
+                  pos2var:oldnew,
+                  pos2reg:oldnew,
+                  ref:oldnew.
+generate_add_ref_(no, _, Tbl0, Tbl, BTbl0, BTbl) --> true |
+    Tbl0=Tbl, BTbl0=BTbl.
+generate_add_ref_(car(List), variable(N), Tabs0, Tabs, BTbl0, BTbl) --> true |
+    &pos2var <<= [get_and_put(List, {NList,Type}, {NList,Type})],
+    &varno <<= [new_variable(Pos)],
+    {{set_vector_element(BTbl0, N, RB0, RB, BTbl),
+      RB := RB0+1}},
+    {{set_to_tables(&pos2reg, Pos, Tabs0, Tabs, Rpos0)}},
+    &pos2reg <<= [get_and_put(List, Rlist0, Rlist0)],
+    {{Rpos := Rpos0-1,
+      Rlist := Rlist0-1}},
+    &code <<= [put_constant(0, Rpos),
+               mark_element(Rlist, Rpos)].
+generate_add_ref_(cdr(List), variable(N), Tabs0, Tabs, BTbl0, BTbl) --> true |
+    &pos2var <<= [get_and_put(List, {NList,Type}, {NList,Type})],
+    &varno <<= [new_variable(Pos)],
+    {{set_vector_element(BTbl0, N, RB0, RB, BTbl),
+      RB := RB0+1}},
+    {{set_to_tables(&pos2reg, Pos, Tabs0, Tabs, Rpos0)}},
+    &pos2reg <<= [get_and_put(List, Rlist0, Rlist0)],
+    {{Rpos := Rpos0-1,
+      Rlist := Rlist0-1}}, 
+    &code <<= [put_constant(1, Rpos),
+               mark_element(Rlist, Rpos)].
+generate_add_ref_(element(Vect, Pos), variable(N), Tabs0, Tabs, BTbl0, BTbl) --> 
+        integer(Pos) |
+    &pos2var <<= [get_and_put(Vect, {NVect,Type}, {NVect,Type})],
+    &varno <<= [new_variable(PosVar)],
+    {{set_vector_element(BTbl0, N, RB0, RB, BTbl),
+      RB := RB0+1}},
+    {{set_to_tables(&pos2reg, PosVar, Tabs0, Tabs, Rpos0)}},
+    &pos2reg <<= [get_and_put(Vect, Rvect0, Rvect0)],
+    {{Rpos := Rpos0-1,
+      Rvect := Rvect0-1}},
+    &code <<= [put_constant(Pos, Rpos),
+               mark_element(Rvect, Rpos)].
+otherwise.
+generate_add_ref_(element(Vect, Pos), variable(N), Tabs0, Tabs, BTbl0, BTbl) -->
+        true |
+    &pos2var <<= [get_and_put(Vect, {NVect,Type}, {NVect,Type})],
+    &pos2reg <<= [get_and_put(Vect, Rvect0, Rvect0),
+                  get_and_put(Pos, Rpos0, Rpos0)],
+    {{set_vector_element(BTbl0, N, RB0, RB, BTbl),
+      RB := RB0+1,
+      Rvect := Rvect0-1,
+      Rpos := Rpos0-1}},
+    &code <<= [mark_element(Rvect, Rpos)],
+    Tabs0=Tabs.
+
+:- local_implicit pos2reg:oldnew.
+set_to_tables(variable(N),
+              From0-To0-Reg0, Tabs, R) --> true |
+    {{set_vector_element(From0, N, _, 0, From),
+      set_vector_element(To0, N, _, 0, To)}},
+      Tabs=From-To-Reg,
+      find_free_register_and_set(variable(N), Reg0, Reg, R).
+
+find_free_register_and_set(variable(N), Reg0, Reg, R) --> vector(Reg0, Size) |
+    {{find_free_register(0, Size, Reg0, Reg, N, 0, R)}},
+    &pos2reg <<= [put(variable(N), R)].
+
+find_free_register(A, Size, Reg0, Reg, N, Max0, R) :- A<Size |
+    set_vector_element(Reg0, A, R0, R0, Reg1),
+    return_greater(R0, Max0, Max),
+    A1 := A+1,
+    find_free_register(A1, Size, Reg1, Reg, N, Max, R).
+find_free_register(Size, Size, Reg0, Reg, N, Max, R) :- true |
+    R := Max+1,
+    set_vector_element(Reg0, N, _, R, Reg).
+
+return_greater(M0, M1, Max) :- M0 > M1 | Max=M0.
+otherwise.
+return_greater(_, M1, Max) :- true | Max=M1.
+    
+% 
+% generate collect_XXX instructions.
+% 
+:- local_implicit
+                 pos2reg:oldnew,
+                 pos2var:oldnew,
+                 code:oldnew.
+generate_collect([collect_list(Pos)|Collect],
+                 Body0, Body) --> true |
+%% bug fixed D.Sekita 900806
+%%    &pos2var <<= [get_and_put(Pos, {N, Type}, {N, Type})],
+%%    {{set_vector_element(Body0, N, Ref0, Ref, Body1)}},
+    generate_if_not_refed(Pos, Body0, Body1, collect_list(Pos)),
+    generate_collect(Collect, Body1, Body).
+generate_collect([collect_vector(Pos,Size)|Collect],
+                 Body0, Body) --> true |
+%%    &pos2var <<= [get_and_put(Pos, {N, Type}, {N, Type})],
+%%    {{set_vector_element(Body0, N, Ref0, Ref, Body1)}},
+%%    generate_if_not_refed(Ref0, Ref, collect_vector(Pos,Size)),
+    generate_if_not_refed(Pos, Body0, Body1, collect_vector(Pos,Size)),
+    generate_collect(Collect, Body1, Body).
+% nearly Bug
+generate_collect([collect_value(Pos)|Collect], Body0, Body) --> integer(Pos) |
+%    &pos2var <<= [get_and_put(Pos, {N, Type}, {N, Type})],
+%    {{set_vector_element(Body0, N, Ref0, Ref, Body1)}},
+%    generate_if_not_refed(Ref0, Ref, collect_value(Pos)),
+    generate_collect(Collect, Body0, Body).
+generate_collect([collect_value(element(_,_))|Collect], Body0, Body) --> true |
+    generate_collect(Collect, Body0, Body).
+otherwise.
+generate_collect([collect_value(Pos)|Collect], Body0, Body) --> true |
+%%    &pos2var <<= [get_and_put(Pos, {N, Type}, {N, Type})],
+%%    {{set_vector_element(Body0, N, Ref0, Ref, Body1)}},
+%%    generate_if_not_refed(Ref0, Ref, collect_value(Pos)),
+    generate_if_not_refed(Pos, Body0, Body1, collect_value(Pos)),
+    generate_collect(Collect, Body1, Body).
+generate_collect([], Body0, Body) --> true |
+    Body0=Body.
+
+%%generate_if_not_refed(0, Ref, Instr0) --> true |
+%%    Ref=0,
+%%    {{set_vector_element(Instr0, 1, Arg, Reg, Instr),
+%%      allocate_register(&pos2reg, Arg, Reg)}},
+%%    &code <<= [Instr].
+%%otherwise.
+%%generate_if_not_refed(Ref0, Ref, _) --> true |
+%%    Ref0=Ref.
+
+:- local_implicit
+                 pos2reg:oldnew,
+                 pos2var:oldnew,
+                 code:oldnew.
+
+generate_if_not_refed(Pos, Body0, Body, Instr) --> true |
+   &pos2var <<= [get_and_put(Pos, {N,Type}, {N,Type})],
+   {{set_vector_element(Body0, N, Ref0, Ref, Body1)}},
+   generate_if_not_refed(Ref0, Ref, Pos, Body1, Body, Instr).
+
+generate_if_not_refed(0, Ref, element(Pos,_), Body0, Body, Instr) --> true |
+   Ref = 0,
+   generate_if_not_refed(Pos, Body0, Body, Instr).
+generate_if_not_refed(0, Ref, car(Pos), Body0, Body, Instr) --> true |
+   Ref=0,
+   generate_if_not_refed(Pos, Body0, Body, Instr).
+generate_if_not_refed(0, Ref, cdr(Pos), Body0, Body, Instr) --> true |
+   Ref=0,
+   generate_if_not_refed(Pos, Body0, Body, Instr).
+otherwise.
+generate_if_not_refed(Ref0, Ref, _, Body0, Body, _) --> Ref0 > 0 |
+   Ref=Ref0, Body0=Body.
+generate_if_not_refed(0, Ref, _, Body0, Body, Instr0) --> true |
+   Ref=0, Body0=Body,
+  {{set_vector_element(Instr0, 1, Arg, Reg, Instr),
+   allocate_register(&pos2reg, Arg, Reg)}},
+   &code <<= [Instr].
+
+:- local_implicit pos2reg:oldnew.
+allocate_register(Pos, Reg) --> true |
+    &pos2reg <<= [get_and_put(Pos, Reg0, Reg0)],
+    {{Reg := Reg0-1}}.
+
+
+%%
+%% initialize_reference_table
+%%    
+:- local_implicit
+                 var2pos:oldnew.
+initialize_reference_table(A, N, Pass0, Pass) --> A<N |
+    &var2pos <<= [empty(A, YorN)],
+    refered_or_not_in_guard(YorN, A, Pass0, Pass1),
+    {{A1 := A+1}},
+    initialize_reference_table(A1, N, Pass1, Pass).
+initialize_reference_table(N, N, Pass0, Pass) --> true |
+    Pass0=Pass.
+
+refered_or_not_in_guard(no, N, Pass0, Pass) --> true |
+    {{set_vector_element(Pass0, N, _, 1, Pass)}}.
+refered_or_not_in_guard(yes, _, Pass0, Pass) --> true |
+    Pass0=Pass.
+
+copy_body_reference_to_guard([variable(ND)=var(variable(NS))|Cdr], BTbl0, BTbl) :- true |
+    set_vector_element(BTbl0, ND, RD, RD, BTbl1),
+    set_vector_element(BTbl1, NS, _, RD, BTbl2),
+    copy_body_reference_to_guard(Cdr, BTbl2, BTbl).
+copy_body_reference_to_guard([], BTbl0, BTbl) :- BTbl0=BTbl.
+
+%%
+%% for transfer instructions
+%%
+reference_transfer([variable(ND)=var(variable(NS))|Tbl],
+                      Pref0, Pref, Bref0, Bref) :- true |
+    set_vector_element(Bref0, ND, RD, R, Bref1),
+    set_vector_element(Bref1, NS, RS, R, Bref2),
+    set_vector_element(Pref0, ND, _, PD, Pref1),
+    set_vector_element(Pref1, NS, PD, PD, Pref2),
+    return_greater(RD, RS, R),
+    reference_transfer(Tbl, Pref2, Pref, Bref2, Bref).
+reference_transfer([], Pref0, Pref, Bref0, Bref) :- true |
+    Pref0=Pref, Bref0=Bref.
+
+%%
+%% misc
+%% 
+:- local_implicit out:oldnew.
+unique([variable(Nx)=var(variable(Ny))|Cdr]) --> true |
+    &out <<= [variable(Nx)=var(variable(Ny))],
+    {{unique(Out, [], Nx, Ny, Cdr)}},
+    unique(Out).
+unique([]) --> true | true.
+
+unique(Nx, Ny, [variable(Nx)=var(variable(Ny))|Cdr]) --> true |
+    unique(Nx, Ny, Cdr).
+otherwise.
+unique(Nx, Ny, [Instr|Cdr]) --> true |
+    &out <<= [Instr],
+    unique(Nx, Ny, Cdr).
+unique(_, _, []) --> true | true.
+
+:- local_implicit code:oldnew.
+remove_position([Goal0|Cdr]) --> true |
+    {{remove_position_one_goal(Goal0, Goal)}},
+    &code <<= [Goal],
+    remove_position(Cdr).
+remove_position([]) --> true.
+
+remove_position_one_goal(Mod0:Goal0, Goal) :- true |
+    remove_position_one_goal(Mod0, Mod),
+    remove_position_one_goal(Goal0, Goal1),
+    Goal=(Mod:Goal1).
+remove_position_one_goal(Goal0@Pri0, Goal) :- true |
+    remove_position_one_goal(Goal0, Goal1),
+    remove_position_one_goal(Pri0, Pri1),
+    Goal=(Goal1@Pri1).
+otherwise.
+remove_position_one_goal(Goal0, Goal) :- vector(Goal0, N) |
+    remove_position_args(0, N, Goal0, Goal).
+otherwise.
+remove_position_one_goal(Goal0, Goal) :- true | Goal0=Goal.
+
+remove_position_args(A, N, Goal0, Goal) :- A<N |
+    set_vector_element(Goal0, A, Arg0, Arg, Goal1),
+    A1 := A+1,
+    remove_position_one_arg(Arg0, Arg),
+    remove_position_args(A1, N, Goal1, Goal).
+remove_position_args(N, N, Goal0, Goal) :- true |
+    Goal0=Goal.
+
+remove_position_one_arg(list([Car|Cdr]), NewList) :- true |
+    remove_position_one_arg(Car, NewCar),
+    remove_position_one_arg(Cdr, NewCdr),
+    NewList=list([NewCar|NewCdr]).
+remove_position_one_arg((variable(N)@_), NewArg) :- true |
+    NewArg=variable(N).
+remove_position_one_arg(variable(N), NewArg) :- true |
+    NewArg=variable(N).
+otherwise.
+remove_position_one_arg(vector(Vect0), WVect) :- vector(Vect0, N) |
+    remove_position_args(0, N, Vect0, Vect),
+    WVect=vector(Vect).
+otherwise.
+remove_position_one_arg(Arg0, Arg) :-  true | Arg0=Arg.
+
+
+%%
+%% generate collect_value instruction for head argment
+%%
+make_collect_for_head_args(H0, H, Collect0, Collect,
+                           Bodytbl0, Bodytbl) :- vector(H0, N) |
+    make_collect_for_head_args(1, N, H0, H, Collect0, Collect,
+                               Bodytbl0, Bodytbl).
+otherwise.
+make_collect_for_head_args(H0, H, Collect0, Collect,
+                           BodyTbl0, BodyTbl) :- true |
+    H0=H, Collect0=Collect, BodyTbl0=BodyTbl.
+
+make_collect_for_head_args(A, N, H0, H, Collect0, Collect,
+                           Bodytbl0, Bodytbl) :- A < N |
+    set_vector_element(H0, A, Arg0, Arg, H1),
+    check_arg(A, Arg0, Arg, Collect0, Collect1, Bodytbl0, Bodytbl1),
+    A1 := A+1,
+    make_collect_for_head_args(A1, N, H1, H, Collect1, Collect,
+                               Bodytbl1, Bodytbl).
+make_collect_for_head_args(N, N, H0, H, Collect0, Collect,
+                           Bodytbl0, Bodytbl) :- true |
+    H0=H,
+    Collect0=Collect,
+    Bodytbl0=Bodytbl.
+
+check_arg(A, variable(N), Arg0, Collect0, Collect, Bodytbl0, Bodytbl) :- true |
+    set_vector_element(Bodytbl0, N, Ref, Ref, Bodytbl),
+    check_refed_in_body(Ref, A, Collect0, Collect),
+    Arg0=variable(N).
+otherwise.
+check_arg(_, Arg0, Arg, Collect0, Collect, Bodytbl0, Bodytbl) :- true |
+    Arg0=Arg, Collect0=Collect, Bodytbl0=Bodytbl.
+
+check_refed_in_body(0, A, Collect0, Collect) :- true |
+    Collect=[collect_value(arg(A))|Collect0].
+check_refed_in_body(N, _, Collect0, Collect) :- N>0 |
+    Collect0=Collect.
+
+
+wrap_one_level((G1,G2), WGoals) :- true |
+    wrap_one_level(G1, WG1),
+    wrap_one_level(G2, WG2),
+    WGoals=vector({atom((',')), WG1, WG2}).
+otherwise.
+wrap_one_level(Goal0, WGoal) :- vector_element(Goal0, 0, F), atom(F) |
+    set_vector_element(Goal0, 0, _, atom(F), Goal1),
+    WGoal=vector(Goal1).
+otherwise.
+wrap_one_level(Goal0, WGoal) :- atom(Goal0) |
+    WGoal=atom(Goal0).
+
+:- local_implicit out:oldnew.
+unwrap_goal_list([Goal0|Rest]) --> true |
+    {{unwrap_one_goal(Goal0, Goal)}},
+    &out <<= [Goal],
+    unwrap_goal_list(Rest).
+unwrap_goal_list([]) --> true | true.
+
+unwrap_one_goal(vector({atom(':'), vector({atom('::'), Package0, Mod0}), Goal0}), Goal) :- true |
+    unwrap_one_goal(Package0, Package),
+    unwrap_one_goal(Mod0, Mod),
+    unwrap_one_goal(Goal0, Goal1),
+    Goal=(Package::Mod:Goal1).
+unwrap_one_goal(vector({atom('@'), Goal0, Pragma0}), Goal) :- true |
+    unwrap_one_goal(Goal0, Goal1),
+    unwrap_one_goal(Pragma0, Pragma1),
+    Goal=(Goal1@Pragma1).
+otherwise.
+unwrap_one_goal(vector({atom(':'), Mod0, Goal0}), Goal) :- true |
+    unwrap_one_goal(Mod0, Mod),
+    unwrap_one_goal(Goal0, Goal1),
+    Goal=(Mod:Goal1).
+otherwise.
+unwrap_one_goal(vector(Goal0), Goal) :- vector_element(Goal0, 0, Func), Func=atom(F) |
+    set_vector_element(Goal0, 0, _, F, Goal).
+unwrap_one_goal(atom(Atom), Goal) :- true | Goal=Atom.

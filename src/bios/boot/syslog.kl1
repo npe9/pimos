@@ -1,0 +1,130 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi522::>sys>pimos>bios>boot>syslog.kl1.5, 17-Jan-92 12:20:32, Edit by yashiro
+:- module syslog.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public create/3.
+
+create(Syslog,FEP,NewFEP) :- 
+    true |
+        FEP = {fep#file,FepFileReq,FileReqStatus,NewFEP1},
+        wait_status(FileReqStatus,FepFileReq,NewFEP1,NewFEP,Syslog).
+
+wait_status(fep#normal,FileReq,Out0,Out,Syslog):-
+    true|
+        Out0 = Out,
+        initiate_stream(FileReq,NewFileReq,STATUS),
+        wait_status1(STATUS,NewFileReq,Syslog).
+otherwise.
+wait_status(_,Fep,Out0,Out,Syslog):-
+    true|
+        Out0 = Out,
+        abort_command(Syslog,ascii#"file_request"),
+        Fep = fep#nil.
+:- switch(virtual_machine_interface).
+:- case(no).
+wait_status1(fep#normal,FileReq,Syslog) :-
+    true |
+        FileReq = {fep#append_open,0,0,string#"pimos:pimos.syslog",Device,Status,FileReq1},
+        check_device_status(Status,Device,FileReq1,Syslog).
+:- default.
+wait_status1(fep#normal,FileReq,Syslog) :-
+    true |
+        FileReq = {fep#append_open,0,0,string#">sys>user>me>pimos.syslog",Device,Status,FileReq1},
+        check_device_status(Status,Device,FileReq1,Syslog).
+:- end_switch.
+otherwise.
+:- switch(virtual_machine_interface).
+:- case(yes).
+wait_status1(_,FileReq,Syslog) :-
+    true |
+        abort_command(Syslog,ascii#"cannot open file >sys>user>me>pimos.syslog"),
+        FileReq = fep#nil.
+:- default.
+wait_status1(_,FileReq,Syslog) :-
+    true |
+        abort_command(Syslog,ascii#"cannot open file pimos:pimos.syslog"),
+        FileReq = fep#nil.
+:- end_switch.
+
+check_device_status(fep#normal,Device,FileReq,Syslog) :-
+    true |
+        FileReq = fep#nil,
+        initiate_stream(Device,NDevice,Status),
+        request_handler(Status,Syslog,NDevice).
+otherwise.
+:-switch(virtual_machine_interface).
+:-case(yes).
+check_device_status(_,Device,FileReq,Syslog) :-
+    true |
+        FileReq = fep#nil,
+        Device = fep#nil,
+        abort_command(Syslog,ascii#"cannot open file >sys>user>me>pimos.syslog").
+:-default.
+check_device_status(_,Device,FileReq,Syslog) :-
+    true |
+        FileReq = fep#nil,
+        Device = fep#nil,
+        abort_command(Syslog,ascii#"cannot open file pimos:pimos.syslog").
+:-end_switch.
+request_handler(fep#normal,Syslog,Device) :-
+    true |
+        Syslog = normal(NSyslog),
+        request_handler0(NSyslog,Device).
+otherwise.
+request_handler(_,Syslog,Device) :-
+    true |
+        Syslog=abnormal(NSyslog),
+        Device = fep#nil,
+        abort_command(NSyslog,ascii#"syslog reset").
+
+request_handler0([putb(Buffer,Result) |Syslog],Device) :-
+    true |
+        Device={fep#putb,Buffer,Status,Device1},
+        wait_command_status0(Status,Result,Syslog,Device1).
+request_handler0([],Device) :-
+    true |
+        Device=fep#nil.
+otherwise.
+request_handler0([A|Syslog],Device) :-
+    display_console(ascii#"llegal message to Syslog device"),
+    display_console(A) |
+        request_handler0(Syslog,Device).
+
+wait_command_status0(fep#normal,Result,Syslog,Device) :-
+    true |
+        Result = normal,
+        request_handler0(Syslog,Device).
+wait_command_status0(fep#abnormal,Result,Syslog,Device) :-
+    true |
+        Result = abnormal,
+        request_handler0(Syslog,Device).
+
+initiate_stream(Stream,NewStream,STATUS) :-
+    true |
+        Stream = {fep#reset,ABORT,ATTENTION,STATUS,NewStream},
+        wait_and_unify_nil(ATTENTION,ABORT).
+
+wait_and_unify_nil(ATTENTION,ABORT) :-
+    wait(ATTENTION) |
+        ABORT = fep#nil.
+
+abort_command(Syslog,Reason) :-
+    display_console(ascii#"SYSLOG ERROR: reason"),
+    display_console(Reason) |
+        abort_command(Syslog).
+
+abort_command([putb(_,Result) |Syslog]) :-
+    true |
+        Result = abnormal,
+        abort_command(Syslog).
+otherwise.
+abort_command([A|Syslog]) :-
+    display_console(ascii#"llegal message to Syslog device"),
+    display_console(A) |
+        abort_command(Syslog).

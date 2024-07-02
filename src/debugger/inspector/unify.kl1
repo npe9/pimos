@@ -1,0 +1,99 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module monitor_unify_check.
+:- include("pimos.h").
+:- with_macro pimos.
+:- public unify_check/4.
+
+unify_check(P,P1,X,Res) :- true |
+        unbound(X,X0),
+        if_unify_check(P,P1,X0,Res).
+
+if_unify_check(P,P1,{X},Res) :- true |
+        unify_check1(P,P1,X,Res).
+if_unify_check(variable(A),P1,{_,_,_},Res) :- true |
+        P1=variable(A),Res=wake_up.
+otherwise.
+if_unify_check(P,P1,{_,_,X},Res) :- true |
+        P=P1,Res=not_determined(X).
+
+unify_check1(variable(A),P1,_,Res) :- true |
+        P1=variable(A),
+        Res=wake_up.
+unify_check1(integer(A),P1,X,Res) :- A=:=X |
+        P1=integer(A),
+        Res=wake_up.
+:- switch(floating_point).
+:- case(yes).
+unify_check1(floating_point(A),P1,X,Res) :- A$=:=X |
+        P1=floating_point(A),
+        Res=wake_up.
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+unify_check1(extended_floating_point(A),P1,X,Res) :- A$$=:=X |
+        P1=extended_floating_point(A),
+        Res=wake_up.
+:- end_switch.
+unify_check1(atom(A),P1,X,Res) :- A=X |
+        P1=atom(A),
+        Res=wake_up.
+unify_check1(list([A|B]),P1,[Car|Cdr],Res) :- true |
+        P1=list([A1|B1]),
+        unify_check(A,A1,Car,R),
+        list_car_checked(B,B1,Cdr,Res,R).
+unify_check1(vector(A),P1,X,Res) :- vector(A,N),vector(X,N) |
+        P1=vector(A1),
+        unify_check_vect(A,A1,X,Res,0,N).
+unify_check1(module(A),P1,X,Res) :- module(A,N),module(X,N) |
+        P1=module(A),
+        unify_check_mod(A,X,Res,0,N).
+unify_check1(string(A),P1,X,Res) :- string(X,_,_),A=X |
+        P1=string(A),
+        Res=wake_up.
+unify_check1(code(A),P1,X,Res) :- code(X,_,_,_),A=X |
+        P1=code(A),
+        Res=wake_up.
+otherwise.
+unify_check1(P,P1,_,Res) :- true | P=P1,Res=no.
+
+list_car_checked(P,P1,_,Res,not_determined(Y)) :- true |
+        P=P1,Res=not_determined(Y).
+list_car_checked(P,P1,_,Res,no) :- true |
+        P=P1,Res=no.
+list_car_checked(P,P1,X,Res,wake_up) :- true |
+        unify_check(P,P1,X,Res).
+
+unify_check_vect(A,A1,X,Res,I,N) :- I<N |
+        set_vector_element(A,I,E,E1,A0),
+        vector_element(X,I,F,_),
+        unify_check(E,E1,F,R),
+        vect_first_checked(A0,A1,X,Res,I,N,R).
+unify_check_vect(A,A1,_,Res,N,N) :- true |
+        A=A1,Res=wake_up.
+
+vect_first_checked(A,A1,_,Res,_,_,not_determined(Y)) :- true |
+        A=A1,Res=not_determined(Y).
+vect_first_checked(A,A1,_,Res,_,_,no) :- true |
+        A=A1,Res=no.
+vect_first_checked(A,A1,X,Res,I,N,wake_up) :- true |
+        unify_check_vect(A,A1,X,Res,~(I+1),N).
+
+unify_check_mod(A,X,Res,I,N) :- I<N |
+        module_element(A,N,E),
+        module_element(X,N,F),
+        unify_check(E,_,F,R),
+        mod_first_checked(A,X,Res,I,N,R).
+unify_check_mod(_,_,Res,N,N) :- true | Res=wake_up.
+
+mod_first_checked(_,_,Res,_,_,not_determined(Y)) :- true |
+        Res=not_determined(Y).
+mod_first_checked(_,_,Res,_,_,no) :- true |
+        Res=no.
+mod_first_checked(A,X,Res,I,N,wake_up) :- true |
+        unify_check_mod(A,X,Res,~(I+1),N).
+

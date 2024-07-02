@@ -1,0 +1,376 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%
+%
+%     Library
+%
+%%%%%%%%%%%%%%%%%%%%
+:-module(mklib).
+:- include("pimos.h").
+:-with_macro pimos.
+:- public universe/2,           % Referred from: parse
+        insertToDList/3,        % unparse
+        delete/3,               % operator
+        fillString/3,           % buffer
+        codeToInteger/6,        % buffer
+        integer_to_string/3,    % unparse, (variable)
+        integer_to_stringC/3,   % unparse, listener_cmd_utility
+        string_to_integer/3,    % token, varchk
+        wrap_integer/2,         % parse
+        unwrap/2.               % unparse
+:- switch(floating_point).
+:- case(yes).
+:- public wrap_floating/2,      % parse
+        floatType/2.            % unparse
+:- end_switch.
+
+:- public listToVector/2,length/3,wrap/2.       % OMAKE
+
+:-public length/2, 
+        scons/3, member/3, union/3, intersection/3, reverse/2, 
+        unify/2,doManager/3.
+
+
+delete(_, [],Y) :- true | Y = [].
+delete(A, [A|X],Y) :- true | Y = X.
+otherwise.
+delete(A, [B|X],Y) :- true | Y = [B|Y1], delete(A, X,Y1).
+
+%
+% insertToDList(+NormalList, -DListHead,+DListTail)
+%
+insertToDList([], H,T) :- true | H = T.
+insertToDList([A|X], H,T) :- true | H = [A|H1], insertToDList(X, H1,T).
+
+%
+% universe(-Term, +List)
+%
+universe(Term, FArgs) :- list(FArgs) | listToVector(FArgs, Term).
+    
+%
+% listToVector(+List, -Vector)
+%
+listToVector(List, Vector) :- true |
+    length(List, 0,N),
+    listToVector(N,List, Vector).
+
+listToVector(N,List, Vector) :- true |
+    new_vector(Vector0, N),
+    listToVectorArgs(List, 0, Vector0,Vector).
+
+listToVectorArgs([], _, V,NV) :- true | NV = V.
+listToVectorArgs([A|X], M, V,NV) :- true |
+     set_vector_element(V, M, _,A, V1),
+     listToVectorArgs(X, ~(M+1), V1,NV).
+
+%
+% length(+List, +Buffer,-ListLength)
+%
+length([], N,M) :- true | M := N.
+length([A|X], N,M) :- true | N1 := N+1, length(X, N1,M).
+
+%
+% fillString(+String,-String, +Element)
+%
+fillString(Str,NStr, E) :- string(Str, Size, _) |
+     fillStringArgs(0,Size, Str,NStr, E).
+
+fillStringArgs(N,N, Str,NStr, _) :- true | NStr = Str.
+fillStringArgs(M,N, Str,NStr, E) :- M < N |
+     set_string_element(Str, M, E, Str1),
+     M1 := M + 1,
+     fillStringArgs(M1,N, Str1,NStr, E).
+
+%
+% codeToInteger(+From,+String, -From,-String, +Integer,-Integer)
+%
+codeToInteger(M,S, N,NS, Int,NInt) :- string(S, Size, _) |
+    codeToIntegerArgs(M,Size, S, N,NS, Int,NInt).
+
+codeToIntegerArgs(M,M, Str, N,NStr, Int,NInt) :- true | 
+    N := M, NStr = Str, NInt := Int.
+codeToIntegerArgs(From,To, Str, N,NStr, Int,NInt) :- 
+    string_element(Str, From, Digit), #"0" =< Digit, Digit =< #"9" |
+    Int1 := (Int * 10) + (Digit - #"0"),
+    From1 := From + 1,
+    codeToIntegerArgs(From1,To, Str, N,NStr, Int1,NInt).
+otherwise.
+codeToIntegerArgs(From,_, Str, N,NStr, Int,NInt) :- true | 
+    N := From, NStr = Str, NInt := Int.
+
+%
+% integer_to_string(+Integer,+Adic, -Result)
+%       Result = normal(StringRepresentationForPlusInteger) ||
+%                normal(0)  ||
+%                normal(minus(StringRepresentationForAbsoluteValueOfMinusInteger)) ||
+%                abnormal({Integer,Adic})
+%
+integer_to_string(Int,A, Result) :- integer(Int), 2 =< A, A =< 36 |
+    builtin#new_string(Str, Size),
+    integerToStringArgs(Int,A, 0,Size, Str,Result1),
+    (Int > 0   ->  Result = Result1;
+     Int = 0   ->  Result = normal(string#"0");
+     Int < 0, Result1 = normal(String)  ->
+            Result = normal(minus(String))).
+otherwise.
+integer_to_string(Int,A, Result) :- true | Result = abnormal({Int,A}).
+
+%
+% integer_to_stringC(+Integer,+Adic, -Result)
+%
+%       Result = normal(StringRepresentationForInteger) ||
+%                normal(0)  ||
+%                abnormal({Integer,Adic})
+%
+integer_to_stringC(Int,A, Result) :- integer(Int), 2 =< A, A =< 36 |
+    builtin#new_string(Str, Size),
+    integerToStringArgs(Int,A, 0,Size, Str,Result1),
+    (Int > 0   ->  Result = Result1;
+     Int = 0   ->  Result = normal(string#"0");
+     Int < 0, Result1 = normal(String)  ->
+        builtin#append_string(string#"-",String, MString),
+        Result = normal(MString)).
+otherwise.
+integer_to_stringC(Int,A, Result) :- true | Result = abnormal({Int,A}).
+
+integerToStringArgs(0,_, From,To, Str,Result) :- true |
+    To := From, Result = normal(Str).
+integerToStringArgs(Int,A, From,To, Str,Result) :- Int =\= 0 |
+    Q := Int / A, R := Int mod A, To := To1 + 1,
+    (0 =< R, R =< 9 -> JIS := R + #"0"; %%%%%
+     9 < R, R =< 36 -> JIS := R + #"A" - 10;    %%%%%
+     -9 =< R, R < 0 -> JIS := -R + #"0"; %%%%%
+     -36 =< R, R < -9 -> JIS := -R + #"A" - 10),    %%%%%
+    set_string_element(Str, To1, JIS, Str1),
+    integerToStringArgs(Q,A, From,To1, Str1,Result).
+
+%
+% string_to_integer(+String,+Adic, -Integer)
+%       Integer : Integer or Bignum
+string_to_integer(Str,A, Int) :- string(Str, Size, _), A =:= 10 |
+    Int = normal(Int0),
+    bignum:parse(Str, Int0).
+otherwise.
+string_to_integer(Str,A, Int) :- string(Str, Size, _), 2 =< A, A =< 36 |
+    stringToIntegerArgs(0,Size, Str,A, integer, 0,Int).
+otherwise.
+string_to_integer(Str,A, Result) :- true | Result = abnormal({Str,A}).
+
+stringToIntegerArgs(M,M, _,_, _, Num,NNum) :- true | NNum = normal(Num).
+stringToIntegerArgs(M,N, Str,A, Type, Num,NNum) :- M < N |
+    string_element(Str, M, JIS, Str1),
+    (#"0" =< JIS, JIS =< #"9"    -> Digit := JIS - #"0"; %%%%%
+     #"A" =< JIS, JIS =< #"Z"    -> Digit := JIS - #"A" + 10;
+     #"a" =< JIS, JIS =< #"z"    -> Digit := JIS - #"a" + 10;
+    otherwise;
+     true    -> Digit = abnormal(char)),
+    M1 := M + 1,
+    stringToIntegerArgsDecide(Digit, M1,N, Str1,A, Type, Num,NNum).
+
+stringToIntegerArgsDecide(Digit, M,N, Str,A, integer, Num,NNum) :-
+    0 =< Digit, Digit < A  |
+%    Num1 := Num*A + Digit,
+    double_num:multiply(0,Num, 0,A, High,Low),
+    double_num:add(High,Low, 0,Digit, NHigh,NLow),
+    (NHigh =:= 0, NLow >= 0    ->  % Normal
+        stringToIntegerArgs(M,N, Str,A, integer, NLow,NNum);
+     NHigh =:= 0, NLow < 0    ->  % Boundary
+        (M =:= N    -> NNum = normal(NLow);
+         M < N    -> 
+            stringToIntegerArgsDecide(Digit, M,N, Str,A, bignum, Num,NNum));
+     NHigh > 0    ->  % Overflow
+        stringToIntegerArgsDecide(Digit, M,N, Str,A, bignum, Num,NNum)).
+stringToIntegerArgsDecide(Digit, M,N, Str,A, bignum, Num,NNum) :-
+%    Num1 := Num*A + Digit,
+    bignum:multiply(Num, A, Num1),
+    bignum:add(Num1, Digit, Num2),
+    stringToIntegerArgs(M,N, Str,A, bignum, Num2,NNum).
+otherwise.
+stringToIntegerArgsDecide(Digit, M,_, Str,A, _, _,Result) :- true |
+    Result = abnormal({M,Str,A}).
+
+%
+% floatType(+FloatingPoint, -Type)
+%
+:- switch(floating_point).
+:- case(yes).
+:- switch(machine_type).
+:- case(mpsi).
+floatType(Float, Type) :- floating_point(Float) |
+    floatValue(Float, S,Exp,Man),
+    floatTypeDecide(S,Exp,Man, Type).
+:- case(vpim).
+floatType(Float, Type) :- floating_point(Float,Type0) |
+    Sign := Type0/\16#"80",
+    Kind := Type0/\16#"1f",
+    floatTypeDecide_vpim(Sign,Kind,Type).
+:- end_switch.
+otherwise.
+floatType(Float, Type) :- true | Type = otherwise.
+
+:- switch(machine_type).
+:- case(mpsi).
+%
+% floatTypeDecide(+Sign,+Exponent,+Mantissa, -Type)
+%       Sign : 0(plus) || 1(minus)
+%       Exponent(8bit) : 16#"00" or 16#"FF" means special floating
+%       Mantissa(23bit) 
+%
+floatTypeDecide(0,0,0, Type) :- true | Type = plus(zero).
+floatTypeDecide(0,16#"FF",0, Type) :- true | Type = plus(infinity).
+floatTypeDecide(0,16#"FF",M, Type) :- M =\= 0 | Type = plus(nan).
+floatTypeDecide(1,0,0, Type) :- true | Type = minus(zero).
+floatTypeDecide(1,16#"FF",0, Type) :- true | Type = minus(infinity).
+floatTypeDecide(1,16#"FF",M, Type) :- M =\= 0 | Type = minus(nan).
+otherwise.
+floatTypeDecide(0,E,M, Type) :- true | Type = plus(normal).
+floatTypeDecide(1,E,M, Type) :- true | Type = minus(normal).
+
+%
+% floatValue(+FloatingPoint, -Sign,-Exponent,-Mantissa)
+%
+%       |------------------------------------|
+%       |S| Exponent |   Mantissa            |
+%       |------------------------------------|
+%         0          8                      31
+floatValue(Float, S,E,M) :- tag_and_value(Float, _, Value) |
+    S := Value >> 31,
+    E := (Value << 1) >> 24,
+    M := Value /\ 16#"7FFFFF".
+
+:- case(vpim).
+floatTypeDecide_vpim(0,  2#"10000",Type) :- true | Type=plus(nan).
+floatTypeDecide_vpim(0,  2#"01000",Type) :- true | Type=plus(infinity).
+floatTypeDecide_vpim(0,  2#"00100",Type) :- true | Type=plus(normal).
+floatTypeDecide_vpim(0,  2#"00010",Type) :- true | Type=plus(zero).
+floatTypeDecide_vpim(0,  2#"00001",Type) :- true | Type=plus(normal).
+floatTypeDecide_vpim(128,2#"10000",Type) :- true | Type=minus(nan).
+floatTypeDecide_vpim(128,2#"01000",Type) :- true | Type=minus(infinity).
+floatTypeDecide_vpim(128,2#"00100",Type) :- true | Type=minus(normal).
+floatTypeDecide_vpim(128,2#"00010",Type) :- true | Type=minus(zero).
+floatTypeDecide_vpim(128,2#"00001",Type) :- true | Type=minus(normal).
+:- end_switch.
+
+wrap_floating(Token, WF) :- (Token = pfloat(F,_); Token = float(F)) |
+    WF = floating_point(F).
+wrap_floating(Token, WF) :- Token = mfloat(F,_) |
+    WF = floating_point($~(-F)).
+
+:- switch(extended_floating_point).
+:- case(yes).
+wrap_floating(Token, WF) :- (Token = pfloatX(F,_); Token = floatX(F)) |
+        WF=extended_floating_point(F).
+wrap_floating(Token, WF) :- Token = mfloatX(F,_) |
+        WF=extended_floating_point(XF),
+        XF $$:= -F.
+:- end_switch.
+
+:- end_switch.
+
+wrap_integer(Token, WI) :- (Token = pint(N,_); Token = int(N)) | wrap(N, WI).
+wrap_integer(Token, WI) :- Token = mint(N,_) |
+    bignum:negate(N, NN), wrap(NN, WI).
+
+wrap(X, Y) :- atom(X) | Y = atom(X).
+wrap(X, Y) :- integer(X) | Y = integer(X).
+:- switch(floating_point).
+:- case(yes).
+wrap(X, Y) :- floating_point(X) | Y = floating_point(X).
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+wrap(X, Y) :- extended_floating_point(X,_) | Y = extended_floating_point(X).
+:- end_switch.
+wrap(X, Y) :- string(X,_,_) | Y = string(X).
+wrap([Car|Cdr], Y) :- true | 
+    Y = list([NCar|NCdr]), wrap(Car, NCar), wrap(Cdr, NCdr).
+wrap(X, Y) :- vector(X, Size) |
+    Y = vector(NX),
+    wrapArgs(0,Size, X,NX).
+
+wrapArgs(N,N, X,NX) :- true | NX = X.
+wrapArgs(M,N, X,NX) :- M < N |
+    set_vector_element(X,M, Xm,NXm, X1),
+    wrap(Xm,NXm),
+    wrapArgs(~(M+1),N, X1,NX).
+    
+unwrap(X, Y) :- X = atom(Atom) | Y = Atom.
+unwrap(X, Y) :- X = integer(Int) | Y = Int.
+:- switch(floating_point).
+:- case(yes).
+unwrap(X, Y) :- X = floating_point(Float) | Y = Float.
+:- end_switch.
+:- switch(extended_floating_point).
+:- case(yes).
+unwrap(X, Y) :- X = extended_floating_point(Float,_) | Y = Float.
+:- end_switch.
+unwrap(X, Y) :- X = string(Str) | Y = Str.
+unwrap(X, Y) :- X = list([Car|Cdr]) |
+    Y = [NCar|NCdr], unwrap(Car, NCar), unwrap(Cdr, NCdr).
+unwrap(X, Y) :- X = vector(V), vector(V, Size) |
+    unwrapArgs(0,Size, V,Y).
+
+unwrapArgs(N,N, X,NX) :- true | NX = X.
+unwrapArgs(M,N, X,NX) :- M < N |
+    set_vector_element(X,M, Xm,NXm, X1),
+    unwrap(Xm,NXm),
+    unwrapArgs(~(M+1),N, X1,NX).
+
+
+
+%
+% length(+List, -ListLength)
+%
+length(L, N) :- true | length(L, 0,N).
+
+%
+% member(+Element, +List, -Result)
+%
+member(_,    [], Rst) :- true | Rst = no.
+member(A, [A|X], Rst) :- true | Rst = yes.
+otherwise.
+member(A, [_|X], Rst) :- true | member(A, X, Rst).
+
+%
+% scons(+Element, +List,-List)
+%
+scons(A, X,Y) :- true | member(A, X, Rst), sconsDecide(Rst, A, X,Y).
+
+sconsDecide(yes, _, X,Y) :- true | Y = X.
+sconsDecide(no, A, X,Y) :- true | Y = [A|X].
+
+%
+% union(+X,+Y, -UnionOfXandY)
+%
+union([], Y, Z) :- true | Z = Y.
+union([A|X], Y, Z) :- true |
+     scons(A, Y, AY), union(X, AY, Z).
+
+intersection([], _, Z) :- true | Z = [].
+intersection([A|X], Y, Z) :- true |
+    member(A, Y, YN),
+    (YN = yes   -> Z = [A|Z1], intersection(X, Y, Z1);
+     YN = no    -> intersection(X, Y, Z)).
+
+reverse(X, Y) :- true | reverse(X, [],Y).
+
+reverse([], Y,Z) :- true | Z = Y.
+reverse([A|X], Y,Z) :- true | reverse(X, [A|Y],Z).
+
+%
+% unify(X, Y)
+%
+unify(X,Y) :- true | X = Y.
+
+doManager([],[], Out) :- true | Out = [].
+doManager([],[S|Ss], Out) :- true | doManager(S,Ss, Out).
+doManager([do(S)|In], Ss, Out) :- true | doManager(In, [S|Ss], Out).
+otherwise.
+doManager([M|In], Ss, Out) :- true |
+    Out = [M|Out1], doManager(In, Ss, Out1).
+

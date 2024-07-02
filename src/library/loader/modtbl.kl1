@@ -1,0 +1,295 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>Loader>modtbl.kl1.4, 16-Apr-92 18:39:47, Edit by hori
+:- module loader_module_table.
+:- public module_table/1.
+:- with_macro pimos.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     MODULE_TABLE/1                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+module_table(In):- true |
+    pool:keyed_set(DTBL),
+    module_table(In,DTBL).
+
+%% MODULE_TABLE
+
+module_table([module(Package,Name,Module,ExMod)|In],DTBL) :- atom(Name), atom(Package) |
+    DTBL = [put({(::),Package,Name},{Module,ExMod},_)|DTBL1],
+    module_table(In,DTBL1).
+module_table([flush(MI,MO,Status)|In],DTBL) :- true |
+    DTBL = [get_all(All)|DTBL1],
+    pool:keyed_set(GTBL,100),
+    pool:keyed_set(PTBL,100),
+    pool:keyed_bag(CTBL,100),
+    module_table:cache_table(CT),
+    shoen:raise(pimos_tag#task,general_request,[getenv(compile:link_error,LE)]),
+    wait_link_error(LE,LinkError),
+    resolve_1(All,NewAll,GTBL,PTBL,CTBL,CT,LinkError,MI,MO,Status0),
+    check_flush(Status0,NewAll,DTBL1,DTBL2,Status),
+    module_table(In,DTBL2).
+%module_table([auto_load_flush(CT,MI,MO,Status)|In],DTBL) :- true |
+%    DTBL = [get_all(All)|DTBL1],
+%    pool:keyed_set(GTBL,100),
+%    pool:keyed_set(PTBL,100),
+%    pool:keyed_bag(CTBL,100),
+%    resolve_1(All,NewAll,GTBL,PTBL,CTBL,CT,error,MI,MO,Status0),
+%    check_flush(Status0,NewAll,DTBL1,DTBL2,Status),
+%    module_table(In,DTBL2).
+module_table([flush(LinkError,CT,MI,MO,Status)|In],DTBL0) :- true |
+    DTBL0 = [get_all(All)|DTBL1],
+    pool:keyed_set(GTBL,100),
+    pool:keyed_set(PTBL,100),
+    pool:keyed_bag(CTBL,100),
+    resolve_1(All,NewAll,GTBL,PTBL,CTBL,CT,LinkError,MI,MO,Status0),
+    check_flush(Status0,NewAll,DTBL1,DTBL2,Status),
+    module_table(In,DTBL2).
+module_table([force_flush(LinkError,CT,MI,MO,Status)|In],DTBL0) :- true |
+    DTBL0 = [get_all(All)|DTBL1],
+    pool:keyed_set(GTBL,100),
+    pool:keyed_set(PTBL,100),
+    pool:keyed_bag(CTBL,100),
+    resolve_1(All,NewAll,GTBL,PTBL,CTBL,CT,LinkError,MI,MO,Status0),
+    check_flush(Status0,NewAll,DTBL1,DTBL2,Status),
+    module_table(In,DTBL2).
+module_table([reset|In],DTBL) :- true |
+    DTBL = [],
+    pool:keyed_set(NewDTBL,100),
+    module_table(In,NewDTBL).
+module_table([unresolved_modules(ModuleList)|In],DTBL) :- true |
+    DTBL = [carbon_copy(All)|NewDTBL],
+    trans(All,ModuleList),
+    module_table(In,NewDTBL).
+module_table([],DTBL):- true |
+    DTBL = [].
+
+resolve_1([{Name,{Module,ExMod}}|Rest],NewAll,GTBL,PTBL,CTBL,CT0,LE,MI,MO,Status) :- true |
+    put_ex_mod(ExMod,Name,NewExMod,GTBL,GTBL1,CTBL,CTBL1),
+    PTBL = [put(Name,Module,_)|PTBL1],
+    NewAll = [{Name,{Module,NewExMod}}|NewAll1],
+    resolve_1(Rest,NewAll1,GTBL1,PTBL1,CTBL1,CT0,LE,MI,MO,Status).
+resolve_1([],NewAll,GTBL,PTBL,CTBL,CT0,LE,MI,MO,Status) :- true |
+    NewAll = [],
+    GTBL = [get_all(All)],
+    resolve_2(All,PTBL,CTBL,CT0,MI,MO,[],LE,normal,Status).
+
+put_ex_mod([ext_mod(ExName,{ExModule})|ExMod],Name,NewExMod,GTBL0,GTBL,CTBL0,CTBL) :-
+    atom(ExName), Name = {(::),Pac,ModName} |
+    NewExName = {(::),Pac,ExName},
+    NewExMod = [ext_mod(NewExName,{ExModule})|NewExMod1],
+    GTBL0 = [empty(NewExName,YorN)|GTBL1],
+    put_ex_mod(YorN,NewExName,ExModule,ExMod,Name,NewExMod1,GTBL1,GTBL,CTBL0,CTBL).
+put_ex_mod([ext_mod({(::),0,ExName},{ExModule})|ExMod],Name,NewExMod,GTBL0,GTBL,CTBL0,CTBL) :-
+    atom(ExName), Name = {(::),Pac,ModName} |
+    NewExName = {(::),Pac,ExName},
+    NewExMod = [ext_mod(NewExName,{ExModule})|NewExMod1],
+    GTBL0 = [empty(NewExName,YorN)|GTBL1],
+    put_ex_mod(YorN,NewExName,ExModule,ExMod,Name,NewExMod1,GTBL1,GTBL,CTBL0,CTBL).
+put_ex_mod([ext_mod(ExName,{ExModule})|ExMod],Name,NewExMod,GTBL0,GTBL,CTBL0,CTBL) :-
+    ExName = {(::),ExPac,ExModName}, atom(ExPac) |
+    NewExMod = [ext_mod(ExName,{ExModule})|NewExMod1],
+    GTBL0 = [empty(ExName,YorN)|GTBL1],
+    put_ex_mod(YorN,ExName,ExModule,ExMod,Name,NewExMod1,GTBL1,GTBL,CTBL0,CTBL).
+put_ex_mod([ext_mod(ExName,{ExModule,Pred,Arity})|ExMod],Name,NewExMod,GTBL0,GTBL,CTBL0,CTBL) :- 
+    atom(ExName), Name = {(::),Pac,ModName} |
+    NewExName = {(::),Pac,ExName},
+    NewExMod = [ext_mod(NewExName,{ExModule,Pred,Arity})|NewExMod1],
+    GTBL0 = [empty(NewExName,YorN)|GTBL1],
+    CTBL0 = [put(NewExName,{Pred,Arity,Name})|CTBL1],
+    put_ex_mod(YorN,NewExName,ExModule,ExMod,Name,NewExMod1,GTBL1,GTBL,CTBL1,CTBL).
+put_ex_mod([ext_mod({(::),0,ExName},{ExModule,Pred,Arity})|ExMod],
+                                                        Name,NewExMod,GTBL0,GTBL,CTBL0,CTBL) :- 
+    atom(ExName), Name = {(::),Pac,ModName} |
+    NewExName = {(::),Pac,ExName},
+    NewExMod = [ext_mod(NewExName,{ExModule,Pred,Arity})|NewExMod1],
+    GTBL0 = [empty(NewExName,YorN)|GTBL1],
+    CTBL0 = [put(NewExName,{Pred,Arity,Name})|CTBL1],
+    put_ex_mod(YorN,NewExName,ExModule,ExMod,Name,NewExMod1,GTBL1,GTBL,CTBL1,CTBL).
+put_ex_mod([ext_mod(ExName,{ExModule,Pred,Arity})|ExMod],Name,NewExMod,GTBL0,GTBL,CTBL0,CTBL) :- 
+    ExName = {(::),ExPac,ExModName}, atom(ExPac) |
+    NewExMod = [ext_mod(ExName,{ExModule,Pred,Arity})|NewExMod1],
+    GTBL0 = [empty(ExName,YorN)|GTBL1],
+    CTBL0 = [put(ExName,{Pred,Arity,Name})|CTBL1],
+    put_ex_mod(YorN,ExName,ExModule,ExMod,Name,NewExMod1,GTBL1,GTBL,CTBL1,CTBL).
+put_ex_mod([],Name,NewExMod,GTBL0,GTBL,CTBL0,CTBL) :- true |
+    NewExMod = [],
+    GTBL0 = GTBL,
+    CTBL0 = CTBL.
+
+put_ex_mod(yes,ExName,ExModule,ExMod,Name,NewExMod,GTBL0,GTBL,CTBL0,CTBL) :- true |
+    GTBL0 = [put(ExName,{ExModule,[Name]},_)|GTBL1],
+    put_ex_mod(ExMod,Name,NewExMod,GTBL1,GTBL,CTBL0,CTBL).
+put_ex_mod(no,ExName,ExModule,ExMod,Name,NewExMod,GTBL0,GTBL,CTBL0,CTBL) :- true |
+    GTBL0 = [get_and_put(ExName,{ExModule,RefNames},{ExModule,[Name|RefNames]})|GTBL1],
+    put_ex_mod(ExMod,Name,NewExMod,GTBL1,GTBL,CTBL0,CTBL).
+
+resolve_2([{ExName,{Module,RefNames}}|Rest],PTBL,CTBL,CT0,MI,MO,Stack,LE,Status0,Status) :- 
+    true |
+    PTBL = [empty(ExName,YorN)|PTBL1],
+    resolve_2(YorN,ExName,ExName,Module,RefNames,Rest,PTBL1,CTBL,CT0,MI,MO,Stack,LE,Status0,Status).
+resolve_2([],PTBL,CTBL,CT0,MI,MO,Stack,LE,Status0,Status) :- true |
+    register(Status0,PTBL,CT0,MI,MO,Stack,Status),
+    CTBL = [].
+
+resolve_2(yes,ExName0,ExName1,Module,RefNames,Rest,PTBL,CTBL,CT0,MI,MO,Stack,LE,Status0,Status) :-
+    ExName0 = {(::),PackageName,ExModuleName} |
+    CT0 = [get_module_in_the_package(PackageName,ExModuleName,St)|CT1],
+    wait_get(St,ExName0,ExName1,Module,RefNames,Rest,PTBL,CTBL,CT1,MI,MO,Stack,LE,Status0,Status).
+resolve_2(no,ExName0,ExName1,Module1,RefNames,Rest,PTBL,CTBL,CT0,MI,MO,Stack,LE,Status0,Status) :-
+    true |
+    PTBL = [get_and_put(ExName0,Module2,Module2)|PTBL1],
+    Stack0 = [{Module1,Module2}|Stack],
+    CTBL = [get_all(ExName1,ExPreds)|CTBL1],
+    check_ex_pred(ExPreds,ExName0,Module2,MI,M1,LE,normal,Status1),
+    set_status(Status0,Status1,Status2),
+    resolve_2(Rest,PTBL1,CTBL1,CT0,M1,MO,Stack0,LE,Status2,Status).
+
+wait_get(normal(Module2),ExName0,ExName1,Module1,RefNames,Rest,PTBL,CTBL,CT0,MI,MO,
+                    Stack,LE,Status0,Status):- true |
+    Stack0 = [{Module1,Module2}|Stack],
+    CTBL = [get_all(ExName1,ExPreds)|CTBL1],
+    check_ex_pred(ExPreds,ExName0,Module2,MI,M1,LE,normal,Status1),
+    set_status(Status0,Status1,Status2),
+    resolve_2(Rest,PTBL,CTBL1,CT0,M1,MO,Stack0,LE,Status2,Status).
+wait_get(non_existent,ExName0,ExName1,Mod1,RefNames,Rest,PTBL,CTBL,CT0,MI,MO,
+                    Stack,LE,Status0,Status) :- ExName0 = {(::),PackageName,ExModuleName} |
+    CT0 = [get_super_package(PackageName,St)|CT1],
+    wait_super_package(St,ExName0,ExName1,Mod1,RefNames,Rest,PTBL,CTBL,CT1,MI,MO,
+                    Stack,LE,Status0,Status).
+otherwise.
+wait_get(_,_,ExName,Module,RefNames,Rest,PTBL,CTBL,CT0,MI,MO,Stack,LE,Status0,Status):- true |
+    undef_module_error(LE,ExName,RefNames,MI,M1,Status0,Status1),
+    Stack0 = [{Module,ExName}|Stack],
+    resolve_2(Rest,PTBL,CTBL,CT0,M1,MO,Stack0,LE,Status1,Status).
+
+wait_super_package(normal(SuperPackageName),ExName0,ExName1,Mod1,RefNames,Rest,
+                PTBL,CTBL,CT0,MI,MO,Stack,LE,Status0,Status) :- ExName0 = {(::),_,ExModuleName} |
+    ExName2 = {(::),SuperPackageName,ExModuleName},
+    PTBL = [empty(ExName2,YorN)|PTBL1],
+    resolve_2(YorN,ExName2,ExName1,Mod1,RefNames,Rest,PTBL1,CTBL,CT0,MI,MO,Stack,LE,Status0,Status).
+otherwise.
+wait_super_package(_,_,ExName,Mod1,RefNames,Rest,PTBL,CTBL,CT0,MI,MO,Stack,LE,Status0,Status) :- 
+    true |
+    undef_module_error(LE,ExName,RefNames,MI,M1,Status0,Status1),
+    Stack0 = [{Mod1,ExName}|Stack],
+    resolve_2(Rest,PTBL,CTBL,CT0,M1,MO,Stack0,LE,Status1,Status).
+
+undef_module_error(LE,ExName,[RefName|Rest],MI,MO,Status0,Status) :- wait(Status0) |
+    member(RefName,Rest,YorN),
+    uniq_name(YorN,LE,ExName,RefName,MI,M1),
+    undef_module_error(LE,ExName,Rest,M1,MO,Status0,Status).
+undef_module_error(error,ExName,[],MI,MO,Status0,Status) :- wait(Status0) | 
+    MI = MO, 
+    Status = abnormal.
+undef_module_error(warning,ExName,[],MI,MO,Status0,Status) :- wait(Status0) | 
+    MI = MO, 
+    Status = normal.
+
+member(Elm,[],Status) :- true | Status = no.
+member(Elm,[Elm|Rest],Status) :- true | Status = yes.
+otherwise.
+member(Elm,[_|Rest],Status) :- true | member(Elm,Rest,Status).
+
+uniq_name(yes,LE,ExName,RefName,MI,MO) :- true | MI = MO.
+uniq_name(no,error,ExName,RefName,MI,MO) :- true |
+    MI = [error(string#"undefined module : ~t (referred from : ~t)",[ExName,RefName])|MO].
+uniq_name(no,warning,ExName,RefName,MI,MO) :- true |
+    MI = [warning(string#"undefined module : ~t (referred from : ~t)",[ExName,RefName])|MO].
+
+check_ex_pred([{Pred,Arity,Name}|ExPreds],ExName,ExModule,MI,MO,LE,Status0,Status) :- true |
+    predicate_to_code(ExModule,Pred,Arity,Code),
+    check_code(LE,Code,ExName,Pred,Arity,Name,MI,M1,Status1),
+    set_status(Status0,Status1,Status2),
+    check_ex_pred(ExPreds,ExName,ExModule,M1,MO,LE,Status2,Status).
+check_ex_pred([],ExName,ExModule,MI,MO,LE,Status0,Status) :- true |
+    MI = MO,
+    Status0 = Status.
+
+check_code(LE,Code,ExName,Pred,Arity,Name,MI,MO,Status) :- code(Code,_,_,_) |
+    MI = MO,
+    Status = normal.
+otherwise.
+check_code(error,Code,ExName,Pred,Arity,Name,MI,MO,Status) :- true |
+    MI = [error(string#"undefined predicate : ~t in ~t (referred from : ~t)", 
+                                            [Pred/Arity,ExName,Name])|MO],
+    Status = abnormal.
+check_code(warning,Code,ExName,Pred,Arity,Name,MI,MO,Status) :- true |
+    MI = [warning(string#"undefined predicate : ~t in ~t (referred from : ~t)", 
+                                            [Pred/Arity,ExName,Name])|MO],
+    Status = normal.
+
+set_status(normal,normal,Status):- true |
+    Status = normal.
+otherwise.
+set_status(St0,St1,Status):- wait(St0), wait(St1) |
+    Status = abnormal.
+
+register(normal,PTBL,CT0,MI,MO,Stack,Status) :- true |
+    PTBL = [get_all(All)],
+    register(All,CT0,MI,MO,Status),
+    unify_modules(Stack).
+otherwise.
+register(_,PTBL,CT0,MI,MO,Stack,Status) :- true |
+    PTBL = [],
+    CT0 = [],
+    MI = MO,
+    Status = abnormal.
+
+register([{Name,Module}|Rest],CT0,MI,MO,Status) :- true |
+    module_utility:ground_module(Module,done,Done),
+    register(Done,Name,Module,Rest,CT0,MI,MO,Status).
+register([],CT0,MI,MO,Status) :- true |
+    CT0 = [],
+    MI = MO,
+    Status = normal.
+
+register(Done,{(::),Package,Name},Module,Rest,CT0,MI,MO,Status) :- wait(Done) |
+    CT0 = [get_module(Package,Name,St1),update_module(Package,Name,Module,St2)|CT1],
+    wait_reg(St1,St2,Rest,{(::),Package,Name},CT1,MI,MO,Status).
+
+wait_reg(normal(_),normal,Rest,Name,CT0,MI,MO,Status) :- true |
+    MI = [message(string#"""~t"" Updated",[Name])|M1],
+    register(Rest,CT0,M1,MO,Status).
+otherwise.
+wait_reg(_,normal,Rest,Name,CT0,MI,MO,Status) :- true |
+    MI = [message(string#"""~t"" Loaded",[Name])|M1],
+    register(Rest,CT0,M1,MO,Status).
+otherwise.
+wait_reg(_,_,Rest,Name,CT0,MI,MO,Status) :- true |
+    MI = [error(string#"module registration error : ~t",[Name])|M1],
+    set_status(abnormal,Status0,Status),
+    register(Rest,CT0,M1,MO,Status0).
+
+unify_modules([{Module1,Module2}|Stack]) :- true |
+    Module1 = Module2,
+    unify_modules(Stack).
+unify_modules([]) :- true | true.
+
+check_flush(normal,All,DTBL0,DTBL,Status) :- true |
+    trans(All,Loaded),
+    DTBL0 = DTBL,
+    Status = normal(Loaded).
+check_flush(abnormal,All,DTBL0,DTBL,Status) :- true |
+    put_all(All,DTBL0,DTBL),
+    Status = abnormal.
+
+trans([{{(::),Package,ModuleName},Module}|Rest],List) :- true |
+    List = [{(::),Package,ModuleName}|List0],
+    trans(Rest,List0).
+trans([],List) :- true | List = [].
+
+put_all([{Name,Module}|Rest],TBL0,TBL) :- true |
+    TBL0 = [put(Name,Module,_)|TBL1],
+    put_all(Rest,TBL1,TBL).
+put_all([],TBL0,TBL) :- true |
+    TBL0 = TBL.
+
+wait_link_error(normal(warning),LinkError) :- true | LinkError = warning.
+otherwise.
+wait_link_error(_,LinkError) :- true | LinkError = error.

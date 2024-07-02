@@ -1,0 +1,185 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+:- module timer_utility.
+:- with_macro pimos.
+:- public get_date_string/2,get_date_value/5,get_date_count/4,
+    month/4,day/3,day/4,
+    get_time_string/2,get_time_value/5,get_time_count/5,
+    add_date_time/6,subtract_date_time/6,
+    sort/5,descending_sort/5,
+    get_number_string/3,
+    usage/1.
+
+usage(L) :- true |
+        get_msgs(StrList),
+        builtin#append_string(StrList,Str),
+        wait_msgs(L,Str).
+
+wait_msgs(L,Str) :- wait(Str) | L=[{string#"~s",[Str]}].
+
+get_msgs(StrList) :- true |
+        new_string(LF0,1,16),
+        set_string_element(LF0,0,key#lf,LF),
+        StrList=[
+               string#"Usage : timer_utility:",
+            LF,string#"  get_date_string(DateCount, ^String)",
+            LF,string#"  get_date_value(DateCount, ^Year, ^Month, ^Day, ^Week)",
+            LF,string#"  get_date_count(Year, Month, Day, ^DateCount)",
+            LF,string#"  month(MonthIndex, ^Name, ^AbbrName, ^Days)",
+            LF,string#"  day(DayIndex, ^Name, ^AbbrName)",
+            LF,
+            LF,string#"  get_time_string(TimeCount, ^String)",
+            LF,string#"  get_time_value(TimeCount, ^Hour, ^Min, ^Sec, ^Millisec)",
+            LF,string#"  get_time_count(Hour, Min, Sec, Millisec, ^TimeCount)",
+            LF,
+            LF,string#"  add_date_time(Date1, Time1, Date2, Time2, ^Date, ^Time)",
+            LF,string#"  subtract_date_time(Date1, Time1, Date2, Time2, ^Date, ^Time)",
+            LF,string#"  sort(X, Y, ^Earlier, ^Later, ^Swapped)",
+            LF,string#"  descending_sort(X, Y, ^Later, ^Earlier, ^Swapped)",
+            LF,string#"     ( X, Y : {DateCount, TimeCount} )",
+            LF
+        ].
+
+get_date_string(Date,Str) :- true |
+        timer_utility_date:get_date_string(Date,Str).
+
+get_date_value(Date,Year,Mon,Day,Week) :- true |
+        timer_utility_date:get_date_value(Date,Year,Mon,Day,Week).
+
+get_date_count(Year,Mon,Day,Date) :- true |
+        timer_utility_date:get_date_count(Year,Mon,Day,Date).
+
+month(Month_idx,Name,AbbrName,Days) :- true |
+        timer_utility_date:month(Month_idx,Name,AbbrName,Days).
+
+day(Day_idx,Name,AbbrName,JapaneseName) :- true |
+        JapaneseName="",
+        timer_utility_date:day(Day_idx,Name,AbbrName).
+day(Day_idx,Name,AbbrName) :- true |
+        timer_utility_date:day(Day_idx,Name,AbbrName).
+
+get_time_string(Time,Str) :- true |
+        timer_utility_time:get_time_string(Time,Str).
+
+get_time_value(Time,Hour,Min,Sec,Mill) :- true |
+        timer_utility_time:get_time_value(Time,Hour,Min,Sec,Mill).
+
+get_time_count(Hour,Min,Sec,Mill,Time) :- true |
+        timer_utility_time:get_time_count(Hour,Min,Sec,Mill,Time).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% add_date_time(Date1,Time1,Date2,Time2,^Date,^Time)
+
+add_date_time(D,T,D1,T1,Date,Time) :- integer(D),integer(T),integer(D1),integer(T1) |
+        add_time(~(T+T1),Day,Time),
+        add_day(D,D1,Day,Date).
+otherwise.
+add_date_time(D,T,D1,T1,Date,Time) :- true |
+            shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_data"),add_date_time(D,T,D1,T1,Date,Time)).
+
+add_time(T,Day,Time) :- T>=0 |
+        Day:=T/86400000,Time := T mod 86400000.
+add_time(T,Day,Time) :- T<0,
+    Time0:=T mod 86400000,Time0 =:= 0 |
+        Day:=T/86400000,Time:=0.
+add_time(T,Day,Time) :- T<0,
+    Time0:=T mod 86400000,Time0 < 0 |
+        Day:=T/86400000-1,Time:=86400000+Time0.
+
+add_day(D,D1,D2,Date) :- Date0:=D+D1+D2 | Date=Date0.
+
+subtract_date_time(D,T,D1,T1,Date,Time) :- integer(D),integer(T),integer(D1),integer(T1) |
+        subtract_time(~(T-T1),Day,Time),
+        subtract_day(D,D1,Day,Date).
+otherwise.
+subtract_date_time(D,T,D1,T1,Date,Time) :- true |
+            shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_data"),subtract_date_time(D,T,D1,T1,Date,Time)).
+
+subtract_time(T,Day,Time) :- T>=0 |
+        Day := -T/86400000,Time := T mod 86400000.
+subtract_time(T,Day,Time) :- T<0,
+    Time0:=T mod 86400000,Time0 =:= 0,
+    T0 := T/86400000 |
+        Day := T0, Time:=0.
+subtract_time(T,Day,Time) :- T<0,
+    Time0:=T mod 86400000,Time0<0,
+    T0 := T/86400000,T1 := 86400000+Time0 |
+        Day:=T0+1,Time:=T1.
+
+subtract_day(D,D1,D2,Date) :- Date0:=D-D1-D2 | Date=Date0.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% sort(Date_time1,Date_time2,Earlier,Later,Swapped)
+% descending_sort(Date_time1,Date_time2,Later,Earlier,Swapped)
+%%      Date_time   :: = {Date,Time}
+%%      Swapped     :: = yes/no
+
+sort({D,T},{D1,T1},E,L,YorN) :- S:=T/86400000,ND:=D+S,NT:=T-S*86400000,
+    S1:=T1/86400000,ND1:=D1+S1,NT1:=T1-S1*86400000,
+    ND<ND1 |
+        E={D,T},L={D1,T1},YorN=no.
+sort({D,T},{D1,T1},E,L,YorN) :- S:=T/86400000,ND:=D+S,NT:=T-S*86400000,
+    S1:=T1/86400000,ND1:=D1+S1,NT1:=T1-S1*86400000,
+    ND=:=ND1,NT=<NT1 |
+        E={D,T},L={D1,T1},YorN=no.
+sort({D,T},{D1,T1},E,L,YorN) :- S:=T/86400000,ND:=D+S,NT:=T-S*86400000,
+    S1:=T1/86400000,ND1:=D1+S1,NT1:=T1-S1*86400000,
+    ND=:=ND1,NT>NT1 |
+        E={D1,T1},L={D,T},YorN=yes.
+sort({D,T},{D1,T1},E,L,YorN) :- S:=T/86400000,ND:=D+S,NT:=T-S*86400000,
+    S1:=T1/86400000,ND1:=D1+S1,NT1:=T1-S1*86400000,
+    ND>ND1 |
+        E={D1,T1},L={D,T},YorN=yes.
+otherwise.
+sort(X,Y,E,L,YorN) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_data"),sort(X,Y,E,L,YorN)).
+
+descending_sort({D,T},{D1,T1},E,L,YorN) :- S:=T/86400000,ND:=D+S,NT:=T-S*86400000,
+    S1:=T1/86400000,ND1:=D1+S1,NT1:=T1-S1*86400000,
+    ND>ND1 |
+        E={D,T},L={D1,T1},YorN=no.
+descending_sort({D,T},{D1,T1},E,L,YorN) :- S:=T/86400000,ND:=D+S,NT:=T-S*86400000,
+    S1:=T1/86400000,ND1:=D1+S1,NT1:=T1-S1*86400000,
+    ND=:=ND1,NT>=NT1 |
+        E={D,T},L={D1,T1},YorN=no.
+descending_sort({D,T},{D1,T1},E,L,YorN) :- S:=T/86400000,ND:=D+S,NT:=T-S*86400000,
+    S1:=T1/86400000,ND1:=D1+S1,NT1:=T1-S1*86400000,
+    ND=:=ND1,NT<NT1 |
+        E={D1,T1},L={D,T},YorN=yes.
+descending_sort({D,T},{D1,T1},E,L,YorN) :- S:=T/86400000,ND:=D+S,NT:=T-S*86400000,
+    S1:=T1/86400000,ND1:=D1+S1,NT1:=T1-S1*86400000,
+    ND<ND1 |
+        E={D1,T1},L={D,T},YorN=yes.
+otherwise.
+descending_sort(X,Y,L,E,YorN) :- true |
+        shoen:raise(pimos_tag#error,'$PIMOS$'(timer_utility,
+            string#"illegal_data"),descending_sort(X,Y,L,E,YorN)).
+
+
+get_number_string(N,D,Str) :- true |
+        get_strings(N,D,L,[]),
+        builtin#append_string(L,Str).
+
+get_strings(N,D,L,L1) :- D>0 |
+        number(~(N mod 10),S),
+        L0=[S|L1],
+        get_strings(~(N/10),~(D-1),L,L0).
+get_strings(_,0,L,L1) :- true | L=L1.
+
+number(0,Str) :- true | Str=string#"0".
+number(1,Str) :- true | Str=string#"1".
+number(2,Str) :- true | Str=string#"2".
+number(3,Str) :- true | Str=string#"3".
+number(4,Str) :- true | Str=string#"4".
+number(5,Str) :- true | Str=string#"5".
+number(6,Str) :- true | Str=string#"6".
+number(7,Str) :- true | Str=string#"7".
+number(8,Str) :- true | Str=string#"8".
+number(9,Str) :- true | Str=string#"9".

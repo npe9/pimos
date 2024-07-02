@@ -1,0 +1,907 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%%% profiler interface %%%
+%%%  1991.10.18
+%%% version 2.9
+
+class profiler_view_monitor has
+nature as_program;
+instance
+attribute   window,
+            outstream,
+            test,
+            act;
+
+:goal(Obj):-
+    %:create(#standard_io_window,[size(200,200)],W),:activate(W),Obj!test:=W,
+    :assign_window(Obj!window),
+    (:get_view(Obj!window,menu),!,
+     :get(Obj!act,_),
+     :activate(Obj!window);
+     true),
+    repeat,
+    (:get_view(Obj!window,menu),!,
+     read(Obj,Code);
+     :read(Obj!window,Code)),
+    Code=\='$$nil',
+    :get_view(Obj!window,View),
+    (View==menu,!,AnsCode=Code;
+     :get_wid(Obj!window,Wid),
+     :get_gid(Obj!window,Gid),
+     freeze({Code,Wid,Gid},AnsCode)),
+    :put(Obj!outstream,AnsCode),
+    fail;
+
+local
+
+read(Obj,Code):-
+     :read(Obj!window,C),
+     (C=\=deactivate,!,Code=C;
+      :deactivate(Obj!window),
+      :get(Obj!act,ACT),!,
+      :activate(Obj!window),
+      read(Obj,Code));
+
+end.
+
+class view_select_menu has
+nature  as_view_select_window,
+        with_icon,
+        labeled_sash,
+        as_graphics,
+        as_mouse_input,
+        with_shared_window,
+        inferior_window;
+
+:test(C):-
+    :create(#standard_io_window,[size(200,200)],W),
+    :activate(W),
+    repeat,
+    :gett(W,N),
+    new_string(S,3,16),  %% max 999
+    (N<10,!,K=1;
+     N<100,!,K=2;
+     N<1000,!,K=3),
+    set_number(1,K,3,N,S),
+    :putb(W,S,3),
+    :putl(W),
+    N==99,!,
+    :kill(W);
+
+:go(Class):-
+    :create(#standard_io_window,[size(400,200),
+        position(400,0)],SW),
+    :activate(SW),
+    :create(#font,"font:test_11.font",F),
+    :create(Class,[size(400,400),
+        title("View Selector"),margin_flag(off),
+        border_flag(off)],W),
+    :draw_init(W,F),
+    :activate(W),
+    repeat,
+    :read(W,Code),
+    :putt(SW,Code),
+    :putl(SW),
+    Code==exit,!,
+    :kill(SW),
+    :kill(W);
+
+instance
+attribute   view:=menu,
+            wid,
+            gid,
+            graph_num:=1,
+            font;
+:get_view(Obj,Obj!view):-!;
+:get_wid(Obj,Obj!wid):-!;
+:get_gid(Obj,Obj!gid):-!;
+:draw_init(Obj,Font):-!,        %% for initial draw
+    Obj!font:=Font,
+    :draw_init(Obj,216,60),
+    :draw_init_data(Obj,what_when,r,5,5,1);
+:draw_item(Obj,Font,Item):-!;   %% for reverse
+
+:change(Obj,I,N):-
+    integer(N),!,
+    :get_pos(Obj,I,X,Y,W,H),
+    new_string(S,3,16),  %% max 999
+    (N<10,!,K=1;
+     N<100,!,K=2;
+     N<1000,!,K=3),
+    set_number(1,K,3,N,S),
+    :draw_string(Obj,X+2,Y+3,S,Obj!font,set);
+:change(Obj,I,nil):-!,
+    :get_pos(Obj,I,X,Y,W,H),
+    :draw_filled_rectangle(Obj,X,Y,W,H,0,fix,reset);
+:change(Obj,nil,I2):-!,
+    :get_pos(Obj,I2,X,Y,W,H),
+    :draw_filled_rectangle(Obj,X+1,Y+1,W-2,H-2,0,fix,exclusive_or);
+:change(Obj,I1,I2):-
+    :get_pos(Obj,I1,X0,Y0,W0,H0),
+    :get_pos(Obj,I2,X,Y,W,H),
+    :draw_filled_rectangle(Obj,X0+1,Y0+1,W0-2,H0-2,0,fix,exclusive_or),
+    :draw_filled_rectangle(Obj,X+1,Y+1,W-2,H-2,0,fix,exclusive_or);
+
+:draw_label(Obj,S,X,Y,WY,WH):-
+    :draw_label(#draw_l,Obj,S,X,Y,WY,WH);
+
+:draw_init_data(Obj,V,Type,Num,To,Wid):-
+    :change(Obj,nil,V),
+    :change(Obj,nil,Type),
+    :change(Obj,num,Num),
+    :change(Obj,to,To),
+    :change(Obj,window,Wid),  %%% win No.
+    true;
+
+local
+
+set_number(C,_,LS,_,_):-C>LS,!;
+set_number(C,L,LS,N,S):-C>L,!,
+    set_string_element(S,LS-C,#" "),
+    set_number(C+1,L,LS,N,S);
+set_number(C,L,LS,N,S):-
+    keta(N,C,Num),
+    ncode(Num,Code),
+    set_string_element(S,LS-C,Code),
+    set_number(C+1,L,LS,N,S);
+
+keta(N,C,A):-
+    ex10(C,1,X),
+    ex10(C-1,1,Y),
+    A=(N mod X)/Y;
+
+ex10(0,N,N):-!;
+ex10(C,N,A):-
+    N1=N*10,
+    ex10(C-1,N1,A);
+
+ncode(0,C):-!,C= #"0";
+ncode(1,C):-!,C= #"1";
+ncode(2,C):-!,C= #"2";
+ncode(3,C):-!,C= #"3";
+ncode(4,C):-!,C= #"4";
+ncode(5,C):-!,C= #"5";
+ncode(6,C):-!,C= #"6";
+ncode(7,C):-!,C= #"7";
+ncode(8,C):-!,C= #"8";
+ncode(9,C):-!,C= #"9";
+
+end.
+
+
+class draw_l has
+
+:draw_label(Class,Obj,String,X1,Y1,WY,WH):-
+    Font= Obj!font,
+    Win=Obj,
+    DX=X1+4,
+    DY=Y1+4,
+    SX=10,
+    SY=WY+20,
+    Work=Obj,
+    (string(String,Len,_),Len<4,!,ADJ=20;ADJ=0),
+    :get_parameter(#ipl,bmm_size,Dev),
+    (Dev==16#"07FF",!,Disp=mono;
+     Dev==16#"0FFF",!,Disp=color;
+     (#view_selector!color==on,!,
+      :set_color_pair(Win,0,
+        {{45570,56830,60670},{0,0,0}}),!;
+      true),
+     Disp=color),
+    (Disp==mono,!,OP1=copy,OP2=reset;OP1=reverse,OP2=set),
+    :draw_filled_rectangle(Work,0,WY,300,WH,0,fix,reset),
+    :draw_string(Work,SX,SY,String,Font,set),
+    :draw_filled_rectangle(Work,SX,SY,67,22,0,light_paint,exclusive_or),
+    :transfer(Win,SX+1,SY+1,DX+1,DY+1,63-ADJ,20,OP1),
+    :draw_filled_rectangle(Win,DX,DY,65-ADJ,22,0,light_paint,OP2),
+    :transfer(Win,SX+1,SY+1,DX+1,DY+1,63-ADJ,20,exclusive_or);
+
+end.
+
+class graph_status_element has
+:create(C,{View,Type,From,Num,To,Wid},Obj):-
+    :new(C,Obj),
+    Obj!view:=View,
+    Obj!vtype:=Type,
+    Obj!vfrom:=From,
+    Obj!vnum:=Num,
+    Obj!vto:=To,
+    Obj!wid:=Wid;
+:create(C,Obj):-
+    :new(C,Obj);
+instance
+attribute
+    view,
+    vtype,
+    vfrom,
+    vnum,
+    vto,
+    wid;
+:set(Obj,{View,Type,From,Num,To,Wid}):-
+    (unbound(View),!;
+     Obj!view:=View),
+    (unbound(Type),!;
+     Obj!vtype:=Type),
+    (unbound(From),!;
+     Obj!vfrom:=From),
+    (unbound(Num),!;
+     Obj!vnum :=Num),
+    (unbound(To),!;
+     Obj!vto  :=To),
+    (unbound(Wid),!;
+     Obj!wid  :=Wid);
+:get(Obj,{View,Type,From,Num,To,Wid}):-
+    View=Obj!view,
+    Type=Obj!vtype,
+    From=Obj!vfrom,
+    Num=Obj!vnum,
+    To=Obj!vto,
+    Wid=Obj!wid;
+:copy(Obj,E):-
+    E!view :=Obj!view,
+    E!vtype:=Obj!vtype,
+    E!vfrom:=Obj!vfrom,
+    E!vnum :=Obj!vnum,
+    E!vto  :=Obj!vto,
+    E!wid  :=Obj!wid;
+end.
+
+class view_selector has
+
+attribute (font:= F :- 
+%                :create(#font,">sys>csp>FONT.DIR>test_11.font",F)
+    :create(#font,"font:test_11.font",F)),
+            color:=off,
+            count,
+            win;
+
+:create(Class,VS):-
+    %:create(#standard_io_window,[size(400,200),
+    %    position(400,0),title("View Trace")],MW),
+    %:activate(MW),
+    %Class!win:=MW,
+
+    Class!count:=0,
+    :new(Class,VS),
+    :create(#stream,S),
+    VS!instream:=S,
+    :create(#list_index,I1),
+    :create(#list_index,I2),
+    :create(#list_index,I3),
+    :create(#list_index,I4),
+    VS!window_pool :=I1,
+    VS!graph_status:=I2,
+    VS!process_pool:=I3,
+    VS!monitor_pool:=I4,
+    %:create(#profiler_entry_manager,E),
+    %VS!entry:=E,
+    VS!font:=Class!font,
+    :create(#what_manipulator,VS,B),
+    VS!what_man:=B,
+    :create(#history_manipulator,Class!font,HM),
+    :draw(HM),
+    VS!hist_man:=HM,
+    :init_menu(VS);
+
+instance
+
+attribute   instream,
+            window_pool,
+            process_pool,
+            monitor_pool,
+            graph_status,
+            font,
+            act,
+            what_man,
+            hist_man,
+            %entry,
+            predMax,
+            history_mode:=off,
+            new_win_counter:=1,
+            test_mode;
+
+:init_menu(VS):-
+    make_init_table(Tb),
+    :add_at(VS!graph_status,Tb,0),
+    :create(#profiler_view_monitor,Mon),
+    :adjust_position(#screen_checker,selector,APX,APY),
+    :create(#view_select_menu,[%position(manipulator),
+        size(384,238),title(" View selector"),
+        %position(860,685),  %%%%xxx
+        position(APX,APY),
+        permission(out),
+        border_flag(off),margin_flag(off)],W),
+    :assign_window(W),
+    %:activate(W),
+    %:set_position(W,860,685),
+    PX=W!x,PY=W!y,
+    %check_pos(PX,PY,W,Flag),
+    %:set_size(W,384,300),
+    :draw_init(W,VS!font),
+    %(Flag==on,!,:set_position(W,PX,PY);true),
+    :create(#process,P),
+    :create(#stream,St),
+    VS!act:=St,
+    Mon!window:=W,
+    Mon!outstream:=VS!instream,
+    Mon!act:=St,
+    :add_at(VS!window_pool,W,0),
+    :add_at(VS!process_pool,P,0),
+    :add_at(VS!monitor_pool,Mon,0),
+    :self(#process,Self),
+    :set_sub_priority(Self,14),
+    :set_sub_priority(P,13),
+    :activate(P,Mon),
+    :resign_window(W);
+
+:regist(VS,Window,Wid,Gid):-
+    :add_at(VS!window_pool,Window,Wid),
+    make_table(Tb,Window,VS),
+    :add_at(VS!graph_status,Tb,Gid),
+    :create(#profiler_view_monitor,Mon),
+    :create(#process,P),
+    Window!outstream:=VS!instream,
+    Mon!window:=Window,
+    Mon!outstream:=VS!instream,
+    :add_at(VS!process_pool,P,Wid),
+    :add_at(VS!monitor_pool,Mon,Wid),
+    :activate(Window),%%%
+    :activate(P,Mon);
+
+:remove(VS,Wid):-
+    :remove_at(VS!window_pool,W,Wid),
+    :get_gid(W,Gid),
+    %:remove(VS!entry,Wid),
+    :remove_at(VS!graph_status,_,Gid),
+    :remove_at(VS!process_pool,P,Wid),
+    :remove_at(VS!monitor_pool,Mon,Wid),
+    :exterminate(P),
+    :kill(W);
+
+:activate(VS):-
+    %:get_at(VS!window_pool,W,0),
+    %:get_at(VS!process_pool,P,0),
+    #view_selector!count:= #view_selector!count+1,
+    :put(VS!act,activate);
+
+:deactivate(VS):-
+    :get_at(VS!window_pool,W,0),
+    :get_at(VS!process_pool,P,0),
+    :assign_window(W),
+    #view_selector!count:= #view_selector!count-1,
+    :input_data(W,deactivate),
+    :resign_window(W);
+
+:kill(VS):-
+    %:kill(#view_selector!win),
+    :get_contents(VS!window_pool,WL),
+    :get_contents(VS!process_pool,PL),
+    (VS!test_mode==0,!,
+     terminates(PL);
+     exterminates(PL)),
+    (VS!test_mode==0,!;
+     kills(WL),
+     :kill(VS!what_man),
+     :kill(VS!hist_man)),
+    :clear(VS!graph_status),
+    :clear(VS!window_pool),
+    :clear(VS!process_pool),
+    :clear(VS!monitor_pool);
+
+%%% Main %%%
+
+:read(VS,Command):-
+    VS!history_mode==on,!,
+    :read(VS!hist_man,Com),
+    (Com=history(nil),!,:clear_items(VS!what_man);true),
+    (Com=history(Hid),!,
+     VS!history_mode:=off,
+     :activate(VS),
+     :deactivate(VS!hist_man);
+     true),
+    Command=code(do_it,Com);
+:read(VS,Command):-
+    :get_at(VS!window_pool,W,0),
+    repeat,
+    :get(VS!instream,InCode0),
+    melt(InCode0,InCode),
+
+    %:putt(#view_selector!win,InCode),
+    %:putl(#view_selector!win),
+
+    :assign_window(W),
+    make_com(InCode,Command,VS),
+    :resign_window(W),
+    Command={code,_,_},!;
+
+:get_what_manipulator(VS,B):-
+    B=VS!what_man;
+
+:get_history_manipulator(VS,H):-
+    H=VS!hist_man;
+
+:get_font(VS,VS!font):-!;
+
+:set_pred_num(VS,N):-
+    VS!predMax:=N;
+
+:get_pred_num(VS,VS!predMax):-!;
+
+:get_history_tag(VS,Tag):-
+    :get_tag(VS!hist_man,Tag);
+
+local
+
+make_init_table(Tb):-
+    :create(#graph_status_element,
+        {what_when,r,1,5,5,1},Tb);
+
+make_table(Tb,Win,VS):-
+    :create(#graph_status_element,Tb),
+    :get_at(VS!graph_status,Tb0,0),
+    :copy(Tb0,Tb),
+    :get_wid(Win,Wid),
+    :set(Tb,{_,_,_,_,_,Wid});
+
+current_status(VS,Stack):-
+    :get_at(VS!graph_status,Tb0,0),
+    :get(Tb0,Stack);
+
+change_status(VS,Stack):-
+    :get_at(VS!graph_status,Tb0,0),
+    :get(Tb0,Old),
+    %:putt(#view_selector!win,Old),:putl(#view_selector!win),
+    redraw_selector_menu(VS,Old,Stack),
+    %:putt(#view_selector!win,Stack),:putl(#view_selector!win),
+    :set(Tb0,Stack),!;
+
+copy_status(VS,Gid):-
+    :get_at(VS!graph_status,Tb0,0),
+    :get_at(VS!graph_status,Tb,Gid),
+    :copy(Tb0,Tb);
+
+kills([]):-!;
+kills([F|L]):-
+    :resign_window(F),
+    :kill(F),
+    kills(L);
+
+terminates([]):-!;
+terminates([F|L]):-
+    :terminate(F),
+    terminates(L);
+
+exterminates([]):-!;
+exterminates([F|L]):-
+    :exterminate(F),
+    exterminates(L);
+
+make_com(exit,code(exit,nil),_):-!;
+
+make_com(what_when,fail,VS):-!,
+    (current_status(VS,{V,T,_,_,_,_}),V==predicate,!,
+     set_type_display(VS,T);
+     true),
+    change_status(VS,{what_when,_,_,_,_,_});
+make_com(overall_what_when,fail,VS):-!,
+    (current_status(VS,{V,T,_,_,_,_}),V==predicate,!,
+     set_type_display(VS,T);
+     true),
+    change_status(VS,{overall_what_when,_,_,_,_,_});
+make_com(what_where,fail,VS):-!,
+    (current_status(VS,{V,T,_,_,_,_}),V==predicate,!,
+     set_type_display(VS,T);
+     true),
+    change_status(VS,{what_where,_,_,_,_,_});
+make_com(overall_what_where,fail,VS):-!,
+    (current_status(VS,{V,T,_,_,_,_}),V==predicate,!,
+     set_type_display(VS,T);
+     true),
+    change_status(VS,{overall_what_where,_,_,_,_,_});
+make_com(when_where,fail,VS):-!,
+    (current_status(VS,{V,T,_,_,_,_}),V==predicate,!,
+     set_type_display(VS,T);
+     true),
+    change_status(VS,{when_where,_,_,_,_,_});
+make_com(predicate,fail,VS):-!,
+    current_status(VS,{V,T,_,_,_,_}),
+    (V==predicate,!;
+     reset_type_display(VS,T)),
+    change_status(VS,{predicate,_,_,_,_,_});
+
+make_com(r,fail,VS):-!,
+    change_status(VS,{_,r,_,_,_,_});
+make_com(s,fail,VS):-!,
+    change_status(VS,{_,s,_,_,_,_});
+make_com(rs,fail,VS):-!,
+    change_status(VS,{_,rs,_,_,_,_});
+make_com(inc_num,fail,VS):-!,
+    current_status(VS,{_,_,_,N,_,_}),
+    change_status(VS,{_,_,_,N+1,_,_});
+make_com(dec_num,fail,VS):-!,
+    current_status(VS,{_,_,_,N,_,_}),
+    N>1,
+    change_status(VS,{_,_,_,N-1,_,_});
+make_com(inc_to,fail,VS):-!,
+    current_status(VS,{_,_,_,_,N,_}),
+    N<999,
+    change_status(VS,{_,_,_,_,N+1,_});
+make_com(dec_to,fail,VS):-!,
+    current_status(VS,{_,_,_,_,N,_}),
+    N>1,
+    change_status(VS,{_,_,_,_,N-1,_});
+make_com(inc_wid,fail,VS):-!,
+    current_status(VS,{_,_,_,_,_,N}),
+    N<999,
+    change_status(VS,{_,_,_,_,_,N+1});
+make_com(dec_wid,fail,VS):-!,
+    current_status(VS,{_,_,_,_,_,N}),
+    N>1,
+    change_status(VS,{_,_,_,_,_,N-1});
+
+make_com(what_manipulator,code(do_it,what(predicate,C)),VS):-!,
+    :count(VS!what_man,N),N>0,!,
+    :activate(VS!what_man),
+    :read(VS!what_man,C),
+    :deactivate(VS!what_man);
+make_com(history_manipulator,code(do_it,Com),VS):-!,
+    VS!history_mode:=on,
+    :deactivate(VS),
+    %:get_at(VS!window_pool,Menu,0),
+    %X0=Menu!x,Y0=Menu!y,
+    %:get_size(VS!hist_man,W,H),
+    %cal_pos(W,H,X0,Y0,X,Y),
+    X=400,Y=300,
+    %:set_position(VS!hist_man,X,Y),
+    :activate(VS!hist_man),
+    :read(VS!hist_man,Com),
+    (Com=history(nil),!,:clear_items(VS!what_man);true),
+    (Com=history(Hid),!,
+     VS!history_mode:=off,
+     :activate(VS),
+     %:put(VS!act,act),
+     :deactivate(VS!hist_man);
+     true);
+make_com(do_it,code(do_it,Com),VS):-!,
+    (VS!new_win_counter>1,!;
+     VS!new_win_counter:=2),
+    current_status(VS,Stack0),
+    add_table(Stack0,VS,Stack,VS!predMax),
+    make_plot(Stack,Com),
+    reset_scale(VS),    %%%% 9/13
+    reshape_adj(VS);    %%%% 9/12
+make_com(new_win,ReturnCode,VS):-!,
+    Count=VS!new_win_counter,
+    VS!new_win_counter:=Count+1,
+    change_status(VS,{_,_,_,_,_,Count}),
+    make_com(do_it,ReturnCode,VS);
+
+make_com({kill,Wid,Gid},code(window,kill(Wid,Gid)),_):-!;
+
+make_com({select,Wid,Gid},fail,VS):-!,
+    change_status(VS,{_,_,_,_,_,Wid});
+
+make_com({previous_page_predicate,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_when_where(VS,Gid),
+    check_reshape(VS,Wid,Gid),!,
+    Code=previous_page_node;
+make_com({previous_predicate,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_when_where(VS,Gid),
+    check_reshape(VS,Wid,Gid),!,
+    Code=previous_node;
+make_com({top_predicate,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_when_where(VS,Gid),
+    check_reshape(VS,Wid,Gid),!,
+    Code=top_node;
+make_com({bottom_predicate,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_when_where(VS,Gid),
+    check_reshape(VS,Wid,Gid),!,
+    Code=bottom_node;
+make_com({next_predicate,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_when_where(VS,Gid),
+    check_reshape(VS,Wid,Gid),!,
+    Code=next_node;
+make_com({next_page_predicate,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_when_where(VS,Gid),
+    check_reshape(VS,Wid,Gid),!,
+    Code=next_page_node;
+
+make_com({time_scale_small,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-   %%% no use
+    check_reshape(VS,Wid,Gid),!,
+    (check_time_or_node(VS,Gid,Mode),Mode==time,!,
+     Code=time_scale_small;
+     Code=node_scale_small);
+make_com({time_scale_large,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-   %%% no use
+    check_reshape(VS,Wid,Gid),!,
+    (check_time_or_node(VS,Gid,Mode),Mode==time,!,
+     Code=time_scale_large;
+     Code=node_scale_large);
+make_com({time_scale,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-     %%% 9/13
+    check_reshape(VS,Wid,Gid),!,
+    check_time_or_node(VS,Gid,Mode),
+    :get_at(VS!window_pool,Win,Wid),
+    :sw_scale(Win),
+    :get_scale(Win,Flag),
+%    (Mode==time,Flag==large,!,Code=time_scale_large;
+%     Mode==time,Flag==small,!,Code=time_scale_small;
+%     Flag==large,!,Code=node_scale_large;
+%     Flag==small,!,Code=node_scale_small
+%    );
+    Code=scale;
+
+make_com({next_page_time,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_reshape(VS,Wid,Gid),!,
+    (check_time_or_node(VS,Gid,Mode),Mode==time,!,
+     Code=next_page_time;
+     Code=next_page_node);
+make_com({next_time,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_reshape(VS,Wid,Gid),!,
+    (check_time_or_node(VS,Gid,Mode),Mode==time,!,
+     Code=next_time;
+     Code=next_node);
+make_com({previous_time,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_reshape(VS,Wid,Gid),!,
+    (check_time_or_node(VS,Gid,Mode),Mode==time,!,
+     Code=previous_time;
+     Code=previous_node);
+make_com({previous_page_time,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_reshape(VS,Wid,Gid),!,
+    (check_time_or_node(VS,Gid,Mode),Mode==time,!,
+     Code=previous_page_time;
+     Code=previous_page_node);
+make_com({top_time,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_reshape(VS,Wid,Gid),!,
+    (check_time_or_node(VS,Gid,Mode),Mode==time,!,
+     Code=top_time;
+     Code=top_node);
+make_com({bottom_time,Wid,Gid},code(window,{Code,Wid,Gid}),VS):-
+    check_reshape(VS,Wid,Gid),!,
+    (check_time_or_node(VS,Gid,Mode),Mode==time,!,
+     Code=bottom_time;
+     Code=bottom_node);
+
+make_com(Mes,code(window,Com),VS):-
+   Mes={Code,Wid,Gid},
+   (Code==time_scale_small,!;%% no use
+    Code==time_scale_large,!;%% no use
+    Code==time_scale,!;%% 9/13
+    Code==next_page_time,!;
+    Code==next_time,!;
+    Code==previous_time,!;
+    Code==previous_page_time,!;
+    Code==top_time,!;
+    Code==bottom_time,!;
+    check_when_where(VS,Gid),!,
+     (Code==previous_page_predicate,!;
+      Code==previous_predicate,!;
+      Code==top_predicate,!;
+      Code==bottom_predicate,!;
+      Code==next_predicate,!;
+      Code==next_page_predicate,!)
+    ),
+    !,
+    :get_at(VS!window_pool,Win,Wid),%%% 9/13
+    :reset_scale(Win),              %%% 9/13
+    :get_at(VS!graph_status,E,Gid),
+    :get(E,Status),
+    make_plot(Status,Com);
+
+make_com(Mes,code(window,Com),VS):-
+    Mes={Code,Wid,Gid},
+    (:get_at(VS!graph_status,GT,Gid),
+     :get(GT,{V,_,_,_,_,_}),
+     V=\=predicate,!,
+     %:status(VS!entry,Wid,live),
+     update_table(Gid,VS,Code,New),
+     make_plot(New,Com);
+
+     (Code==previous_page_predicate;
+      Code==previous_predicate;
+      Code==top_predicate;    %%
+      Code==bottom_predicate; %%
+      Code==next_predicate;
+      Code==next_page_predicate),!,
+     Com={Code,Wid,Gid};
+
+     %:status(VS!entry,Wid,live),
+     update_table(Gid,VS,Code,New),
+     make_plot(New,Com));
+
+
+make_plot({View,Type,F,N,T,Wid},Com):-
+    (View==when_where,!,
+     Com=plot(View,Type,Wid,Wid);
+     (View==what_when;View==what_where),!,
+     Com=plot(View,Type,F,N,Wid,Wid);
+     View==predicate,!,
+     Com=predicate(Wid);
+     Com=plot(View,Type,T,Wid,Wid));
+
+add_table({View,Type,F,N,T,Did},VS,{View,Type,F1,N1,T1,Iid},Max):-!,
+    %:entry(VS!entry,Did,Iid),
+    Did=Iid,%%%
+    (integer(N),N>Max,!,F1=1,N1=Max;F1=F,N1=N),
+    (integer(T),T>Max,!,T1=Max;T1=T),   %% 9/21
+    (:get_at(VS!graph_status,E,Iid),!;
+     :create(#graph_status_element,E),
+     :add_at(VS!graph_status,E,Iid)),
+    :set(E,{View,Type,F1,N1,T1,Iid});
+
+update_table(Gid,VS,Code,S):-
+    :get_at(VS!graph_status,E,Gid),
+    :get(E,S0),
+    update(Code,S0,S,VS!predMax),
+    :set(E,S);
+
+update(previous_page_predicate,S0,S,Max):-!,%%
+    S0={V,T,F,N,To,W},
+    (F-N>0,!,
+     S ={V,T,F-N,N,To,W};
+     F=\=1,!,
+     S ={V,T,1,N,To,W});
+update(previous_predicate,S0,S,Max):-!,
+    S0={V,T,F,N,To,W},
+    F-1>0,
+    S ={V,T,F-1,N,To,W};
+update(next_predicate,S0,S,Max):-!,
+    S0={V,T,F,N,To,W},
+    F+N=<Max,
+    S ={V,T,F+1,N,To,W};
+update(next_page_predicate,S0,S,Max):-!,%%
+    S0={V,T,F,N,To,W},
+    (F+N+N-1=<Max,!,
+     S ={V,T,F+N,N,To,W};
+     F+N-1=\=Max,!,
+     S ={V,T,Max-N+1,N,To,W});
+update(top_predicate,S0,S,Max):-!,
+    S0={V,T,F,N,To,W},
+    F>1,
+    S ={V,T,1,N,To,W};
+update(bottom_predicate,S0,S,Max):-!,
+    S0={V,T,F,N,To,W},
+    F0=Max-N+1,
+    (F0<1,!,F1=1;F1=F0),
+    F1=\=F,
+    S ={V,T,F1,N,To,W};
+update(inc_predicate_num,S0,S,Max):-
+    S0={V,T,F,N,To,W},(V==what_when;V==what_where),!,
+    F+N=<Max,
+    S ={V,T,F,N+1,To,W};
+update(inc_predicate_num,S0,S,Max):-!,
+    S0={V,T,F,N,To,W},
+    To+1=<Max,   %% 9/21
+    S ={V,T,F,N,To+1,W};
+update(dec_predicate_num,S0,S,Max):-
+    S0={V,T,F,N,To,W},(V==what_when;V==what_where),!,
+    N-1>0,
+    S ={V,T,F,N-1,To,W};
+update(dec_predicate_num,S0,S,Max):-!,
+    S0={V,T,F,N,To,W},
+    To-1>0,
+    S ={V,T,F,N,To-1,W};
+update(r,S0,S,Max):-!,
+    S0={V,T,F,N,To,W},
+    S ={V,r,F,N,To,W};
+update(s,S0,S,Max):-!,
+    S0={V,T,F,N,To,W},
+    S ={V,s,F,N,To,W};
+update(rs,S0,S,Max):-!,
+    S0={V,T,F,N,To,W},
+    S ={V,rs,F,N,To,W};
+
+redraw_selector_menu(VS,Old,New):-!,
+    :get_at(VS!window_pool,W,0),
+    Old={V0,T0,_,N0,To0,Wid0},
+    New={V1,T1,_,N1,To1,Wid1},
+
+    (V0=V1,!;
+     (V1=\=when_where,!;
+      T0=\=rs,!;
+      T1=r),
+     :change(W,V0,V1)),
+
+    (T0=T1,!;
+     V0==when_where,T1==rs,!,fail;  %%
+     V0==predicate, V1==when_where,!,
+     :change(W,T0,T1);
+     V0==predicate, !,fail;
+     :change(W,T0,T1)),
+
+    (N0=N1,!;
+     V0==predicate,!,fail;
+     V0==when_where,!,fail;
+     V0==overall_what_when,!,fail;
+     V0==overall_what_where,!,fail;
+     :change(W,num,N1)),
+
+    (To0=To1,!;
+     V0==predicate,!,fail;
+     V0==when_where,!,fail;
+     V0==what_when,!,fail;
+     V0==what_where,!,fail;
+     :change(W,to,To1)),
+
+    (Wid0=Wid1,!;
+     :change(W,window,Wid1),  %%% win No.
+     true
+     );
+
+check_pos(PX,PY,Win,off):-
+    PY<705,PY>0,!;
+check_pos(PX,PY,Win,on):-
+    :set_position(Win,PX,640);
+
+set_type_display(VS,Type):-!,
+    :get_at(VS!window_pool,W,0),
+    :change(W,nil,Type);
+reset_type_display(VS,Type):-!,
+    :get_at(VS!window_pool,W,0),
+    :change(W,nil,Type);
+
+cal_pos(W,H,X0,Y0,X,Y):-
+    (X0+377+W/2>1279,!,X=1279-W-1;X=X0+377-W/2-1),
+    (Y0+238+H/2>943,!,Y=943-H-1;Y=Y0+238-H/2-1);
+
+check_time_or_node(VS,Gid,Mode):-
+    :get_at(VS!graph_status,G,Gid),
+    :get(G,Data),
+    Data={View,Type,From,Num,To,Wid},
+    ((View==what_where,!;
+      View==overall_what_where,!),!,
+     Mode=node;
+     Mode=time);
+
+check_reshape(VS,Wid,Gid):-
+    :get_at(VS!window_pool,Win,Wid),
+    :get_at(VS!graph_status,G,Gid),
+    :get(G,Data),
+    first(Data,View),
+    (:reshaped(Win),View=\=predicate,!,fail;true);
+
+check_when_where(VS,Gid):-!,
+    :get_at(VS!graph_status,G,Gid),
+    :get(G,Data),
+    first(Data,View),!,
+    View==when_where;
+
+reshape_adj(VS):-
+    :get_at(VS!graph_status,G,0),
+    :get(G,Data),
+    vector_element(Data,5,Wid),
+    (:get_at(VS!window_pool,Win,Wid),
+     :reshaped(Win),!;
+     true);
+
+reset_scale(VS):-
+    :get_at(VS!graph_status,G,0),
+    :get(G,Data),
+    vector_element(Data,5,Wid),
+    (:get_at(VS!window_pool,Win,Wid),
+     :reset_scale(Win),!;
+     true);
+
+end.
+
+class screen_checker has
+
+:adjust_position(C,WinName,X,Y):-!,
+    :get_size(#screen,W,H),
+    check(W,H,ScreenType),
+    table(WinName,ScreenType,X,Y);
+
+local
+
+check(W,H,Type):-
+    ((W<1024;H<763),!,Type=small;
+     (W<1280;H<944),!,Type=ux;
+     Type=big),!;
+
+table(selector,big,860,685):-!;
+table(selector,ux,604,504):-!;
+table(history,big,660,535):-!;
+table(history,ux,404,354):-!;
+table(what,big,590,400):-!;
+table(what,ux,334,219):-!;
+table(_,small,0,0):-!;
+
+end.

@@ -1,0 +1,1393 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1992 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% icpsi368::>sys>user>susaki>procom2>codegenf.kl1.63, 30-May-90 18:16:56, Edit by susaki
+:- module protCodegen.
+:- public codegen/2.
+:- with_macro pimos.
+
+codegen(Normal,Code):- true |
+        merge(Normal,Normal2),
+        generation0(Normal2,Code,Name),
+        nTable:nameTable2(Name).
+
+%%%%% for system defined predicate
+
+generation0([],Code,Name):- true |
+    Code = [],
+    Name = [].
+generation0([normal(Pred,'+',st(Prot,Error))|Normal],Code,Name):- 
+    true |
+    generation([normal(Pred,'+',st(Prot,Error))|Normal],Code,Name).
+otherwise.
+generation0([normal(top(Pred),Sign,Body)|Normal],Code,Name):- true |
+    generation([normal(Pred,Sign,Body)|Normal],Code,Name).
+generation0([normal(Pred,Sign,Body)|Normal],Code,Name):- 
+    atom(Pred) |
+    generation([normal(Pred,Sign,Body)|Normal],Code,Name).
+
+
+generation([normal(Pred,'+',s(Prot))| Normal],Code,Name):- 
+        Prot \= any, Prot \= ground |
+        Code = [gencode(head(Pred,'User','OS','_','Error'), 
+                        guard([goal(Prot,'User')]),
+                        body([unify('User','OS')])),
+                genErr(head(Pred,'User','OS','Flag','Error'), guard(true),
+                       error('User','Error'))| Ctail],
+        generation0(Normal,Ctail,Name).
+generation([normal(Pred,'-',s(Prot))| Normal],Code,Name):- 
+        Prot \= any, Prot \= ground |
+        Name = Ntail,
+        Code = [gencode(head(Pred,'User','OS','_','Error'), 
+                        guard([goal(Prot,'OS')]),
+                        body([unify('OS','User')]))| Ctail],
+        generation0(Normal,Ctail,Ntail).
+generation([normal(Pred,'-',s(ground))| Normal],Code,Name):- 
+        true |
+        Code = [gencode(head(Pred,'User','OS','_','Error'), guard(true),
+                        body([goal('-ground','OS2','OS'),
+                      unify('OS2','User')]))| Ctail],
+        generation0(Normal,Ctail,Name).
+generation([normal(Pred,'+',s(any))| Normal],Code,Name):- true |
+        Code = [gencode(head(Pred,'User','OS','_','Error'), guard(true),
+                        body([unify('User','OS')]))| Ctail],
+        generation0(Normal,Ctail,Name).
+generation([normal(Pred,'-',s(any))| Normal],Code,Name):- true |
+        Code = [gencode(head(Pred,'User','OS','_','Error'), guard(true),
+                        body([unify('User','OS')]))| Ctail],
+        generation0(Normal,Ctail,Name).
+generation([normal(Pred,'+',s(ground))| Normal],Code,Name):- true |
+        Name = [secondName(Pred,Pred2)| Ntail],
+        Code = [gencode(head(Pred,'User','OS','_','Error'), guard(true),
+                        body([goal('+ground','User','User2'),
+                              goal(Pred2,'User2','OS','Flag','Error')])),
+%                genErr(head(Pred,'User','OS','Flag','Error'), guard(true),
+%                       error('User','Error')),
+                gencode(head(Pred2,'User2','OS','_','Error'), 
+                        guard([goal('wait','User2')]),
+                        body([unify('User2','OS')])),
+                genfail(head(Pred2,'User2','OS',fail,'Error'),
+                        guard(true), body(true))| Ctail],
+        generation0(Normal,Ctail,Ntail).
+
+%%%%% for stream, list, vector
+
+generation([normal(Pred,'+',st(Prot,Err))| Normal],Code,Name):- true |
+        genStreamP(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail),
+        sendSecond(Ctail-Ctail2,Second),
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+generation([normal(Pred,'-',st(Prot,Err))| Normal],Code,Name):- true |
+        genStreamM(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail),
+        Stail = [],
+        sendSecond(Ctail-Ctail2,Second),
+        generation0(Normal,Ctail2,Ntail).
+generation([normal(Pred,'+',li(Prot,Err))| Normal],Code,Name):- true |
+        genlistP(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail),
+        sendSecond(Ctail-Ctail2,Second),
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+generation([normal(Pred,'-',li(Prot,Err))| Normal],Code,Name):- true |
+        genlistM(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail),
+        sendSecond(Ctail-Ctail2,Second),
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+generation([normal(Pred,'+',v(any,Prot,Err))| Normal],Code,Name):- true |
+        genVanyP(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail),
+        sendSecond(Ctail-Ctail2,Second),
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+generation([normal(Pred,'-',v(any,Prot,Err))| Normal],Code,Name):- 
+        true |
+        genVanyM(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail),
+        sendSecond(Ctail-Ctail2,Second),
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+generation([normal(Pred,'+',v(Num,In,Out))| Normal],Code,Name):- 
+        integer(Num) |
+        genvectorP(Pred,Num,In,Out,Code-Ctail,Second-Stail,Name-Ntail),
+        sendSecond(Ctail-Ctail2,Second),
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+generation([normal(Pred,'-',v(Num,In,Out))| Normal],Code,Name):- 
+        integer(Num) |
+        genvectorM(Pred,Num,In,Out,Code-Ctail),
+        generation0(Normal,Ctail,Name).
+
+%%%%% for enumeration
+
+generation([normal(Pred,'+',e(Enu))| Normal],Code,Name):- true |
+        genenuP(Pred,Enu,Enu,Code-Ctail,Second-Stail,Name-Ntail2,List-Ltail),
+        Ntail2 = [secondName(Pred,Pred2)| Ntail],
+        sendSecondP(Ctail-Ctail2,Second,List,Pred2),
+        Ltail = [],
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+generation([normal(Pred,'-',e(Enu))| Normal],Code,Name):- true |
+        genenuM(Pred,Enu,Enu,Code-Ctail,Second-Stail,Name-Ntail),
+        sendSecond(Ctail-Ctail2,Second),
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+
+%%%%% it has inheritance
+generation([normal(Pred,'+',i(Bodies))| Normal],Code,Name):- true |
+        genSuperP(Pred,Bodies,Code-Ctail,Second-Stail,Name-Ntail2,VorL-VorLtail),
+        Ntail2 = [secondName(Pred,Pred2)|Ntail],
+        sendSecondP(Ctail-Ctail2,Second,VorL,Pred2),
+        VorLtail = [],
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+generation([normal(Pred,'-',i(Bodies))| Normal],Code,Name):- true |
+        genSuperM(Pred,Bodies,Code-Ctail,Second-Stail,Name-Ntail2,VorL-VorLtail),
+        Ntail2 = [secondName(Pred,Pred2)|Ntail],
+        sendSecondP(Ctail-Ctail2,Second,VorL,Pred2),
+        VorLtail = [],
+        Stail = [],
+        generation0(Normal,Ctail2,Ntail).
+
+%%%%%
+sendSecond(Code-Ctail,[GenCode|Second]):- true |
+        Code = [GenCode | Ctail1],
+        sendSecond(Ctail1-Ctail,Second).
+sendSecond(Code-Ctail,[]):- true |
+        Code = Ctail.
+
+sendSecondP(Code-Ctail,[GenCode|Second],VorL,Pred2):- true |
+        Code = [genfail(head(Pred2,'User','OS',fail,'Error'),
+                    guard(true), body(true)), GenCode | Ctail2],
+        sendSecondP2(Ctail2-Ctail,Second,VorL).
+sendSecondP(Code-Ctail,[],VorL,Pred2):- true |
+        sendSecond(Code-Ctail,VorL).
+
+sendSecondP2(Code-Ctail,[GenCode|Second],VorL):- true |
+        Code = [GenCode | Ctail2],
+        sendSecondP2(Ctail2-Ctail,Second,VorL).
+sendSecondP2(Code-Ctail,[],VorL):- true |
+        sendSecond(Code-Ctail,VorL).
+
+%%%%% for inheritance
+
+genSuperP(Pred,[s(Key)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- 
+        Key \= ground |
+        Code = [gencode(head(Pred,'User','OS','_','Error'), 
+                        guard([goal(Key,'User')]),
+                        body([unify('User','OS')]))| Ctail1],
+        genSuperP(Pred,Bodies,Ctail1-Ctail,Second-Stail,Name-Ntail,VorL-Tail).
+genSuperP(Pred,[s(ground)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- 
+        true |
+        Name = [secondName(Pred,Pred2)|Ntail1],
+        Code = [gencode(head(Pred,'User','OS','_','Error'), 
+                        guard(true),
+                        body([goal('+ground','User','User2'),
+                              goal(Pred2,'User2','OS','Flag','Error')]))|Ctail1],
+        Second = [gencode(head(Pred2,'User2','OS','_','Error'), 
+                        guard([goal('wait','User2')]),
+                        body([unify('User2','OS')]))| Stail1],
+        genSuperP(Pred,Bodies,Ctail1-Ctail,Stail1-Stail,Ntail1-Ntail,VorL-Tail).
+genSuperP(Pred,[st(Prot,Err)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- 
+        true |
+        genStreamPS(Pred,Prot,Err,Code-Ctail1,Second-Stail1,Name-Ntail1),
+        genSuperP(Pred,Bodies,Ctail1-Ctail,Stail1-Stail,Ntail-Ntail1,VorL-Tail).
+genSuperP(Pred,[li(Prot,Err)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):-
+        true |
+        genlistPS(Pred,Prot,Err,Code-Ctail1,VorL-Tail2,Name-Ntail1),
+        genSuperP(Pred,Bodies,Ctail1-Ctail,Second-Stail,Ntail1-Ntail,Tail2-Tail).
+genSuperP(Pred,[v(any,Prot,Err)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):-
+        true |
+        genVanyPS(Pred,Prot,Err,Code-Ctail1,VorL-Tail2,Name-Ntail1),
+        genSuperP(Pred,Bodies,Ctail1-Ctail,Second-Stail,Ntail1-Ntail,Tail2-Tail).
+genSuperP(Pred,[v(Num,In,Out)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):-
+        integer(Num) |
+        genvectorPS(Pred,Num,In,Out,Code-Ctail1,Second-Stail1,Name-Ntail1),
+        genSuperP(Pred,Bodies,Ctail1-Ctail,Stail1-Stail,Ntail1-Ntail,VorL-Tail).
+genSuperP(Pred,[e(Enu)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- true |
+        genenuPS(Pred,Enu,Enu,Code-Ctail1,Second-Stail1,Name-Ntail1,VorL-Tail2),
+        genSuperP(Pred,Bodies,Ctail1-Ctail,Stail1-Stail,Ntail1-Ntail,Tail2-Tail).
+genSuperP(Pred,[i(Super)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- 
+        true |
+        genSuperP(Pred,Super,Code-Ctail1,Second-Stail1,Name-Ntail1,VorL-Tail1),
+        genSuperP(Pred,Bodies,Ctail1-Ctail,Stail1-Stail,Ntail1-Ntail,Tail1-Tail).
+genSuperP(Pred,[],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- true |
+        Name = Ntail,
+        Code = [genErr(head(Pred,'User','OS','Flag','Error'), guard(true),
+                       error('User','Error'))| Ctail],
+        Second = Stail,
+        VorL = Tail.
+genSuperP(Pred,[last(Last,Err)],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- 
+        true |
+        genErr(Err,Info),
+        Code = [genlast(head(Pred,'User','OS','Flag','Error'),
+                        guard(true),
+                        body([goal(Last,'User','OS','Flag',Info)]))|Ctail],
+        Second = Stail,
+        VorL = Tail,
+        Name = Ntail.
+
+%%%%% minus
+
+genSuperM(Pred,[s(Key)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- 
+        Key \= ground |
+        Code = [gencode(head(Pred,'User','OS','_','Error'), 
+                        guard([goal(Key,'OS')]),
+                        body([unify('User','OS')]))| Ctail1],
+        genSuperM(Pred,Bodies,Ctail1-Ctail,Second-Stail,Name-Ntail,VorL-Tail).
+genSuperM(Pred,[s(ground)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- 
+        true |
+        Code = [gencode(head(Pred,'User','OS','_','Error'), 
+                        guard(true),                
+                        body([goal('-ground','OS1','OS'),
+                            unify('User','OS1')]))| Ctail1],
+        genSuperM(Pred,Bodies,Ctail1-Ctail,Second-Stail,Name-Ntail,VorL-Tail).
+genSuperM(Pred,[st(Prot,Err)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- 
+        true |
+        genStreamM(Pred,Prot,Err,Code-Ctail1,Second-Stail1,Name-Ntail1),
+        genSuperM(Pred,Bodies,Ctail1-Ctail,Stail1-Stail,Ntail-Ntail1,VorL-Tail).
+genSuperM(Pred,[li(Prot,Err)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):-
+        true |
+        genlistM(Pred,Prot,Err,Code-Ctail1,VorL-Tail2,Name-Ntail1),
+        genSuperM(Pred,Bodies,Ctail1-Ctail,Second-Stail,Ntail1-Ntail,Tail2-Tail).
+genSuperM(Pred,[v(any,Prot,Err)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):-
+        true |
+        genVanyM(Pred,Prot,Err,Code-Ctail1,VorL-Tail1,Name-Ntail1),
+        genSuperM(Pred,Bodies,Ctail1-Ctail,Second-Stail,Ntail1-Ntail,Tail1-Tail).
+genSuperM(Pred,[v(Num,In,Out)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):-
+        integer(Num) |
+        genvectorM(Pred,Num,In,Out,Code-Ctail1),
+        genSuperM(Pred,Bodies,Ctail1-Ctail,Second-Stail,Name-Ntail,VorL-Tail).
+genSuperM(Pred,[e(Enu)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- true |
+        genenuM(Pred,Enu,Enu,Code-Ctail1,Second-Stail1,Name-Ntail1),
+        genSuperM(Pred,Bodies,Ctail1-Ctail,Stail1-Stail,Ntail1-Ntail,VorL-Tail).
+genSuperM(Pred,[i(Super)|Bodies],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- true |
+        genSuperM(Pred,Super,Code-Ctail1,Second-Stail1,Name-Ntail1,VorL-Tail2),
+        genSuperM(Pred,Bodies,Ctail1-Ctail,Stail1-Stail,Ntail1-Ntail,Tail2-Tail).
+genSuperM(Pred,[last(Last,Err)],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- true |
+        genErr(Err,Info),
+        Code = [genlast(head(Pred,'User','OS','Flag','Error'),
+                        guard(true),
+                        body([goal(Last,'User','OS','Flag',Info)]))|Ctail],
+        VorL = Tail,
+        Second = Stail,
+        Name = Ntail.
+genSuperM(_Pred,[],Code-Ctail,Second-Stail,Name-Ntail,VorL-Tail):- true |
+        Code = Ctail,
+        VorL = Tail,
+        Second = Stail,
+        Name = Ntail.
+
+%%%%% code generation for stream
+
+genStreamP(top(Pred),s(any),[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Code = [gencode(head(Pred,['User'|'U2'],'OS','_','Error'), 
+                        guard(true),
+                        body([listunify('OS' = ['User'|'OS2']),
+                              goal(Pred,'U2','OS2','_','Error')])),
+                gencode(head(Pred,[],'OS','_','Error'), guard(true),
+                        body([unify('OS',[])])), 
+                genErr(head(Pred,'User','OS','Flag','Error'), 
+                        guard(true), error('User','Error','OS'))| Ctail],
+        Second = Stail,
+        Name = Ntail.
+genStreamP(Pred,s(any),[],Code-Ctail,Second-Stail,Name-Ntail):- atom(Pred) |
+
+        Code = [gencode(head(Pred,['User'|'U2'],'OS','_','Error'), 
+                        guard(true),
+                        body([listunify('OS' = ['User'|'OS2']),
+                              goal(Pred,'U2','OS2','_','Error')])),
+                gencode(head(Pred,[],'OS','_','Error'), guard(true),
+                        body([unify('OS',[])])), 
+                genErr(head(Pred,'User','OS','Flag','Error'), 
+                        guard(true), error('User','Error'))| Ctail],
+        Second = Stail,
+        Name = Ntail.
+genStreamP(top(Pred),Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        genErr(Err,Info),
+        Name = [secondName(Pred,Pred2)|Ntail],
+        Code = [gencode(head(Pred,['User'|'U2'],'OS','_','Error'), 
+                                guard(true),
+                        body([goal(Prot,'User','OS1','Flag',Info),
+                           goal(Pred2,'U2','OS','OS1','Flag','Error')])),
+                gencode(head(Pred,[],'OS','_','Error'), guard(true),
+                        body([unify([],'OS')])),
+                genErr(head(Pred,'User','OS','Flag','Error'), 
+                        guard(true), error('User','Error','OS'))|Ctail],
+        Second = [gencode(head(Pred2,'U2','OS','OS1','_','Error'), 
+                          guard([goal(wait,'OS1')]),
+                          body([listunify('OS',['OS1'|'OS2']),
+                                goal(Pred,'U2','OS2','_','Error')])),
+                genfail(head(Pred2,'U2','OS','OS1',fail,'Error'),
+                        guard(true), body(true))|Stail].
+genStreamP(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground, atom(Pred) |
+        genErr(Err,Info),
+        Name = [secondName(Pred,Pred2)|Ntail],
+        Code = [gencode(head(Pred,['User'|'U2'],'OS','_','Error'), 
+                                guard(true),
+                        body([goal(Prot,'User','OS1','Flag',Info),
+                           goal(Pred2,'U2','OS','OS1','Flag','Error')])),
+                gencode(head(Pred,[],'OS','_','Error'), guard(true),
+                        body([unify([],'OS')])),
+                genErr(head(Pred,'User','OS','Flag','Error'), 
+                        guard(true), error('User','Error'))|Ctail],
+        Second = [gencode(head(Pred2,'U2','OS','OS1','_','Error'), 
+                          guard([goal(wait,'OS1')]),
+                          body([listunify('OS',['OS1'|'OS2']),
+                                goal(Pred,'U2','OS2','_','Error')])),
+                genfail(head(Pred2,'U2','OS','OS1',fail,'Error'),
+                        guard(true), body(true))|Stail].
+genStreamP(top(Pred),ground,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        genErr(Err,Info),
+        Name = [secondName(Pred,Pred2)|Ntail],
+        Code = [gencode(head(Pred,['User'|'U2'],'OS','_','Error'), guard(true),
+                        body([goal('+ground','User','OS1'),
+                              goal(Pred2,'U2','OS','OS1','_','Error')])),
+                gencode(head(Pred,[],'OS','_','Error'), guard(true),
+                        body([unify([],'OS')])),
+                genErr(head(Pred,'User','OS','Flag','Error'), 
+                        guard(true), error('User','Error','OS'))|Ctail],
+        Second = [gencode(head(Pred2,'U2','OS','OS1','_','Error'), 
+                          guard([goal(wait,'OS1')]),
+                          body([listunify('OS',['OS1'|'OS2']),
+                                goal(Pred,'U2','OS2','_','Error')])),
+                genfail(head(Pred2,'U2','OS','OS1',fail,'Error'),
+                        guard(true), body(true)) |Stail].
+genStreamP(Pred,ground,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Pred) |
+        genErr(Err,Info),
+        Name = [secondName(Pred,Pred2)|Ntail],
+        Code = [gencode(head(Pred,['User'|'U2'],'OS','_','Error'), guard(true),
+                        body([goal('+ground','User','OS1'),
+                              goal(Pred2,'U2','OS','OS1','_','Error')])),
+                gencode(head(Pred,[],'OS','_','Error'), guard(true),
+                        body([unify([],'OS')])),
+                genErr(head(Pred,'User','OS','Flag','Error'), 
+                        guard(true), error('User','Error'))|Ctail],
+        Second = [gencode(head(Pred2,'U2','OS','OS1','_','Error'), 
+                          guard([goal(wait,'OS1')]),
+                          body([listunify('OS',['OS1'|'OS2']),
+                                goal(Pred,'U2','OS2','_','Error')])),
+                genfail(head(Pred2,'U2','OS','OS1',fail,'Error'),
+                        guard(true), body(true)) |Stail].
+
+%%%%%  stream generation as inherited definition
+
+genStreamPS(Pred,s(any),[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Code = [gencode(head(Pred,['User'|'U2'],'OS','_','Error'), guard(true),
+                        body([listunify('OS' = ['User'|'OS2']),
+                              goal(Pred,'U2','OS2','_','Error')])),
+                gencode(head(Pred,[],'OS','_','Error'), guard(true),
+                        body([unify('OS',[])]))| Ctail],
+        Second = Stail,
+        Name = Ntail.
+genStreamPS(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        genErr(Err,Info),
+        Name = [secondName(Pred,Pred2)|Ntail],
+        Code = [gencode(head(Pred,['User'|'U2'],'OS','_','Error'), 
+                        guard(true),
+                        body([goal(Prot,'User','OS1','Flag',Info),
+                              goal(Pred2,'U2','OS','OS1','Flag','Error')])),
+                gencode(head(Pred,[],'OS','_','Error'), guard(true),
+                        body([unify([],'OS')]))| Ctail],
+        Second = [gencode(head(Pred2,'U2','OS','OS1','_','Error'), 
+                          guard([goal(wait,'OS1')]),
+                          body([listunify('OS',['OS1'|'OS2']),
+                                goal(Pred,'U2','OS2','_','Error')]))|Stail].
+genStreamPS(Pred,ground,_Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        Name = [secondName(Pred,Pred2)|Ntail],
+        Code = [gencode(head(Pred,['User'|'U2'],'OS','_','Error'), guard(true),
+                        body([goal('+ground','User','OS1'),
+                              goal(Pred2,'U2','OS','OS1','_','Error')])),
+                gencode(head(Pred,[],'OS','_','Error'), guard(true),
+                        body([unify([],'OS')]))| Ctail],
+        Second = [gencode(head(Pred2,'U2','OS','OS1','_','Error'), 
+                          guard([goal(wait,'OS1')]),
+                          body([listunify('OS',['OS1'|'OS2']),
+                                goal(Pred,'U2','OS2','_','Error')]))|Stail].
+
+%%%%% stream    os -> user
+
+genStreamM(Pred,s(any),[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Code = [gencode(head(Pred,'User',['OS'|'OS2'],'_','Error'), 
+                        guard(true),
+                        body([listunify('User',['OS'|'U2']),
+                              goal(Pred,'U2','OS2','_','Error')])),
+                gencode(head(Pred,'User',[],'_','Error'),
+                        guard(true),
+                        body([unify('User',[])]))| Ctail],
+        Second = Stail,
+        Name = Ntail.
+genStreamM(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot),Prot \= ground  |
+        genErr(Err,Info),
+        Name = [secondName(Pred,Pred2)|Ntail],
+        Code = [gencode(head(Pred,'User',['OS'|'OS2'],'_','Error'), 
+                        guard(true),
+                        body([goal(Prot,'User1','OS','Flag',Info),
+                              goal(Pred2,'User','OS2','User1','Flag','Error')])),
+                gencode(head(Pred,'User',[],'_','Error'), guard(true),
+                        body([unify('User',[])]))| Ctail],
+        Second = [gencode(head(Pred2,'User','OS2','User1', '_','Error'),
+                          guard([goal('wait','User1')]),
+                          body([listunify('User',['User1'|'User2']),
+                                body(Pred,'User2','OS2','_','Error')]))| Stail].
+genStreamM(Pred,ground,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        genErr(Err,Info),
+        Name = [secondName(Pred,Pred2)|Ntail],
+        Code = [gencode(head(Pred,'User',['OS'|'OS2'],'_','Error'), 
+                        guard(true),
+                        body([goal('-ground','User1','OS'),
+                              goal(Pred2,'User','OS2','User1','_','Error')])),
+                gencode(head(Pred,'User',[],'_','Error'), guard(true),
+                        body([unify('User',[])]))| Ctail],
+        Second = [gencode(head(Pred2,'User','OS2','User1','_','Error'),
+                          guard([goal('wait','User1')]),
+                          body([listunify('User',['User1'|'User2']),
+                                body(Pred,'User2','OS2','_','Error')]))| Stail].
+
+%%%%% for list(p)
+        
+genlistP(Pred,s(any),[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Name = [listName1(Pred,PredL1)| Ntail],
+        Code = [gencode(head(Pred,['In1'|'In2'],'Out','Flag','Error'),
+                        guard(true),
+                        body([goal(PredL1,'In2',['In1'|'Tail'],
+                                        'Tail','Out','Flag','Error')])),
+                gencode(head(Pred,[],'Out','Flag','Error'), guard(true),
+                        body([unify('Out',[])])),
+                genErr(head(Pred,'User','OS','Flag','Error'), 
+                        guard(true),
+                       error('User','Error'))| Ctail],
+        Second = [gencode(head(PredL1,[],'Top','Tail','Out','Flag','Error'),
+                          guard(true), 
+                          body([unify('Tail',[]), unify('Out','Top')])),
+                  gencode(head(PredL1,['In1'|'In2'],'Top',
+                               'Tail','Out','Flag','Error'),
+                          guard(true),
+                          body([goal(PredL1,'In2','Top','Tail2',
+                                     'Out','Flag','Error'),
+                                listunify('Tail',['In1'|'Tail2'])]))| Stail].
+genlistP(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        genErr(Err,Info),
+        Name = [listName0(Pred,PredL0), listName1(Pred,PredL1), 
+                listName2(Pred,PredL2)| Ntail],
+        Code = [gencode(head(Pred,['In1'|'In2'],'Out','Flag','Error'), 
+                        guard(true),
+                        body([goal(Prot,'In1','In11','Flag',Info),
+                              goal(PredL0,'In11','In2','Top','Top','Out',
+                                   'Flag','Error')])),
+                gencode(head(Pred,[],'Out','Flag','Error'), guard(true),
+                        body([unify([],'Out')]))| Ctail],
+        Second = [gencode(head(PredL0,'In11','In2','Top','Tail',
+                            'Out','Flag','Error'), 
+                          guard([goal('wait', 'In11')]),
+                          body([goal(PredL1,'In2','Top',
+                                     'Tail2','Out','Flag','Error'),
+                                listunify('Tail',['In11'|'Tail2'])])),
+                  genfail(head(PredL0,'In11','In2','Top','Tail',
+                        'Out',fail,'Error'),
+                        guard(true),body(true)),
+                  gencode(head(PredL1,[],'Top','Tail','Out','Flag','Error'), 
+                          guard(true),
+                          body([unify('Tail',[]), unify('Out','Top')])),
+                  gencode(head(PredL1,['In1'|'In2'],'Top','Tail',
+                               'Out','Flag','Error'),
+                          guard(true),
+                          body([goal(Prot,'In1','In11','Flag','Error'),
+                                goal(PredL0,'In11','In2','Top','Tail',
+                                    'Out','Flag','Error')]))|Stail].
+
+genlistP(Pred,ground,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        genErr(Err,Info),
+        Name = [listName0(Pred,PredL0), listName1(Pred,PredL1), 
+                listName2(Pred,PredL2)| Ntail],
+        Code = [gencode(head(Pred,['In1'|'In2'],'Out','Flag','Error'), 
+                        guard(true),
+                        body([goal('+ground','In1','In11'),
+                              goal(PredL0,'In11','In2','Top','Top',
+                                    'Out','Flag','Error')]))| Ctail],
+        Second = [gencode(head(PredL0,'In11','In2','Top','Tail',
+                                    'Out','Flag','Error'), 
+                          guard([goal('wait', 'In11')]),
+                          body([listunify('Tail',['In11'|'Tail2']),
+                                goal(PredL1,'Top',
+                                     'Tail2','Out','Flag','Error')])),
+                genfail(head(PredL0,'In11','In2','Top','Tail',
+                                'Out',fail,'Error'),
+                        guard(true), body(true)),
+                  gencode(head(PredL1,[],'Top','Tail','Out','Flag','Error'), 
+                          guard(true),
+                          body([unify('Tail',[]), unify('Out','Top')])),
+                  gencode(head(PredL1,['In1'|'In2'],'Top','Tail',
+                               'Out','Flag','Error'),
+                          guard(true),
+                          body([goal('+ground','In1','In11'),
+                                goal(PredL0,'In11','In2','Top','Tail',
+                                     'Out','Flag','Error')]))| Stail].
+
+%%%%%
+
+genlistPenu(Pred,s(any),[],Enuall,Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Name = [listName1(Pred,PredL1)| Ntail1],
+        Code = [gencode(head(Pred,['In1'|'In2'],'Out','Flag','Error'),
+                        guard(true),
+                        body([goal(PredL1,'In2',['In1'|'Tail'],
+                                        'Tail','Out','Flag','Error')])),
+                gencode(head(Pred,[],'Out','Flag','Error'), guard(true),
+                        body([unify('Out',[])]))| Ctail],
+        Second = [gencode(head(PredL1,[],'Top','Tail','Out','Flag','Error'),
+                          guard(true), 
+                          body([unify('Tail',[]), unify('Out','Top')])),
+                  gencode(head(PredL1,['In1'|'In2'],'Top',
+                               'Tail','Out','Flag','Error'),
+                          guard(true),
+                          body([goal(PredL1,'In2','Top','Tail2',
+                                     'Out','Flag','Error'),
+                                listunify('Tail',['In1'|'Tail2'])]))| Stail1],
+        genlistPenuPat(PredL1,Enuall,Stail1-Stail,Third-Third,Ntail1-Ntail).
+genlistPenu(Pred,Prot,Err,Enuall,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        genErr(Err,Info),
+        Name = [listName0(Pred,PredL0), listName1(Pred,PredL1), 
+                listName2(Pred,PredL2)| Ntail1],
+        Code = [gencode(head(Pred,['In1'|'In2'],'Out','Flag','Error'), 
+                        guard(true),
+                        body([goal(Prot,'In1','In11','Flag',Info),
+                              goal(PredL0,'In11','In2','Top','Top',
+                                   'Out','Flag','Error')]))| Ctail],
+        Second = [gencode(head(PredL0,'In11','In2','Top','Tail',
+                                    'Out','Flag','Error'), 
+                          guard([goal('wait', 'In11')]),
+                          body([listunify('Tail',['In11'|'Tail2']),
+                                goal(PredL1,'In2','Top',
+                                     'Tail2','Out','Flag','Error')])),
+                  gencode(head(PredL1,['In1'|'In2'],'Top','Tail',
+                               'Out','Flag','Error'),
+                          guard(true),
+                          body([goal(Prot,'In1','In11','Flag','Error'),
+                                goal(PredL0,'In11','In2','Top','Tail',
+                                    'Out','Flag','Error')]))| Stail1],
+    genlistPenuPat(PredL1,Enuall,Stail1-Stail,Third-Third,Ntail1-Ntail).
+genlistPenu(Pred,ground,Err,Enuall,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        genErr(Err,Info),
+        Name = [listName0(Pred,PredL0), listName1(Pred,PredL1), 
+                listName2(Pred,PredL2)| Ntail1],
+        Code = [gencode(head(Pred,['In1'|'In2'],'Out','Flag','Error'), 
+                        guard(true),
+                        body([goal('+ground','In1','In11'),
+                              goal(PredL0,'In11','In2','Top','Top',
+                                   'Out','Flag','Error')]))| Ctail],
+        Second = [gencode(head(PredL0,'In11','In2','Top','Tail',
+                                'Out','Flag','Error'), 
+                          guard([goal('wait', 'In11')]),
+                          body([listunify('Tail',['In11'|'Tail2']),
+                                goal(PredL1,'In2','Top',
+                                     'Tail2','Out','Flag','Error')])),
+                  gencode(head(PredL1,['In1'|'In2'],'Top','Tail','Flag',
+                               'Out','Error'),
+                          guard(true),
+                          body([goal('+ground','In1','In11'),
+                                goal(PredL0,'In11','In2','Top','Tail',
+                                    'Out','Flag','Error')]))| Stail1],
+        genlistPenuPat(PredL1,Enuall,Stail1-Stail,Third-Third,Ntail1-Ntail).
+
+%%%%% put patterns in second list
+
+genlistPenuPat(PredL1,[li(_Prot,_Err)|Enu],
+        Second-Stail,Third-Ttail,Name-Ntail):- true |
+        genlistPenuPat(PredL1,Enu,Second-Stail,Third-Ttail,Name-Ntail).
+genlistPenuPat(PredL1,[pt(1,Pat,[],[])|Enu],
+        Second-Stail,Third-Ttail,Name-Ntail):- true |
+        Second = [gencode(head(PredL1,Pat,'Top','Tail','Out','Flag','Error'),
+                        guard('true'), 
+                        body([unify('Tail',Pat),unify('Out','Top')]))|Stail1],
+        genlistPenuPat(PredL1,Enu,Stail1-Stail,Third-Ttail,Name-Ntail).
+genlistPenuPat(PredL1,[pt(Num,Pat,In,Out)|Enu],
+        Second-Stail,Third-Ttail,Name-Ntail):- Num >= 1 |
+        genenuPat(PredL1,Num,Pat,In,Out,Second-Stail1,Third-Ttail1,Name-Ntail1),
+        genlistPenuPat(PredL1,Enu,Stail1-Stail,Ttail1-Ttail,Ntail1-Ntail).
+genlistPenuPat(PredL1,[],Second-Stail,Third-Ttail,Name-Ntail):- true |
+        Second = [genErr(head(PredL1,'Pat','Top','Tail','Out','Flag','Error'),
+                        guard(true), error('Pat','Error'))| Third],
+        Ttail = Stail,
+        Name = Ntail.
+
+%%%%% list for inherited definition
+
+genlistPS(Pred,s(any),[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Name = [listName1(Pred,PredL1)| Ntail],
+        Code = [gencode(head(Pred,['In1'|'In2'],'Out','Flag','Error'),
+                        guard(true),
+                        body([goal(PredL1,'In2',['In1'|'Tail'],
+                                        'Tail','Out','Flag','Error')])),
+                gencode(head(Pred,[],'Out','Flag','Error'), guard(true),
+                        body([unify('Out',[])]))| Ctail],
+        Second = [gencode(head(PredL1,[],'Top','Tail','Out','Flag','Error'),
+                          guard(true), 
+                          body([unify('Tail',[]), unify('Out','Top')])),
+                  gencode(head(PredL1,'In2',['In1'|'In2'],'Top',
+                               'Tail','Out','Flag','Error'),
+                          guard(true),
+                          body([goal(PredL1,'In2','Top','Tail2',
+                                     'Out','Flag','Error'),
+                                listunify('Tail',['In1'|'Tail2'])]))| Stail].
+genlistPS(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        genErr(Err,Info),
+        Name = [listName0(Pred,PredL0), listName1(Pred,PredL1), 
+                listName2(Pred,PredL2)| Ntail],
+        Code = [gencode(head(Pred,['In1'|'In2'],'Out','Flag','Error'), 
+                        guard(true),
+                        body([goal(Prot,'In1','In11','Flag',Info),
+                              goal(PredL0,'In11','In2','Top','Top',
+                                    'Out','Flag','Error')])),
+                gencode(head(Pred,[],'Out','Flag','Error'),guard(true),
+                        body([unify([],'OS')]))| Ctail],
+        Second = [gencode(head(PredL0,'In11','In2','Top','Tail',
+                                    'Out','Flag','Error'), 
+                          guard([goal('wait', 'In11')]),
+                          body([listunify('Tail',['In11'|'Tail2']),
+                                goal(PredL1,'In2','Top',
+                                     'Tail2','Out','Flag','Error')])),
+                  genfail(head(PredL0,'In11','In2','Top','Tail','Out',
+                                fail,'Error'), guard(true), body(true)),
+                  gencode(head(PredL1,[],'Top','Tail','Out','Flag',
+                          'Error'), 
+                          guard(true),
+                          body([unify('Tail',[]), unify('Out','Top')])),
+                  gencode(head(PredL1,['In1'|'In2'],'Top','Tail',
+                               'Out','Flag','Error'),
+                          guard(true),
+                          body([goal(Prot,'In1','In11','Flag','Error'),
+                                goal(PredL0,'In11','In2','Top','Tail',
+                                    'Out','Flag','Error')]))|Stail].
+
+genlistPS(Pred,ground,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        genErr(Err,Info),
+        Name = [listName0(Pred,PredL0), listName1(Pred,PredL1), 
+                listName2(Pred,PredL2)| Ntail],
+        Code = [gencode(head(Pred,['In1'|'In2'],'Out','Flag','Error'), 
+                        guard(true),
+                        body([goal('+ground','In1','In11'),
+                              goal(PredL0,'In11','In2','Top','Top','Out',
+                                   'Flag','Error')])),
+                gencode(head(Pred,[],'Out','Flag','Error'),
+                        gurad(true),body([unify([],'OS')]))| Ctail],
+        Second = [gencode(head(PredL0,'In11','In2','Top','Tail',
+                                'Out','Flag','Error'), 
+                          guard([goal('wait', 'In11')]),
+                          body([listunify('Tail',['In11'|'Tail2']),
+                                goal(PredL1,'In2','Top',
+                                     'Tail2','Out','Flag','Error')])),
+                  gencode(head(PredL1,[],'Top','Tail','Out','Flag',
+                                    'Error'), 
+                          guard(true),
+                          body([unify('Tail',[]), unify('Out','Top')])),
+                  gencode(head(PredL1,['In1'|'In2'],'Top','Tail',
+                               'Out','Flag','Error'),
+                          guard(true),
+                          body([goal('+ground','In1','In11'),
+                                goal(PredL0,'In11','In2','Top','Tail',
+                                    'Out','Flag','Error')]))|Stail].
+
+
+%%%%%
+                                
+%%%%% list  OS -> User
+
+genlistM(Pred,s(any),Err,Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Name = [listName1(Pred,PredL1)| Ntail],
+        Code = [gencode(head(Pred,'Out',['In1'|'In2'],'Flag','Error'),
+                        guard(true),
+                body([goal(PredL1,'In2',['In1'|'Tail'],'Tail','Out','Flag','Error')])),
+                gencode(head(Pred,'Out',[],'Flag','Error'),
+                        guard(true),
+                        body([unify('Out',[])]))| Ctail],
+        Second = [gencode(head(PredL1,[],'Top','Tail','Out','Flag','Error'),
+                          guard(true),
+                          body([unify('Tail',[]), unify('Out','Top')])),
+          gencode(head(PredL1,['In1'|'In2'],'Top','Tail','Out','Flag','Error'),
+                  guard(true),
+                  body([listunify('Tail',['In1'|'Tail2']),
+                        goal(PredL1,'In2','Top','Tail2',
+                             'Out','Flag','Error')]))|Stail].
+genlistM(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        Name = [secondName(Pred,Pred2)| Ntail],
+        genErr(Err,Info),
+        Code = [gencode(head(Pred,'User',['OS'|'OS2'],'Flag','Error'),
+                        guard(true),
+                        body([goal(Prot,'User1','OS','Flag',Info),
+                              goal(Pred2,'User','OS2','User1','Flag',Info)])),
+                gencode(head(Pred,'User',[],'Flag','Error'),
+                        guard(true),
+                        body([unify('User',[])]))| Ctail],
+        Second = [gencode(head(Pred2,'User','OS2','User1','Flag','Error'),
+                          guard([goal(wait,'User1')]),
+                          body([listunify('User',['User1'|'User2']),
+                                goal(Pred,'User2','OS2','Flag','Error')]))| Stail].
+genlistM(Pred,ground,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        Name = [secondName(Pred,Pred2)| Ntail],
+        genErr(Err,Info),
+        Code = [gencode(head(Pred,'User',['OS'|'OS2'],'Flag','Error'),
+                        guard(true),
+                        body([goal('-ground','User1','OS'),
+                              goal(Pred2,'User','OS2','User1','Flag',Info)])),
+                gencode(head(Pred,'User',[],'Flag','Error'),
+                        guard(true),
+                        body([unify('User',[])]))| Ctail],
+        Second = [gencode(head(Pred2,'User','OS2','User1','Flag','Error'),
+                          guard([goal(wait,'User1')]),
+                          body([listunify('User',['User1'|'User2']),
+                                goal(Pred,'User2','OS2','Flag','Error')]))| Stail].
+
+genlistMenu(Pred,s(any),Err,Enuall,Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Name = [listName1(Pred,PredL1)| Ntail],
+        Code = [gencode(head(Pred,'Out',['In1'|'In2'],'Flag','Error'),
+                        guard(true),
+                body([goal(PredL1,'In2',['In1'|'Tail'],'Tail','Out','Flag','Error')]))|Ctail],
+        Second = [gencode(head(PredL1,[],'Top','Tail','Out','Flag','Error'),
+                          guard(true),
+                          body([unify('Tail',[]), unify('Out','Top')])),
+          gencode(head(PredL1,['In1'|'In2'],'Top','Tail','Out','Flag','Error'),
+                  guard(true),
+                  body([listunify('Tail',['In1'|'Tail2']),
+                        goal(PredL1,'In2','Top','Tail2',
+                             'Out','Flag','Error')]))|Stail].
+genlistMenu(Pred,Prot,Err,Enuall,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        Name = [secondName(Pred,Pred2)| Ntail],
+        genErr(Err,Info),
+        Code = [gencode(head(Pred,'User',['OS'|'OS2'],'Flag','Error'),
+                        guard(true),
+                        body([goal(Prot,'User1','OS','Flag',Info),
+                              goal(Pred2,'User','OS2','User1','Flag',Info)]))|
+                Ctail],
+        Second = [gencode(head(Pred2,'User','OS2','User1','Flag','Error'),
+                          guard([goal(wait,'User1')]),
+                          body([listunify('User',['User1'|'User2']),
+                                goal(Pred,'User2','OS2','Flag','Error')]))| Stail].
+genlistMenu(Pred,ground,Err,Enuall,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        Name = [secondName(Pred,Pred2)| Ntail],
+        genErr(Err,Info),
+        Code = [gencode(head(Pred,'User',['OS'|'OS2'],'Flag','Error'),
+                        guard(true),
+                        body([goal('-ground','User1','OS'),
+                              goal(Pred2,'User','OS2','User1','Flag',Info)]))|
+                Ctail],
+        Second = [gencode(head(Pred2,'User','OS2','User1','Flag','Error'),
+                          guard([goal(wait,'User1')]),
+                          body([listunify('User',['User1'|'User2']),
+                                goal(Pred,'User2','OS2','Flag','Error')]))| Stail].
+
+%%%%% vector(p) +
+                                
+genVanyP(Pred,s(any),[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Code = [gencode(head(Pred,'In','Out','_','Error'), 
+                        guard([goal(vector,'In','Size')]),
+                        body([unify('In','Out')])),
+                genErr(head(Pred,'User','OS','Flag','Error'), guard(true),
+                       error('User','Error'))| Ctail],
+        Second = Stail,
+        Name = Ntail.
+genVanyP(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        genErr(Err,Info),
+        Name = [vector1(Pred,PredV1), vector2(Pred,PredV2) | Ntail],
+        Code = [gencode(head(Pred,'In','Out','Flag','Error'),
+                        guard([goal(vector,'In','Size')]),             
+                        body([goal(PredV1,'In','Out',0,'Size','Flag',Info)])),
+                genErr(head(Pred,'In','Out','Flag','Error'), 
+                       guard(true),
+                       error('In','Error'))| Ctail],
+        Second = [gencode(head(PredV1,'In','Out','Pos','Size','Flag','Error'),
+                     guard([unify('Pos'\='Size')]),
+                     body([goal('vector_element','In','Pos','Elm','Nin'),
+                            goal(Prot,'Elm','Elm2','Flag','Error'),
+                            cal('Npos':= 'Pos' + 1),
+                            goal(PredV2,'Elm2','Nin','Out','Npos','Size',
+                                    'Flag','Error')])),
+                 gencode(head(PredV1,'In','Out','Size','Size','Flag','Error'),
+                         guard(true),
+                         body([unify('In','Out')])),
+               gencode(head(PredV2,'Elm','In','Out','Pos','Size',
+                                'Flag','Error'),
+                         guard([goal(wait,'Elm')]),
+                         body([goal(PredV1,'In','Out','Pos','Size',
+                                'Flag','Error')])),
+                genfail(head(PredV2,'Elm','In','Out','Pos','Size',
+                                fail,'Error'), 
+                        guard(true), body(true))| Stail].
+                              
+genVanyP(Pred,ground,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        genErr(Err,Info),
+        Name = [vector1(Pred,PredV1), vector2(Pred,PredV2)| Ntail],
+        Code = [gencode(head(Pred,'In','Out','Flag','Error'),
+                        guard([goal(vector,'In','Size')]),
+                        body([goal(PredV1,'In','Out',0,'Size','Flag',Info)])),
+                genErr(head(Pred,'User','OS','Flag','Error'), 
+                        guard(true),
+                        error('User','Error'))| Ctail],
+        Second = [gencode(head(PredV1,'In','Out','Pos','Size','Flag','Error'),
+                         guard([unify('Pos'\='Size')]),
+                         body([goal('vector_element','In','Pos',
+                                    'Elm','Nin'),
+                            goal('+ground','Elm','Elm2'),
+                            cal('Npos':= 'Pos' + 1),
+                            goal(PredV2,'Elm2','Nin','Out','Npos','Size',
+                                    'Flag','Error')])),
+                  gencode(head(PredV1,'In','Out','Size','Size',
+                                'Flag','Error'), guard(true),
+                        body([unify('In','Out')])),
+                 gencode(head(PredV2,'Elm','In','Out','Pos','Size',
+                            'Flag','Error'),
+                         guard([goal(wait,'Elm')]),
+                         body([goal(PredV1,'In','Out','Pos','Size',
+                            'Flag','Error')])),
+                 genfail(head(PredV2,'Elm','In','Out','Pos','Size',
+                            fail,'Error'),
+                        guard(true), body(true))| Stail].
+
+%%%%% for inherited definition
+
+genVanyPS(Pred,s(any),[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Code = [gencode(head(Pred,'In','Out','Flag','Error'), 
+                        guard([goal(vector,'In','Size')]),
+                        body([unify('In','Out')]))| Ctail],
+        Second = Stail,
+        Name = Ntail.
+genVanyPS(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        genErr(Err,Info),
+        Name = [vector1(Pred,PredV1), vector2(Pred,PredV2)| Ntail],
+        Code = [gencode(head(Pred,'In','Out','Flag','Error'),
+                        guard([goal(vector,'In','Size')]),
+                        body([goal(PredV1,'In','Out',0,'Size',
+                            'Flag',Info)]))| Ctail],
+        Second = [gencode(head(PredV1,'In','Out','Pos','Size',
+                            'Flag','Error'),
+                     guard([unify('Pos'\='Size')]),
+                     body([goal('vector_element','In','Pos','Elm','Nin'),
+                           goal(Prot,'Elm','Elm2','Flag','Error'),
+                           cal('Npos' := 'Pos' + 1),
+                           goal(PredV2,'Elm2','In','Out','Npos','Size',
+                                    'Flag','Error')])),
+                 gencode(head(PredV1,'In','Out','Size','Size',
+                        'Flag','Error'),
+                         guard(true),
+                         body([unify('In','Out')])),
+                 gencode(head(PredV2,'Elm','In','Out','Pos','Size',
+                                    'Flag','Error'),
+                         guard([goal(wait,'Elm')]),
+                         body([goal(PredV1,'In','Out','Pos','Size',
+                                    'Flag','Error')])),
+                genfail(head(PredV2,'Elm','In','Out','Pos','Size',
+                                    fail,'Error'),
+                        guard(true),
+                        body(true))| Stail].
+                              
+genVanyPS(Pred,ground,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        genErr(Err,Info),
+        Name = [vector1(Pred,PredV1), vector2(Pred,PredV2)| Ntail],
+        Code = [gencode(head(Pred,'In','Out','Flag','Error'),
+                        guard([goal(vector,'In','Size')]),
+                        body([goal(PredV1,'In','Out',0,'Size',
+                            'Flag',Info)]))| Ctail],
+        Second = [gencode(head(PredV1,'In','Out','Pos','Size',
+                            'Flag','Error'),
+                         guard([unify('Pos'\='Size')]),
+                         body([goal('vector_element','In','Pos','Elm','Nin'),
+                               cal('Npos':= 'Pos' + 1),
+                               goal('+ground','Elm','Elm2','Flag'),
+                               goal(PredV2,'Elm2','Nin','Out','Pos',
+                                    'Size','Flag','Error')])),
+                 gencode(head(PredV1,'In','Out','Size','Size',
+                            'Flag','Error'),
+                         guard(true),
+                         body([unify('In','Out')])),
+                 gencode(head(PredV2,'Elm','In','Out','Pos','Size',
+                            'Flag','Error'),
+                         guard([goal(wait,'Elm')]),
+                         body([goal(PredV1,'In','Out','Pos','Size',
+                            'Flag','Error')])),
+                 genfail(head(PredV2,'Elm','In','Out','Pos','Size',
+                            fail,'Error'),
+                         guard(true), body(true))| Stail].
+                              
+
+%%%%% vector(p) -
+
+genVanyM(Pred,s(any),[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Code = [gencode(head(Pred,'Out','In','Flag','Error'), 
+                        guard([goal(vector,'In','Size')]),
+                        body([unify('In','Out')]))| Ctail],
+        Second = Stail,
+        Name = Ntail.
+genVanyM(Pred,Prot,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        atom(Prot), Prot \= ground |
+        genErr(Err,Info),
+        Name = [secondName(Pred,Pred2), vector2(Pred,PredV2),
+                vector1(Pred,PredV1)| Ntail],
+        Code = [gencode(head(Pred,'Out','In','Flag',Info),
+                        guard([goal(vector,'In','Size'),
+                               goal(vector_element,'In',0,'Elm')]),
+                        body([goal(PredV1,'In','Elm',1,'Size','In2','Flag',Info),
+                              goal(Pred2,'In2','Out','Flag',Info)]))| Ctail],
+        Second = [gencode(head(Pred2,'In2','Out','Flag','Error'),
+                          guard([goal(wait,'In2')]),
+                          body([unify('Out','In2')])),
+                  gencode(head(PredV1,'Vector','Elm','Pos','Size','In2','Flag','Error'),
+                          guard([unify('Pos' \= 'Size')]),
+                          body([goal(Prot,'Elm2','Elm','Flag','Error'),
+                                goal(PredV2,'Vector','Pos','Elm2',
+                                     'Size','In2','Flag','Error')])),
+                  gencode(head(PredV1,'Vector','Elm','Size','Size','In2','Flag','Error'),
+                          guard(true),
+                          body([goal(Prot,'Elm2','Elm','Flag','Error'),
+                                goal(PredV2,'Vector','Size','Elm2',
+                                     'Size','In2','Flag','Error')])),
+                  gencode(head(PredV2,'Vector','Pos','Elm2','Size','In2','Flag','Error'),
+                          guard([goal('wait','Elm2'),unify('Pos'\='Size'),
+                                goal(vector_element,'Vector','Pos','Nelm')]),
+                          body([cal('Npos' := 'Pos' + 1),
+                                goal(PredV1,'Vector','Nelm','Npos',
+                                     'Size','In2','Flag','Error')])),
+                  gencode(head(PredV2,'Vector','Size','Elm2','Size','In2','Flag','Error'),
+                          guard([goal(wait,'Elm2')]),
+                          body([unify('Vector','In2')]))| Stail].
+genVanyM(Pred,ground,Err,Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        genErr(Err,Info),
+        Name = [secondName(Pred,Pred2), vector2(Pred,PredV2),
+                vector1(Pred,PredV1)| Ntail],
+        Code = [gencode(head(Pred,'Out','In','Flag',Info),
+                        guard([goal(vector,'In','Size'),
+                               goal(vector_element,'In',0,'Elm')]),
+                        body([goal(PredV1,'In','Elm',1,'Size','In2','Flag',Info),
+                              goal(Pred2,'In2','Out','Flag',Info)]))| Ctail],
+        Second = [gencode(head(Pred2,'In2','Out','Flag','Error'),
+                          guard([goal(wait,'In2')]),
+                          body([unify('Out','In2')])),
+                  gencode(head(PredV1,'Vector','Elm','Pos','Size','In2','Flag','Error'),
+                          guard([unify('Pos' \= 'Size')]),
+                          body([goal('-ground','Elm2','Elm'),
+                                goal(PredV2,'Vector','Pos','Elm2',
+                                     'Size','In2','Flag','Error')])),
+                  gencode(head(PredV1,'Vector','Elm','Size','Size','In2','Flag','Error'),
+                          guard(true),
+                          body([goal('-ground','Elm2','Elm'),
+                                goal(PredV2,'Vector','Size','Elm2',
+                                     'Size','In2','Flag','Error')])),
+                  gencode(head(PredV2,'Vector','Pos','Elm2','Size','In2','Flag','Error'),
+                          guard([goal('wait','Elm2'),unify('Pos'\='Size'),
+                                goal(vector_element,'Vector','Pos','Nelm')]),
+                          body([cal('Npos' := 'Pos' + 1),
+                                goal(PredV1,'Vector','Nelm','Npos',
+                                     'SIze','In2','Flag','Error')])),
+                  gencode(head(PredV2,'Vector','Size','Elm2','Size','In2','Flag','Error'),
+                          guard([goal(wait,'Elm2')]),
+                          body([unify('Vector','In2')]))| Stail].
+
+
+%%%%% vector([p1,p2,p3]) ->  {_1,_2,_3}
+%%%%% inherited definition
+genvectorPS(Pred,Num,In,Out,Code-Ctail,Second-Stail,Name-Ntail):- 
+        Num =\= 0 |
+        Name = [secondName(Pred,Pred2)| Ntail],
+        Code = [gencode(head(Pred,v(User1),'OS','_','Error'),
+                        guard(true),
+                        body([goal(Pred2,v(User2),'OS','Flag','Error')| 
+                            Pfilters]))| Ctail],
+        Second = [gencode(head(Pred2,v(User2),'OS','_','Error'),
+                          guard(Guard),
+                          body([unify(v(User3),'OS')|Mfilters]))| Stail],
+        initializeVP(Num,User1),
+        initializeVP(Num,User21),
+        initializeVP(Num,User31),
+        genGuardP(In,User21,User2,User31,User32,Pfilters,Guard),
+        genMfiltersP(User32,Out,Mfilters,User3).
+genvectorPS(Pred,0,[],[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Name = Ntail,
+        Second = Stail,
+        Code = [gencode(head(Pred,'{}','OS','_','Error'),
+                        guard(true),
+                        body([unify('{}','OS')]))| Ctail].
+           
+
+%%%%%
+genvectorP(Pred,Num,In,Out,Code-Ctail,Second-Stail,Name-Ntail):- 
+        Num =\= 0 |
+        Name = [secondName(Pred,Pred2)| Ntail],
+        Code = [gencode(head(Pred,v(User1),'OS','_','Error'),
+                        guard(true),
+                        body([goal(Pred2,v(User2),'OS','Flag','Error')| 
+                            Pfilters])),
+                genErr(head(Pred,'User','OS','Flag','Error'), guard(true),
+                       error('User','Error'))| Ctail],
+        Second = [gencode(head(Pred2,v(User2),'OS','_','Error'),
+                          guard(Guard),
+                          body([unify(v(User3),'OS')|Mfilters])),
+                    genfail(head(Pred2,'User','OS',fail,'Error'),
+                        guard(true), body(true))| Stail],
+        initializeVP(Num,User1),
+        initializeVP(Num,User21),
+        initializeVP(Num,User31),
+        genGuardP(In,User21,User2,User31,User32,Pfilters,Guard),
+        genMfiltersP(User32,Out,Mfilters,User3).
+genvectorP(Pred,0,[],[],Code-Ctail,Second-Stail,Name-Ntail):- true |
+        Name = Ntail,
+        Second = Stail,
+        Code = [gencode(head(Pred,'{}','OS','_','Error'),
+                        guard(true),
+                        body([unify('{}','OS')])),
+                genErr(head(Pred,'User','OS','Flag','Error'), guard(true),
+                       error('User','Error'))| Ctail].
+
+genvectorM(Pred,Num,[],Out,Code-Ctail):- Num =\= 0 |
+        Code = [gencode(head(Pred,'User',v(OS1),'_','Error'),
+                        guard(true),
+                        body([unify('User',v(OS2))|Filters]))| Ctail],
+        genFilter(Num,Out,OS1,OS2,Filters).
+genvectorM(Pred,0,[],[],Code-Ctail):- true |
+        Code = [gencode(head(Pred,'User','{}','_','Error'),
+                        guard(true),
+                        body([unify('User','{}')]))| Ctail].
+
+%%%%%  inherited enumeration (it does not generate error code )
+
+genenuPS(Pred,[pt(Num,Pat,In,Out)|Enu],Enuall,Code-Ctail,
+        Second-Stail,Name-Ntail,List-Ltail):- true |
+        genenuPat(Pred,Num,Pat,In,Out,Code-Ctail1,Second-Stail1,Name-Ntail1),
+        genenuPS(Pred,Enu,Enuall,Ctail1-Ctail,Stail1-Stail,Ntail1-Ntail,List-Ltail).
+genenuPS(Pred,[li(Prot,Err)|Enu],Enuall,Code-Ctail,
+        Second-Stail,Name-Ntail,List-Ltail):- true |
+        genlistPenu(Pred,Prot,Err,Enuall,Code-Ctail1,List-Ltail2,Name-Ntail1),
+        genenuPS(Pred,Enu,Enuall,Ctail1-Ctail,Second-Stail,Ntail1-Ntail,Ltail2-Ltail).
+genenuPS(Pred,[],Enuall,Code-Ctail,Second-Stail,Name-Ntail,List-Ltail):- true |
+        List = Ltail,
+        Code = Ctail,
+        Second = Stail,
+        Name = Ntail.
+
+%%%%%  enumeration (plus)
+
+genenuP(Pred,[pt(Num,Pat,In,Out)|Enu],Enuall,Code-Ctail,
+        Second-Stail,Name-Ntail,List-Ltail):- true |
+        genenuPat(Pred,Num,Pat,In,Out,Code-Ctail1,
+                Second-Stail1,Name-Ntail1),
+        genenuP(Pred,Enu,Enuall,Ctail1-Ctail,
+                Stail1-Stail,Ntail1-Ntail,List-Ltail).
+genenuP(Pred,[li(Prot,Err)|Enu],Enuall,Code-Ctail,
+        Second-Stail,Name-Ntail,List-Ltail):- true |
+        genlistPenu(Pred,Prot,Err,Enuall,Code-Ctail1,
+                List-Ltail2,Name-Ntail1),
+        genenuP(Pred,Enu,Enuall,Ctail1-Ctail,Second-Stail,
+                Ntail1-Ntail,Ltail2-Ltail).
+genenuP(Pred,[],Enuall,Code-Ctail,Second-Stail,Name-Ntail,List-Ltail):- 
+        true |
+        Code = [genErr(head(Pred,'User','OS','Flag','Error'), guard(true),
+                       error('User','Error'))| Ctail],
+        List = Ltail,
+        Second = Stail,
+        Name = Ntail.
+
+genenuPat(Pred,1,Pat,[],[],Code-Ctail,Second-Stail,Name-Ntail):- 
+        true |
+        Name = Ntail,
+        Second = Stail,
+        Code = [gencode(head(Pred,e({Pat}),'OS','_','Error'),
+                        guard(true),
+                        body([unify(e({Pat}),'OS')]))| Ctail].
+genenuPat(Pred,Num,Pat,[],Out,Code-Ctail,Second-Stail,Name-Ntail):- 
+        Num >= 2 |
+        Name = Ntail,
+        Second = Stail,
+        Code = [gencode(head(Pred,e(User1),'OS','_','Error'),
+                        guard(true),
+                        body([unify(e(User3),'OS')| Mfilters]))|Ctail],
+        Arity := Num - 1,
+        initializeVP(Arity,User11),
+        initializeVP(Arity,User31),
+        genMfiltersP(User31,Out,Mfilters,User33),
+        setpat(User11,User1,Num,Pat),
+        setpat(User33,User3,Num,Pat).
+
+
+genenuPat(Pred,Num,Pat,In,Out,Code-Ctail,Second-Stail,Name-Ntail):- 
+        Num >= 2, In \= [] |
+        Name = [secondName(Pred,Pred2)| Ntail],
+        Code = [gencode(head(Pred,e(User1),'OS','_','Error'),
+                        guard(true),
+                        body([goal(Pred2,e(User2),'OS','Flag',
+                        'Error')| Pfilters]))|Ctail],
+        Second = [gencode(head(Pred2,e(User2),'OS','_','Error'),
+                          guard(Guard),
+                          body([unify(e(User3),'OS')|Mfilters]))| Stail],
+        Arity := Num - 1,
+        initializeVP(Arity,User11),
+        initializeVP(Arity,User21),
+        initializeVP(Arity,User31),
+        genGuardP(In,User21,User22,User31,User32,Pfilters,Guard),
+        genMfiltersP(User32,Out,Mfilters,User33),
+        setpat(User11,User1,Num,Pat),
+        setpat(User22,User2,Num,Pat),
+        setpat(User33,User3,Num,Pat).
+
+setpat(Vector,User,Num,Pat):- true |
+        new_vector(New,Num),
+        set_vector_element(New,0,_,Pat,New2),
+        copy(0,Num,Vector,New2,User).
+
+copy(Pos,Size,S,D,User):- Pos < Size - 1 |
+    vector_element(S,Pos,Elm,S2),
+    Npos := Pos + 1,
+    set_vector_element(D,Npos,_,Elm,D2),
+    copy(Npos,Size,S2,D2,User).
+copy(Pos,Size,_S,D,User):- Pos =:= Size - 1 |
+    D = User.
+        
+%%%%%  enumeration (minus)
+
+genenuM(Pred,[pt(Num,Pat,[],Out)|Enu],Enuall,Code-Ctail,Scode-Stail,
+        Name-Ntail):- true |
+        genpatM(Pred,Num,Pat,Out,Code-Ctail1,Name-Ntail1),
+        genenuM(Pred,Enu,Enuall,Ctail1-Ctail,Scode-Stail,Ntail1-Ntail).
+genenuM(Pred,[li(Prot,Err)|Enu],Enuall,Code-Ctail,Scode-Stail,
+        Name-Ntail):- true |
+        genlistMenu(Pred,Prot,Err,Enuall,Code-Ctail1,Scode-Stail1,Name-Ntail1),
+        genenuM(Pred,Enu,Enuall,Ctail1-Ctail,Stail1-Stail,Ntail1-Ntail).
+genenuM(_Pred,[],Enuall,Code-Ctail,Scode-Stail,Name-Ntail):- true |
+        Code = Ctail,
+        Scode = Stail,
+        Name = Ntail.
+
+genpatM(Pred,1,Pat,[],Code-Ctail,Name-Ntail):- true |
+        Name = Ntail,
+        Code = [gencode(head(Pred,'User',e({Pat}),'_','Error'),
+                        guard(true),
+                        body([unify('User',e({Pat}))]))| Ctail].
+
+genpatM(Pred,Num,Pat,Out,Code-Ctail,Name-Ntail):- Num >= 2 |
+        Name = Ntail,
+        Code = [gencode(head(Pred,'User',e(OS1),'_','Error'),
+                        guard(true),
+                        body([unify('User',e(OS2))|Filters]))| Ctail],
+        Arity := Num - 1,
+        genFilter(Arity,Out,OS11,OS21,Filters),
+        setpat(OS11,OS1,Num,Pat),
+        setpat(OS21,OS2,Num,Pat).
+        
+
+%%%%% make pattern for vector {_1,_2,_3} and etc.
+
+genGuardP(In,User21,User2,User31,User3,Pfilters,Guard):- true |
+        genGP(User21,User2,User31,User3,In,Pfilters,Guard).
+
+genGP(User21,User2,User31,User3,[{{_Key,_Num},s(any),[]}| In],
+        Pfilters,Guard):- true |
+        genGP(User21,User2,User31,User3,In,Pfilters,Guard).
+genGP(User21,User2,User31,User3,[{{_Key,Num},Name,Err}| In],Pfilters,Guard):- 
+        atom(Name), Name \= ground |
+        genErr(Err,Info),
+        Pos := Num - 1,
+        makevar2(Num,Num2),
+        set_vector_element(User21,Pos,Old,Num2,User22),
+        set_vector_element(User31,Pos,_,Num2,User32),
+        Pfilters = [goal(Name,Old,Num2,'Flag',Info)| Ptail],
+        Guard = [goal(wait,Num2)| Gtail],
+        genGP(User22,User2,User32,User3,In,Ptail,Gtail).
+genGP(User21,User2,User31,User3,[{{_Key,Num},ground,Err}| In],Pfilters,Guard):- 
+        true |
+        genErr(Err,Info),
+        Pos := Num - 1,
+        makevar2(Num,Num2),
+        set_vector_element(User21,Pos,Old,Num2,User22),
+        set_vector_element(User31,Pos,_,Num2,User32),
+        Pfilters = [goal('+ground',Old,Num2)| Ptail],
+        Guard = [goal(wait,Num2)| Gtail],
+        genGP(User22,User2,User32,User3,In,Ptail,Gtail).
+genGP(User21,User2,User31,User3,[],Pfilters,Guard):- true |
+        User21 = User2,
+        User31 = User3,
+        Pfilters = [],
+        Guard = [].
+        
+genMfiltersP(User31,[{{_Key,_Num},s(any),[]}|Out],Mfilters,User3):- true |
+             genMfiltersP(User31,Out,Mfilters,User3).
+genMfiltersP(User31,[{{_Key,Num},Name,Err}|Out],Mfilters,User3):-
+        atom(Name), Name \= ground |
+        genErr(Err,Info),
+        Pos := Num - 1,
+        makevar2(Num,Num2),
+        set_vector_element(User31,Pos,Old,Num2,User32),
+        Mfilters = [goal(Name,Old,Num2,'Flag',Info)| Mtail],
+        genMfiltersP(User32,Out,Mtail,User3).
+genMfiltersP(User31,[{{_Key,Num},ground,Err}|Out],Mfilters,User3):-
+        true |
+        genErr(Err,Info),
+        Pos := Num - 1,
+        makevar2(Num,Num2),
+        set_vector_element(User31,Pos,Old,Num2,User32),
+        Mfilters = [goal('-ground',Old,Num2)| Mtail],
+        genMfiltersP(User32,Out,Mtail,User3).
+genMfiltersP(User,[],Mfilters,User3):- true |
+        User = User3,
+        Mfilters = [].
+
+%%%%% vector minus
+
+genFilter(Num,Out,OS1,OS2,Filters):- true |
+        initializeVM(Num,OS1),
+        initializeVM(Num,V22),
+        genF(Out,V22,OS2,Filters).
+
+genF([{{_Key,_Num},s(any),[]}| Out],V,OS2,Filters):- true |
+        genF(Out,V,OS2,Filters).
+genF([{{_Key,Num},Name,Err}| Out],V,OS2,Filters):- 
+        atom(Name), Name \= ground |
+        genErr(Err,Info),
+        Pos := Num - 1,
+        makevar1(Num,Num2),
+        set_vector_element(V,Pos,Old,Num2,New),
+        Filters = [goal(Name,Num2,Old,'Flag',Info)| Ftail],
+        genF(Out,New,OS2,Ftail).
+genF([{{_Key,Num},ground,Err}| Out],V,OS2,Filters):- 
+        true |
+        genErr(Err,Info),
+        Pos := Num - 1,
+        makevar1(Num,Num2),
+        set_vector_element(V,Pos,Old,Num2,New),
+        Filters = [goal('-ground',Num2,Old)| Ftail],
+        genF(Out,New,OS2,Ftail).
+genF([],V,OS2,Filters):- true |
+        OS2 = V,
+        Filters = [].
+
+%%%%%
+
+genErr(Err,Info):- true |
+    genErr2(Err,Tmp-Tmp,Info,none).
+
+genErr2([add(E)|Err],Tmp-Tmp1,Info,_Pre):- true |
+    Tmp1 = [E|Tmp2],
+    genErr2(Err,Tmp-Tmp2,Info,add).
+genErr2([reset(E)|_Err],Tmp-Tmp1,Info,_Pre):- true |
+    Tmp1 = [E|Tmp2],
+    genErr3(Tmp-Tmp2,Info,reset).
+genErr2([],Tmp-Tmp1,Info,Pre):- true |
+    genErr3(Tmp-Tmp1,Info,Pre).
+
+genErr3(Tmp-Tmp1,Info,reset):- true |
+    Tmp1 = [],
+    Info = Tmp.
+genErr3(Tmp-Tmp1,Info,add):- true |
+    Tmp1 = ['Error'],
+    Info = Tmp.
+genErr3(_Tmp-Tmp1,Info,none):- true |
+    Tmp1 = [],
+    Info = 'Error'.
+%%%%%
+
+initializeVP(1,User):- true |
+    new_vector(V,1),
+    set_vector_element(V,0,_,'_1',User).
+initializeVP(Size,User):- Size > 1 |
+    new_vector(V,Size),
+    set_vector_element(V,0,_,'_1',V2),
+    initVP2(Size,1,V2,User).
+
+initVP2(Size,Pos,V,User):- Pos =:= Size - 1 |
+    Num := Pos + 1,
+    makevar1(Num,Var),
+    set_vector_element(V,Pos,_,Var,User).
+otherwise.
+initVP2(Size,Pos,V,User):- true |
+    Num := Pos + 1,
+    makevar1(Num,Var),
+    set_vector_element(V,Pos,_,Var,V2),
+    initVP2(Size,Num,V2,User).
+
+initializeVM(1,User):- true |
+    new_vector(V,1),
+    set_vector_element(V,0,_,'__1',User).
+initializeVM(Size,User):- Size > 1 |
+    new_vector(V,Size),
+    set_vector_element(V,0,_,'__1',V2),
+    initVM2(Size,1,V2,User).
+
+initVM2(Size,Pos,V,User):- Pos =:= Size -1 |
+    Num := Pos + 1,
+    makevar2(Num,Var),
+    set_vector_element(V,Pos,_,Var,User).
+otherwise.
+initVM2(Size,Pos,V,User):- true |
+    Num := Pos + 1,
+    makevar2(Num,Var),
+    set_vector_element(V,Pos,_,Var,V2),
+    initVM2(Size,Num,V2,User).
+
+%%%%%
+makevar1(1,Var):- true |
+    Var = '_1'.
+makevar1(2,Var):- true |
+    Var = '_2'.
+makevar1(3,Var):- true |
+    Var = '_3'.
+makevar1(4,Var):- true |
+    Var = '_4'.
+makevar1(5,Var):- true |
+    Var = '_5'.
+makevar1(6,Var):- true |
+    Var = '_6'.
+makevar1(7,Var):- true |
+    Var = '_7'.
+makevar1(8,Var):- true |
+    Var = '_8'.
+makevar1(9,Var):- true |
+    Var = '_9'.
+makevar1(10,Var):- true |
+    Var = '_10'.
+makevar1(Int,Var):- Int > 10 |
+    nTable:checkNum(Int,IntS),
+    builtin#append_string("__",IntS,VarP),
+    atom_table:intern(VarP,normal(Var)).
+
+makevar2(1,Var):- true |
+    Var = '__1'.
+makevar2(2,Var):- true |
+    Var = '__2'.
+makevar2(3,Var):- true |
+    Var = '__3'.
+makevar2(4,Var):- true |
+    Var = '__4'.
+makevar2(5,Var):- true |
+    Var = '__5'.
+makevar2(6,Var):- true |
+    Var = '__6'.
+makevar2(7,Var):- true |
+    Var = '__7'.
+makevar2(8,Var):- true |
+    Var = '__8'.
+makevar2(9,Var):- true |
+    Var = '__9'.
+makevar2(10,Var):- true |
+    Var = '__10'.
+makevar2(Int,Var):- Int > 10 |
+    nTable:checkNum(Int,IntS),
+    builtin#append_string("__",IntS,VarP),
+    atom_table:intern(VarP,normal(Var)).
+

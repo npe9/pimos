@@ -1,0 +1,169 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_cmd_library.
+:- public do_command/1.
+:- with_macro pimos.
+
+do_command(module(M,LIST)) :- true |
+    module_table:cache_table([get_module(M,Mod)]),
+    wait_get_module(Mod,M,LIST).
+
+do_command(public(P::M)) :- atom(P), atom(M) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(P,M,'*','*',List)],
+    listener_utility:out([do(OUT)]),
+    list_pac(List,OUT,(public)).
+do_command(public(M)) :- atom(M) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(M,'*','*',List)],
+    listener_utility:out([do(OUT)]),
+    list_pac(List,OUT,(public)).
+do_command(public(P::M,LIST)) :- atom(P), atom(M) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(P,M,'*','*',List)],
+    get_pac(List,(public),LIST).
+do_command(public(M,LIST)) :- atom(M) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(M,'*','*',List)],
+    get_pac(List,(public),LIST).
+
+do_command(local(P::M)) :- atom(P), atom(M) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(P,M,'*','*',List)],
+    listener_utility:out([do(OUT)]),
+    list_pac(List,OUT,local).
+do_command(local(M)) :- atom(M) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(M,'*','*',List)],
+    listener_utility:out([do(OUT)]),
+    list_pac(List,OUT,local).
+do_command(local(P::M,LIST)) :- atom(P), atom(M) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(P,M,'*','*',List)],
+    get_pac(List,local,LIST).
+do_command(local(M,LIST)) :- atom(M) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(M,'*','*',List)],
+    get_pac(List,local,LIST).
+
+do_command(info(M)) :- true |
+    module_table:cache_table([get_module(M,Status)]),
+    listener_utility:out(OUT),
+    info(Status,M,OUT).
+
+do_command(predicates(Pa::M,P,A)) :- atom(Pa), atom(M), atom(P) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(Pa,M,P,A,List)],
+    listener_utility:out([do(OUT)]),
+    list_pac(List,OUT,all).
+do_command(predicates(M,P,A)) :- atom(M), atom(P) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(M,P,A,List)],
+    listener_utility:out([do(OUT)]),
+    list_pac(List,OUT,all).
+do_command(predicates(Pa::M,P,A,List)) :- atom(Pa), atom(M), atom(P) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(Pa,M,P,A,List)].
+do_command(predicates(M,P,A,List)) :- atom(M), atom(P) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(M,P,A,List)].
+
+do_command(modules(Pa)) :- atom(Pa) |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(Pa,*,*,*,List)],
+    listener_utility:out([do(OUT)]),
+    list_pac(List,OUT,module).
+do_command(modules) :- true |
+    listener_utility:resource([code(COD)]),
+    COD=[get_predicates(*,*,*,List)],
+    listener_utility:out([do(OUT)]),
+    list_pac(List,OUT,module).
+
+otherwise.
+do_command(Goal) :- true |
+    shoen:raise(pimos_tag#error,
+        '$PIMOS$'(macro#module_name,"Illegal argument"),Goal).
+
+
+list_pac([{_,[]}|L],OUT,Type) :- true | list_pac(L,OUT,Type).
+list_pac([],OUT,_) :- true | OUT=[].
+otherwise.
+list_pac([{Pac,List}|L],OUT,Type) :- true |
+    OUT=[putf("~t::~n",[Pac])|OUT1],
+    list_mod(List,OUT1,OUT2,Type),
+    list_pac(L,OUT2,Type).
+
+list_mod([{Mod,_}|L],OUT,OUT2,module) :- true |
+    OUT=[putf("  ~t~n",[Mod])|OUT1],
+    list_mod(L,OUT1,OUT2,module).
+otherwise.
+list_mod([{_,[]}|L],OUT,OUT1,Type) :- true | list_mod(L,OUT,OUT1,Type).
+list_mod([],OUT,OUT1,_) :- true | OUT1=OUT.
+otherwise.
+list_mod([{Mod,List}|L],OUT,OUT3,Type) :- true |
+    OUT=[putf("  ~t:~n",[Mod])|OUT1],
+    list_pred(List,OUT1,OUT2,Type),
+    list_mod(L,OUT2,OUT3,Type).
+
+list_pred([{(public),P,A}|L],OUT,OUT2,all) :- true |
+    OUT=[putf("    ~t/~t (public)~n",[P,A])|OUT1],
+    list_pred(L,OUT1,OUT2,all).
+list_pred([{local,P,A}|L],OUT,OUT2,all) :- true |
+    OUT=[putf("    ~t/~t~n",[P,A])|OUT1],
+    list_pred(L,OUT1,OUT2,all).
+otherwise.
+list_pred([{Type,P,A}|L],OUT,OUT2,Type) :- true |
+    OUT=[putf("    ~t~n",[(P/A)])|OUT1],
+    list_pred(L,OUT1,OUT2,Type).
+list_pred([],OUT,OUT1,_) :- true | OUT1=OUT.
+otherwise.
+list_pred([_|L],OUT,OUT1,Type) :- true | list_pred(L,OUT,OUT1,Type).
+
+wait_get_module(normal(Mod),_,LIST) :- true | module:predicates(Mod,LIST).
+wait_get_module(non_existent,M,_) :- true |
+    shoen:raise(pimos_tag#error,'$PIMOS$'((module/2),"Nonexistent module"),M).
+otherwise.
+wait_get_module(_,M,_) :- true |
+    shoen:raise(pimos_tag#error,'$PIMOS$'((module/2),"Illegal argument"),M).
+
+get_pac([{_,[]}|L],Type,LIST) :- true | get_pac(L,Type,LIST).
+get_pac([],_,LIST) :- true | LIST=[].
+otherwise.
+get_pac([{Pac,List}|L],Type,LIST) :- true |
+    LIST=[{Pac,List1}|LIST1],
+    get_mod(List,Type,List1),
+    get_pac(L,Type,LIST1).
+
+get_mod([{Mod,List}|L],Type,LIST) :- true |
+    LIST=[{Mod,List1}|LIST1],
+    get_pred(List,Type,List1),
+    get_mod(L,Type,LIST1).
+get_mod([],_,LIST) :- true | LIST=[].
+
+get_pred([{Type,P,A}|L],Type,LIST) :- true |
+    LIST=[{P,A}|LIST1],
+    get_pred(L,Type,LIST1).
+get_pred([],_,LIST) :- true | LIST=[].
+otherwise.
+get_pred([_|L],Type,LIST) :- true | get_pred(L,Type,LIST).
+
+
+info(normal(Module),_Name,OUT) :- module(Module,Size)|
+    module:get_module_name(Module,ModName),
+    module_information:get_attributes(Module,Status),
+    listener_utility:print_module_info(Status,
+            ModName,Size," %%% MODULE INFORMATIONS %%%",OUT,[]).
+info(non_existent,Name,OUT) :- true |
+    OUT=[putf(" info: ~t nonexistent.~n",[Name])].
+info(protection_violation,Name,OUT) :- true |
+    OUT=[putf(" info: ~t protection violation.~n",[Name])].
+info(abnormal,_Name,OUT) :- true |
+    OUT=[putf(" info: Illegal module name.~n",[])].
+% 92.7.2
+info(abnormal(Reason),_Name,OUT) :- true |
+    OUT=[putf(" info: Illegal module name ~t.~n",[Reason])].

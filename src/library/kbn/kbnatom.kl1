@@ -1,0 +1,117 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% icpsi183::>sys>user>hori>Pimos>v40>KBN>kbnatom.kl1.29, 21-Aug-92 17:59:24, Edit by hori
+
+:- module kbn_atom.
+:- with_macro pimos.
+:- public atom_table/2.
+
+atom_table(AT0,FS0) :- true |
+    atom_table:cache_table(CT0),
+    pool:keyed_set(AI0,1000),
+    AI0 = [put([],{0,string#"[]"},_)|AI1],  % The atom number of '[]' is fixed to zero (0).
+    encode(AT0,1,AI1,CT0,FS0).
+
+encode([atom(Atom,ID)|In],NewID,AI0,CT,FS) :- true |
+    AI0 = [empty(Atom,YorN)|AI1],
+    put(YorN,In,Atom,ID,NewID,AI1,CT,FS).
+encode([pred_hash(PredHash,KbnPredHash)|In],NewID,AI0,CT,FS) :- true |
+    decode_pred_hash_key(PredHash,PredAtom,Arity),
+    AI0 = [empty(PredAtom,YorN)|AI1],
+    pred_atom(YorN,In,PredAtom,Arity,KbnPredHash,NewID,AI1,CT,FS).
+encode([],NewID,AI0,CT0,FS0) :- true |
+    AI0 = [get_all(AtomList)],
+    CT0 = [],
+    buffer:output_filter(FS1,FS0),
+    save_atoms(AtomList,FS1).
+
+put(no,In,Atom,ID,NewID,AI0,CT,FS) :- true |
+    AI0 = [get_and_put(Atom,{ID,Name},{ID,Name})|AI1],
+    encode(In,NewID,AI1,CT,FS).
+put(yes,In,Atom,ID,NewID,AI0,CT0,FS) :- true |
+%%    ID := ((NewID \/ 16#"8000") << 16) >> 16,   % To Avoid Compiler Bug
+    ID = NewID,
+    CT0 = [get_atom_name(Atom,normal(Name))|CT1],
+    AI0 = [put(Atom,{NewID,Name},_)|AI1],
+    NewID1 := NewID + 1,
+    encode(In,NewID1,AI1,CT1,FS).
+
+pred_atom(no,In,Atom,Arity,Key,NewID,AI0,CT,FS) :- true |
+    AI0 = [get_and_put(Atom,{ID,Name},{ID,Name})|AI1],
+    Key := ( Arity << 24 ) \/ ( ( ID + Arity ) /\ 16#"FFFFFF" ),
+    encode(In,NewID,AI1,CT,FS).
+pred_atom(yes,In,Atom,Arity,Key,NewID,AI0,CT0,FS) :- true |
+    CT0 = [get_atom_name(Atom,normal(Name))|CT1],
+    AI0 = [put(Atom,{NewID,Name},_)|AI1],
+    Key := ( Arity << 24 ) \/ ( ( NewID + Arity ) /\ 16#"FFFFFF" ),
+    NewID1 := NewID + 1,
+    encode(In,NewID1,AI1,CT1,FS).
+
+decode_pred_hash_key(Key,PredName,Arity) :-
+    atom(Key), tag_and_value(Key,_,Value) |
+    Arity := Value >> 24,
+    Pred := ( Value - Arity ) /\ 16#"FFFFFF",
+    new_instruction(PredName,02,Pred).
+
+%%%% DUMP Symbol Table
+
+save_atoms([{_,{ID,Name}}|AtomList],Stream) :- true |
+    convert_and_put(ID,Name,Stream,Stream1),
+    save_atoms(AtomList,Stream1).
+save_atoms([],Stream) :- true | Stream = [].
+
+convert_and_put(Value,String,Stream,Stream1) :-
+    dec_to_hex(Value,6,Hex),
+    Stream = [putf(string#"      ~s     ~s~n",[Hex,String])|Stream1].
+
+dec_to_hex(Dec,N,Hex) :- true |
+    new_string(Hex0,N,16),
+    d_to_h(Dec,N,List),
+    N1 := N-1,
+    fill(List,N1,Hex0,Hex).
+
+fill([A|B],K,Hex,Hex1) :- true |
+    set_string_element(Hex,K,A,Hex0),
+    K1 := K-1,
+    fill(B,K1,Hex0,Hex1).
+fill([],K,Hex,Hex1) :- true | Hex = Hex1.
+
+d_to_h(Dec,N,List) :- 0 =< Dec, Dec =< 15 |
+    dh(Dec,K),
+    List = [K|List1],
+    N1 := N-1,
+    dh0(N1,List1).
+d_to_h(Dec,N,List) :- Dec > 15 | 
+    D1 := Dec /\ 15, D2 := Dec >> 4,
+    N1 := N-1,
+    dh(D1,C),
+    List = [C|List1],
+    d_to_h(D2,N1,List1).
+
+dh0(0,List) :- true  | List = [].
+dh0(N,List) :- N > 0 |
+    N1 := N-1,
+    List = [#" "|List1],
+    dh0(N1,List1).
+
+dh(  0, Hex) :- true | Hex = #"0".
+dh(  1, Hex) :- true | Hex = #"1".
+dh(  2, Hex) :- true | Hex = #"2".
+dh(  3, Hex) :- true | Hex = #"3".
+dh(  4, Hex) :- true | Hex = #"4".
+dh(  5, Hex) :- true | Hex = #"5".
+dh(  6, Hex) :- true | Hex = #"6".
+dh(  7, Hex) :- true | Hex = #"7".
+dh(  8, Hex) :- true | Hex = #"8".
+dh(  9, Hex) :- true | Hex = #"9".
+dh( 10, Hex) :- true | Hex = #"A".
+dh( 11, Hex) :- true | Hex = #"B".
+dh( 12, Hex) :- true | Hex = #"C".
+dh( 13, Hex) :- true | Hex = #"D".
+dh( 14, Hex) :- true | Hex = #"E".
+dh( 15, Hex) :- true | Hex = #"F".

@@ -1,0 +1,155 @@
+%(C)1992 Institute for New Generation Computer Technology
+%	(Read COPYRIGHT for detailed information.)
+%% #profiler_view_window
+%% 1991.9.13
+
+class profiler_view_window has
+nature  as_profiler_view_window,%%%
+        as_pg_color_window,%%%
+        with_icon,
+        reshape_notifier,
+        select_notifier,
+        labeled_sash,
+        as_graphics,
+        as_mouse_input,
+        as_input,%% for select_notifier
+        with_shared_window,
+        inferior_window;
+after:create(_,_,Obj):-
+    Obj!oldW:=Obj!width,
+    Obj!oldH:=Obj!height,
+    Obj!oldW2:=Obj!width,
+    Obj!oldH2:=Obj!height;
+instance
+attribute   view:=nil,
+            wid:=nil,
+            gid:=nil,
+            graph_num:=0,
+            window_num,
+            outstream,
+            oldW,
+            oldH,
+            oldW2,
+            oldH2,
+            scale_flag:=large;
+
+:get_view(Obj,Obj!view):-!;
+:get_wid(Obj,Obj!wid):-!;
+:get_gid(Obj,Obj!gid):-!;
+:set_view(Obj,V):-!,Obj!view:=V;
+:set_wid(Obj, V):-!,Obj!wid:=V;
+:set_gid(Obj, V):-!,Obj!gid:=V;
+:set_grap_num(Obj,V):-!,Obj!graph_num:=V;
+:get_grap_num(Obj,Obj!graph_num):-!;
+:get_area(Obj,W,H):-
+    :get_size(Obj,W0,H0),
+    :get_label_height(Obj,LH),
+    W=W0-40,H=H0-LH-40;
+
+:draw(W):-
+    :get_view(W,V),
+    %set_label(W,V),
+    :draw(W,V);
+
+%% for select
+
+:has_been_selected(Obj):-
+    :select_view_window(Obj);
+
+:select_view_window(Obj):-!,
+    :get_wid(Obj,Wid),
+    :get_gid(Obj,Gid),
+    St=Obj!outstream,
+    freeze({select,Wid,Gid},Fr),
+    :put(St,Fr);
+
+%% for reshape
+
+:has_been_reshaped(Obj):-
+    W=Obj!oldW,
+    H=Obj!oldH,
+    NW=Obj!width,
+    NH=Obj!height,
+    Obj!oldW:=NW,
+    Obj!oldH:=NH,
+    (W>=NW,H>=NH,!;
+     icon_area_clear(Obj,W,H)),
+    ((NW>=350,NH>=350),!,
+     :redraw(Obj);
+     NW>=350,NH<350,!,
+     :set_size(Obj,NW,350);
+     NW<350,NH>=350,!,
+     :set_size(Obj,350,NH);
+     :set_size(Obj,350,350));
+
+:redraw(W):-!,
+    :reset_icon(W),
+    :draw_frame(W),
+    :get_view(W,V),
+    :draw_disp(W,V);
+
+%% for selector check
+
+%% reshape --> succ
+
+:reshaped(W):-
+    W!width==W!oldW2,
+    W!height==W!oldH2,!,fail;
+:reshaped(W):-
+    W!oldW2:=W!width,
+    W!oldH2:=W!height;
+
+:get_scale(W,Code):-
+    S=W!scale_flag,
+    (S==large,!,Code=large;
+     S==small,!,Code=small);
+
+:sw_scale(W):-
+    S=W!scale_flag,
+    (S==large,!,W!scale_flag:=small;
+     S==small,!,W!scale_flag:=large);
+
+:reset_scale(W):-
+    W!scale_flag:=large;
+
+:set_scale(W,S):-
+    (S==large;S==small),!,
+    W!scale_flag:=S;
+:set_scale(W,_):-
+    :confirm(#messenger,"  ERROR set_scale arg   "),
+    fail;
+
+local
+
+icon_area_clear(Obj,W,H):-
+    :draw_filled_rectangle(Obj,W-31,0,32,H,0,fix,reset),
+    :draw_filled_rectangle(Obj,0,H-31-24,W,32,0,fix,reset);
+
+set_label(Obj,V):-
+    %:get_display_num(Obj,Num),
+    (true;
+     :confirm(#messenger," set-label Fial !! "),
+     fail),
+    Num=Obj!wid,%%
+    table(V,SV,Len1),
+    :get_number_string(#symbolizer,Num,SN),
+    string(SN,Len2,_),
+    new_string(S,Len1+Len2+2+4,16),
+    set_string_element(S,0,#" "),
+    set_string_element(S,1,#"["),
+    set_substring(S,2,Len2,SN),
+    set_string_element(S,2+Len2,#"]"),
+    set_substring(S,3+Len2,3,"   "),
+    set_substring(S,6+Len2,Len1,SV),
+    :set_title(Obj,S),!;
+
+table(what_when,        "What x When",11):-!;
+table(overall_what_when,"Overall What x When",19):-!;
+table(what_where,       "What x Where",12):-!;
+table(overall_what_where,"Overall What x Where",20):-!;
+table(when_where,       "When x Where",12):-!;
+table(predicate,        "Predicate",9):-!;
+table(pe_view,          "PE View",7):-!;
+table(_," ",1):-!;
+
+end.

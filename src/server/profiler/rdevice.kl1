@@ -1,0 +1,210 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- include("pimos.h").
+:- module profiling_request_device.
+:- with_macro pimos.
+:- public create/7.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% create(ServerAbort,Control,Abort,ClientAbort,AbsNode,User,Handler)
+%   ServerAbort : Server task alive or not.
+%   Control     : Send add_resource/3 message.
+%   Abort       : Abort messages in the Control stream.
+%   ClientAbort : Client task alive or not.
+%   AbsNode     : Absolute node number where user raised.
+%   User        : Stream from user.
+%   Handler     : Stream to profiling handler.
+
+create(SAb,Cnt,Ab,CAb,_AbsNode,User,Dev) :- wait(SAb) |
+    Cnt=[], Ab=abort, Dev=[],
+    abort_msg(User,CAb).
+
+create(_SAb,Cnt,Ab,CAb,_AbsNode,_User,Dev) :- wait(CAb) |
+    Cnt=[], Ab=abort, Dev=[].
+
+alternatively.
+create(SAb,Cnt,Ab,CAb,AbsNode,[current_node(Node,Nodes)|User],Dev) :- true|
+    From := AbsNode-Node, 
+    To := From+Nodes-1,
+    handler(SAb,Cnt,Ab,CAb,{AbsNode,From,To},User,Dev).
+
+
+handler(SAb,Cnt,Ab,CAb,_Node,User,Dev) :- wait(SAb) |
+    Cnt=[], Ab=abort, Dev=[],
+    abort_msg(User,CAb).
+
+handler(_SAb,Cnt,Ab,CAb,_Node,_User,Dev) :- wait(CAb) |
+    Cnt=[], Ab=abort, Dev=[].
+
+alternatively.
+% Create device.
+handler(SAb,Cnt,Ab,CAb,{AbsNode,From,To},
+  [create(Int,Item,Nodes,Unit,Status)|User],Dev) :- true|
+    new_vector(V,7),
+    max_interval(Unit,Max),
+    check_interval(Int,Max,IntSt),
+    check_items(Item,[],V,ItmSt),
+    check_nodes(Nodes,Nds,Nds,From,To,NodeSt),
+    add_resource(SAb,Cnt,Ab,CAb,{AbsNode,From,To},User,Dev,
+        IntSt,ItmSt,NodeSt,Unit,Status).
+handler(SAb,Cnt,Ab,CAb,{AbsNode,From,To},
+  [create(Int,Item,Unit,Status)|User],Dev) :- true|
+    new_vector(V,7),
+    max_interval(Unit,Max),
+    check_interval(Int,Max,IntSt),
+    check_items(Item,[],V,ItmSt),
+    make_nodes(From,To,Nodes),
+    add_resource(SAb,Cnt,Ab,CAb,{AbsNode,From,To},User,Dev,
+        IntSt,ItmSt,normal(Nodes),Unit,Status).
+handler(SAb,Cnt,Ab,CAb,{AbsNode,From,To},
+  [create(Int,Item,Status)|User],Dev) :- true|
+    new_vector(V,7),
+    max_interval(msec,Max),
+    check_interval(Int,Max,IntSt),
+    check_items(Item,[],V,ItmSt),
+    make_nodes(From,To,Nodes),
+    add_resource(SAb,Cnt,Ab,CAb,{AbsNode,From,To},User,Dev,
+        IntSt,ItmSt,normal(Nodes),msec,Status).
+
+handler(SAb,Cnt,Ab,CAb,Node,[get_interval_range(Unit,Status)|User],Dev) :- true|
+    max_interval(Unit,Max),
+    Status=normal(100,Max),
+    handler(SAb,Cnt,Ab,CAb,Node,User,Dev).
+handler(SAb,Cnt,Ab,CAb,Node,[get_interval_range(Status)|User],Dev) :- true|
+    max_interval(msec,Max),
+    Status=normal(100,Max),
+    handler(SAb,Cnt,Ab,CAb,Node,User,Dev).
+
+handler(_SAb,Cnt,_Ab,_CAb,_Node,[],Dev) :- true| Cnt=[], Dev=[].
+
+
+add_resource(SAb,Cnt,Ab,CAb,Node,User,Dev,
+  normal(Int),normal(Itm),normal(Nodes),Unit,Status) :- true|
+    Cnt=[add_resource(profiling_device,"profiling_device",Res)|Cnt1],
+    Dev={Dev1,Dev2},
+    wait_add_resource(SAb,CAb,Int,Itm,Nodes,Unit,Status,Node,Dev1,Res),
+    handler(SAb,Cnt1,Ab,CAb,Node,User,Dev2).
+add_resource(SAb,Cnt,Ab,CAb,Node,User,Dev,
+  abnormal(Reason),_ItmSt,_NodeSt,_Unit,Status) :- true|
+    Status=abnormal(Reason),
+    handler(SAb,Cnt,Ab,CAb,Node,User,Dev).
+add_resource(SAb,Cnt,Ab,CAb,Node,User,Dev,
+  _IntSt,abnormal(Reason),_NodeSt,_Unit,Status) :- true|
+    Status=abnormal(Reason),
+    handler(SAb,Cnt,Ab,CAb,Node,User,Dev).
+add_resource(SAb,Cnt,Ab,CAb,Node,User,Dev,
+  _IntSt,_ItmSt,abnormal(Reason),_Unit,Status) :- true|
+    Status=abnormal(Reason),
+    handler(SAb,Cnt,Ab,CAb,Node,User,Dev).
+
+
+wait_add_resource(SAb,CAb,Int,Item,Nodes,Unit,Status,Node,Dev,normal(Cnt,Ab)) :- true|
+    Status=normal(USR,UAb,Att),
+    Dev=[create(SAb,CAb,Int,Item,Nodes,Unit,Node,USR,UAb,Att,Cnt,Ab)].
+otherwise.
+wait_add_resource(_SAb,_CAb,_Int,_Item,_Nodes,_Unit,Status,_Node,Dev,_) :- true|
+    Status=abnormal(aborted), Dev=[].
+    
+
+abort_msg(_,CAb) :- wait(CAb)| true.
+alternatively.
+abort_msg([create(_,_,_,Status)|User],CAb) :- true|
+    Status=abnormal(out_of_service),
+    abort_msg(User,CAb).
+abort_msg([create(_,_,Status)|User],CAb) :- true|
+    Status=abnormal(out_of_service),
+    abort_msg(User,CAb).
+abort_msg([get_interval_range(Status)|User],CAb) :- 
+    Status=abnormal(out_of_service),
+    abort_msg(User,CAb).
+abort_msg([],_) :- true | true.
+
+
+check_interval(I,Max,St) :- I>=100, I=<Max| St=normal(I).
+otherwise.
+check_interval(I,_Max,St) :- true| St=abnormal(interval_range_overflow(I)).
+
+
+check_items([idling_time|I],Is,V,St) :- true| 
+    set_vector_element(V,0,E,NE,V1),
+    check_double_define(E,NE,idling_time,St,St1),
+    check_items(I,[idling_time(0)|Is],V1,St1).
+check_items([idling_time(L)|I],Is,V,St) :- L>=0|
+    set_vector_element(V,0,E,NE,V1),
+    check_double_define(E,NE,idling_time(L),St,St1),
+    check_items(I,[idling_time(L)|Is],V1,St1).
+
+check_items([gevc|I],Is,V,St) :- true| 
+    set_vector_element(V,1,E,NE,V1),
+    check_double_define(E,NE,gevc,St,St1),
+    check_items(I,[gevc(0)|Is],V1,St1).
+check_items([gevc(L)|I],Is,V,St) :- L>=0|
+    set_vector_element(V,1,E,NE,V1),
+    check_double_define(E,NE,gevc(L),St,St1),
+    check_items(I,[gevc(L)|Is],V1,St1).
+
+check_items([encoded_message_frequency|I],Is,V,St) :- true| 
+    set_vector_element(V,2,E,NE,V1),
+    check_double_define(E,NE,encoded_message_frequency,St,St1),
+    check_items(I,[encoded_message_frequency|Is],V1,St1).
+check_items([decoded_message_frequency|I],Is,V,St) :- true| 
+    set_vector_element(V,3,E,NE,V1),
+    check_double_define(E,NE,decoded_message_frequency,St,St1),
+    check_items(I,[decoded_message_frequency|Is],V1,St1).
+
+check_items([local_gc|I],Is,V,St) :- true| 
+    set_vector_element(V,4,E,NE,V1),
+    check_double_define(E,NE,local_gc,St,St1),
+    check_items(I,[local_gc(0)|Is],V1,St1).
+check_items([local_gc(L)|I],Is,V,St) :- L>=0|
+    set_vector_element(V,4,E,NE,V1),
+    check_double_define(E,NE,local_gc(L),St,St1),
+    check_items(I,[local_gc(L)|Is],V1,St1).
+
+check_items([log_event|I],Is,V,St) :- true| 
+    set_vector_element(V,5,E,NE,V1),
+    check_double_define(E,NE,log_event,St,St1),
+    check_items(I,[log_event(0)|Is],V1,St1).
+check_items([log_event(L)|I],Is,V,St) :- L>=0|
+    set_vector_element(V,5,E,NE,V1),
+    check_double_define(E,NE,log_event(L),St,St1),
+    check_items(I,[log_event(L)|Is],V1,St1).
+
+check_items([message_handling_time|I],Is,V,St) :- true| 
+    set_vector_element(V,6,E,NE,V1),
+    check_double_define(E,NE,message_handling_time,St,St1),
+    check_items(I,[message_handling_time|Is],V1,St1).
+check_items([],Is,_,St) :- true | St=normal(Is).
+otherwise.
+check_items([Item|_],_,_,St) :- true| St=abnormal(illegal_item_length(Item)).
+
+check_double_define(0, NE,_,   St, NewSt) :- true| NE=1, NewSt=St.
+check_double_define(1,_NE,Item,St,_NewSt) :- true| 
+    St=abnormal(profiling_item_double_defined(Item)).
+
+
+check_nodes([N|Ns],New,NewH,From,To,St) :- AbsN := N+From, AbsN >= From, AbsN =< To|
+    New=[AbsN|New1],    
+    check_nodes(Ns,New1,NewH,From,To,St).
+check_nodes([],New,NewH,_,_,St) :- true| New=[], St=normal(NewH).
+otherwise.
+check_nodes([N|_],_,_,_,_,St) :- true| St=abnormal(node_number_range_overflow(N)).
+
+make_nodes(To,  To,Ns) :- true| Ns=[To].
+otherwise.
+make_nodes(From,To,Ns) :- true| Ns=[From|Ns1], make_nodes(~(From+1),To,Ns1).
+
+
+:- switch(machine).
+:- case(mpsi,pimm).
+max_interval(msec,  Max) :- true| Max := 1000*60*60*24*3.  % 3 days.
+max_interval(msec16,Max) :- true| Max := 1000*60*60*24*3.  % 3 days.
+max_interval(usec,  Max) :- true| Max := 1000*60*60.       % 1 hour.
+:- default.
+max_interval(_,     Max) :- true| Max := 1000*60*60.       % 1 hour.
+:- end_switch.

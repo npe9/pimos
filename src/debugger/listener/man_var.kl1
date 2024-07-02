@@ -1,0 +1,441 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                          %
+% (C)1994 Institute for New Generation Computer Technology %
+% Read COPYRIGHT for detailed information.                 %
+%                                                          %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+:- module listener_var_manager.
+:- public create/1, filter/2, create_for_newgoal/3, distributor/7.
+:- public remember/8.
+:- with_macro pimos.
+
+create(VAR) :-
+    merge(VAR,VAR1),
+    pool:keyed_sorted_set(Table),
+    pool:multiply_keyed_bag({event_number,name,mode,value},32,USED),
+%                           {     0,       1,   2,    3  }
+    manager(VAR1,Table,USED).
+
+%91.3.6
+manager([put_used(Data)|S],Table,NEW) :-
+    NEW=[put(Data)|NEW1],
+    manager(S,Table,NEW1).
+manager([get_all_used(C,Status)|S],Table,NEW) :-
+    NEW=[get_all(C,Status)|NEW1],
+    manager(S,Table,NEW1).
+manager([carbon_copyp_used(C,P,Status)|S],Table,NEW) :-
+    NEW=[carbon_copyp(C,P,Status)|NEW1],
+    manager(S,Table,NEW1).
+
+manager([get_varlist(VarList)|S],Table,NEW) :-
+    Table=[carbon_copy(VarList)|Table1],
+    manager(S,Table1,NEW).
+
+manager([get_variables(ID,Vars)|S],Table,NEW) :-
+    Table=[carbon_copy(Old)|Table1],
+    listener_utility:prepend(Old,Rem,Rems),
+    make_condition(Rems,C,C1),
+    NEW=[carbon_copyp(((0\=ID)/\(2=remember)),{1,2,3},Rem),
+         carbon_copyp(((0=ID)/\C), {1,2,3},V1),
+         carbon_copyp(((0=ID)/\C1),{1,2,3},New)|NEW1],
+    listener_utility:prepend(V1,Rems,V2),
+    compact(V2,V3),
+    listener_utility:prepend(V3,New,V4),
+    sorter:sort(V4,Vars),
+    manager(S,Table1,NEW1).
+
+% SPECIAL 91.4.22
+manager([get_variables(Rems,IntSec,New)|S],Table,NEW) :-
+    Table=[carbon_copy(Old)|Table1],
+    NEW=[carbon_copyp((2=remember),{1,3},Rem0),
+         carbon_copyp(C,           {1,3},IntSec0),
+         carbon_copyp(C1,          {1,3},New0)|NEW1],
+    listener_utility:prepend(Old,Rem0,Rem),
+    compact(Rem,Rems),
+    make_condition(Rems,C,C1),
+    compact(IntSec0,IntSec),    
+    compact(New0,New),    
+    manager(S,Table1,NEW1).
+manager([get_variables(ID,Rems,IntSec,New)|S],Table,NEW) :-
+    Table=[carbon_copy(Old)|Table1],
+    NEW=[carbon_copyp(((0\=ID)/\(2=remember)),{1,3},Rem0),
+         carbon_copyp(((0=ID)/\C),            {1,3},IntSec0),
+         carbon_copyp(((0=ID)/\C1),           {1,3},New0)|NEW1],
+    listener_utility:prepend(Old,Rem0,Rem),
+    compact(Rem,Rems),
+    make_condition(Rems,C,C1),
+    compact(IntSec0,IntSec),    
+    compact(New0,New),    
+    manager(S,Table1,NEW1).
+%
+
+manager([reset(ID,Old,Used,New)|S],Table,NEW) :-
+    C=(0=ID),
+    NEW=[getp_all(C,{1,2,3},UV)|NEW1],
+    put_vars(UV,Used,New,Table,Table1),
+    Table1=[carbon_copy(OV)|Table2],
+    delete(New,OV,Old),
+    manager(S,Table2,NEW1).
+manager([abort(ID,Status)|S],Table,NEW) :- true|
+    Status=normal,
+    C=(0=ID),
+    NEW=[get_all(C,_)|NEW1],
+    manager(S,Table,NEW1).
+%
+manager([forget(Status)|S],     Table,NEW) :-
+    Table  = [get_all(_)|Table1],                % clear
+    Status=normal,
+    manager(S,Table1,NEW).
+
+manager([forget(Name,Status)|S],Table,NEW) :-
+    Table=[get_if_any(Name,Val)|Table1],
+    forget_status(Val,Name,Status),
+    C=(1=Name),
+    NEW=[get_all(C,All)|NEW1],
+    forget_variables(All,NEW1,NEW2),
+    manager(S,Table1,NEW2).
+
+manager([put_immediately("_",_,Status)|S],Table,NEW) :-
+    Status=abnormal,
+    manager(S,Table,NEW).
+manager([put_immediately(Name,_,Status)|S],Table,NEW) :-  % "_XXX"
+  string(Name,Size,_), Size>1, string_element(Name,0,#"_") |
+    Status=abnormal,
+    manager(S,Table,NEW).
+manager([remember("_",_,Status)|S],Table,NEW) :-
+    Status=abnormal,
+    manager(S,Table,NEW).
+manager([remember(Name,_,Status)|S],Table,NEW) :-  % "_XXX"
+  string(Name,Size,_), Size>1, string_element(Name,0,#"_") |
+    Status=abnormal,
+    manager(S,Table,NEW).
+
+manager([get_value(Name,Var)|S],Table,NEW) :-
+        Table=[carbon_copy(Name,Val)|Table1],
+        get_value(Val,Name,Var),
+        manager(S,Table1,NEW).
+
+manager([do(List)|S],Table,NEW) :-    % 90.4.17
+    merge(List,List1),
+    listener_utility:prepend(List1,S,S1),
+    manager(S1,Table,NEW).
+
+manager([],                    Table,NEW) :- Table=[], NEW=[].
+
+otherwise.
+manager([put_immediately(Name,Var,Status)|S],Table,NEW) :-
+        Table=[do([empty(Name,YorN)|Do])|Table1],
+        put_immediately(YorN,Name,Var,Status,Do),
+        manager(S,Table1,NEW).
+manager([remember(Name,Var,Status)|S],Table,NEW) :-
+        Table=[do([empty(Name,YorN)|Do])|Table1],
+        put_immediately(YorN,Name,Var,Status,Do),
+        manager(S,Table1,NEW).
+
+otherwise.
+manager([Msg|S],Table,NEW) :-
+    Table=[Msg|Table1],
+    manager(S,Table1,NEW).
+
+forget_status({}, Name, Status) :- Status=non_existent(Name).
+forget_status({_},_Name,Status) :- Status=normal.
+
+put_immediately(yes,Name,Var,Status,Do) :-
+        Status=normal,
+        Do=[put(Name,Var,_)].
+put_immediately(no,_,_,Status,Do) :-
+        Status=existent,Do=[].
+
+get_value([Val],_Name,Status) :- Status=normal(Val).
+get_value([],   Name, Status) :- Status=non_existent(Name).
+
+
+filter([forget(N,S)|US],OS) :- string(N,_,_) |
+    OS=[forget(N,S1)|OS1],
+    listener_utility:wait_unify(S1,S),
+    filter(US,OS1).
+filter([put_immediately(N,V,S)|US],OS) :- string(N,_,_) |
+    OS=[put_immediately(N,V,S1)|OS1],
+    listener_utility:ground_unify(S1,S),
+    filter(US,OS1).
+filter([remember(N,V,S)|US],OS) :- string(N,_,_) |
+    OS=[remember(N,V,S1)|OS1],
+    listener_utility:ground_unify(S1,S),
+    filter(US,OS1).
+filter([get_value(N,V)|US],OS) :- string(N,_,_) |
+    OS=[get_value(N,V1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    filter(US,OS1).
+filter([get_varlist(V)|US],OS) :-
+    OS=[get_varlist(V1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    filter(US,OS1).
+filter([get_variables(ID,V)|US],OS) :- integer(ID) |
+    OS=[get_variables(ID,V1)|OS1],
+    listener_utility:wait_unify(V1,V),
+    filter(US,OS1).
+filter([get_variables(ID,A,B,C)|US],OS) :- integer(ID) |
+    OS=[get_variables(ID,A1,B1,C1)|OS1],
+    listener_utility:wait_unify(A1,A), 
+    listener_utility:wait_unify(B1,B), 
+    listener_utility:wait_unify(C1,C), 
+    filter(US,OS1).
+filter([get_variables(A,B,C)|US],OS) :-
+    OS=[get_variables(A1,B1,C1)|OS1],
+    listener_utility:wait_unify(A1,A), 
+    listener_utility:wait_unify(B1,B), 
+    listener_utility:wait_unify(C1,C), 
+    filter(US,OS1).
+filter([forget(S)|US],OS) :-
+    OS=[forget(S1)|OS1],
+    listener_utility:wait_unify(S1,S),
+    filter(US,OS1).
+filter([do(List)|US],OS) :-
+    merge(List,List1),
+    listener_utility:prepend(List1,US,US1),
+    filter(US1,OS).
+filter([],OS) :- OS=[].
+
+
+create_for_newgoal(VAR,IN,IN1) :- true |
+    variable:pool2(Tmp),
+    manager1(VAR,IN,IN1,Tmp).
+
+
+manager1([put("_",_  )|S],IN,IN1,Tmp) :- true |      % "_"
+    manager1(S,IN,IN1,Tmp).
+
+manager1([put(Name,Var)|S],IN,IN1,Tmp) :-                   % "_XXX"
+  string(Name,Size,_), Size>1, string_element(Name,0,#"_") |
+    Tmp = [put_var(Name,Var)|Tmp1],
+    manager1(S,IN,IN1,Tmp1).
+
+manager1([put(Name,Var)|S],IN,IN1,Tmp) :- integer(Name) |   % macro_exp
+    Tmp = [put_var(Name,Var)|Tmp1],
+    manager1(S,IN,IN1,Tmp1).
+
+manager1([remember("_",_  )|S],IN,IN1,Tmp) :- true |      % "_"
+    manager1(S,IN,IN1,Tmp).
+
+manager1([remember(Name,Var)|S],IN,IN1,Tmp) :-                   % "_XXX"
+  string(Name,Size,_), Size>1, string_element(Name,0,#"_") |
+    Tmp = [put_var(Name,Var)|Tmp1],
+    manager1(S,IN,IN1,Tmp1).
+
+manager1([do(List)|S],IN,IN1,Tmp) :- true |   % 90.4.17
+    merge(List,List1),
+    listener_utility:prepend(List1,S,S1),
+    manager1(S1,IN,IN1,Tmp).
+
+manager1([],          IN,IN1,Tmp) :- true | IN1=IN, Tmp=[].
+
+otherwise.
+manager1([put(Name,Var)|S],IN,IN2,Tmp) :- string(Name,_,_) |
+    IN=[get_value(Name,Val)|IN1],
+    displayed_check(Val,Name,Var,Tmp,Tmp1),
+    manager1(S,IN1,IN2,Tmp1).
+manager1([remember(Name,Var)|S],IN,IN2,Tmp) :- string(Name,_,_) |
+    IN=[get_value(Name,Val)|IN1],
+    displayed_check(Val,Name,Var,Tmp,Tmp1),
+    manager1(S,IN1,IN2,Tmp1).
+
+displayed_check({},Name,Var,Tmp,Tmp1) :- true | % not displayed yet
+    Tmp = [put_var(Name,Var)|Tmp1].
+displayed_check({Old},_,Var,Tmp,Tmp1) :- true | % already displayed
+    Var=Old, Tmp1=Tmp.
+
+
+
+distributor(S,VAR,VAR1,ID,Rem,Prt,Query) :-
+    distribute(S,VAR,VAR1,ID,Rem,Prt,Query,TMP),
+    variable:pool2(TMP).
+
+distribute([put("_",_  )|S],VAR,VAR1,ID,Rem,Prt,Query,TMP) :- true |     % "_"
+    distribute(S,VAR,VAR1,ID,Rem,Prt,Query,TMP).
+
+distribute([put(Name,Var)|S],VAR,VAR1,ID,Rem,Prt,Query,TMP) :-                  % "_XXX"
+  string(Name,Size,_), Size>1, string_element(Name,0,#"_") |
+    TMP = [put_var(Name,Var)|TMP1],
+    distribute(S,VAR,VAR1,ID,Rem,Prt,Query,TMP1).
+
+distribute([put(Name,Var)|S],VAR,VAR1,ID,Rem,Prt,Query,TMP) :- integer(Name) |  % macro_exp
+    TMP = [put_var(Name,Var)|TMP1],
+    distribute(S,VAR,VAR1,ID,Rem,Prt,Query,TMP1).
+
+distribute([remember("_",_  )|S],VAR,VAR1,ID,Rem,Prt,Query,TMP) :- true | 
+    distribute(S,VAR,VAR1,ID,Rem,Prt,Query,TMP).
+
+distribute([remember(Name,Var)|S],VAR,VAR1,ID,Rem,Prt,Query,TMP) :-             % "_XXX"
+  string(Name,Size,_), Size>1, string_element(Name,0,#"_") |
+    TMP = [put_var(Name,Var)|TMP1],
+    distribute(S,VAR,VAR1,ID,Rem,Prt,Query,TMP1).
+
+distribute([remember(Name,Var)|S],VAR,VAR1,ID,Rem,Prt,Query,TMP) :- integer(Name) | % macro_exp
+    TMP = [put_var(Name,Var)|TMP1],
+    distribute(S,VAR,VAR1,ID,Rem,Prt,Query,TMP1).
+
+distribute([do(List)|S],VAR,VAR1,ID,Rem,Prt,Query,TMP) :- true |   % 90.4.17
+    merge(List,List1),
+    listener_utility:prepend(List1,S,S1),
+    distribute(S1,VAR,VAR1,ID,Rem,Prt,Query,TMP).
+
+distribute([],VAR,VAR1,_,_,_,_,TMP) :- true | VAR1=VAR, TMP=[].
+
+otherwise.
+distribute([put(Name,Var)|S],VAR,VAR2,ID,off,no,no,TMP) :- true |
+    C=((1=Name)/\(2=remember)),
+    VAR=[carbon_copy(Name,V1),
+         carbon_copyp_used(C,{3},V2)|VAR1],
+    remembrance_check(V1,V2,Name,Var,TMP,TMP1),
+    distribute(S,VAR1,VAR2,ID,off,no,no,TMP1).
+
+otherwise.
+distribute([put(Name,Var)|S],VAR,VAR3,ID,off,Prt,Query,TMP) :- true |
+    C =((0=ID) /\(1=Name)),
+    C1=((0\=ID)/\(1=Name)/\(2=remember)),
+    VAR=[carbon_copy(Name,V1),
+         carbon_copyp_used(C, {3},V2),
+         carbon_copyp_used(C1,{3},V3)|VAR1],
+    unify_and_put(V1,V2,V3,ID,Name,Var,VAR1,VAR2),
+    distribute(S,VAR2,VAR3,ID,off,Prt,Query,TMP).
+
+distribute([put(Name,Var)|S],VAR,VAR3,ID,on,Prt,Query,TMP) :- true |
+    C =((0=ID) /\(1=Name)),
+    C1=((0\=ID)/\(1=Name)/\(2=remember)),
+    VAR=[carbon_copy(Name,V1),
+         carbon_copyp_used(C, {3},V2),
+         carbon_copyp_used(C1,{3},V3)|VAR1],
+    unify_and_remember(V1,V2,V3,ID,Name,Var,VAR1,VAR2),
+    distribute(S,VAR2,VAR3,ID,on,Prt,Query,TMP).
+
+distribute([remember(Name,Var)|S],VAR,VAR3,ID,Rem,Prt,Query,TMP) :- true |
+    C =((0=ID) /\(1=Name)),
+    C1=((0\=ID)/\(1=Name)/\(2=remember)),
+    VAR=[carbon_copy(Name,V1),
+         carbon_copyp_used(C, {3},V2),
+         carbon_copyp_used(C1,{3},V3)|VAR1],
+    unify_and_remember(V1,V2,V3,ID,Name,Var,VAR1,VAR2),
+    distribute(S,VAR2,VAR3,ID,Rem,Prt,Query,TMP).
+
+unify_and_put([], [],     [],     ID,Name,Var,VAR,VAR1) :-
+    VAR=[put_used({ID,Name,forget,Var})|VAR1].
+unify_and_put([V],[],     _,      ID,Name,Var,VAR,VAR1) :-
+    Var=V,
+    VAR=[put_used({ID,Name,forget,Var})|VAR1].
+unify_and_put(_,  [{V}|_],_,      _, _,   Var,VAR,VAR1) :- Var=V, VAR1=VAR.
+unify_and_put([], [],     [{V}|_],ID,Name,Var,VAR,VAR1) :- 
+    Var=V,
+    VAR=[put_used({ID,Name,forget,Var})|VAR1].
+
+unify_and_remember([], [],     [],     ID,Name,Var,VAR,VAR1) :-
+    VAR=[put_used({ID,Name,remember,Var})|VAR1].
+unify_and_remember([V],[],     _,      ID,Name,Var,VAR,VAR1) :-
+    Var=V,
+    VAR=[put_used({ID,Name,remember,Var})|VAR1].
+unify_and_remember(_,  [{V}|_],_,      ID,Name,Var,VAR,VAR1) :- 
+    Var=V,
+    VAR=[get_all_used(((0=ID)/\(1=Name)),_),
+         put_used({ID,Name,remember,Var})|VAR1].
+unify_and_remember([], [],     [{V}|_],ID,Name,Var,VAR,VAR1) :- 
+    Var=V,
+    VAR=[put_used({ID,Name,remember,Var})|VAR1].
+
+remembrance_check([],   [],     Name,Var,Tmp,Tmp1) :- true | Tmp = [put_var(Name,Var)|Tmp1].
+remembrance_check([Old],_,      _,   Var,Tmp,Tmp1) :- true | Var=Old, Tmp1=Tmp.
+remembrance_check([],   [{V}|_],_,   Var,Tmp,Tmp1) :- true | Var=V, Tmp1=Tmp.
+
+make_condition([],     C,C1) :- true| C=(1=[]), C1=true.
+make_condition([V],    C,C1) :- vector_element(V,0,N)| C=(1=N),  C1=(1\=N).
+otherwise.
+make_condition([V|Rems],C,C1) :- vector_element(V,0,N)|
+    C =or((1=N),C2),
+    C1=and((1\=N),C3),
+    make_condition(Rems,C2,C3).
+
+put_vars([{N,V}|UV],Used,New,T,T2) :- true|
+    T=[put(N,V,S)|T1],
+    Used=[{N,V}|Used1],
+    existent(S,N,V,New,New1),
+    put_vars(UV,Used1,New1,T1,T2).
+put_vars([{N,remember,V}|UV],Used,New,T,T2) :- true|
+    T=[put(N,V,S)|T1],
+    Used=[{N,V}|Used1],
+    existent(S,N,V,New,New1),
+    put_vars(UV,Used1,New1,T1,T2).
+put_vars([{N,forget,  V}|UV],Used,New,T,T2) :- true|
+    T=[empty(N,YorN)|T1],
+    nonexistent_YorN(YorN,N,V,Used,Used1,New,New1),
+    put_vars(UV,Used1,New1,T1,T2).
+put_vars([],Used,New,T,T1) :- Used=[], New=[], T1=T.
+
+existent({}, N,V,New,New1) :- true| New=[{N,V}|New1].
+existent({_},_,_,New,New1) :- true| New1=New.
+
+nonexistent_YorN(yes,N,V,Used,Used1,New,New1) :- true|
+    Used=[{N,forget,V}|Used1], New=[{N,forget,V}|New1].
+nonexistent_YorN(no, N,V,Used,Used1,New,New1) :- true|
+    Used=[{N,V}|Used1],        New1=New.
+
+
+delete([{N,_}|New],OV,Old) :-
+    del(N,OV,OV1),
+    delete(New,OV1,Old).
+delete([],OV,Old) :- Old=OV.
+otherwise.
+delete([_|New],OV,Old) :- delete(New,OV,Old).
+
+del(N,[{N,_}|OV],Old) :- Old=OV.
+del(_,[],        Old) :- Old=[].
+otherwise.
+del(N,[V|OV],    Old) :- Old=[V|Old1], del(N,OV,Old1).
+
+
+compact([],Vs) :- Vs=[].
+compact([{N,M,V}|Cdr],Vs) :-
+    Vs=[{N,M,V}|Vs1],
+    compact1(N,Cdr,Cdr1),
+    compact(Cdr1,Vs1).
+compact([{N,V}|Cdr],Vs) :-
+    Vs=[{N,V}|Vs1],
+    compact1(N,Cdr,Cdr1),
+    compact(Cdr1,Vs1).
+
+compact1(N,[{N,_,_}|Cdr],Cdr1) :- compact1(N,Cdr,Cdr1).
+compact1(N,[{N,_}  |Cdr],Cdr1) :- compact1(N,Cdr,Cdr1).
+compact1(_,[],Cdr) :- Cdr=[].
+otherwise.
+compact1(N,[Car|Cdr],Cdr1) :- Cdr1=[Car|Cdr2], compact1(N,Cdr,Cdr2).
+    
+forget_variables([{ID,Name,_,Val}|Vars],NEW,NEW2) :-
+    NEW=[put({ID,Name,forget,Val})|NEW1],
+    forget_variables(Vars,NEW1,NEW2).
+forget_variables([],NEW,NEW1) :- NEW1=NEW.
+
+
+%%%%%%%%%%%
+% UTILITY %
+%%%%%%%%%%%
+remember({Val},_,Var,Var, IN,IN1,RSC,RSC1) :- % remember(Var) or remember(Var,Var)
+    RSC=[variable(put_immediately(Var,Val,Status))|RSC1],
+    rem_status(Status,Var,Val,IN,IN1).
+remember({Val},{},_,Name,IN,IN1,RSC,RSC1) :- 
+    RSC=[variable(put_immediately(Name,Val,Status))|RSC1],
+    rem_status(Status,Name,Val,IN,IN1).
+remember({},  _, Var,_,   IN,IN1,RSC,RSC1) :- % "Var" is non-existent in variable:pool2.
+    RSC1=RSC,
+    IN=[putf(" rem: ~s nonexistent~n",[Var])|IN1].
+otherwise.
+remember(_,{_},_,Name,IN,IN1,RSC,RSC1) :- 
+    RSC1=RSC,
+    IN=[putf(" rem: ~s already displayed~n",[Name])|IN1].
+
+% non-existent in listener-variable-pool.
+rem_status(normal,  Name,Val,IN,IN1) :- true| IN=[put_var(Name,Val)|IN1].
+% Name is already remembered in listener-variable-pool.
+rem_status(existent,Name,_,  IN,IN1) :- true|
+    IN=[putf(" rem: ~s already remembered~n",[Name])|IN1].
+% Illegal variable name (_, _XXX).
+rem_status(abnormal,Name,_,  IN,IN1) :- true|
+    IN=[putf(" rem: ~s illegal name~n",[Name])|IN1].
+
